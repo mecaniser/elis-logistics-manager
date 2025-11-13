@@ -1,7 +1,7 @@
-from app.models.truck import Truck
-from app.models.driver import Driver
-from app.models.settlement import Settlement
-from app.models.repair import Repair
+from .truck import Truck
+from .driver import Driver
+from .settlement import Settlement
+from .repair import Repair
 
 __all__ = ["Truck", "Driver", "Settlement", "Repair"]
 
