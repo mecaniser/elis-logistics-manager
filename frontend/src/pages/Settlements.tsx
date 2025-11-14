@@ -26,6 +26,7 @@ export default function Settlements() {
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
+  const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8>(6)
   
   const SETTLEMENT_TYPES = [
     'Owner Operator Income Sheet',
@@ -45,7 +46,7 @@ export default function Settlements() {
     'payroll_fee',
     'truck_parking',
     'service_on_truck',
-    'other'
+    'custom'
   ]
 
   useEffect(() => {
@@ -250,7 +251,7 @@ export default function Settlements() {
     // Map old category names to new ones (for backward compatibility)
     const categoryMapping: { [key: string]: string[] } = {
       'fees': ['dispatch_fee', 'safety', 'prepass', 'insurance'], // Old "fees" category might contain multiple
-      'other': ['service_on_truck', 'truck_parking', 'other'] // Old "other" category
+      'other': ['service_on_truck', 'truck_parking', 'custom'] // Old "other" category maps to "custom"
     }
     
     STANDARD_EXPENSE_CATEGORIES.forEach(category => {
@@ -306,24 +307,84 @@ export default function Settlements() {
       const wasParsed = existingCategories[key] !== undefined && existingCategories[key] !== null
       
       if (wasParsed) {
-        // Show the parsed value (even if 0, because it was explicitly parsed)
-        inputValues[key] = String(existingCategories[key])
+        // Show the parsed value formatted with 2 decimals (even if 0, because it was explicitly parsed)
+        inputValues[key] = formatCurrency(existingCategories[key])
       } else if (value > 0) {
-        // Show non-zero values that were calculated/derived
-        inputValues[key] = String(value)
+        // Show non-zero values that were calculated/derived, formatted with 2 decimals
+        inputValues[key] = formatCurrency(value)
       } else {
         // Leave empty for unparsed zero values
         inputValues[key] = ''
       }
     })
     setExpenseCategoryInputs(inputValues)
+    
+    // Initialize dispatch fee percentage based on existing dispatch fee
+    // If dispatch fee exists, try to determine percentage from gross revenue
+    if (categories.dispatch_fee && settlement.gross_revenue) {
+      const calculatedPercent = (categories.dispatch_fee / settlement.gross_revenue) * 100
+      // Round to nearest 6% or 8%
+      if (Math.abs(calculatedPercent - 6) < Math.abs(calculatedPercent - 8)) {
+        setDispatchFeePercent(6)
+      } else {
+        setDispatchFeePercent(8)
+      }
+    } else {
+      setDispatchFeePercent(6) // Default to 6%
+    }
+    
+  }
+  
+  // Format currency to 2 decimals with dollar sign
+  const formatCurrency = (value: number | string | undefined | null): string => {
+    if (value === undefined || value === null || value === '') return ''
+    const numValue = typeof value === 'string' ? parseFloat(value) : value
+    if (isNaN(numValue)) return ''
+    return `$${numValue.toFixed(2)}`
+  }
+
+  // Parse currency input (remove dollar sign and commas)
+  const parseCurrencyInput = (value: string): string => {
+    // Remove dollar sign and commas, keep only numbers and decimal point
+    return value.replace(/[$,]/g, '')
+  }
+
+  // Calculate dispatch fee when percentage or gross revenue changes
+  const calculateDispatchFee = (grossRevenue: number | undefined, percent: 6 | 8) => {
+    if (!grossRevenue) return 0
+    return grossRevenue * (percent / 100)
+  }
+  
+  const handleDispatchFeePercentChange = (percent: 6 | 8) => {
+    setDispatchFeePercent(percent)
+    const grossRevenue = editFormData.gross_revenue
+    if (grossRevenue) {
+      const dispatchFee = calculateDispatchFee(grossRevenue, percent)
+      const updatedCategories = { ...editFormData.expense_categories }
+      updatedCategories.dispatch_fee = dispatchFee
+      
+      // Recalculate total expenses
+      const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
+      
+      setEditFormData({
+        ...editFormData,
+        expense_categories: updatedCategories,
+        expenses: totalExpenses,
+        net_profit: grossRevenue && totalExpenses ? grossRevenue - totalExpenses : editFormData.net_profit
+      })
+      
+      // Update input value
+      setExpenseCategoryInputs(prev => ({ ...prev, dispatch_fee: formatCurrency(dispatchFee) }))
+    }
   }
 
   const handleCancelEdit = () => {
     setEditingSettlement(null)
     setEditFormData({})
     setExpenseCategoryInputs({})
+    setDispatchFeePercent(6)
   }
+  
 
   const handleSaveEdit = async () => {
     if (!editingSettlement) return
@@ -353,6 +414,7 @@ export default function Settlements() {
         ? parseFloat(value) || 0 
         : value
     updated[newKey] = numValue
+    
     const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
     setEditFormData({
       ...editFormData,
@@ -365,6 +427,7 @@ export default function Settlements() {
   }
 
   const handleExpenseCategoryAmountChange = (key: string, value: string) => {
+    // Store the raw input value (without formatting) while typing
     setExpenseCategoryInputs(prev => ({ ...prev, [key]: value }))
     if (!editFormData.expense_categories) {
       setEditFormData({ ...editFormData, expense_categories: {} })
@@ -385,12 +448,14 @@ export default function Settlements() {
       return
     }
     let cleanedValue = value
-    if (value.startsWith('0') && value.length > 1 && value[1] !== '.') {
-      cleanedValue = value.replace(/^0+(?=\d)/, '')
+    // Remove leading zeros (but preserve "0.05" type values)
+    if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
+      cleanedValue = cleanedValue.substring(1)
     }
     const numValue = parseFloat(cleanedValue)
     const updated = { ...editFormData.expense_categories }
     updated[key] = isNaN(numValue) ? 0 : numValue
+    
     const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
     setEditFormData({
       ...editFormData,
@@ -667,10 +732,12 @@ export default function Settlements() {
                               </span>
                             </div>
                           )}
-                          {settlement.net_profit && (
+                          {settlement.net_profit !== undefined && (
                             <div>
                               <span className="text-gray-500">Profit: </span>
-                              <span className="font-medium text-blue-600">
+                              <span className={`font-medium ${
+                                settlement.net_profit < 0 ? 'text-red-600' : 'text-blue-600'
+                              }`}>
                                 ${settlement.net_profit.toLocaleString()}
                               </span>
                             </div>
@@ -803,58 +870,161 @@ export default function Settlements() {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Gross Revenue</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          value={editFormData.gross_revenue || ''}
+                          type="text"
+                          inputMode="decimal"
+                          value={editFormData.gross_revenue !== undefined ? formatCurrency(editFormData.gross_revenue) : ''}
                           onChange={(e) => {
-                            const revenue = e.target.value ? Number(e.target.value) : undefined
-                            const expenses = editFormData.expenses || 0
-                            setEditFormData({
-                              ...editFormData,
-                              gross_revenue: revenue,
-                              net_profit: revenue && expenses ? revenue - expenses : editFormData.net_profit
-                            })
+                            const inputValue = parseCurrencyInput(e.target.value)
+                            if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                              const revenue = inputValue ? Number(inputValue) : undefined
+                              const expenses = editFormData.expenses || 0
+                              
+                              // Recalculate dispatch fee when gross revenue changes
+                              let updatedCategories = { ...editFormData.expense_categories }
+                              if (revenue) {
+                                const dispatchFee = calculateDispatchFee(revenue, dispatchFeePercent)
+                                updatedCategories.dispatch_fee = dispatchFee
+                                setExpenseCategoryInputs(prev => ({ ...prev, dispatch_fee: formatCurrency(dispatchFee) }))
+                              }
+                              
+                              // Recalculate total expenses
+                              const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
+                              
+                              setEditFormData({
+                                ...editFormData,
+                                gross_revenue: revenue,
+                                expense_categories: updatedCategories,
+                                expenses: totalExpenses,
+                                net_profit: revenue && totalExpenses ? revenue - totalExpenses : editFormData.net_profit
+                              })
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const inputValue = parseCurrencyInput(e.target.value.trim())
+                            if (inputValue === '' || inputValue === '.') {
+                              setEditFormData({ ...editFormData, gross_revenue: undefined })
+                            } else {
+                              const revenue = parseFloat(inputValue)
+                              if (!isNaN(revenue)) {
+                                setEditFormData({ ...editFormData, gross_revenue: revenue })
+                              }
+                            }
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="$0.00"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Total Expenses</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          value={editFormData.expenses || ''}
+                          type="text"
+                          inputMode="decimal"
+                          value={editFormData.expenses !== undefined ? formatCurrency(editFormData.expenses) : ''}
                           onChange={(e) => {
-                            const expenses = e.target.value ? Number(e.target.value) : undefined
-                            const revenue = editFormData.gross_revenue || 0
-                            setEditFormData({
-                              ...editFormData,
-                              expenses: expenses,
-                              net_profit: revenue && expenses ? revenue - expenses : editFormData.net_profit
-                            })
+                            const inputValue = parseCurrencyInput(e.target.value)
+                            if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                              const expenses = inputValue ? Number(inputValue) : undefined
+                              const revenue = editFormData.gross_revenue || 0
+                              setEditFormData({
+                                ...editFormData,
+                                expenses: expenses,
+                                net_profit: revenue && expenses ? revenue - expenses : editFormData.net_profit
+                              })
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const inputValue = parseCurrencyInput(e.target.value.trim())
+                            if (inputValue === '' || inputValue === '.') {
+                              setEditFormData({ ...editFormData, expenses: undefined })
+                            } else {
+                              const expenses = parseFloat(inputValue)
+                              if (!isNaN(expenses)) {
+                                setEditFormData({ ...editFormData, expenses: expenses })
+                              }
+                            }
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="$0.00"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Net Profit</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          value={editFormData.net_profit || ''}
+                          type="text"
+                          inputMode="decimal"
+                          value={editFormData.net_profit !== undefined ? formatCurrency(editFormData.net_profit) : ''}
                           onChange={(e) => {
-                            const profit = e.target.value ? Number(e.target.value) : undefined
-                            const revenue = editFormData.gross_revenue || 0
-                            setEditFormData({
-                              ...editFormData,
-                              net_profit: profit,
-                              expenses: revenue && profit ? revenue - profit : editFormData.expenses
-                            })
+                            const inputValue = parseCurrencyInput(e.target.value)
+                            if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                              const profit = inputValue ? Number(inputValue) : undefined
+                              const revenue = editFormData.gross_revenue || 0
+                              setEditFormData({
+                                ...editFormData,
+                                net_profit: profit,
+                                expenses: revenue && profit ? revenue - profit : editFormData.expenses
+                              })
+                            }
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          onBlur={(e) => {
+                            const inputValue = parseCurrencyInput(e.target.value.trim())
+                            if (inputValue === '' || inputValue === '.') {
+                              setEditFormData({ ...editFormData, net_profit: undefined })
+                            } else {
+                              const profit = parseFloat(inputValue)
+                              if (!isNaN(profit)) {
+                                setEditFormData({ ...editFormData, net_profit: profit })
+                              }
+                            }
+                          }}
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                            editFormData.net_profit !== undefined && editFormData.net_profit < 0
+                              ? 'border-red-500 text-red-600 focus:ring-red-500'
+                              : 'border-gray-300 focus:ring-blue-500'
+                          }`}
+                          placeholder="$0.00"
                         />
                       </div>
                     </div>
+                    
+                    {/* Dispatch Fee Percentage Toggle */}
+                    {editFormData.gross_revenue && (
+                      <div className="border-t pt-4">
+                        <h5 className="text-md font-medium text-gray-900 mb-3">Dispatch Fee Calculation</h5>
+                        <div className="p-3 bg-gray-50 rounded-md">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Select Dispatch Fee Percentage
+                          </label>
+                          <div className="flex items-center gap-4">
+                            <label className="flex items-center cursor-pointer">
+                              <input
+                                type="radio"
+                                name="dispatchFeePercent"
+                                checked={dispatchFeePercent === 6}
+                                onChange={() => handleDispatchFeePercentChange(6)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">6%</span>
+                            </label>
+                            <label className="flex items-center cursor-pointer">
+                              <input
+                                type="radio"
+                                name="dispatchFeePercent"
+                                checked={dispatchFeePercent === 8}
+                                onChange={() => handleDispatchFeePercentChange(8)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">8%</span>
+                            </label>
+                            {editFormData.expense_categories?.dispatch_fee && (
+                              <span className="ml-auto text-sm font-medium text-gray-700">
+                                Dispatch Fee: ${editFormData.expense_categories.dispatch_fee.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="border-t pt-4">
                       <div className="flex items-center justify-between mb-3">
                         <h5 className="text-md font-medium text-gray-900">Expense Categories</h5>
@@ -869,29 +1039,42 @@ export default function Settlements() {
                       <div className="space-y-2 max-h-96 lg:max-h-[70vh] overflow-y-auto">
                         {editFormData.expense_categories ? (
                           <>
-                            {/* Display standard categories first */}
-                            {STANDARD_EXPENSE_CATEGORIES.map((category) => {
+                            {/* Display standard categories first (except "custom" which is editable) */}
+                            {STANDARD_EXPENSE_CATEGORIES.filter(cat => cat !== 'custom').map((category) => {
                               const value = editFormData.expense_categories![category] || 0
                               const displayName = category.split('_').map(word => 
                                 word.charAt(0).toUpperCase() + word.slice(1)
                               ).join(' ')
+                              
+                              // Calculate payroll fee percentage if this is payroll_fee and driver_pay exists
+                              let percentageDisplay = null
+                              if (category === 'payroll_fee' && editFormData.expense_categories?.driver_pay && editFormData.expense_categories.driver_pay > 0 && value > 0) {
+                                const percent = (value / editFormData.expense_categories.driver_pay) * 100
+                                percentageDisplay = (
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    ({percent.toFixed(2)}%)
+                                  </span>
+                                )
+                              }
+                              
                               return (
                                 <div key={category} className="flex items-center gap-2">
-                                  <label className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-medium text-gray-700">
+                                  <label className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-medium text-gray-700 flex items-center">
                                     {displayName}
+                                    {percentageDisplay}
                                   </label>
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : String(value))}
+                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
                                     onChange={(e) => {
-                                      const inputValue = e.target.value
+                                      const inputValue = parseCurrencyInput(e.target.value)
                                       if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                         handleExpenseCategoryAmountChange(category, inputValue)
                                       }
                                     }}
                                     onBlur={(e) => {
-                                      const inputValue = e.target.value.trim()
+                                      const inputValue = parseCurrencyInput(e.target.value.trim())
                                       if (inputValue === '' || inputValue === '.' || inputValue === null) {
                                         handleExpenseCategoryChange(category, category, 0)
                                         setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
@@ -899,7 +1082,7 @@ export default function Settlements() {
                                         const numValue = parseFloat(inputValue)
                                         if (!isNaN(numValue)) {
                                           handleExpenseCategoryChange(category, category, numValue)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: String(numValue) }))
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
                                         } else {
                                           handleExpenseCategoryChange(category, category, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
@@ -913,9 +1096,9 @@ export default function Settlements() {
                                 </div>
                               )
                             })}
-                            {/* Display any additional non-standard categories */}
+                            {/* Display "custom" and any additional non-standard categories as editable */}
                             {Object.entries(editFormData.expense_categories)
-                              .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
+                              .filter(([key]) => key === 'custom' || !STANDARD_EXPENSE_CATEGORIES.includes(key))
                               .map(([key, value]) => (
                                 <div key={key} className="flex items-center gap-2">
                                   <input
@@ -933,15 +1116,15 @@ export default function Settlements() {
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : String(value))}
+                                    value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
                                     onChange={(e) => {
-                                      const inputValue = e.target.value
+                                      const inputValue = parseCurrencyInput(e.target.value)
                                       if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                         handleExpenseCategoryAmountChange(key, inputValue)
                                       }
                                     }}
                                     onBlur={(e) => {
-                                      const inputValue = e.target.value.trim()
+                                      const inputValue = parseCurrencyInput(e.target.value.trim())
                                       if (inputValue === '' || inputValue === '.' || inputValue === null) {
                                         handleExpenseCategoryChange(key, key, 0)
                                         setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
@@ -949,7 +1132,7 @@ export default function Settlements() {
                                         const numValue = parseFloat(inputValue)
                                         if (!isNaN(numValue)) {
                                           handleExpenseCategoryChange(key, key, numValue)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: String(numValue) }))
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
                                         } else {
                                           handleExpenseCategoryChange(key, key, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))

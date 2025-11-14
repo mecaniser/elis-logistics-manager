@@ -166,56 +166,191 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
             total_expenses = 0.0
             expense_categories = {
                 "fuel": 0.0,
-                "fees": 0.0,  # Dispatch fee, safety, prepass, insurance, etc
+                "dispatch_fee": 0.0,
+                "insurance": 0.0,
+                "safety": 0.0,
+                "prepass": 0.0,
                 "ifta": 0.0,
-                "driver_pay": 0.0,  # Driver's pay/compensation
-                "other": 0.0  # Service on truck, parking, deductions, etc
+                "driver_pay": 0.0,
+                "payroll_fee": 0.0,
+                "truck_parking": 0.0,
+                "service_on_truck": 0.0,
+                "custom": 0.0
             }
             
             if is_income_sheet_format:
                 # Format 2: Expenses in parentheses like "($ 211.91)"
+                # Process line by line to avoid false matches
                 expense_mappings = [
-                    (r'FUEL[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fuel'),
-                    (r'IFTA[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'ifta'),
-                    (r'DISPATCH FEE[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fees'),
-                    (r'SAFETY[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fees'),
-                    (r'PREPASS[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fees'),
-                    (r'INSURANCE[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fees'),
-                    (r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)", 'driver_pay'),
-                    (r'SERVICE ON THE TRUCK[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'other'),
-                    (r'TRUCK PARKING[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'other'),
+                    # DISPATCH FEE line is actually PAYROLL FEE - may have percentage and amount, take the fee amount (last one)
+                    (r'^DISPATCH[^\n]*FEE[^\n]*%\s*\(\$\s*([\d,]+\.?\d*)\)[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'payroll_fee', 2),  # Two amounts, take second (the fee)
+                    (r'^DISPATCH[^\n]*FEE[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'payroll_fee', 1),  # Single amount
+                    # FUEL - standalone line with FUEL keyword
+                    (r'^FUEL[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'fuel', 1),  # Single amount on FUEL line
+                    (r'IFTA[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'ifta', 1),
+                    (r'SAFETY[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'safety', 1),
+                    (r'PREPASS[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'prepass', 1),
+                    (r'INSURANCE[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'insurance', 1),
+                    # DRIVER'S PAY in PDF - treat as base driver's pay (before payroll fee)
+                    # Payroll fee will be calculated as percentage of this base amount
+                    (r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)", 'driver_pay', 1),
+                    (r'PAYROLL[^\n]*FEE[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'payroll_fee', 1),
+                    (r'SERVICE ON THE TRUCK[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'service_on_truck', 1),
+                    (r'TRUCK PARKING[^\n]*\(\$\s*([\d,]+\.?\d*)\)', 'truck_parking', 1),
                 ]
             else:
                 # Format 1: "Expense Name $X,XXX.XX"
                 expense_mappings = [
                     (r'Fuel\s+\$?([\d,]+\.?\d*)', 'fuel'),
                     (r'IFTA\s+\$?([\d,]+\.?\d*)', 'ifta'),
-                    (r'Dispatch Fee\s+\$?([\d,]+\.?\d*)', 'fees'),
-                    (r'Safety\s+\$?([\d,]+\.?\d*)', 'fees'),
-                    (r'Prepass\s+\$?([\d,]+\.?\d*)', 'fees'),
-                    (r'Insurance\s+\$?([\d,]+\.?\d*)', 'fees'),
+                    (r'Dispatch Fee\s+\$?([\d,]+\.?\d*)', 'dispatch_fee'),
+                    (r'Safety\s+\$?([\d,]+\.?\d*)', 'safety'),
+                    (r'Prepass\s+\$?([\d,]+\.?\d*)', 'prepass'),
+                    (r'Insurance\s+\$?([\d,]+\.?\d*)', 'insurance'),
+                    (r"Driver's Pay\s+\$?([\d,]+\.?\d*)", 'driver_pay'),
                     (r"Driver's Pay Fee\s+\$?([\d,]+\.?\d*)", 'driver_pay'),
-                    (r'Deductions\s+\$?([\d,]+\.?\d*)', 'other'),
+                    (r'Payroll Fee\s+\$?([\d,]+\.?\d*)', 'payroll_fee'),
+                    (r'Payroll\s+\$?([\d,]+\.?\d*)', 'payroll_fee'),
+                    (r'Service on Truck\s+\$?([\d,]+\.?\d*)', 'service_on_truck'),
+                    (r'Truck Parking\s+\$?([\d,]+\.?\d*)', 'truck_parking'),
+                    (r'Deductions\s+\$?([\d,]+\.?\d*)', 'custom'),
                 ]
             
-            for pattern, category in expense_mappings:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    amount = float(match.group(1).replace(",", ""))
-                    expense_categories[category] += amount
-                    total_expenses += amount
+            # Process line by line for income sheet format to avoid false matches
+            if is_income_sheet_format:
+                lines = text.split('\n')
+                for line in lines:
+                    for mapping in expense_mappings:
+                        if len(mapping) == 3:
+                            pattern, category, group_num = mapping
+                        else:
+                            # Backward compatibility
+                            pattern, category = mapping
+                            group_num = 1
+                        
+                        match = re.search(pattern, line, re.IGNORECASE)
+                        if match:
+                            # Only update if category is still 0 (avoid double counting)
+                            if category in expense_categories and expense_categories[category] == 0:
+                                amount_str = match.group(group_num).replace(",", "")
+                                amount = float(amount_str)
+                                
+                                # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
+                                if category == 'driver_pay':
+                                    driver_pay_gross = amount
+                                    # Check if payroll fee was already found (e.g., from DISPATCH FEE line)
+                                    if expense_categories["payroll_fee"] > 0:
+                                        # Use found payroll fee and calculate base driver's pay
+                                        payroll_fee_amount = expense_categories["payroll_fee"]
+                                        base_driver_pay = driver_pay_gross - payroll_fee_amount
+                                    else:
+                                        # Calculate base driver's pay and payroll fee
+                                        # If gross = base + (base * 6.5%), then base = gross / (1 + 6.5%)
+                                        base_driver_pay = driver_pay_gross / 1.065
+                                        payroll_fee_amount = base_driver_pay * 0.065
+                                        expense_categories["payroll_fee"] = payroll_fee_amount
+                                        total_expenses += payroll_fee_amount
+                                    
+                                    expense_categories["driver_pay"] = base_driver_pay
+                                    total_expenses += base_driver_pay
+                                else:
+                                    expense_categories[category] = amount
+                                    total_expenses += amount
+                                break  # Found this category, move to next line
             
-            # Format 1: Also check for Driver's Pay separately
             if not is_income_sheet_format:
-                drivers_pay_match = re.search(r"Driver's Pay\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
-                if drivers_pay_match:
-                    amount = float(drivers_pay_match.group(1).replace(",", ""))
-                    expense_categories["driver_pay"] += amount
-                    total_expenses += amount
+                # Format 1: Search entire text
+                for mapping in expense_mappings:
+                    if len(mapping) == 3:
+                        pattern, category, group_num = mapping
+                    else:
+                        # Backward compatibility
+                        pattern, category = mapping
+                        group_num = 1
+                    
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        # Only update if category is still 0 (avoid double counting)
+                        if category in expense_categories and expense_categories[category] == 0:
+                            amount_str = match.group(group_num).replace(",", "")
+                            amount = float(amount_str)
+                            
+                            # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
+                            if category == 'driver_pay':
+                                driver_pay_gross = amount
+                                # Check if payroll fee was already found
+                                if expense_categories["payroll_fee"] > 0:
+                                    # Use found payroll fee and calculate base driver's pay
+                                    payroll_fee_amount = expense_categories["payroll_fee"]
+                                    base_driver_pay = driver_pay_gross - payroll_fee_amount
+                                else:
+                                    # Calculate base driver's pay and payroll fee
+                                    base_driver_pay = driver_pay_gross / 1.065
+                                    payroll_fee_amount = base_driver_pay * 0.065
+                                    expense_categories["payroll_fee"] = payroll_fee_amount
+                                    total_expenses += payroll_fee_amount
+                                
+                                expense_categories["driver_pay"] = base_driver_pay
+                                total_expenses += base_driver_pay
+                            else:
+                                expense_categories[category] = amount
+                                total_expenses += amount
+                
+                # Format 1: Also check for Driver's Pay separately (in case it wasn't caught above)
+                if expense_categories["driver_pay"] == 0:
+                    drivers_pay_match = re.search(r"Driver's Pay\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
+                    if drivers_pay_match:
+                        driver_pay_gross = float(drivers_pay_match.group(1).replace(",", ""))
+                        # Check if payroll fee was already found
+                        if expense_categories["payroll_fee"] > 0:
+                            # Use found payroll fee and calculate base driver's pay
+                            payroll_fee_amount = expense_categories["payroll_fee"]
+                            base_driver_pay = driver_pay_gross - payroll_fee_amount
+                        else:
+                            # Calculate base driver's pay and payroll fee
+                            base_driver_pay = driver_pay_gross / 1.065
+                            payroll_fee_amount = base_driver_pay * 0.065
+                            expense_categories["payroll_fee"] = payroll_fee_amount
+                            total_expenses += payroll_fee_amount
+                        
+                        expense_categories["driver_pay"] = base_driver_pay
+                        total_expenses += base_driver_pay
             
+            # Check for Payroll Fee separately (may appear as "Payroll Fee" or "Payroll" or percentage-based)
+            # Note: "DISPATCH FEE" line is already mapped to payroll_fee above, this is for explicit "PAYROLL FEE" lines
+            payroll_fee_match = re.search(r'Payroll\s+Fee\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            if payroll_fee_match and expense_categories["payroll_fee"] == 0:
+                amount = float(payroll_fee_match.group(1).replace(",", ""))
+                expense_categories["payroll_fee"] += amount
+                total_expenses += amount
+            
+            # Extract dispatch fee from PDF if explicitly shown
+            # Note: the "DISPATCH FEE" line in PDFs is actually payroll fee, so we look for dispatch fee separately
+            # Only extract if explicitly found in PDF - no automatic calculation
+            if expense_categories["dispatch_fee"] == 0 and settlement_data["gross_revenue"]:
+                # Look for dispatch fee percentage in text and extract the first amount from "DISPATCH FEE X% ($ amount1) ($ amount2)"
+                # The first amount is the dispatch fee, the second is payroll fee (already captured above)
+                dispatch_line_match = re.search(r'DISPATCH[^\n]*FEE[^\n]*%\s*\(\$\s*([\d,]+\.?\d*)\)', text, re.IGNORECASE)
+                if dispatch_line_match:
+                    # Use the first amount (the calculated percentage amount) as dispatch fee
+                    dispatch_amount = float(dispatch_line_match.group(1).replace(",", ""))
+                    expense_categories["dispatch_fee"] = dispatch_amount
+                    total_expenses += dispatch_amount
+            
+            # Always set expense_categories, even if empty (so frontend can display all categories)
+            settlement_data["expense_categories"] = expense_categories
+            
+            # Set total expenses if we found any, or calculate from gross - net if available
             if total_expenses > 0:
                 settlement_data["expenses"] = total_expenses
-                settlement_data["expense_categories"] = expense_categories
+            elif settlement_data["gross_revenue"] and settlement_data["net_profit"]:
+                # Calculate expenses from gross - net if not found explicitly
+                calculated_expenses = settlement_data["gross_revenue"] - settlement_data["net_profit"]
+                settlement_data["expenses"] = calculated_expenses
+                # Put calculated expenses in "custom" if no categories were found
+                if total_expenses == 0:
+                    expense_categories["custom"] = calculated_expenses
+                    settlement_data["expense_categories"] = expense_categories
             
             # Count blocks delivered
             if is_income_sheet_format:
