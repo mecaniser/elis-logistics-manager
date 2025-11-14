@@ -1,0 +1,194 @@
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Types
+export interface Truck {
+  id: number
+  name: string
+  license_plate?: string
+  vin?: string
+  license_plate_history?: string[]
+}
+
+export interface Settlement {
+  id: number
+  truck_id: number
+  settlement_date: string
+  week_start?: string
+  week_end?: string
+  miles_driven?: number
+  blocks_delivered?: number
+  gross_revenue?: number
+  expenses?: number
+  expense_categories?: { [key: string]: number }
+  net_profit?: number
+  pdf_file_path?: string
+  settlement_type?: string
+}
+
+export interface Repair {
+  id: number
+  truck_id: number
+  repair_date: string
+  description: string
+  cost: number
+  category?: string
+  invoice_number?: string
+  pdf_file_path?: string
+  image_paths?: string[]
+}
+
+export interface DashboardData {
+  total_trucks: number
+  total_settlements: number
+  total_revenue: number
+  total_expenses: number
+  net_profit: number
+  expense_categories?: {
+    fuel: number
+    dispatch_fee: number
+    insurance: number
+    safety: number
+    prepass: number
+    ifta: number
+    driver_pay: number
+    payroll_fee: number
+    truck_parking: number
+    repairs: number
+    other: number
+  }
+  truck_profits: Array<{
+    truck_id: number
+    truck_name: string
+    total_revenue: number
+    total_expenses: number
+    net_profit: number
+  }>
+}
+
+// Truck API
+export const trucksApi = {
+  getAll: () => api.get<Truck[]>('/trucks'),
+  getById: (id: number) => api.get<Truck>(`/trucks/${id}`),
+  create: (data: { name: string; license_plate?: string; vin?: string }) =>
+    api.post<Truck>('/trucks', data),
+  update: (id: number, data: { name?: string; license_plate?: string; vin?: string }) =>
+    api.put<Truck>(`/trucks/${id}`, data),
+  delete: (id: number) => api.delete(`/trucks/${id}`),
+}
+
+// Settlement API
+export const settlementsApi = {
+  getAll: (truckId?: number) => {
+    const params = truckId ? { truck_id: truckId } : {}
+    return api.get<Settlement[]>('/settlements', { params })
+  },
+  getById: (id: number) => api.get<Settlement>(`/settlements/${id}`),
+  create: (data: Partial<Settlement>) =>
+    api.post<Settlement>('/settlements', data),
+  update: (id: number, data: Partial<Settlement>) =>
+    api.put<Settlement>(`/settlements/${id}`, data),
+  upload: (file: File, truckId?: number, settlementType?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (truckId !== undefined) {
+      formData.append('truck_id', truckId.toString())
+    }
+    if (settlementType) {
+      formData.append('settlement_type', settlementType)
+    }
+    return api.post<Settlement>(
+      `/settlements/upload`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+  },
+  uploadBulk: (files: File[], truckId?: number, settlementType?: string) => {
+    const formData = new FormData()
+    files.forEach((file) => {
+      formData.append('files', file)
+    })
+    if (truckId !== undefined) {
+      formData.append('truck_id', truckId.toString())
+    }
+    if (settlementType) {
+      formData.append('settlement_type', settlementType)
+    }
+    return api.post<{
+      total: number
+      successful: number
+      failed: number
+      results: Array<{
+        filename: string
+        success: boolean
+        settlement?: Settlement
+        error?: string
+      }>
+    }>(
+      `/settlements/upload-bulk`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+  },
+  delete: (id: number) => api.delete(`/settlements/${id}`),
+}
+
+// Repair API
+export const repairsApi = {
+  getAll: (truckId?: number) => {
+    const params = truckId ? { truck_id: truckId } : {}
+    return api.get<Repair[]>('/repairs', { params })
+  },
+  getById: (id: number) => api.get<Repair>(`/repairs/${id}`),
+  create: (data: Partial<Repair>) => api.post<Repair>('/repairs', data),
+  upload: (file: File, images: File[], truckId: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    images.forEach((img) => {
+      formData.append('images', img)
+    })
+    formData.append('truck_id', truckId.toString())
+    return api.post<{
+      repair: Repair
+      warning?: string
+    }>(
+      `/repairs/upload`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+  },
+  delete: (id: number) => api.delete(`/repairs/${id}`),
+}
+
+// Analytics API
+export const analyticsApi = {
+  getDashboard: (truckId?: number) => {
+    const params = truckId ? { truck_id: truckId } : {}
+    return api.get<DashboardData>('/analytics/dashboard', { params })
+  },
+  getTruckProfit: (truckId: number) =>
+    api.get<{
+      truck_id: number
+      settlements_total: number
+      repairs_total: number
+      net_profit: number
+    }>(`/analytics/truck-profit/${truckId}`),
+}

@@ -38,8 +38,23 @@ app.include_router(repairs.router, prefix="/api/repairs", tags=["repairs"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 
 # Serve uploaded files
-if os.path.exists("uploads"):
-    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Determine uploads directory - backend runs from backend/ directory
+current_file_dir = os.path.dirname(os.path.abspath(__file__))  # backend/app/
+backend_dir = os.path.dirname(current_file_dir)  # backend/
+uploads_dir = os.path.join(backend_dir, "uploads")  # backend/uploads
+
+# Fallback: try relative path if absolute doesn't work
+if not os.path.exists(uploads_dir):
+    uploads_dir = os.path.join(os.path.dirname(backend_dir), "backend", "uploads")
+
+if os.path.exists(uploads_dir) and os.path.isdir(uploads_dir):
+    app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+    print(f"✓ Serving uploads from: {uploads_dir}")
+else:
+    print(f"⚠ Warning: uploads directory not found at: {uploads_dir}")
+    print(f"  Current file dir: {current_file_dir}")
+    print(f"  Backend dir: {backend_dir}")
+    print(f"  Attempted uploads path: {uploads_dir}")
 
 @app.get("/")
 async def root():

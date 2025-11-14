@@ -3,7 +3,7 @@ Repair schemas
 """
 from pydantic import BaseModel
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 from decimal import Decimal
 
 class RepairBase(BaseModel):
@@ -13,9 +13,17 @@ class RepairBase(BaseModel):
     category: Optional[str] = None
     cost: Decimal
     receipt_path: Optional[str] = None
+    image_paths: Optional[List[str]] = None
 
 class RepairCreate(RepairBase):
     pass
+
+class RepairUpdate(BaseModel):
+    truck_id: Optional[int] = None
+    repair_date: Optional[date] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    cost: Optional[Decimal] = None
 
 class RepairResponse(RepairBase):
     id: int
@@ -23,4 +31,8 @@ class RepairResponse(RepairBase):
 
     class Config:
         from_attributes = True
+
+class RepairUploadResponse(BaseModel):
+    repair: RepairResponse
+    warning: Optional[str] = None
 

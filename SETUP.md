@@ -2,14 +2,28 @@
 
 ## Quick Start
 
-### 1. Backend Setup
+### Option 1: Automated Setup (Recommended)
+
+Run the setup script:
+```bash
+./start.sh
+```
+
+This will:
+- Create Python virtual environment
+- Install backend dependencies
+- Install frontend dependencies
+
+### Option 2: Manual Setup
+
+#### 1. Backend Setup
 
 ```bash
 # Navigate to backend
 cd backend
 
 # Create virtual environment
-python -m venv venv
+python3 -m venv venv
 
 # Activate virtual environment
 # On macOS/Linux:
@@ -19,23 +33,52 @@ venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Create .env file
-cp .env.example .env
+**Note:** Database tables are auto-created on first run. No manual migration needed.
 
-# Initialize database (creates tables)
-python -c "from app.database import Base, engine; Base.metadata.create_all(bind=engine)"
+#### 2. Frontend Setup
 
-# Run server
+```bash
+# Navigate to frontend
+cd frontend
+
+# Install dependencies
+npm install
+```
+
+## Running the Application
+
+You need **two terminal windows**:
+
+### Terminal 1 - Backend
+
+```bash
+cd backend
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 uvicorn app.main:app --reload
 ```
 
-Backend will run on: http://localhost:8000
-API docs: http://localhost:8000/docs
+Backend will run on: **http://localhost:8000**  
+API docs: **http://localhost:8000/docs**
 
-### 2. Test the API
+### Terminal 2 - Frontend
 
 ```bash
+cd frontend
+npm run dev
+```
+
+Frontend will run on: **http://localhost:3000**
+
+## Testing
+
+### Test Backend API
+
+```bash
+# Health check
+curl http://localhost:8000/api/health
+
 # Create a truck
 curl -X POST "http://localhost:8000/api/trucks" \
   -H "Content-Type: application/json" \
@@ -45,15 +88,21 @@ curl -X POST "http://localhost:8000/api/trucks" \
 curl http://localhost:8000/api/trucks
 ```
 
-### 3. Next Steps
+### Test PDF Upload
 
-1. **Customize PDF Parser:** Update `backend/app/utils/pdf_parser.py` based on your Amazon Relay PDF format
-2. **Create Frontend:** Set up React app (see Frontend Setup below)
-3. **Deploy to Railway:** Follow Railway deployment guide
+Use the frontend at http://localhost:3000/settlements to upload a PDF, or use the API:
 
-## Frontend Setup (Coming Soon)
+```bash
+curl -X POST "http://localhost:8000/api/settlements/upload?truck_id=1" \
+  -F "file=@path/to/your/settlement.pdf"
+```
 
-React frontend will be created next.
+## Project Status
+
+✅ Backend API - Complete  
+✅ PDF Parser - Customized for Amazon Relay format  
+✅ Frontend - Complete React app  
+✅ Tests - Backend tests available
 
 ## Railway Deployment
 

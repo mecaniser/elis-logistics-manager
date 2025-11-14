@@ -10,6 +10,7 @@ from app.schemas.truck import TruckCreate, TruckResponse
 
 router = APIRouter()
 
+@router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
 def get_trucks(db: Session = Depends(get_db)):
     """Get all trucks"""
