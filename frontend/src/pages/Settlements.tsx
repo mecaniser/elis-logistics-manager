@@ -52,6 +52,23 @@ export default function Settlements() {
     'service_on_truck'
   ]
 
+  // Color codes for expense categories
+  const getCategoryColor = (category: string) => {
+    const colorMap: { [key: string]: { bg: string; border: string; text: string } } = {
+      fuel: { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-700' },
+      dispatch_fee: { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700' },
+      insurance: { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700' },
+      safety: { bg: 'bg-yellow-50', border: 'border-yellow-300', text: 'text-yellow-700' },
+      prepass: { bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-700' },
+      ifta: { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
+      driver_pay: { bg: 'bg-pink-50', border: 'border-pink-300', text: 'text-pink-700' },
+      payroll_fee: { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-700' },
+      truck_parking: { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-700' },
+      service_on_truck: { bg: 'bg-cyan-50', border: 'border-cyan-300', text: 'text-cyan-700' },
+    }
+    return colorMap[category] || { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700' }
+  }
+
   useEffect(() => {
     loadTrucks()
     loadSettlements()
@@ -977,7 +994,7 @@ export default function Settlements() {
                       <h4 className="text-lg font-medium text-gray-900">PDF Document</h4>
                     </div>
                     {editingSettlement.pdf_file_path ? (
-                      <div className="w-full h-[500px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
+                      <div className="w-full h-[750px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
                         <iframe
                           src={getPdfUrl(editingSettlement.pdf_file_path)}
                           className="w-full h-full border-0"
@@ -985,7 +1002,7 @@ export default function Settlements() {
                         />
                       </div>
                     ) : (
-                      <div className="w-full h-[500px] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                      <div className="w-full h-[750px] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
                         <p className="text-gray-500">No PDF available</p>
                       </div>
                     )}
@@ -1203,7 +1220,7 @@ export default function Settlements() {
                           + Add Category
                         </button>
                       </div>
-                      <div className="space-y-2 max-h-96 lg:max-h-[70vh] overflow-y-auto">
+                      <div className="grid grid-cols-6 gap-2 max-h-96 lg:max-h-[70vh] overflow-y-auto w-full">
                         {editFormData.expense_categories ? (
                           <>
                             {/* Display standard categories */}
@@ -1224,51 +1241,51 @@ export default function Settlements() {
                                 )
                               }
                               
+                              const categoryColor = getCategoryColor(category)
                               return (
-                                <div key={category} className="flex items-center gap-2">
-                                  <label className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-medium text-gray-700 flex items-center">
-                                    {displayName}
+                                <div key={category} className="flex flex-col gap-1.5">
+                                  <label className={`px-2 py-1.5 border rounded-md ${categoryColor.bg} ${categoryColor.border} text-sm font-medium ${categoryColor.text} flex items-center justify-between`}>
+                                    <span className="truncate">{displayName}</span>
                                     {percentageDisplay}
                                   </label>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                      onChange={(e) => {
-                                        const rawValue = e.target.value
-                                        const inputValue = parseCurrencyInput(rawValue)
-                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                          // Store raw input value
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
-                                          
-                                          // Update category value during typing to recalculate net profit
-                                          if (inputValue === '' || inputValue === '.') {
-                                            handleExpenseCategoryChange(category, category, 0)
-                                          } else {
-                                            handleExpenseCategoryAmountChange(category, inputValue)
-                                          }
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                    onChange={(e) => {
+                                      const rawValue = e.target.value
+                                      const inputValue = parseCurrencyInput(rawValue)
+                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                        // Store raw input value
+                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
+                                        
+                                        // Update category value during typing to recalculate net profit
+                                        if (inputValue === '' || inputValue === '.') {
+                                          handleExpenseCategoryChange(category, category, 0)
+                                        } else {
+                                          handleExpenseCategoryAmountChange(category, inputValue)
                                         }
-                                      }}
-                                      onBlur={(e) => {
-                                        const inputValue = parseCurrencyInput(e.target.value.trim())
-                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const inputValue = parseCurrencyInput(e.target.value.trim())
+                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                        handleExpenseCategoryChange(category, category, 0)
+                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                      } else {
+                                        const numValue = parseFloat(inputValue)
+                                        if (!isNaN(numValue)) {
+                                          handleExpenseCategoryChange(category, category, numValue)
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
+                                        } else {
                                           handleExpenseCategoryChange(category, category, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                        } else {
-                                          const numValue = parseFloat(inputValue)
-                                          if (!isNaN(numValue)) {
-                                            handleExpenseCategoryChange(category, category, numValue)
-                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
-                                          } else {
-                                            handleExpenseCategoryChange(category, category, 0)
-                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                          }
                                         }
-                                      }}
-                                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                      placeholder="0.00"
-                                    />
-                                  <div className="w-8"></div>
+                                      }
+                                    }}
+                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    placeholder="0.00"
+                                  />
                                 </div>
                               )
                             })}
@@ -1278,45 +1295,55 @@ export default function Settlements() {
                               .map(([key, value]) => {
                                 const categoryNameInput = categoryNameInputs[key] !== undefined ? categoryNameInputs[key] : key
                                 return (
-                                  <div key={key} className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={categoryNameInput}
-                                      onChange={(e) => {
-                                        // Only update the input state, don't change the category key yet
-                                        setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
-                                      }}
-                                      onBlur={(e) => {
-                                        const newKey = e.target.value.trim()
-                                        if (newKey && newKey !== key) {
-                                          // Check if new key already exists
-                                          const currentCategories = editFormData.expense_categories || {}
-                                          if (currentCategories[newKey] !== undefined && newKey !== key) {
-                                            showModal('Error', `Category "${newKey}" already exists.`, 'error')
-                                            // Reset to original key
+                                  <div key={key} className="flex flex-col gap-1.5">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={categoryNameInput}
+                                        onChange={(e) => {
+                                          // Only update the input state, don't change the category key yet
+                                          setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                        }}
+                                        onBlur={(e) => {
+                                          const newKey = e.target.value.trim()
+                                          if (newKey && newKey !== key) {
+                                            // Check if new key already exists
+                                            const currentCategories = editFormData.expense_categories || {}
+                                            if (currentCategories[newKey] !== undefined && newKey !== key) {
+                                              showModal('Error', `Category "${newKey}" already exists.`, 'error')
+                                              // Reset to original key
+                                              setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
+                                              return
+                                            }
+                                            // Update the category key
+                                            handleExpenseCategoryChange(key, newKey, value || 0)
+                                            // Update the category name input state with the new key
+                                            setCategoryNameInputs(prev => {
+                                              const updated = { ...prev }
+                                              delete updated[key]
+                                              updated[newKey] = newKey
+                                              return updated
+                                            })
+                                          } else if (!newKey) {
+                                            // Empty name - reset to original key
                                             setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                            return
+                                          } else {
+                                            // Same key, just update the input state
+                                            setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
                                           }
-                                          // Update the category key
-                                          handleExpenseCategoryChange(key, newKey, value || 0)
-                                          // Update the category name input state with the new key
-                                          setCategoryNameInputs(prev => {
-                                            const updated = { ...prev }
-                                            delete updated[key]
-                                            updated[newKey] = newKey
-                                            return updated
-                                          })
-                                        } else if (!newKey) {
-                                          // Empty name - reset to original key
-                                          setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                        } else {
-                                          // Same key, just update the input state
-                                          setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
-                                        }
-                                      }}
-                                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                      placeholder="Category name"
-                                    />
+                                        }}
+                                        className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        placeholder="Category name"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveExpenseCategory(key)}
+                                        className="text-red-600 hover:text-red-800 px-1.5 py-1.5 text-sm"
+                                        title="Remove category"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
                                     <input
                                       type="text"
                                       inputMode="decimal"
@@ -1368,23 +1395,15 @@ export default function Settlements() {
                                           }
                                         }
                                       }}
-                                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                       placeholder="0.00"
                                     />
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveExpenseCategory(key)}
-                                      className="text-red-600 hover:text-red-800 px-2"
-                                      title="Remove category"
-                                    >
-                                      ✕
-                                    </button>
                                   </div>
                                 )
                               })}
                           </>
                         ) : (
-                          <p className="text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
+                          <p className="col-span-6 text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
                         )}
                       </div>
                     </div>
