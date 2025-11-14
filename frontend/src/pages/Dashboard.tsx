@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { analyticsApi, trucksApi, Truck } from '../services/api'
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import ReactECharts from 'echarts-for-react'
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null)
@@ -145,43 +145,154 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {expenseCategoriesData.length > 0 && (
-          <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Expenses by Category</h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={expenseCategoriesData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {expenseCategoriesData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Expenses by Category</h2>
+            <ReactECharts
+              option={{
+                tooltip: {
+                  trigger: 'item',
+                  formatter: (params: any) => {
+                    const value = params.value || 0
+                    const percent = params.percent || 0
+                    return `${params.name}<br/>$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${percent}%)`
+                  },
+                  backgroundColor: '#fff',
+                  borderColor: '#e5e7eb',
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  padding: [8, 12],
+                  textStyle: {
+                    color: '#374151'
+                  }
+                },
+                legend: {
+                  orient: 'vertical',
+                  right: 10,
+                  top: 'center',
+                  itemGap: 12,
+                  textStyle: {
+                    fontSize: 12,
+                    color: '#374151'
+                  },
+                  formatter: (name: string) => {
+                    const item = expenseCategoriesData.find(d => d.name === name)
+                    const total = expenseCategoriesData.reduce((sum, d) => sum + d.value, 0)
+                    const percent = item ? ((item.value / total) * 100).toFixed(1) : '0'
+                    return `${name} (${percent}%)`
+                  }
+                },
+                series: [
+                  {
+                    name: 'Expenses',
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    center: ['35%', '50%'],
+                    avoidLabelOverlap: false,
+                    itemStyle: {
+                      borderRadius: 8,
+                      borderColor: '#fff',
+                      borderWidth: 2
+                    },
+                    label: {
+                      show: false
+                    },
+                    emphasis: {
+                      label: {
+                        show: true,
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                      },
+                      itemStyle: {
+                        shadowBlur: 10,
+                        shadowOffsetX: 0,
+                        shadowColor: 'rgba(0, 0, 0, 0.5)'
+                      }
+                    },
+                    labelLine: {
+                      show: false
+                    },
+                    data: expenseCategoriesData.map(item => ({
+                      value: item.value,
+                      name: item.name,
+                      itemStyle: {
+                        color: item.color
+                      }
+                    }))
+                  }
+                ]
+              }}
+              style={{ height: '450px', width: '100%' }}
+              opts={{ renderer: 'svg' }}
+            />
           </div>
         )}
 
         {truckProfitsData.length > 0 && (
-          <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Profit by Truck</h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={truckProfitsData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="truck_name" />
-                <YAxis />
-                <Tooltip formatter={(value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
-                <Bar dataKey="net_profit" fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Profit by Truck</h2>
+            <ReactECharts
+              option={{
+                tooltip: {
+                  trigger: 'axis',
+                  axisPointer: {
+                    type: 'shadow'
+                  },
+                  formatter: (params: any) => {
+                    const value = params[0]?.value || 0
+                    return `${params[0]?.name}<br/>$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  },
+                  backgroundColor: '#fff',
+                  borderColor: '#e5e7eb',
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  padding: [8, 12]
+                },
+                grid: {
+                  left: '3%',
+                  right: '4%',
+                  bottom: '3%',
+                  containLabel: true
+                },
+                xAxis: {
+                  type: 'category',
+                  data: truckProfitsData.map(item => item.truck_name),
+                  axisLabel: {
+                    rotate: truckProfitsData.length > 5 ? 45 : 0,
+                    fontSize: 11
+                  }
+                },
+                yAxis: {
+                  type: 'value',
+                  axisLabel: {
+                    formatter: (value: number) => `$${value.toLocaleString()}`
+                  }
+                },
+                series: [
+                  {
+                    name: 'Net Profit',
+                    type: 'bar',
+                    data: truckProfitsData.map(item => item.net_profit),
+                    itemStyle: {
+                      color: (params: any) => {
+                        return params.value >= 0 ? '#10b981' : '#ef4444'
+                      },
+                      borderRadius: [4, 4, 0, 0]
+                    },
+                    label: {
+                      show: true,
+                      position: 'top',
+                      formatter: (params: any) => {
+                        const value = params.value || 0
+                        return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                      },
+                      fontSize: 10
+                    }
+                  }
+                ]
+              }}
+              style={{ height: '400px', width: '100%' }}
+              opts={{ renderer: 'svg' }}
+            />
           </div>
         )}
       </div>

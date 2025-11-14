@@ -29,7 +29,7 @@ export default function Settlements() {
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
   const [categoryNameInputs, setCategoryNameInputs] = useState<{ [key: string]: string }>({})
-  const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8>(6)
+  const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8 | 10>(6)
   const [grossRevenueInput, setGrossRevenueInput] = useState<string>('')
   const [totalExpensesInput, setTotalExpensesInput] = useState<string>('')
   const [netProfitInput, setNetProfitInput] = useState<string>('')
@@ -349,11 +349,16 @@ export default function Settlements() {
       // If dispatch fee exists, try to determine percentage from gross revenue
       if (categories.dispatch_fee && settlement.gross_revenue) {
         const calculatedPercent = (categories.dispatch_fee / settlement.gross_revenue) * 100
-        // Round to nearest 6% or 8%
-        if (Math.abs(calculatedPercent - 6) < Math.abs(calculatedPercent - 8)) {
+        // Round to nearest 6%, 8%, or 10%
+        const diff6 = Math.abs(calculatedPercent - 6)
+        const diff8 = Math.abs(calculatedPercent - 8)
+        const diff10 = Math.abs(calculatedPercent - 10)
+        if (diff6 <= diff8 && diff6 <= diff10) {
           setDispatchFeePercent(6)
-        } else {
+        } else if (diff8 <= diff10) {
           setDispatchFeePercent(8)
+        } else {
+          setDispatchFeePercent(10)
         }
       } else {
         setDispatchFeePercent(6) // Default to 6%
@@ -389,12 +394,12 @@ export default function Settlements() {
   }
 
   // Calculate dispatch fee when percentage or gross revenue changes
-  const calculateDispatchFee = (grossRevenue: number | undefined, percent: 6 | 8) => {
+  const calculateDispatchFee = (grossRevenue: number | undefined, percent: 6 | 8 | 10) => {
     if (!grossRevenue) return 0
     return grossRevenue * (percent / 100)
   }
   
-  const handleDispatchFeePercentChange = (percent: 6 | 8) => {
+  const handleDispatchFeePercentChange = (percent: 6 | 8 | 10) => {
     setDispatchFeePercent(percent)
     setEditFormData(prev => {
       const grossRevenue = prev.gross_revenue
@@ -1346,6 +1351,16 @@ export default function Settlements() {
                               className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
                             />
                             <span className="ml-1.5 text-gray-700">8%</span>
+                          </label>
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="radio"
+                              name="dispatchFeePercent"
+                              checked={dispatchFeePercent === 10}
+                              onChange={() => handleDispatchFeePercentChange(10)}
+                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
+                            />
+                            <span className="ml-1.5 text-gray-700">10%</span>
                           </label>
                         </div>
                       </div>
