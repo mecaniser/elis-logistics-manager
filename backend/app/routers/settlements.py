@@ -45,7 +45,7 @@ async def upload_settlement_pdf(
     
     # Parse PDF
     try:
-        settlement_data = parse_amazon_relay_pdf(file_path)
+        settlement_data = parse_amazon_relay_pdf(file_path, settlement_type)
         
         # Determine truck_id - use provided, or auto-detect from license plate
         if truck_id:
@@ -135,7 +135,7 @@ async def upload_settlement_pdf_bulk(
                 buffer.write(content)
             
             # Parse PDF
-            settlement_data = parse_amazon_relay_pdf(file_path)
+            settlement_data = parse_amazon_relay_pdf(file_path, settlement_type)
             
             # Determine truck_id - use provided, or auto-detect from license plate
             if truck_id:

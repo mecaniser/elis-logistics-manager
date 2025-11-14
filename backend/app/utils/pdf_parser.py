@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict
 
 
-def parse_amazon_relay_pdf(file_path: str) -> Dict:
+def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
     """
     Parse Amazon Relay settlement PDF and extract structured data.
     
@@ -216,10 +216,38 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
                     (r'Deductions\s+\$?([\d,]+\.?\d*)', 'custom'),
                 ]
             
+            # Special handling for NBM settlement type: look for "driver's pay" and "driver's pay fee" rows
+            if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+                # Look for "DRIVER'S PAY" and "DRIVER'S PAY FEE" rows specifically
+                # Format 2 (income sheet): amounts in parentheses like "($ 1,234.56)"
+                drivers_pay_match = re.search(r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)", text, re.IGNORECASE)
+                drivers_pay_fee_match = re.search(r"DRIVER'S PAY FEE[^\n]*\(\$\s*([\d,]+\.?\d*)\)", text, re.IGNORECASE)
+                
+                # Format 1 (paystub): amounts like "$1,234.56" or "1,234.56"
+                if not drivers_pay_match:
+                    drivers_pay_match = re.search(r"Driver's Pay\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
+                if not drivers_pay_fee_match:
+                    drivers_pay_fee_match = re.search(r"Driver's Pay Fee\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
+                
+                if drivers_pay_match:
+                    driver_pay_amount = float(drivers_pay_match.group(1).replace(",", ""))
+                    expense_categories["driver_pay"] = driver_pay_amount
+                    total_expenses += driver_pay_amount
+                
+                if drivers_pay_fee_match:
+                    payroll_fee_amount = float(drivers_pay_fee_match.group(1).replace(",", ""))
+                    expense_categories["payroll_fee"] = payroll_fee_amount
+                    total_expenses += payroll_fee_amount
+            
             # Process line by line for income sheet format to avoid false matches
             if is_income_sheet_format:
                 lines = text.split('\n')
                 for line in lines:
+                    # Skip processing driver's pay and payroll fee for NBM if already found above
+                    if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+                        if re.search(r"DRIVER'S PAY", line, re.IGNORECASE) or re.search(r"DRIVER'S PAY FEE", line, re.IGNORECASE):
+                            continue
+                    
                     for mapping in expense_mappings:
                         if len(mapping) == 3:
                             pattern, category, group_num = mapping
@@ -236,7 +264,8 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
                                 amount = float(amount_str)
                                 
                                 # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
-                                if category == 'driver_pay':
+                                # Skip this for NBM as we handle it separately above
+                                if category == 'driver_pay' and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
                                     driver_pay_gross = amount
                                     # Check if payroll fee was already found (e.g., from DISPATCH FEE line)
                                     if expense_categories["payroll_fee"] > 0:
@@ -276,7 +305,8 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
                             amount = float(amount_str)
                             
                             # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
-                            if category == 'driver_pay':
+                            # Skip this for NBM as we handle it separately above
+                            if category == 'driver_pay' and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
                                 driver_pay_gross = amount
                                 # Check if payroll fee was already found
                                 if expense_categories["payroll_fee"] > 0:
@@ -297,7 +327,8 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
                                 total_expenses += amount
                 
                 # Format 1: Also check for Driver's Pay separately (in case it wasn't caught above)
-                if expense_categories["driver_pay"] == 0:
+                # Skip this for NBM as we handle it separately above
+                if expense_categories["driver_pay"] == 0 and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
                     drivers_pay_match = re.search(r"Driver's Pay\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
                     if drivers_pay_match:
                         driver_pay_gross = float(drivers_pay_match.group(1).replace(",", ""))
