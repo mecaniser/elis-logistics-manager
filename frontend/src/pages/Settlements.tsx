@@ -26,7 +26,11 @@ export default function Settlements() {
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
+  const [categoryNameInputs, setCategoryNameInputs] = useState<{ [key: string]: string }>({})
   const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8>(6)
+  const [grossRevenueInput, setGrossRevenueInput] = useState<string>('')
+  const [totalExpensesInput, setTotalExpensesInput] = useState<string>('')
+  const [netProfitInput, setNetProfitInput] = useState<string>('')
   
   const SETTLEMENT_TYPES = [
     'Owner Operator Income Sheet',
@@ -45,8 +49,7 @@ export default function Settlements() {
     'driver_pay',
     'payroll_fee',
     'truck_parking',
-    'service_on_truck',
-    'custom'
+    'service_on_truck'
   ]
 
   useEffect(() => {
@@ -251,7 +254,8 @@ export default function Settlements() {
     // Map old category names to new ones (for backward compatibility)
     const categoryMapping: { [key: string]: string[] } = {
       'fees': ['dispatch_fee', 'safety', 'prepass', 'insurance'], // Old "fees" category might contain multiple
-      'other': ['service_on_truck', 'truck_parking', 'custom'] // Old "other" category maps to "custom"
+      'other': ['service_on_truck', 'truck_parking'], // Old "other" category
+      'custom': [] // Old "custom" category - ignore it
     }
     
     STANDARD_EXPENSE_CATEGORIES.forEach(category => {
@@ -302,6 +306,7 @@ export default function Settlements() {
     
     // Initialize input values - auto-fill with parsed values from PDF
     const inputValues: { [key: string]: string } = {}
+    const categoryNameValues: { [key: string]: string } = {}
     Object.entries(categories).forEach(([key, value]) => {
       // Check if this category was parsed from the PDF (exists in original data)
       const wasParsed = existingCategories[key] !== undefined && existingCategories[key] !== null
@@ -316,23 +321,33 @@ export default function Settlements() {
         // Leave empty for unparsed zero values
         inputValues[key] = ''
       }
+      
+      // Initialize category name inputs for non-standard categories
+      if (!STANDARD_EXPENSE_CATEGORIES.includes(key)) {
+        categoryNameValues[key] = key
+      }
     })
     setExpenseCategoryInputs(inputValues)
+    setCategoryNameInputs(categoryNameValues)
     
-    // Initialize dispatch fee percentage based on existing dispatch fee
-    // If dispatch fee exists, try to determine percentage from gross revenue
-    if (categories.dispatch_fee && settlement.gross_revenue) {
-      const calculatedPercent = (categories.dispatch_fee / settlement.gross_revenue) * 100
-      // Round to nearest 6% or 8%
-      if (Math.abs(calculatedPercent - 6) < Math.abs(calculatedPercent - 8)) {
-        setDispatchFeePercent(6)
+      // Initialize dispatch fee percentage based on existing dispatch fee
+      // If dispatch fee exists, try to determine percentage from gross revenue
+      if (categories.dispatch_fee && settlement.gross_revenue) {
+        const calculatedPercent = (categories.dispatch_fee / settlement.gross_revenue) * 100
+        // Round to nearest 6% or 8%
+        if (Math.abs(calculatedPercent - 6) < Math.abs(calculatedPercent - 8)) {
+          setDispatchFeePercent(6)
+        } else {
+          setDispatchFeePercent(8)
+        }
       } else {
-        setDispatchFeePercent(8)
+        setDispatchFeePercent(6) // Default to 6%
       }
-    } else {
-      setDispatchFeePercent(6) // Default to 6%
-    }
-    
+      
+      // Initialize input values for gross revenue, expenses, and net profit
+      setGrossRevenueInput(settlement.gross_revenue !== undefined && settlement.gross_revenue !== null ? formatCurrency(settlement.gross_revenue) : '')
+      setTotalExpensesInput(settlement.expenses !== undefined && settlement.expenses !== null ? formatCurrency(settlement.expenses) : '')
+      setNetProfitInput(settlement.net_profit !== undefined && settlement.net_profit !== null ? formatCurrency(settlement.net_profit) : '')
   }
   
   // Format currency to 2 decimals with dollar sign
@@ -365,16 +380,21 @@ export default function Settlements() {
       
       // Recalculate total expenses
       const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
+      const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
       
       setEditFormData({
         ...editFormData,
         expense_categories: updatedCategories,
         expenses: totalExpenses,
-        net_profit: grossRevenue && totalExpenses ? grossRevenue - totalExpenses : editFormData.net_profit
+        net_profit: netProfit
       })
       
-      // Update input value
+      // Update input values
       setExpenseCategoryInputs(prev => ({ ...prev, dispatch_fee: formatCurrency(dispatchFee) }))
+      setTotalExpensesInput(formatCurrency(totalExpenses))
+      if (netProfit !== undefined) {
+        setNetProfitInput(formatCurrency(netProfit))
+      }
     }
   }
 
@@ -382,7 +402,59 @@ export default function Settlements() {
     setEditingSettlement(null)
     setEditFormData({})
     setExpenseCategoryInputs({})
+    setCategoryNameInputs({})
     setDispatchFeePercent(6)
+    setGrossRevenueInput('')
+    setTotalExpensesInput('')
+    setNetProfitInput('')
+  }
+
+  // Helper function to get sorted settlements (newest first)
+  const getSortedSettlements = () => {
+    return [...settlements].sort((a, b) => {
+      const dateA = new Date(a.settlement_date).getTime()
+      const dateB = new Date(b.settlement_date).getTime()
+      if (dateB !== dateA) return dateB - dateA
+      return b.id - a.id
+    })
+  }
+
+  const navigateToSettlement = (direction: 'prev' | 'next') => {
+    if (!editingSettlement) return
+    
+    const sortedSettlements = getSortedSettlements()
+    const currentIndex = sortedSettlements.findIndex(s => s.id === editingSettlement.id)
+    
+    if (currentIndex === -1) return
+    
+    let targetIndex: number
+    if (direction === 'prev') {
+      targetIndex = currentIndex + 1
+      if (targetIndex >= sortedSettlements.length) return // Already at first
+    } else {
+      targetIndex = currentIndex - 1
+      if (targetIndex < 0) return // Already at last
+    }
+    
+    const targetSettlement = sortedSettlements[targetIndex]
+    if (targetSettlement) {
+      handleEditSettlement(targetSettlement)
+    }
+  }
+  
+  // Check if navigation buttons should be disabled
+  const getNavigationState = () => {
+    if (!editingSettlement) return { canGoPrev: false, canGoNext: false }
+    
+    const sortedSettlements = getSortedSettlements()
+    const currentIndex = sortedSettlements.findIndex(s => s.id === editingSettlement.id)
+    
+    if (currentIndex === -1) return { canGoPrev: false, canGoNext: false }
+    
+    return {
+      canGoPrev: currentIndex + 1 < sortedSettlements.length,
+      canGoNext: currentIndex - 1 >= 0
+    }
   }
   
 
@@ -416,14 +488,21 @@ export default function Settlements() {
     updated[newKey] = numValue
     
     const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    const grossRevenue = editFormData.gross_revenue || 0
+    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    
     setEditFormData({
       ...editFormData,
       expense_categories: updated,
       expenses: totalExpenses,
-      net_profit: editFormData.gross_revenue && totalExpenses 
-        ? editFormData.gross_revenue - totalExpenses 
-        : editFormData.net_profit
+      net_profit: netProfit
     })
+    
+    // Update total expenses input and net profit input to reflect the changes
+    setTotalExpensesInput(formatCurrency(totalExpenses))
+    if (netProfit !== undefined) {
+      setNetProfitInput(formatCurrency(netProfit))
+    }
   }
 
   const handleExpenseCategoryAmountChange = (key: string, value: string) => {
@@ -433,20 +512,15 @@ export default function Settlements() {
       setEditFormData({ ...editFormData, expense_categories: {} })
       return
     }
+    
+    // Allow empty values during typing - don't update the category value yet
+    // Only update on blur
     if (value === '' || value === '.') {
-      const updated = { ...editFormData.expense_categories }
-      updated[key] = 0
-      const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
-      setEditFormData({
-        ...editFormData,
-        expense_categories: updated,
-        expenses: totalExpenses,
-        net_profit: editFormData.gross_revenue && totalExpenses 
-          ? editFormData.gross_revenue - totalExpenses 
-          : editFormData.net_profit
-      })
+      // Keep the input empty, but don't update the category value yet
+      // The category value will be updated on blur
       return
     }
+    
     let cleanedValue = value
     // Remove leading zeros (but preserve "0.05" type values)
     if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
@@ -457,27 +531,43 @@ export default function Settlements() {
     updated[key] = isNaN(numValue) ? 0 : numValue
     
     const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    const grossRevenue = editFormData.gross_revenue || 0
+    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    
     setEditFormData({
       ...editFormData,
       expense_categories: updated,
       expenses: totalExpenses,
-      net_profit: editFormData.gross_revenue && totalExpenses 
-        ? editFormData.gross_revenue - totalExpenses 
-        : editFormData.net_profit
+      net_profit: netProfit
     })
+    
+    // Update total expenses input and net profit input to reflect the changes
+    setTotalExpensesInput(formatCurrency(totalExpenses))
+    if (netProfit !== undefined) {
+      setNetProfitInput(formatCurrency(netProfit))
+    }
   }
 
   const handleAddExpenseCategory = () => {
-    const newKey = prompt('Enter category name:')
-    if (newKey && newKey.trim()) {
-      const currentCategories = editFormData.expense_categories || {}
-      const updated = {
-        ...currentCategories,
-        [newKey.trim()]: 0
-      }
-      setEditFormData({ ...editFormData, expense_categories: updated })
-      setExpenseCategoryInputs(prev => ({ ...prev, [newKey.trim()]: '' }))
+    const currentCategories = editFormData.expense_categories || {}
+    // Generate a unique temporary key for the new category
+    let tempKey = 'new_category'
+    let counter = 1
+    while (currentCategories[tempKey]) {
+      tempKey = `new_category_${counter}`
+      counter++
     }
+    
+    const updated = {
+      ...currentCategories,
+      [tempKey]: 0
+    }
+    setEditFormData({
+      ...editFormData,
+      expense_categories: updated
+    })
+    setExpenseCategoryInputs(prev => ({ ...prev, [tempKey]: '' }))
+    setCategoryNameInputs(prev => ({ ...prev, [tempKey]: '' }))
   }
 
   const handleRemoveExpenseCategory = (key: string) => {
@@ -485,17 +575,33 @@ export default function Settlements() {
     const updated = { ...editFormData.expense_categories }
     delete updated[key]
     const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    const grossRevenue = editFormData.gross_revenue || 0
+    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    
     setEditFormData({
       ...editFormData,
       expense_categories: updated,
       expenses: totalExpenses,
-      net_profit: editFormData.gross_revenue && totalExpenses 
-        ? editFormData.gross_revenue - totalExpenses 
-        : editFormData.net_profit
+      net_profit: netProfit
     })
-    const newInputs = { ...expenseCategoryInputs }
-    delete newInputs[key]
-    setExpenseCategoryInputs(newInputs)
+    
+    setExpenseCategoryInputs(prev => {
+      const newInputs = { ...prev }
+      delete newInputs[key]
+      return newInputs
+    })
+    
+    setCategoryNameInputs(prev => {
+      const newInputs = { ...prev }
+      delete newInputs[key]
+      return newInputs
+    })
+    
+    // Update total expenses input and net profit input to reflect the changes
+    setTotalExpensesInput(formatCurrency(totalExpenses))
+    if (netProfit !== undefined) {
+      setNetProfitInput(formatCurrency(netProfit))
+    }
   }
 
   if (loading) return <div className="text-center py-8">Loading settlements...</div>
@@ -818,9 +924,41 @@ export default function Settlements() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  Edit Settlement - {getTruckName(editingSettlement.truck_id)} - {new Date(editingSettlement.settlement_date).toLocaleDateString()}
-                </h3>
+                <div className="flex items-center gap-4">
+                  {/* Previous/Next Navigation */}
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const navState = getNavigationState()
+                      return (
+                        <>
+                          <button
+                            onClick={() => navigateToSettlement('prev')}
+                            disabled={!navState.canGoPrev}
+                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title="Previous settlement (newer)"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => navigateToSettlement('next')}
+                            disabled={!navState.canGoNext}
+                            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title="Next settlement (older)"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </>
+                      )
+                    })()}
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Edit Settlement - {getTruckName(editingSettlement.truck_id)} - {new Date(editingSettlement.settlement_date).toLocaleDateString()}
+                  </h3>
+                </div>
                 <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-500">
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -868,16 +1006,16 @@ export default function Settlements() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Gross Revenue</label>
+                        <label className="block text-sm font-medium text-blue-600 mb-1">Gross Revenue</label>
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={editFormData.gross_revenue !== undefined ? formatCurrency(editFormData.gross_revenue) : ''}
+                          value={grossRevenueInput}
                           onChange={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value)
                             if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                              const revenue = inputValue ? Number(inputValue) : undefined
-                              const expenses = editFormData.expenses || 0
+                              setGrossRevenueInput(e.target.value)
+                              const revenue = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
                               
                               // Recalculate dispatch fee when gross revenue changes
                               let updatedCategories = { ...editFormData.expense_categories }
@@ -889,41 +1027,54 @@ export default function Settlements() {
                               
                               // Recalculate total expenses
                               const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
+                              const netProfit = revenue && totalExpenses ? revenue - totalExpenses : (revenue ? revenue : undefined)
                               
                               setEditFormData({
                                 ...editFormData,
                                 gross_revenue: revenue,
                                 expense_categories: updatedCategories,
                                 expenses: totalExpenses,
-                                net_profit: revenue && totalExpenses ? revenue - totalExpenses : editFormData.net_profit
+                                net_profit: netProfit
                               })
+                              
+                              // Update total expenses and net profit input fields
+                              setTotalExpensesInput(formatCurrency(totalExpenses))
+                              if (netProfit !== undefined) {
+                                setNetProfitInput(formatCurrency(netProfit))
+                              }
                             }
                           }}
                           onBlur={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value.trim())
                             if (inputValue === '' || inputValue === '.') {
+                              setGrossRevenueInput('')
                               setEditFormData({ ...editFormData, gross_revenue: undefined })
                             } else {
                               const revenue = parseFloat(inputValue)
                               if (!isNaN(revenue)) {
+                                setGrossRevenueInput(formatCurrency(revenue))
                                 setEditFormData({ ...editFormData, gross_revenue: revenue })
+                              } else {
+                                setGrossRevenueInput('')
+                                setEditFormData({ ...editFormData, gross_revenue: undefined })
                               }
                             }
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 font-medium"
                           placeholder="$0.00"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Total Expenses</label>
+                        <label className="block text-sm font-medium text-red-600 mb-1">Total Expenses</label>
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={editFormData.expenses !== undefined ? formatCurrency(editFormData.expenses) : ''}
+                          value={totalExpensesInput}
                           onChange={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value)
                             if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                              const expenses = inputValue ? Number(inputValue) : undefined
+                              setTotalExpensesInput(e.target.value)
+                              const expenses = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
                               const revenue = editFormData.gross_revenue || 0
                               setEditFormData({
                                 ...editFormData,
@@ -935,28 +1086,38 @@ export default function Settlements() {
                           onBlur={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value.trim())
                             if (inputValue === '' || inputValue === '.') {
+                              setTotalExpensesInput('')
                               setEditFormData({ ...editFormData, expenses: undefined })
                             } else {
                               const expenses = parseFloat(inputValue)
                               if (!isNaN(expenses)) {
+                                setTotalExpensesInput(formatCurrency(expenses))
                                 setEditFormData({ ...editFormData, expenses: expenses })
+                              } else {
+                                setTotalExpensesInput('')
+                                setEditFormData({ ...editFormData, expenses: undefined })
                               }
                             }
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
                           placeholder="$0.00"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Net Profit</label>
+                        <label className={`block text-sm font-medium mb-1 ${
+                          editFormData.net_profit !== undefined && editFormData.net_profit < 0 
+                            ? 'text-red-600' 
+                            : 'text-green-600'
+                        }`}>Net Profit</label>
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={editFormData.net_profit !== undefined ? formatCurrency(editFormData.net_profit) : ''}
+                          value={netProfitInput}
                           onChange={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value)
                             if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                              const profit = inputValue ? Number(inputValue) : undefined
+                              setNetProfitInput(e.target.value)
+                              const profit = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
                               const revenue = editFormData.gross_revenue || 0
                               setEditFormData({
                                 ...editFormData,
@@ -968,18 +1129,23 @@ export default function Settlements() {
                           onBlur={(e) => {
                             const inputValue = parseCurrencyInput(e.target.value.trim())
                             if (inputValue === '' || inputValue === '.') {
+                              setNetProfitInput('')
                               setEditFormData({ ...editFormData, net_profit: undefined })
                             } else {
                               const profit = parseFloat(inputValue)
                               if (!isNaN(profit)) {
+                                setNetProfitInput(formatCurrency(profit))
                                 setEditFormData({ ...editFormData, net_profit: profit })
+                              } else {
+                                setNetProfitInput('')
+                                setEditFormData({ ...editFormData, net_profit: undefined })
                               }
                             }
                           }}
-                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-medium ${
                             editFormData.net_profit !== undefined && editFormData.net_profit < 0
-                              ? 'border-red-500 text-red-600 focus:ring-red-500'
-                              : 'border-gray-300 focus:ring-blue-500'
+                              ? 'border-red-300 text-red-700 focus:ring-red-500'
+                              : 'border-green-300 text-green-700 focus:ring-green-500'
                           }`}
                           placeholder="$0.00"
                         />
@@ -1039,8 +1205,8 @@ export default function Settlements() {
                       <div className="space-y-2 max-h-96 lg:max-h-[70vh] overflow-y-auto">
                         {editFormData.expense_categories ? (
                           <>
-                            {/* Display standard categories first (except "custom" which is editable) */}
-                            {STANDARD_EXPENSE_CATEGORIES.filter(cat => cat !== 'custom').map((category) => {
+                            {/* Display standard categories */}
+                            {STANDARD_EXPENSE_CATEGORIES.map((category) => {
                               const value = editFormData.expense_categories![category] || 0
                               const displayName = category.split('_').map(word => 
                                 word.charAt(0).toUpperCase() + word.slice(1)
@@ -1063,95 +1229,158 @@ export default function Settlements() {
                                     {displayName}
                                     {percentageDisplay}
                                   </label>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                    onChange={(e) => {
-                                      const inputValue = parseCurrencyInput(e.target.value)
-                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                        handleExpenseCategoryAmountChange(category, inputValue)
-                                      }
-                                    }}
-                                    onBlur={(e) => {
-                                      const inputValue = parseCurrencyInput(e.target.value.trim())
-                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                        handleExpenseCategoryChange(category, category, 0)
-                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                      } else {
-                                        const numValue = parseFloat(inputValue)
-                                        if (!isNaN(numValue)) {
-                                          handleExpenseCategoryChange(category, category, numValue)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
-                                        } else {
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                      onChange={(e) => {
+                                        const rawValue = e.target.value
+                                        const inputValue = parseCurrencyInput(rawValue)
+                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                          // Store raw input value
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
+                                          
+                                          // Update category value during typing to recalculate net profit
+                                          if (inputValue === '' || inputValue === '.') {
+                                            handleExpenseCategoryChange(category, category, 0)
+                                          } else {
+                                            handleExpenseCategoryAmountChange(category, inputValue)
+                                          }
+                                        }
+                                      }}
+                                      onBlur={(e) => {
+                                        const inputValue = parseCurrencyInput(e.target.value.trim())
+                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
                                           handleExpenseCategoryChange(category, category, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                        } else {
+                                          const numValue = parseFloat(inputValue)
+                                          if (!isNaN(numValue)) {
+                                            handleExpenseCategoryChange(category, category, numValue)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
+                                          } else {
+                                            handleExpenseCategoryChange(category, category, 0)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                          }
                                         }
-                                      }
-                                    }}
-                                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    placeholder="0.00"
-                                  />
+                                      }}
+                                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      placeholder="0.00"
+                                    />
                                   <div className="w-8"></div>
                                 </div>
                               )
                             })}
-                            {/* Display "custom" and any additional non-standard categories as editable */}
+                            {/* Display any additional non-standard categories as editable */}
                             {Object.entries(editFormData.expense_categories)
-                              .filter(([key]) => key === 'custom' || !STANDARD_EXPENSE_CATEGORIES.includes(key))
-                              .map(([key, value]) => (
-                                <div key={key} className="flex items-center gap-2">
-                                  <input
-                                    type="text"
-                                    value={key}
-                                    onChange={(e) => {
-                                      const newKey = e.target.value
-                                      if (newKey !== key) {
-                                        handleExpenseCategoryChange(key, newKey, value || 0)
-                                      }
-                                    }}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    placeholder="Category name"
-                                  />
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                    onChange={(e) => {
-                                      const inputValue = parseCurrencyInput(e.target.value)
-                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                        handleExpenseCategoryAmountChange(key, inputValue)
-                                      }
-                                    }}
-                                    onBlur={(e) => {
-                                      const inputValue = parseCurrencyInput(e.target.value.trim())
-                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                        handleExpenseCategoryChange(key, key, 0)
-                                        setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                      } else {
-                                        const numValue = parseFloat(inputValue)
-                                        if (!isNaN(numValue)) {
-                                          handleExpenseCategoryChange(key, key, numValue)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
+                              .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
+                              .map(([key, value]) => {
+                                const categoryNameInput = categoryNameInputs[key] !== undefined ? categoryNameInputs[key] : key
+                                return (
+                                  <div key={key} className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={categoryNameInput}
+                                      onChange={(e) => {
+                                        // Only update the input state, don't change the category key yet
+                                        setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                      }}
+                                      onBlur={(e) => {
+                                        const newKey = e.target.value.trim()
+                                        if (newKey && newKey !== key) {
+                                          // Check if new key already exists
+                                          const currentCategories = editFormData.expense_categories || {}
+                                          if (currentCategories[newKey] !== undefined && newKey !== key) {
+                                            showModal('Error', `Category "${newKey}" already exists.`, 'error')
+                                            // Reset to original key
+                                            setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
+                                            return
+                                          }
+                                          // Update the category key
+                                          handleExpenseCategoryChange(key, newKey, value || 0)
+                                          // Update the category name input state with the new key
+                                          setCategoryNameInputs(prev => {
+                                            const updated = { ...prev }
+                                            delete updated[key]
+                                            updated[newKey] = newKey
+                                            return updated
+                                          })
+                                        } else if (!newKey) {
+                                          // Empty name - reset to original key
+                                          setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
                                         } else {
+                                          // Same key, just update the input state
+                                          setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
+                                        }
+                                      }}
+                                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      placeholder="Category name"
+                                    />
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                      onChange={(e) => {
+                                        const rawValue = e.target.value
+                                        const inputValue = parseCurrencyInput(rawValue)
+                                        
+                                        // Only allow valid decimal input
+                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                          // Store raw input value
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
+                                          
+                                          // Update category value during typing to recalculate net profit
+                                          // But don't format the input until blur
+                                          if (inputValue === '' || inputValue === '.') {
+                                            handleExpenseCategoryChange(key, key, 0)
+                                          } else {
+                                            let cleanedValue = inputValue
+                                            // Remove leading zeros (but preserve "0.05" type values)
+                                            if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
+                                              cleanedValue = cleanedValue.substring(1)
+                                            }
+                                            const numValue = parseFloat(cleanedValue)
+                                            if (!isNaN(numValue)) {
+                                              handleExpenseCategoryChange(key, key, numValue)
+                                            } else {
+                                              handleExpenseCategoryChange(key, key, 0)
+                                            }
+                                          }
+                                        }
+                                      }}
+                                      onBlur={(e) => {
+                                        const inputValue = parseCurrencyInput(e.target.value.trim())
+                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                          // Empty value - set to 0
                                           handleExpenseCategoryChange(key, key, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                        } else {
+                                          const numValue = parseFloat(inputValue)
+                                          if (!isNaN(numValue)) {
+                                            // Valid number - update category and format the input
+                                            handleExpenseCategoryChange(key, key, numValue)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
+                                          } else {
+                                            // Invalid - set to 0
+                                            handleExpenseCategoryChange(key, key, 0)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                          }
                                         }
-                                      }
-                                    }}
-                                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    placeholder="0.00"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveExpenseCategory(key)}
-                                    className="text-red-600 hover:text-red-800 px-2"
-                                    title="Remove category"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
+                                      }}
+                                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      placeholder="0.00"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveExpenseCategory(key)}
+                                      className="text-red-600 hover:text-red-800 px-2"
+                                      title="Remove category"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )
+                              })}
                           </>
                         ) : (
                           <p className="text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
