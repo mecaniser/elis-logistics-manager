@@ -354,18 +354,72 @@ def parse_amazon_relay_pdf(file_path: str) -> Dict:
             
             # Count blocks delivered
             if is_income_sheet_format:
-                # Format 2: Use STOPS count as blocks
-                # Look in table row: "12/27-12/29/2024 TFC9-CLT2 CLT5 7 795.0"
-                # Pattern: date range, route codes, then stops number
-                table_row_match = re.search(r'\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4}[^\n]*?([A-Z0-9-]+)\s+([A-Z0-9]+)\s+(\d+)', text, re.IGNORECASE)
-                if table_row_match:
-                    # Third group is stops count
-                    settlement_data["blocks_delivered"] = int(table_row_match.group(3))
-                else:
-                    # Fallback: look for "STOPS 7" pattern
-                    stops_match = re.search(r'STOPS\s+(\d+)', text, re.IGNORECASE)
-                    if stops_match:
-                        settlement_data["blocks_delivered"] = int(stops_match.group(1))
+                # Format 2: Count unique P/L column values (route codes or date ranges)
+                # P/L column contains values like "VDF2-CLT5", "18BV-GSP1", or "06/04-06/06/2025"
+                # Each unique P/L value = 1 block/delivery
+                blocks_found = False
+                pl_values = set()
+                
+                try:
+                    # Try to find tables in the PDF
+                    for page in pdf.pages:
+                        tables = page.extract_tables()
+                        for table in tables:
+                            # Look for P/L column header
+                            for row_idx, row in enumerate(table):
+                                if row and any(cell and 'P/L' in str(cell).upper() for cell in row):
+                                    # Found P/L header, get the column index
+                                    header_row = row
+                                    pl_col_idx = None
+                                    for col_idx, cell in enumerate(header_row):
+                                        if cell and 'P/L' in str(cell).upper():
+                                            pl_col_idx = col_idx
+                                            break
+                                    
+                                    if pl_col_idx is not None:
+                                        # Collect all P/L values from data rows
+                                        for data_row in table[row_idx + 1:]:
+                                            if data_row and len(data_row) > pl_col_idx:
+                                                pl_value = data_row[pl_col_idx]
+                                                if pl_value:
+                                                    pl_str = str(pl_value).strip()
+                                                    # Check if it's a route code (e.g., "VDF2-CLT5") or date range (e.g., "06/04-06/06/2025")
+                                                    if pl_str and (re.match(r'[A-Z0-9]+-[A-Z0-9]+', pl_str) or re.match(r'\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4}', pl_str)):
+                                                        pl_values.add(pl_str)
+                                        
+                                        if pl_values:
+                                            settlement_data["blocks_delivered"] = len(pl_values)
+                                            blocks_found = True
+                                            break
+                                    if blocks_found:
+                                        break
+                                if blocks_found:
+                                    break
+                            if blocks_found:
+                                break
+                except Exception:
+                    pass
+                
+                # Fallback: Count unique P/L values from text using regex
+                if not blocks_found:
+                    # Find all route codes (e.g., "VDF2-CLT5", "18BV-GSP1")
+                    route_codes = re.findall(r'\b([A-Z0-9]+-[A-Z0-9]+)\b', text)
+                    # Find all date ranges (e.g., "06/04-06/06/2025")
+                    date_ranges = re.findall(r'\b(\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4})\b', text)
+                    
+                    # Combine and count unique values
+                    pl_values = set(route_codes + date_ranges)
+                    
+                    if pl_values:
+                        settlement_data["blocks_delivered"] = len(pl_values)
+                    else:
+                        # Alternative: Count number of driver pay entries (each driver pay = 1 block)
+                        # Look for multiple "DRIVER'S PAY" entries or individual pay amounts
+                        drivers_pay_pattern = r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)"
+                        drivers_pay_matches = re.findall(drivers_pay_pattern, text, re.IGNORECASE)
+                        if drivers_pay_matches:
+                            settlement_data["blocks_delivered"] = len(drivers_pay_matches)
+                        # If still not found, leave as None so user can enter manually
             else:
                 # Format 1: Count Block IDs (B-XXXXX)
                 block_ids = re.findall(r'B-[A-Z0-9]+', text)

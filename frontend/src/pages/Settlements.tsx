@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
+import Toast from '../components/Toast'
 
 export default function Settlements() {
   const [settlements, setSettlements] = useState<Settlement[]>([])
@@ -25,12 +26,19 @@ export default function Settlements() {
   const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
+  const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
   const [categoryNameInputs, setCategoryNameInputs] = useState<{ [key: string]: string }>({})
   const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8>(6)
   const [grossRevenueInput, setGrossRevenueInput] = useState<string>('')
   const [totalExpensesInput, setTotalExpensesInput] = useState<string>('')
   const [netProfitInput, setNetProfitInput] = useState<string>('')
+  const [isNavigating, setIsNavigating] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
+    message: '',
+    type: 'info',
+    isVisible: false
+  })
   
   const SETTLEMENT_TYPES = [
     'Owner Operator Income Sheet',
@@ -130,26 +138,16 @@ export default function Settlements() {
         if (failed > 0) {
           const errorList = results
             .filter(r => !r.success)
-            .map(r => `• ${r.filename}: ${r.error || 'Unknown error'}`)
-            .join('\n')
+            .map(r => `${r.filename}: ${r.error || 'Unknown error'}`)
+            .join(', ')
           
-          showModal(
-            'Bulk Upload Partial Success',
-            <div className="max-h-96 overflow-y-auto">
-              <p className="mb-2">Uploaded {successful} of {results.length} settlement(s). {failed} failed.</p>
-              <div className="text-left">
-                <p className="font-semibold mb-1">Errors:</p>
-                <pre className="text-xs whitespace-pre-wrap">{errorList}</pre>
-              </div>
-            </div>,
-            'warning'
-          )
+          showToast(`Uploaded ${successful} of ${results.length} settlement(s). ${failed} failed. Errors: ${errorList}`, 'warning')
         } else {
-          showModal('Success', `Successfully uploaded ${successful} settlement(s)!`, 'success')
+          showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
         }
       } else if (uploadFile) {
         await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType)
-        showModal('Success', 'Settlement uploaded successfully!', 'success')
+        showToast('Settlement uploaded successfully!', 'success')
       } else {
         showModal('Error', 'Please select a file to upload', 'error')
         setUploading(false)
@@ -176,11 +174,11 @@ export default function Settlements() {
     if (!settlementToDelete) return
     try {
       await settlementsApi.delete(settlementToDelete)
-      showModal('Success', 'Settlement deleted successfully!', 'success')
+      showToast('Settlement deleted successfully!', 'success')
       setSettlementToDelete(null)
       loadSettlements()
     } catch (err: any) {
-      showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete settlement', 'error')
+      showToast(err.response?.data?.detail || err.message || 'Failed to delete settlement', 'error')
       setSettlementToDelete(null)
     }
   }
@@ -207,14 +205,10 @@ export default function Settlements() {
       const failed = results.filter(r => !r.success)
       
       if (failed.length > 0) {
-        const errorMessages = failed.map(f => `Settlement ${f.id}: ${f.error}`).join('\n')
-        showModal(
-          'Partial Success',
-          `Deleted ${successful} of ${selectedSettlements.size} settlement(s).\n\nErrors:\n${errorMessages}`,
-          'warning'
-        )
+        const errorMessages = failed.map(f => `Settlement ${f.id}: ${f.error}`).join(', ')
+        showToast(`Deleted ${successful} of ${selectedSettlements.size} settlement(s). Errors: ${errorMessages}`, 'warning')
       } else {
-        showModal('Success', `Successfully deleted ${successful} settlement(s)!`, 'success')
+        showToast(`Successfully deleted ${successful} settlement(s)!`, 'success')
       }
       
       setSelectedSettlements(new Set())
@@ -305,7 +299,7 @@ export default function Settlements() {
       }
     })
     
-    setEditFormData({
+    const formData = {
       truck_id: settlement.truck_id,
       driver_id: settlement.driver_id || undefined,
       settlement_date: settlement.settlement_date,
@@ -319,7 +313,11 @@ export default function Settlements() {
       net_profit: settlement.net_profit || undefined,
       license_plate: settlement.license_plate || undefined,
       settlement_type: settlement.settlement_type || undefined,
-    })
+    }
+    
+    setEditFormData(formData)
+    // Store original data for comparison
+    setOriginalFormData({ ...formData })
     
     // Initialize input values - auto-fill with parsed values from PDF
     const inputValues: { [key: string]: string } = {}
@@ -367,18 +365,27 @@ export default function Settlements() {
       setNetProfitInput(settlement.net_profit !== undefined && settlement.net_profit !== null ? formatCurrency(settlement.net_profit) : '')
   }
   
-  // Format currency to 2 decimals with dollar sign
+  // Format currency to 2 decimals with dollar sign (handles negative values)
   const formatCurrency = (value: number | string | undefined | null): string => {
     if (value === undefined || value === null || value === '') return ''
     const numValue = typeof value === 'string' ? parseFloat(value) : value
     if (isNaN(numValue)) return ''
+    if (numValue < 0) {
+      return `-$${Math.abs(numValue).toFixed(2)}`
+    }
     return `$${numValue.toFixed(2)}`
   }
 
-  // Parse currency input (remove dollar sign and commas)
+  // Parse currency input (remove dollar sign and commas, preserve minus sign)
   const parseCurrencyInput = (value: string): string => {
-    // Remove dollar sign and commas, keep only numbers and decimal point
-    return value.replace(/[$,]/g, '')
+    // Remove dollar sign and commas, keep numbers, decimal point, and minus sign
+    // Allow minus sign only at the beginning
+    const cleaned = value.replace(/[$,]/g, '')
+    // Ensure minus sign is only at the start if present
+    if (cleaned.includes('-') && !cleaned.startsWith('-')) {
+      return cleaned.replace(/-/g, '')
+    }
+    return cleaned
   }
 
   // Calculate dispatch fee when percentage or gross revenue changes
@@ -422,12 +429,14 @@ export default function Settlements() {
   const handleCancelEdit = () => {
     setEditingSettlement(null)
     setEditFormData({})
+    setOriginalFormData({})
     setExpenseCategoryInputs({})
     setCategoryNameInputs({})
     setDispatchFeePercent(6)
     setGrossRevenueInput('')
     setTotalExpensesInput('')
     setNetProfitInput('')
+    setIsNavigating(false)
   }
 
   // Helper function to get sorted settlements (newest first)
@@ -440,27 +449,107 @@ export default function Settlements() {
     })
   }
 
-  const navigateToSettlement = (direction: 'prev' | 'next') => {
-    if (!editingSettlement) return
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
+    setToast({ message, type, isVisible: true })
+  }
+
+  // Check if there are any changes compared to original data
+  const hasChanges = (): boolean => {
+    if (!originalFormData || Object.keys(originalFormData).length === 0) return false
+    
+    // Compare all fields
+    const fieldsToCompare: string[] = [
+      'truck_id', 'settlement_date', 'week_start', 'week_end',
+      'miles_driven', 'blocks_delivered', 'gross_revenue', 'expenses',
+      'net_profit', 'settlement_type'
+    ]
+    
+    for (const field of fieldsToCompare) {
+      const original = (originalFormData as any)[field]
+      const current = (editFormData as any)[field]
+      
+      if (original !== current) {
+        // Handle null/undefined comparison
+        if ((original == null && current != null) || (original != null && current == null)) {
+          return true
+        }
+        if (original !== current) {
+          return true
+        }
+      }
+    }
+    
+    // Compare expense_categories
+    const originalCategories = originalFormData.expense_categories || {}
+    const currentCategories = editFormData.expense_categories || {}
+    
+    const allCategoryKeys = new Set([
+      ...Object.keys(originalCategories),
+      ...Object.keys(currentCategories)
+    ])
+    
+    for (const key of allCategoryKeys) {
+      const originalValue = originalCategories[key] || 0
+      const currentValue = currentCategories[key] || 0
+      if (Math.abs(originalValue - currentValue) > 0.01) { // Account for floating point precision
+        return true
+      }
+    }
+    
+    return false
+  }
+
+  const navigateToSettlement = async (direction: 'prev' | 'next') => {
+    if (!editingSettlement || isNavigating) return
+    
+    setIsNavigating(true)
+    
+    // Only save if there are changes
+    const hasUnsavedChanges = hasChanges()
+    
+    if (hasUnsavedChanges) {
+      // Save current settlement before navigating
+      try {
+        await settlementsApi.update(editingSettlement.id, editFormData)
+        await loadSettlements()
+        showToast('Settlement saved successfully', 'success')
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || err.message || 'Failed to update settlement'
+        showToast(errorMessage, 'error')
+        setIsNavigating(false)
+        return // Don't navigate if save failed
+      }
+    }
     
     const sortedSettlements = getSortedSettlements()
     const currentIndex = sortedSettlements.findIndex(s => s.id === editingSettlement.id)
     
-    if (currentIndex === -1) return
+    if (currentIndex === -1) {
+      setIsNavigating(false)
+      return
+    }
     
     let targetIndex: number
     if (direction === 'prev') {
       targetIndex = currentIndex + 1
-      if (targetIndex >= sortedSettlements.length) return // Already at first
+      if (targetIndex >= sortedSettlements.length) {
+        setIsNavigating(false)
+        return // Already at first
+      }
     } else {
       targetIndex = currentIndex - 1
-      if (targetIndex < 0) return // Already at last
+      if (targetIndex < 0) {
+        setIsNavigating(false)
+        return // Already at last
+      }
     }
     
     const targetSettlement = sortedSettlements[targetIndex]
     if (targetSettlement) {
       handleEditSettlement(targetSettlement)
     }
+    
+    setIsNavigating(false)
   }
   
   // Check if navigation buttons should be disabled
@@ -484,11 +573,13 @@ export default function Settlements() {
     try {
       await settlementsApi.update(editingSettlement.id, editFormData)
       await loadSettlements()
-      showModal('Success', 'Settlement updated successfully!', 'success')
+      // Update original data to reflect saved state
+      setOriginalFormData({ ...editFormData })
+      showToast('Settlement updated successfully!', 'success')
       handleCancelEdit()
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to update settlement'
-      showModal('Update Failed', errorMessage, 'error')
+      showToast(errorMessage, 'error')
     }
   }
 
@@ -508,9 +599,20 @@ export default function Settlements() {
         : value
     updated[newKey] = numValue
     
-    const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    // Calculate total expenses:
+    // - Standard categories: positive values add to expenses, negative values reduce expenses
+    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
+    // So we flip the sign for custom categories
+    const totalExpenses = Object.entries(updated).reduce((sum, [key, val]) => {
+      const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
+      // Flip sign for custom categories (non-standard)
+      if (!STANDARD_EXPENSE_CATEGORIES.includes(key)) {
+        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
+      }
+      return sum + numVal  // Standard categories: positive adds, negative subtracts
+    }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
     
     setEditFormData({
       ...editFormData,
@@ -551,9 +653,19 @@ export default function Settlements() {
     const updated = { ...editFormData.expense_categories }
     updated[key] = isNaN(numValue) ? 0 : numValue
     
-    const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    // Calculate total expenses:
+    // - Standard categories: positive values add to expenses, negative values reduce expenses
+    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
+    const totalExpenses = Object.entries(updated).reduce((sum, [catKey, val]) => {
+      const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
+      // Flip sign for custom categories (non-standard)
+      if (!STANDARD_EXPENSE_CATEGORIES.includes(catKey)) {
+        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
+      }
+      return sum + numVal  // Standard categories: positive adds, negative subtracts
+    }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
     
     setEditFormData({
       ...editFormData,
@@ -595,9 +707,19 @@ export default function Settlements() {
     if (!editFormData.expense_categories) return
     const updated = { ...editFormData.expense_categories }
     delete updated[key]
-    const totalExpenses = Object.values(updated).reduce((sum, val) => sum + (val || 0), 0)
+    // Calculate total expenses:
+    // - Standard categories: positive values add to expenses, negative values reduce expenses
+    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
+    const totalExpenses = Object.entries(updated).reduce((sum, [catKey, val]) => {
+      const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
+      // Flip sign for custom categories (non-standard)
+      if (!STANDARD_EXPENSE_CATEGORIES.includes(catKey)) {
+        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
+      }
+      return sum + numVal  // Standard categories: positive adds, negative subtracts
+    }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
     
     setEditFormData({
       ...editFormData,
@@ -954,7 +1076,7 @@ export default function Settlements() {
                         <>
                           <button
                             onClick={() => navigateToSettlement('prev')}
-                            disabled={!navState.canGoPrev}
+                            disabled={!navState.canGoPrev || isNavigating}
                             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                             title="Previous settlement (newer)"
                           >
@@ -964,7 +1086,7 @@ export default function Settlements() {
                           </button>
                           <button
                             onClick={() => navigateToSettlement('next')}
-                            disabled={!navState.canGoNext}
+                            disabled={!navState.canGoNext || isNavigating}
                             className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                             title="Next settlement (older)"
                           >
@@ -1011,7 +1133,7 @@ export default function Settlements() {
                   {/* Settlement Data Section */}
                   <div className="space-y-4">
                     <h4 className="text-lg font-medium text-gray-900 mb-3">Settlement Data</h4>
-                    <div className="grid grid-cols-5 gap-3">
+                    <div className="grid grid-cols-7 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Truck</label>
                         <select
@@ -1031,6 +1153,26 @@ export default function Settlements() {
                           value={editFormData.settlement_date || ''}
                           onChange={(e) => setEditFormData({ ...editFormData, settlement_date: e.target.value })}
                           className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Miles Driven</label>
+                        <input
+                          type="number"
+                          value={editFormData.miles_driven || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, miles_driven: e.target.value ? Number(e.target.value) : undefined })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Blocks Delivered</label>
+                        <input
+                          type="number"
+                          value={editFormData.blocks_delivered || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, blocks_delivered: e.target.value ? Number(e.target.value) : undefined })}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="0"
                         />
                       </div>
                       <div>
@@ -1352,7 +1494,7 @@ export default function Settlements() {
                                         const rawValue = e.target.value
                                         const inputValue = parseCurrencyInput(rawValue)
                                         
-                                        // Only allow valid decimal input
+                                        // Only allow valid decimal input (including negative)
                                         if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                           // Store raw input value
                                           setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
@@ -1363,9 +1505,16 @@ export default function Settlements() {
                                             handleExpenseCategoryChange(key, key, 0)
                                           } else {
                                             let cleanedValue = inputValue
-                                            // Remove leading zeros (but preserve "0.05" type values)
+                                            // Remove leading zeros (but preserve "0.05" type values and minus sign)
+                                            const isNegative = cleanedValue.startsWith('-')
+                                            if (isNegative) {
+                                              cleanedValue = cleanedValue.substring(1)
+                                            }
                                             if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
                                               cleanedValue = cleanedValue.substring(1)
+                                            }
+                                            if (isNegative) {
+                                              cleanedValue = '-' + cleanedValue
                                             }
                                             const numValue = parseFloat(cleanedValue)
                                             if (!isNaN(numValue)) {
@@ -1395,7 +1544,11 @@ export default function Settlements() {
                                           }
                                         }
                                       }}
-                                      className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                      className={`w-full px-2 py-1.5 border rounded-md focus:outline-none focus:ring-2 text-sm ${
+                                        (value || 0) < 0
+                                          ? 'border-red-300 text-red-700 focus:ring-red-500'
+                                          : 'border-green-300 text-green-700 focus:ring-green-500'
+                                      }`}
                                       placeholder="0.00"
                                     />
                                   </div>
@@ -1428,6 +1581,13 @@ export default function Settlements() {
           </div>
         </div>
       )}
+
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast({ ...toast, isVisible: false })}
+      />
     </div>
   )
 }
