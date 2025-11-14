@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
+import Toast from '../components/Toast'
 
 export default function Repairs() {
   const [repairs, setRepairs] = useState<Repair[]>([])
@@ -11,13 +12,22 @@ export default function Repairs() {
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadImages, setUploadImages] = useState<File[]>([])
-  const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [uploading, setUploading] = useState(false)
   const [repairToDelete, setRepairToDelete] = useState<number | null>(null)
+  const [repairToEdit, setRepairToEdit] = useState<Repair | null>(null)
+  const [editFormData, setEditFormData] = useState<Partial<Repair>>({})
+  const [editImages, setEditImages] = useState<File[]>([])
+  const [saving, setSaving] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalTitle, setModalTitle] = useState('')
   const [modalMessage, setModalMessage] = useState('')
   const [modalType, setModalType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
+    message: '',
+    type: 'info',
+    isVisible: false
+  })
+  const [searchFilter, setSearchFilter] = useState<string>('')
 
   useEffect(() => {
     loadTrucks()
@@ -52,30 +62,65 @@ export default function Repairs() {
     setModalOpen(true)
   }
 
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
+    setToast({ message, type, isVisible: true })
+  }
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!uploadFile || !selectedTruck) {
-      showModal('Error', 'Please select a truck and PDF file', 'error')
+    if (!uploadFile) {
+      showModal('Error', 'Please select a PDF invoice file', 'error')
       return
     }
 
     try {
       setUploading(true)
-      const response = await repairsApi.upload(uploadFile, uploadImages, selectedTruck)
+      const response = await repairsApi.upload(uploadFile, uploadImages)
       if (response.data.warning) {
-        showModal('Upload Successful', `Repair uploaded successfully. ${response.data.warning}`, 'warning')
+        showToast(`Repair uploaded successfully. ${response.data.warning}`, 'warning')
       } else {
-        showModal('Success', 'Repair uploaded successfully!', 'success')
+        showToast('Repair uploaded successfully! Truck identified by VIN from invoice.', 'success')
       }
       setUploadFile(null)
       setUploadImages([])
-      setSelectedTruck(null)
       setShowUploadForm(false)
       loadRepairs()
     } catch (err: any) {
-      showModal('Upload Failed', err.response?.data?.detail || err.message || 'Failed to upload repair', 'error')
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to upload repair'
+      showModal('Upload Failed', errorMessage, 'error')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleEdit = (repair: Repair) => {
+    setRepairToEdit(repair)
+    setEditFormData({
+      truck_id: repair.truck_id,
+      repair_date: repair.repair_date,
+      description: repair.description || '',
+      category: repair.category || '',
+      cost: repair.cost
+    })
+    setEditImages([])
+  }
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!repairToEdit) return
+
+    try {
+      setSaving(true)
+      await repairsApi.update(repairToEdit.id, editFormData, editImages.length > 0 ? editImages : undefined)
+      showToast('Repair updated successfully!', 'success')
+      setRepairToEdit(null)
+      setEditFormData({})
+      setEditImages([])
+      loadRepairs()
+    } catch (err: any) {
+      showModal('Error', err.response?.data?.detail || err.message || 'Failed to update repair', 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -83,7 +128,7 @@ export default function Repairs() {
     if (!repairToDelete) return
     try {
       await repairsApi.delete(repairToDelete)
-      showModal('Success', 'Repair deleted successfully!', 'success')
+      showToast('Repair deleted successfully!', 'success')
       setRepairToDelete(null)
       loadRepairs()
     } catch (err: any) {
@@ -102,67 +147,132 @@ export default function Repairs() {
     return `/uploads/${encodeURIComponent(imagePath.split('/').pop() || imagePath)}`
   }
 
+  const getPdfUrl = (pdfPath: string) => {
+    if (pdfPath.startsWith('http')) return pdfPath
+    const filename = pdfPath.split('/').pop() || pdfPath
+    return `/uploads/${encodeURIComponent(filename)}`
+  }
+
   if (loading) return <div className="text-center py-8">Loading repairs...</div>
   if (error) return <div className="text-center py-8 text-red-600">{error}</div>
 
+  // Filter repairs based on search term
+  const filteredRepairs = repairs.filter(repair => {
+    if (!searchFilter.trim()) return true
+    
+    const searchLower = searchFilter.toLowerCase()
+    const truckName = getTruckName(repair.truck_id).toLowerCase()
+    const description = (repair.description || '').toLowerCase()
+    const invoiceNumber = (repair.invoice_number || '').toLowerCase()
+    const truckId = repair.truck_id.toString()
+    
+    return (
+      truckName.includes(searchLower) ||
+      description.includes(searchLower) ||
+      invoiceNumber.includes(searchLower) ||
+      truckId.includes(searchLower)
+    )
+  })
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Repairs</h1>
-        <button
-          onClick={() => setShowUploadForm(!showUploadForm)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          {showUploadForm ? 'Cancel' : 'Upload Repair'}
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial sm:w-64">
+            <input
+              type="text"
+              placeholder="Search by invoice #, description, or truck..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {searchFilter && (
+              <button
+                onClick={() => setSearchFilter('')}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowUploadForm(!showUploadForm)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 whitespace-nowrap"
+          >
+            {showUploadForm ? 'Cancel' : 'Upload Repair'}
+          </button>
+        </div>
       </div>
 
       {showUploadForm && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Upload Repair Invoice</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            The truck will be automatically identified by the VIN number extracted from the invoice.
+          </p>
           <form onSubmit={handleUpload}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Truck *</label>
-              <select
-                value={selectedTruck || ''}
-                onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
-                required
-                disabled={uploading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a truck...</option>
-                {trucks.map((truck) => (
-                  <option key={truck.id} value={truck.id}>
-                    {truck.name} {truck.vin ? `(VIN: ${truck.vin})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">PDF Invoice *</label>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                required
-                disabled={uploading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Images (optional)</label>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => setUploadImages(Array.from(e.target.files || []))}
-                disabled={uploading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">PDF Invoice *</label>
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 hover:border-blue-400 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg className="w-10 h-10 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    <p className="mb-2 text-sm text-gray-500">
+                      <span className="font-semibold">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-gray-500">PDF file only</p>
+                    {uploadFile && (
+                      <p className="mt-2 text-xs font-medium text-blue-600 truncate max-w-[200px]">{uploadFile.name}</p>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    required
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
+                <p className="text-xs text-gray-500 mt-1">Invoice must contain a VIN number</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Images (optional)</label>
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 hover:border-blue-400 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg className="w-10 h-10 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="mb-2 text-sm text-gray-500">
+                      <span className="font-semibold">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-gray-500">Images (multiple allowed)</p>
+                    {uploadImages.length > 0 && (
+                      <p className="mt-2 text-xs font-medium text-blue-600">{uploadImages.length} file{uploadImages.length !== 1 ? 's' : ''} selected</p>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => setUploadImages(Array.from(e.target.files || []))}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
             <button
               type="submit"
-              disabled={uploading || !uploadFile || !selectedTruck}
+              disabled={uploading || !uploadFile}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
               {uploading ? 'Uploading...' : 'Upload'}
@@ -171,39 +281,89 @@ export default function Repairs() {
         </div>
       )}
 
+      {searchFilter && (
+        <div className="mb-4 text-sm text-gray-600">
+          Showing {filteredRepairs.length} of {repairs.length} repair{repairs.length !== 1 ? 's' : ''}
+        </div>
+      )}
+
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
-          {repairs.length === 0 ? (
-            <li className="px-6 py-4 text-gray-500 text-center">No repairs found.</li>
+          {filteredRepairs.length === 0 ? (
+            <li className="px-6 py-4 text-gray-500 text-center">
+              {searchFilter ? `No repairs found matching "${searchFilter}"` : 'No repairs found.'}
+            </li>
           ) : (
-            repairs.map((repair) => (
+            filteredRepairs.map((repair) => (
               <li key={repair.id} className="px-6 py-4">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">{repair.description}</h3>
-                    <p className="text-sm text-gray-500">
-                      {getTruckName(repair.truck_id)} - {new Date(repair.repair_date).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm font-semibold text-red-600">${repair.cost.toLocaleString()}</p>
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-medium text-gray-900">{repair.description}</h3>
+                        <p className="text-sm text-gray-500">
+                          {getTruckName(repair.truck_id)} - {new Date(repair.repair_date).toLocaleDateString()}
+                          {repair.category && <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded">{repair.category}</span>}
+                        </p>
+                        <p className="text-sm font-semibold text-red-600">${repair.cost.toLocaleString()}</p>
+                      </div>
+                      {repair.invoice_number && (
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 mb-1">Invoice #</p>
+                          <p className="text-sm font-mono font-semibold text-gray-700">{repair.invoice_number}</p>
+                        </div>
+                      )}
+                    </div>
+                    {repair.receipt_path && (
+                      <div className="mt-2">
+                        <button
+                          onClick={() => window.open(getPdfUrl(repair.receipt_path!), '_blank')}
+                          className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          View Invoice
+                        </button>
+                      </div>
+                    )}
                     {repair.image_paths && repair.image_paths.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {repair.image_paths.map((img, idx) => (
-                          <img
+                          <button
                             key={idx}
-                            src={getImageUrl(img)}
-                            alt={`Repair ${idx + 1}`}
-                            className="w-20 h-20 object-cover rounded border"
-                          />
+                            onClick={() => window.open(getImageUrl(img), '_blank')}
+                            className="relative group cursor-pointer"
+                          >
+                            <img
+                              src={getImageUrl(img)}
+                              alt={`Repair ${idx + 1}`}
+                              className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
+                              <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                              </svg>
+                            </div>
+                          </button>
                         ))}
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => setRepairToDelete(repair.id)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(repair)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setRepairToDelete(repair.id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </li>
             ))
@@ -215,6 +375,184 @@ export default function Repairs() {
         {modalMessage}
       </Modal>
 
+      {repairToEdit && (
+        <Modal
+          isOpen={repairToEdit !== null}
+          onClose={() => {
+            setRepairToEdit(null)
+            setEditFormData({})
+            setEditImages([])
+          }}
+          title="Edit Repair"
+          type="info"
+          showFooter={false}
+        >
+          <div className="space-y-6">
+            {/* PDF Invoice Section */}
+            {repairToEdit.receipt_path && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-medium text-gray-900">Invoice PDF</h4>
+                  <button
+                    onClick={() => window.open(getPdfUrl(repairToEdit.receipt_path!), '_blank')}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Open in New Tab
+                  </button>
+                </div>
+                <div className="w-full h-[600px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
+                  <iframe
+                    src={getPdfUrl(repairToEdit.receipt_path)}
+                    className="w-full h-full border-0"
+                    title="Repair Invoice PDF"
+                  />
+                </div>
+              </div>
+            )}
+            
+            {/* Edit Form */}
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Truck</label>
+              <select
+                value={editFormData.truck_id || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, truck_id: Number(e.target.value) })}
+                required
+                disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {trucks.map((truck) => (
+                  <option key={truck.id} value={truck.id}>
+                    {truck.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Repair Date</label>
+              <input
+                type="date"
+                value={editFormData.repair_date ? new Date(editFormData.repair_date).toISOString().split('T')[0] : ''}
+                onChange={(e) => setEditFormData({ ...editFormData, repair_date: e.target.value })}
+                required
+                disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                value={editFormData.description || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                disabled={saving}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <select
+                value={editFormData.category || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select category...</option>
+                <option value="engine">Engine</option>
+                <option value="tires">Tires</option>
+                <option value="electrical">Electrical</option>
+                <option value="brakes">Brakes</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cost ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editFormData.cost || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, cost: parseFloat(e.target.value) })}
+                required
+                disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Add Images (optional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => setEditImages(Array.from(e.target.files || []))}
+                disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+              {repairToEdit.image_paths && repairToEdit.image_paths.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs text-gray-500 mb-2">Existing images ({repairToEdit.image_paths.length}):</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {repairToEdit.image_paths.map((img, idx) => (
+                      <img
+                        key={idx}
+                        src={getImageUrl(img)}
+                        alt={`Existing ${idx + 1}`}
+                        className="w-16 h-16 object-cover rounded border"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {editImages.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs text-gray-500 mb-2">New images to add ({editImages.length}):</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {editImages.map((img, idx) => (
+                      <div key={idx} className="relative">
+                        <img
+                          src={URL.createObjectURL(img)}
+                          alt={`New ${idx + 1}`}
+                          className="w-16 h-16 object-cover rounded border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditImages(editImages.filter((_, i) => i !== idx))}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setRepairToEdit(null)
+                  setEditFormData({})
+                  setEditImages([])
+                }}
+                disabled={saving}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+            </form>
+          </div>
+        </Modal>
+      )}
+
       <ConfirmModal
         isOpen={repairToDelete !== null}
         onClose={() => setRepairToDelete(null)}
@@ -223,6 +561,13 @@ export default function Repairs() {
         message="Are you sure you want to delete this repair? This action cannot be undone."
         confirmText="Delete"
         type="danger"
+      />
+
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast({ ...toast, isVisible: false })}
       />
     </div>
   )

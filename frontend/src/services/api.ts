@@ -40,7 +40,7 @@ export interface Repair {
   cost: number
   category?: string
   invoice_number?: string
-  pdf_file_path?: string
+  receipt_path?: string
   image_paths?: string[]
 }
 
@@ -68,7 +68,18 @@ export interface DashboardData {
     truck_name: string
     total_revenue: number
     total_expenses: number
+    repair_costs: number
     net_profit: number
+  }>
+  pm_status?: Array<{
+    truck_id: number
+    truck_name: string
+    last_pm_date: string | null
+    last_pm_repair_id: number | null
+    is_due: boolean
+    days_since_pm: number | null
+    days_overdue: number | null
+    pm_threshold_months: number
   }>
 }
 
@@ -155,13 +166,12 @@ export const repairsApi = {
   },
   getById: (id: number) => api.get<Repair>(`/repairs/${id}`),
   create: (data: Partial<Repair>) => api.post<Repair>('/repairs', data),
-  upload: (file: File, images: File[], truckId: number) => {
+  upload: (file: File, images: File[]) => {
     const formData = new FormData()
     formData.append('file', file)
     images.forEach((img) => {
       formData.append('images', img)
     })
-    formData.append('truck_id', truckId.toString())
     return api.post<{
       repair: Repair
       warning?: string
@@ -174,6 +184,25 @@ export const repairsApi = {
         },
       }
     )
+  },
+  update: (id: number, data: Partial<Repair>, images?: File[]) => {
+    const formData = new FormData()
+    
+    // Add repair data as JSON string (backend will parse it)
+    formData.append('repair_update_json', JSON.stringify(data))
+    
+    // Add images if provided
+    if (images && images.length > 0) {
+      images.forEach((img) => {
+        formData.append('images', img)
+      })
+    }
+    
+    return api.put<Repair>(`/repairs/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
   },
   delete: (id: number) => api.delete(`/repairs/${id}`),
 }

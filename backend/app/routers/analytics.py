@@ -3,7 +3,7 @@ Analytics router
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.repair import Repair
@@ -118,6 +118,7 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
             "truck_name": truck.name,
             "total_revenue": float(truck_revenue),
             "total_expenses": float(truck_expenses) + float(truck_repairs_cost),
+            "repair_costs": float(truck_repairs_cost),
             "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)
         })
     
@@ -184,6 +185,87 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
                 "blocks": settlements_by_month[month_key]["blocks"]
             })
     
+    # Get individual repairs by month (each repair separate)
+    repairs_by_month = []
+    repairs_for_monthly = repairs_query.all()
+    
+    # Get truck names for reference
+    truck_map = {truck.id: truck.name for truck in trucks_query.all()}
+    
+    # Create list of individual repairs with month info
+    for repair in repairs_for_monthly:
+        if repair.repair_date and repair.cost:
+            month_key = repair.repair_date.strftime("%Y-%m")
+            month_label = repair.repair_date.strftime("%b %Y")
+            
+            repairs_by_month.append({
+                "repair_id": repair.id,
+                "month": month_label,
+                "month_key": month_key,
+                "cost": float(repair.cost),
+                "truck_id": repair.truck_id,
+                "truck_name": truck_map.get(repair.truck_id, f"Truck {repair.truck_id}"),
+                "description": repair.description or "No description",
+                "category": repair.category or "other",
+                "repair_date": repair.repair_date.isoformat() if repair.repair_date else None
+            })
+    
+    # Sort by month_key and repair_date
+    repairs_by_month.sort(key=lambda x: (x["month_key"], x["repair_date"] or ""))
+    
+    # Get PM (D13 full pm) status for each truck
+    pm_status = []
+    trucks_for_pm = trucks_query.all()
+    today = datetime.now().date()
+    pm_threshold_months = 3
+    
+    for truck in trucks_for_pm:
+        # Find all D13 full pm repairs for this truck
+        # Search for "d13" and "full pm" in description (case-insensitive)
+        # Both terms must be present in the description
+        pm_repairs = db.query(Repair).filter(
+            and_(
+                Repair.truck_id == truck.id,
+                Repair.description.ilike('%d13%'),
+                Repair.description.ilike('%full pm%')
+            )
+        ).order_by(Repair.repair_date.desc()).all()
+        
+        last_pm_date = None
+        last_pm_repair_id = None
+        if pm_repairs:
+            last_pm_repair = pm_repairs[0]  # Most recent
+            last_pm_date = last_pm_repair.repair_date
+            last_pm_repair_id = last_pm_repair.id
+        
+        # Calculate if due for PM
+        is_due = False
+        days_since_pm = None
+        days_overdue = None
+        
+        if last_pm_date:
+            days_since_pm = (today - last_pm_date).days
+            # PM is due every 3 months (approximately 90 days)
+            days_threshold = pm_threshold_months * 30
+            is_due = days_since_pm >= days_threshold
+            if is_due:
+                days_overdue = days_since_pm - days_threshold
+        else:
+            # No PM found - truck is overdue
+            is_due = True
+            days_overdue = None
+        
+        pm_status.append({
+            "truck_id": truck.id,
+            "truck_name": truck.name,
+            "last_pm_date": last_pm_date.isoformat() if last_pm_date else None,
+            "last_pm_repair_id": last_pm_repair_id,
+            "is_due": is_due,
+            "days_since_pm": days_since_pm,
+            "days_overdue": days_overdue,
+            "pm_threshold_months": pm_threshold_months
+        })
+    
     return {
         "total_trucks": total_trucks,
         "total_settlements": total_settlements,
@@ -192,6 +274,8 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "net_profit": net_profit,
         "expense_categories": expense_categories,
         "truck_profits": truck_profits,
-        "blocks_by_truck_month": blocks_by_truck_month
+        "blocks_by_truck_month": blocks_by_truck_month,
+        "repairs_by_month": repairs_by_month,
+        "pm_status": pm_status
     }
 

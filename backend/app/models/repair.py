@@ -16,6 +16,7 @@ class Repair(Base):
     category = Column(String(50))  # engine, tires, maintenance, etc
     cost = Column(Numeric(10, 2), nullable=False)
     receipt_path = Column(String(255))
+    invoice_number = Column(String(50), nullable=True)  # Invoice number from PDF
     image_paths = Column(JSON, nullable=True)  # List of image file paths
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

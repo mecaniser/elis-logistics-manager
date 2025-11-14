@@ -6,9 +6,10 @@ interface ModalProps {
   title: string
   children: ReactNode
   type?: 'success' | 'error' | 'warning' | 'info'
+  showFooter?: boolean
 }
 
-export default function Modal({ isOpen, onClose, title, children, type = 'info' }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, type = 'info', showFooter = true }: ModalProps) {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -113,30 +114,32 @@ export default function Modal({ isOpen, onClose, title, children, type = 'info' 
           <div className="px-4 sm:px-6 py-3 sm:py-4">
             <div className="text-sm text-gray-700 break-words">{children}</div>
           </div>
-          <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200">
-            <button
-              onClick={onClose}
-              className={`w-full rounded-md px-4 py-2.5 text-sm font-medium text-white ${
-                type === 'error'
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : type === 'warning'
-                  ? 'bg-yellow-600 hover:bg-yellow-700'
-                  : type === 'success'
-                  ? 'bg-green-600 hover:bg-green-700'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                type === 'error'
-                  ? 'focus:ring-red-500'
-                  : type === 'warning'
-                  ? 'focus:ring-yellow-500'
-                  : type === 'success'
-                  ? 'focus:ring-green-500'
-                  : 'focus:ring-blue-500'
-              }`}
-            >
-              OK
-            </button>
-          </div>
+          {showFooter && (
+            <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200">
+              <button
+                onClick={onClose}
+                className={`w-full rounded-md px-4 py-2.5 text-sm font-medium text-white ${
+                  type === 'error'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : type === 'warning'
+                    ? 'bg-yellow-600 hover:bg-yellow-700'
+                    : type === 'success'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                  type === 'error'
+                    ? 'focus:ring-red-500'
+                    : type === 'warning'
+                    ? 'focus:ring-yellow-500'
+                    : type === 'success'
+                    ? 'focus:ring-green-500'
+                    : 'focus:ring-blue-500'
+                }`}
+              >
+                OK
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ class RepairBase(BaseModel):
     category: Optional[str] = None
     cost: Decimal
     receipt_path: Optional[str] = None
+    invoice_number: Optional[str] = None
     image_paths: Optional[List[str]] = None
 
 class RepairCreate(RepairBase):

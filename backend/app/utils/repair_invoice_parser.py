@@ -103,58 +103,146 @@ def parse_repair_invoice_pdf(file_path: str) -> Dict:
                     if vin_match:
                         repair_data["vin"] = vin_match.group(1).upper()
             
-            # Extract Description
-            # Look for work description text - usually appears after the table
-            # Pattern: Look for sentences describing work done (all caps, after SUBTOTAL/TAX)
-            # Example: "REMOVED AND REPLACED STARTER MOTOR. WIRED INVERTER TO BATTERY..."
+            # Extract Description - prioritize table extraction for structured data
+            description_parts = []
             
-            # First, try to find description after TOTAL or TAX line
-            # Look for text that starts with action words and continues
-            work_desc_patterns = [
-                r'(REMOVED[^\n]*(?:\n[^\n]*){0,3}?)(?=\n(?:BALANCE|$))',
-                r'(REPLACED[^\n]*(?:\n[^\n]*){0,3}?)(?=\n(?:BALANCE|$))',
-                r'(INSTALLED[^\n]*(?:\n[^\n]*){0,3}?)(?=\n(?:BALANCE|$))',
-            ]
+            # Method 1: Try to extract from table structure using pdfplumber
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                if tables:
+                    for table in tables:
+                        # Look for description column in table
+                        # Common column names: "DESCRIPTION", "ACTIVITY DESCRIPTION", "WORK DESCRIPTION", "SERVICE DESCRIPTION"
+                        header_row_idx = None
+                        desc_col_idx = None
+                        
+                        # Find header row and description column
+                        for row_idx, row in enumerate(table):
+                            if row and len(row) > 0:
+                                # Check if this row contains column headers
+                                row_text = ' '.join([str(cell) if cell else '' for cell in row]).upper()
+                                if any(keyword in row_text for keyword in ['DESCRIPTION', 'ACTIVITY', 'WORK', 'SERVICE']):
+                                    header_row_idx = row_idx
+                                    # Find which column contains description
+                                    for col_idx, cell in enumerate(row):
+                                        if cell:
+                                            cell_upper = str(cell).upper()
+                                            if any(keyword in cell_upper for keyword in ['DESCRIPTION', 'ACTIVITY', 'WORK', 'SERVICE']):
+                                                desc_col_idx = col_idx
+                                                break
+                                    break
+                        
+                        # Extract description from description column
+                        if header_row_idx is not None and desc_col_idx is not None:
+                            for row_idx in range(header_row_idx + 1, len(table)):
+                                row = table[row_idx]
+                                if row and len(row) > desc_col_idx and row[desc_col_idx]:
+                                    desc_text = str(row[desc_col_idx]).strip()
+                                    # Skip if it's a header, total, or empty
+                                    if desc_text and desc_text.upper() not in ['DESCRIPTION', 'TOTAL', 'SUBTOTAL', 'TAX', 'BALANCE DUE', '']:
+                                        # Clean up the description
+                                        desc_text = re.sub(r'\s+', ' ', desc_text)  # Normalize whitespace
+                                        if len(desc_text) > 5:  # Only add meaningful descriptions
+                                            description_parts.append(desc_text)
             
-            for pattern in work_desc_patterns:
-                desc_match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
-                if desc_match:
-                    description = desc_match.group(1).strip()
-                    # Clean up - remove extra whitespace and newlines
-                    description = re.sub(r'\s+', ' ', description)
-                    # Remove common invoice text and numbers that shouldn't be there
-                    description = re.sub(r'\b(Contact|PHOTOS ATTACHED|TAX\s+\d+|TOTAL\s+\d+)\b', '', description, flags=re.IGNORECASE)
-                    # Remove standalone numbers/decimals that are likely from invoice totals
-                    description = re.sub(r'\s+\.\d+\s+', ' ', description)
-                    description = re.sub(r'\s+\d+\.\d+\s+', ' ', description)
-                    # Remove trailing periods and clean up
-                    description = re.sub(r'\.+$', '', description)
-                    description = re.sub(r'\s+\.\s+', ' ', description)  # Remove standalone periods
-                    description = description.strip()
-                    if len(description) > 10:  # Only use if meaningful
-                        repair_data["description"] = description
-                        break
+            # Method 2: If no table data found, try regex patterns on text
+            if not description_parts:
+                # Look for description after TOTAL or TAX line
+                work_desc_patterns = [
+                    r'(REMOVED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                    r'(REPLACED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                    r'(INSTALLED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                    r'(REPAIRED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                    r'(FIXED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                    r'(SERVICED[^\n]*(?:\n[^\n]*){0,5}?)(?=\n(?:BALANCE|TOTAL|TAX|$))',
+                ]
+                
+                for pattern in work_desc_patterns:
+                    desc_match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+                    if desc_match:
+                        description = desc_match.group(1).strip()
+                        # Clean up - remove extra whitespace and newlines
+                        description = re.sub(r'\s+', ' ', description)
+                        # Remove common invoice text and numbers that shouldn't be there
+                        description = re.sub(r'\b(Contact|PHOTOS ATTACHED|TAX\s+\d+|TOTAL\s+\d+|SUBTOTAL|BALANCE DUE)\b', '', description, flags=re.IGNORECASE)
+                        # Remove standalone numbers/decimals that are likely from invoice totals
+                        description = re.sub(r'\s+\.\d+\s+', ' ', description)
+                        description = re.sub(r'\s+\d+\.\d+\s+', ' ', description)
+                        # Remove trailing periods and clean up
+                        description = re.sub(r'\.+$', '', description)
+                        description = re.sub(r'\s+\.\s+', ' ', description)  # Remove standalone periods
+                        description = description.strip()
+                        if len(description) > 10:  # Only use if meaningful
+                            description_parts.append(description)
+                            break
+                
+                # Method 3: Look for text in ACTIVITY DESCRIPTION column (regex fallback)
+                if not description_parts:
+                    desc_match = re.search(r'ACTIVITY\s+DESCRIPTION\s+([^\n]+(?:\n[^\n]+){0,3})', text, re.IGNORECASE | re.MULTILINE)
+                    if desc_match:
+                        description = desc_match.group(1).strip()
+                        description = re.sub(r'\s+', ' ', description)
+                        description = re.sub(r'\b(TOTAL|SUBTOTAL|TAX|BALANCE)\b', '', description, flags=re.IGNORECASE)
+                        if len(description) > 10:
+                            description_parts.append(description)
             
-            # Fallback: Look for text in ACTIVITY DESCRIPTION column
-            if not repair_data["description"]:
-                # Try to extract from table row
-                desc_match = re.search(r'ACTIVITY DESCRIPTION\s+([^\n]+)', text, re.IGNORECASE)
-                if desc_match:
-                    repair_data["description"] = desc_match.group(1).strip()
+            # Combine all description parts
+            if description_parts:
+                # Join multiple descriptions with semicolons or newlines
+                combined_description = '; '.join(description_parts)
+                # Final cleanup
+                combined_description = re.sub(r'\s+', ' ', combined_description)  # Normalize whitespace
+                combined_description = re.sub(r';\s*;+', ';', combined_description)  # Remove duplicate semicolons
+                combined_description = combined_description.strip('; ').strip()
+                if len(combined_description) > 5:
+                    repair_data["description"] = combined_description
             
             # Try to determine category from description
             if repair_data["description"]:
                 desc_lower = repair_data["description"].lower()
-                if any(word in desc_lower for word in ['starter', 'motor', 'engine']):
-                    repair_data["category"] = "engine"
-                elif any(word in desc_lower for word in ['tire', 'wheel', 'rim']):
-                    repair_data["category"] = "tires"
-                elif any(word in desc_lower for word in ['battery', 'electrical', 'wired', 'inverter']):
-                    repair_data["category"] = "electrical"
-                elif any(word in desc_lower for word in ['brake', 'braking']):
-                    repair_data["category"] = "brakes"
-                elif any(word in desc_lower for word in ['oil', 'filter', 'maintenance']):
-                    repair_data["category"] = "maintenance"
+                
+                # Engine-related keywords
+                engine_keywords = ['starter', 'motor', 'engine', 'crankshaft', 'piston', 'cylinder', 'head gasket', 
+                                  'timing belt', 'serpentine', 'alternator', 'water pump', 'radiator', 'coolant',
+                                  'thermostat', 'fan', 'turbo', 'exhaust', 'manifold', 'catalytic', 'muffler']
+                
+                # Tire-related keywords
+                tire_keywords = ['tire', 'tyre', 'wheel', 'rim', 'lug nut', 'hub', 'bearing', 'axle', 'alignment',
+                                'rotation', 'balance', 'tread', 'valve stem']
+                
+                # Electrical-related keywords
+                electrical_keywords = ['battery', 'electrical', 'wired', 'wire', 'wiring', 'inverter', 'fuse', 'relay',
+                                      'sensor', 'switch', 'light', 'bulb', 'led', 'harness', 'connector', 'ground',
+                                      'starter solenoid', 'ignition', 'spark plug', 'coil']
+                
+                # Brake-related keywords
+                brake_keywords = ['brake', 'braking', 'pad', 'rotor', 'caliper', 'line', 'fluid', 'master cylinder',
+                                 'abs', 'anti-lock']
+                
+                # Maintenance-related keywords
+                maintenance_keywords = ['oil', 'filter', 'air filter', 'fuel filter', 'maintenance', 'service',
+                                       'lube', 'grease', 'fluid change', 'transmission', 'differential', 'transfer case']
+                
+                # Count matches for each category
+                engine_matches = sum(1 for keyword in engine_keywords if keyword in desc_lower)
+                tire_matches = sum(1 for keyword in tire_keywords if keyword in desc_lower)
+                electrical_matches = sum(1 for keyword in electrical_keywords if keyword in desc_lower)
+                brake_matches = sum(1 for keyword in brake_keywords if keyword in desc_lower)
+                maintenance_matches = sum(1 for keyword in maintenance_keywords if keyword in desc_lower)
+                
+                # Assign category based on highest match count
+                category_scores = {
+                    'engine': engine_matches,
+                    'tires': tire_matches,
+                    'electrical': electrical_matches,
+                    'brakes': brake_matches,
+                    'maintenance': maintenance_matches
+                }
+                
+                max_score = max(category_scores.values())
+                if max_score > 0:
+                    # Get category with highest score
+                    repair_data["category"] = max(category_scores, key=category_scores.get)
                 else:
                     repair_data["category"] = "other"
     
