@@ -33,6 +33,21 @@ export default function Settlements() {
     'NBM Transport LLC'
   ]
 
+  // Standard expense categories that should always be displayed
+  const STANDARD_EXPENSE_CATEGORIES = [
+    'fuel',
+    'dispatch_fee',
+    'insurance',
+    'safety',
+    'prepass',
+    'ifta',
+    'driver_pay',
+    'payroll_fee',
+    'truck_parking',
+    'service_on_truck',
+    'other'
+  ]
+
   useEffect(() => {
     loadTrucks()
     loadSettlements()
@@ -55,7 +70,15 @@ export default function Settlements() {
     try {
       setLoading(true)
       const response = await settlementsApi.getAll(selectedTruck || undefined)
-      setSettlements(response.data)
+      const newSettlements = response.data
+      setSettlements(newSettlements)
+      
+      // Clear selections if any selected IDs don't exist in the new settlements
+      const newSettlementIds = new Set(newSettlements.map(s => s.id))
+      const validSelections = Array.from(selectedSettlements).filter(id => newSettlementIds.has(id))
+      if (validSelections.length !== selectedSettlements.size) {
+        setSelectedSettlements(new Set(validSelections))
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load settlements')
     } finally {
@@ -106,6 +129,10 @@ export default function Settlements() {
       } else if (uploadFile) {
         await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType)
         showModal('Success', 'Settlement uploaded successfully!', 'success')
+      } else {
+        showModal('Error', 'Please select a file to upload', 'error')
+        setUploading(false)
+        return
       }
       
       setUploadFile(null)
@@ -113,9 +140,12 @@ export default function Settlements() {
       setSelectedTruckForUpload(null)
       setSelectedSettlementType('')
       setShowUploadForm(false)
+      setSelectedSettlements(new Set()) // Clear any selected settlements
       loadSettlements()
     } catch (err: any) {
-      showModal('Upload Failed', err.response?.data?.detail || err.message || 'Failed to upload settlement', 'error')
+      console.error('Upload error:', err)
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to upload settlement'
+      showModal('Upload Failed', errorMessage, 'error')
     } finally {
       setUploading(false)
     }
@@ -135,14 +165,44 @@ export default function Settlements() {
   }
 
   const handleBulkDelete = async () => {
+    if (selectedSettlements.size === 0) return
+    
     try {
-      await Promise.all(Array.from(selectedSettlements).map(id => settlementsApi.delete(id)))
-      showModal('Success', `Successfully deleted ${selectedSettlements.size} settlement(s)!`, 'success')
+      const deletePromises = Array.from(selectedSettlements).map(async (id) => {
+        try {
+          await settlementsApi.delete(id)
+          return { id, success: true }
+        } catch (err: any) {
+          return { 
+            id, 
+            success: false, 
+            error: err.response?.data?.detail || err.message || 'Unknown error' 
+          }
+        }
+      })
+      
+      const results = await Promise.all(deletePromises)
+      const successful = results.filter(r => r.success).length
+      const failed = results.filter(r => !r.success)
+      
+      if (failed.length > 0) {
+        const errorMessages = failed.map(f => `Settlement ${f.id}: ${f.error}`).join('\n')
+        showModal(
+          'Partial Success',
+          `Deleted ${successful} of ${selectedSettlements.size} settlement(s).\n\nErrors:\n${errorMessages}`,
+          'warning'
+        )
+      } else {
+        showModal('Success', `Successfully deleted ${successful} settlement(s)!`, 'success')
+      }
+      
       setSelectedSettlements(new Set())
+      setSettlementToDelete(null)
       setDeleteMode(false)
       loadSettlements()
     } catch (err: any) {
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete settlements', 'error')
+      setSettlementToDelete(null)
     }
   }
 
@@ -158,8 +218,10 @@ export default function Settlements() {
 
   const handleSelectAll = () => {
     if (selectedSettlements.size === settlements.length) {
+      // Deselect all - this will hide the delete button
       setSelectedSettlements(new Set())
     } else {
+      // Select all - this will show the delete button
       setSelectedSettlements(new Set(settlements.map(s => s.id)))
     }
   }
@@ -177,7 +239,50 @@ export default function Settlements() {
 
   const handleEditSettlement = (settlement: Settlement) => {
     setEditingSettlement(settlement)
-    const categories = settlement.expense_categories || {}
+    // Ensure expense_categories is always an object with all standard categories
+    const existingCategories = settlement.expense_categories && typeof settlement.expense_categories === 'object' 
+      ? settlement.expense_categories 
+      : {}
+    
+    // Initialize all standard categories, using existing values from PDF parsing or 0
+    const categories: { [key: string]: number } = {}
+    
+    // Map old category names to new ones (for backward compatibility)
+    const categoryMapping: { [key: string]: string[] } = {
+      'fees': ['dispatch_fee', 'safety', 'prepass', 'insurance'], // Old "fees" category might contain multiple
+      'other': ['service_on_truck', 'truck_parking', 'other'] // Old "other" category
+    }
+    
+    STANDARD_EXPENSE_CATEGORIES.forEach(category => {
+      // First, check if the category exists directly
+      if (existingCategories[category] !== undefined && existingCategories[category] !== null) {
+        categories[category] = Number(existingCategories[category]) || 0
+      } else {
+        // Check if it's in an old grouped category
+        let found = false
+        for (const [oldCategory, newCategories] of Object.entries(categoryMapping)) {
+          if (newCategories.includes(category) && existingCategories[oldCategory]) {
+            // If the old category exists, we can't split it automatically
+            // So we'll leave it as 0, but the user can manually fill it
+            categories[category] = 0
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          categories[category] = 0
+        }
+      }
+    })
+    
+    // Also include any non-standard categories that might exist (preserve them)
+    Object.keys(existingCategories).forEach(key => {
+      if (!STANDARD_EXPENSE_CATEGORIES.includes(key) && !categoryMapping[key]) {
+        const value = existingCategories[key]
+        categories[key] = value !== undefined && value !== null ? Number(value) || 0 : 0
+      }
+    })
+    
     setEditFormData({
       truck_id: settlement.truck_id,
       driver_id: settlement.driver_id || undefined,
@@ -193,9 +298,23 @@ export default function Settlements() {
       license_plate: settlement.license_plate || undefined,
       settlement_type: settlement.settlement_type || undefined,
     })
+    
+    // Initialize input values - auto-fill with parsed values from PDF
     const inputValues: { [key: string]: string } = {}
     Object.entries(categories).forEach(([key, value]) => {
-      inputValues[key] = value === 0 ? '' : String(value)
+      // Check if this category was parsed from the PDF (exists in original data)
+      const wasParsed = existingCategories[key] !== undefined && existingCategories[key] !== null
+      
+      if (wasParsed) {
+        // Show the parsed value (even if 0, because it was explicitly parsed)
+        inputValues[key] = String(existingCategories[key])
+      } else if (value > 0) {
+        // Show non-zero values that were calculated/derived
+        inputValues[key] = String(value)
+      } else {
+        // Leave empty for unparsed zero values
+        inputValues[key] = ''
+      }
     })
     setExpenseCategoryInputs(inputValues)
   }
@@ -286,8 +405,9 @@ export default function Settlements() {
   const handleAddExpenseCategory = () => {
     const newKey = prompt('Enter category name:')
     if (newKey && newKey.trim()) {
+      const currentCategories = editFormData.expense_categories || {}
       const updated = {
-        ...editFormData.expense_categories,
+        ...currentCategories,
         [newKey.trim()]: 0
       }
       setEditFormData({ ...editFormData, expense_categories: updated })
@@ -320,19 +440,43 @@ export default function Settlements() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlements</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setDeleteMode(!deleteMode)}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-          >
-            {deleteMode ? 'Cancel Delete' : 'Delete Mode'}
-          </button>
-          <button
-            onClick={() => setShowUploadForm(!showUploadForm)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            {showUploadForm ? 'Cancel' : 'Upload Settlement'}
-          </button>
+        <div className="flex gap-2 items-center">
+          {deleteMode ? (
+            <>
+              {selectedSettlements.size > 0 && (
+                <button
+                  onClick={() => setSettlementToDelete(0)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium"
+                >
+                  Delete Selected ({selectedSettlements.size})
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setDeleteMode(false)
+                  setSelectedSettlements(new Set())
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setDeleteMode(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setShowUploadForm(!showUploadForm)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                {showUploadForm ? 'Cancel' : 'Upload Settlement'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -340,27 +484,39 @@ export default function Settlements() {
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Upload Settlement</h2>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Mode</label>
-            <div className="flex gap-4">
-              <label className="flex items-center">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Mode</label>
+            <div className="flex gap-2">
+              <label className="cursor-pointer">
                 <input
                   type="radio"
                   value="single"
                   checked={uploadMode === 'single'}
                   onChange={(e) => setUploadMode(e.target.value as 'single' | 'bulk')}
-                  className="mr-2"
+                  className="sr-only"
                 />
-                Single File
+                <div className={`px-3 py-1.5 border-2 rounded-md text-center text-sm transition-colors whitespace-nowrap ${
+                  uploadMode === 'single'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}>
+                  Single File
+                </div>
               </label>
-              <label className="flex items-center">
+              <label className="cursor-pointer">
                 <input
                   type="radio"
                   value="bulk"
                   checked={uploadMode === 'bulk'}
                   onChange={(e) => setUploadMode(e.target.value as 'single' | 'bulk')}
-                  className="mr-2"
+                  className="sr-only"
                 />
-                Multiple Files
+                <div className={`px-3 py-1.5 border-2 rounded-md text-center text-sm transition-colors whitespace-nowrap ${
+                  uploadMode === 'bulk'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                }`}>
+                  Multiple Files
+                </div>
               </label>
             </div>
           </div>
@@ -437,21 +593,6 @@ export default function Settlements() {
         </div>
       )}
 
-      {deleteMode && selectedSettlements.size > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm font-medium text-blue-900">
-              {selectedSettlements.size} settlement{selectedSettlements.size !== 1 ? 's' : ''} selected
-            </div>
-            <button
-              onClick={() => setSettlementToDelete(0)}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-            >
-              Delete Selected
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
@@ -475,7 +616,9 @@ export default function Settlements() {
               {settlements.map((settlement) => (
                 <li 
                   key={settlement.id} 
-                  className={`px-6 py-4 ${deleteMode ? 'hover:bg-gray-50' : 'hover:bg-gray-50 cursor-pointer'} transition-colors`}
+                  className={`px-6 py-4 hover:bg-gray-50 transition-colors ${
+                    deleteMode ? '' : 'cursor-pointer'
+                  }`}
                   onClick={() => !deleteMode && handleEditSettlement(settlement)}
                 >
                   <div className="flex items-center justify-between">
@@ -488,6 +631,7 @@ export default function Settlements() {
                             e.stopPropagation()
                             handleSelectSettlement(settlement.id)
                           }}
+                          onClick={(e) => e.stopPropagation()}
                           className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                       )}
@@ -603,7 +747,7 @@ export default function Settlements() {
           <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCancelEdit} />
           <div className="flex min-h-full items-center justify-center p-4">
             <div
-              className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-7xl mx-4 max-h-[90vh] flex flex-col"
+              className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-7xl mx-4 max-h-[95vh] lg:max-h-[98vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -623,11 +767,11 @@ export default function Settlements() {
                     {editingSettlement.pdf_file_path ? (
                       <iframe
                         src={getPdfUrl(editingSettlement.pdf_file_path)}
-                        className="w-full h-[600px] border border-gray-300 rounded-lg"
+                        className="w-full h-[600px] lg:h-[80vh] border border-gray-300 rounded-lg"
                         title="Settlement PDF"
                       />
                     ) : (
-                      <div className="w-full h-[600px] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                      <div className="w-full h-[600px] lg:h-[80vh] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
                         <p className="text-gray-500">No PDF available</p>
                       </div>
                     )}
@@ -722,55 +866,113 @@ export default function Settlements() {
                           + Add Category
                         </button>
                       </div>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {editFormData.expense_categories && Object.entries(editFormData.expense_categories).map(([key, value]) => (
-                          <div key={key} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={key}
-                              onChange={(e) => {
-                                const newKey = e.target.value
-                                if (newKey !== key) {
-                                  handleExpenseCategoryChange(key, newKey, value || 0)
-                                }
-                              }}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 ? '' : String(value))}
-                              onChange={(e) => {
-                                const inputValue = e.target.value
-                                if (inputValue === '' || /^\d*\.?\d*$/.test(inputValue)) {
-                                  handleExpenseCategoryAmountChange(key, inputValue)
-                                }
-                              }}
-                              onBlur={(e) => {
-                                const inputValue = e.target.value.trim()
-                                if (inputValue === '' || inputValue === '.') {
-                                  handleExpenseCategoryChange(key, key, 0)
-                                  setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                } else {
-                                  const numValue = parseFloat(inputValue)
-                                  if (!isNaN(numValue)) {
-                                    handleExpenseCategoryChange(key, key, numValue)
-                                    setExpenseCategoryInputs(prev => ({ ...prev, [key]: String(numValue) }))
-                                  }
-                                }
-                              }}
-                              className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              placeholder="0.00"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveExpenseCategory(key)}
-                              className="text-red-600 hover:text-red-800 px-2"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
+                      <div className="space-y-2 max-h-96 lg:max-h-[70vh] overflow-y-auto">
+                        {editFormData.expense_categories ? (
+                          <>
+                            {/* Display standard categories first */}
+                            {STANDARD_EXPENSE_CATEGORIES.map((category) => {
+                              const value = editFormData.expense_categories![category] || 0
+                              const displayName = category.split('_').map(word => 
+                                word.charAt(0).toUpperCase() + word.slice(1)
+                              ).join(' ')
+                              return (
+                                <div key={category} className="flex items-center gap-2">
+                                  <label className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm font-medium text-gray-700">
+                                    {displayName}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : String(value))}
+                                    onChange={(e) => {
+                                      const inputValue = e.target.value
+                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                        handleExpenseCategoryAmountChange(category, inputValue)
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const inputValue = e.target.value.trim()
+                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                        handleExpenseCategoryChange(category, category, 0)
+                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                      } else {
+                                        const numValue = parseFloat(inputValue)
+                                        if (!isNaN(numValue)) {
+                                          handleExpenseCategoryChange(category, category, numValue)
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: String(numValue) }))
+                                        } else {
+                                          handleExpenseCategoryChange(category, category, 0)
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                        }
+                                      }
+                                    }}
+                                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    placeholder="0.00"
+                                  />
+                                  <div className="w-8"></div>
+                                </div>
+                              )
+                            })}
+                            {/* Display any additional non-standard categories */}
+                            {Object.entries(editFormData.expense_categories)
+                              .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
+                              .map(([key, value]) => (
+                                <div key={key} className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={key}
+                                    onChange={(e) => {
+                                      const newKey = e.target.value
+                                      if (newKey !== key) {
+                                        handleExpenseCategoryChange(key, newKey, value || 0)
+                                      }
+                                    }}
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    placeholder="Category name"
+                                  />
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : String(value))}
+                                    onChange={(e) => {
+                                      const inputValue = e.target.value
+                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                        handleExpenseCategoryAmountChange(key, inputValue)
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const inputValue = e.target.value.trim()
+                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                        handleExpenseCategoryChange(key, key, 0)
+                                        setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                      } else {
+                                        const numValue = parseFloat(inputValue)
+                                        if (!isNaN(numValue)) {
+                                          handleExpenseCategoryChange(key, key, numValue)
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: String(numValue) }))
+                                        } else {
+                                          handleExpenseCategoryChange(key, key, 0)
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                        }
+                                      }
+                                    }}
+                                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    placeholder="0.00"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveExpenseCategory(key)}
+                                    className="text-red-600 hover:text-red-800 px-2"
+                                    title="Remove category"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                          </>
+                        ) : (
+                          <p className="text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
+                        )}
                       </div>
                     </div>
                   </div>
