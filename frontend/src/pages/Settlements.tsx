@@ -643,18 +643,15 @@ export default function Settlements() {
     
     // Allow empty values during typing - don't update the category value yet
     // Only update on blur
-    if (value === '' || value === '.') {
+    if (value === '' || value === '.' || value === '-') {
       // Keep the input empty, but don't update the category value yet
       // The category value will be updated on blur
       return
     }
     
-    let cleanedValue = value
-    // Remove leading zeros (but preserve "0.05" type values)
-    if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
-      cleanedValue = cleanedValue.substring(1)
-    }
-    const numValue = parseFloat(cleanedValue)
+    // Parse the value, preserving negative sign
+    // parseCurrencyInput already cleaned it, so we can parse directly
+    const numValue = parseFloat(value)
     const updated = { ...editFormData.expense_categories }
     updated[key] = isNaN(numValue) ? 0 : numValue
     
@@ -1516,27 +1513,11 @@ export default function Settlements() {
                                           
                                           // Update category value during typing to recalculate net profit
                                           // But don't format the input until blur
-                                          if (inputValue === '' || inputValue === '.') {
+                                          if (inputValue === '' || inputValue === '.' || inputValue === '-') {
                                             handleExpenseCategoryChange(key, key, 0)
                                           } else {
-                                            let cleanedValue = inputValue
-                                            // Remove leading zeros (but preserve "0.05" type values and minus sign)
-                                            const isNegative = cleanedValue.startsWith('-')
-                                            if (isNegative) {
-                                              cleanedValue = cleanedValue.substring(1)
-                                            }
-                                            if (cleanedValue.length > 1 && cleanedValue[0] === '0' && cleanedValue[1] !== '.') {
-                                              cleanedValue = cleanedValue.substring(1)
-                                            }
-                                            if (isNegative) {
-                                              cleanedValue = '-' + cleanedValue
-                                            }
-                                            const numValue = parseFloat(cleanedValue)
-                                            if (!isNaN(numValue)) {
-                                              handleExpenseCategoryChange(key, key, numValue)
-                                            } else {
-                                              handleExpenseCategoryChange(key, key, 0)
-                                            }
+                                            // Parse the value, preserving negative sign
+                                            handleExpenseCategoryAmountChange(key, inputValue)
                                           }
                                         }
                                       }}

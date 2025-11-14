@@ -57,6 +57,68 @@ export default function Dashboard() {
   ].filter(item => item.value > 0) : []
 
   const truckProfitsData = data.truck_profits || []
+  const blocksByTruckMonth = data.blocks_by_truck_month || []
+
+  // Process blocks data for chart
+  const processBlocksData = () => {
+    if (blocksByTruckMonth.length === 0) return { months: [], series: [], averageLine: [] }
+    
+    // Get all unique months
+    const monthSet = new Set<string>()
+    blocksByTruckMonth.forEach(item => {
+      monthSet.add(item.month_key)
+    })
+    const months = Array.from(monthSet).sort()
+    
+    // Get all unique trucks
+    const truckSet = new Set<number>()
+    blocksByTruckMonth.forEach(item => {
+      truckSet.add(item.truck_id)
+    })
+    const truckIds = Array.from(truckSet)
+    
+    // Get truck names
+    const truckMap = new Map<number, string>()
+    trucks.forEach(truck => {
+      truckMap.set(truck.id, truck.name)
+    })
+    
+    // Create series for each truck
+    const series = truckIds.map(truckId => {
+      const truckName = truckMap.get(truckId) || `Truck ${truckId}`
+      const data = months.map(monthKey => {
+        const item = blocksByTruckMonth.find(
+          d => d.truck_id === truckId && d.month_key === monthKey
+        )
+        return item ? item.blocks : 0
+      })
+      
+      return {
+        name: truckName,
+        type: 'bar',
+        data: data
+      }
+    })
+    
+    // Calculate average blocks per month across all trucks
+    const averageLine = months.map(monthKey => {
+      const monthData = blocksByTruckMonth.filter(d => d.month_key === monthKey)
+      if (monthData.length === 0) return 0
+      const totalBlocks = monthData.reduce((sum, d) => sum + d.blocks, 0)
+      const avgBlocks = totalBlocks / monthData.length
+      return Math.round(avgBlocks * 100) / 100 // Round to 2 decimal places
+    })
+    
+    // Format month labels
+    const monthLabels = months.map(monthKey => {
+      const item = blocksByTruckMonth.find(d => d.month_key === monthKey)
+      return item ? item.month : monthKey
+    })
+    
+    return { months: monthLabels, series, averageLine }
+  }
+
+  const blocksChartData = processBlocksData()
 
   return (
     <div>
@@ -296,6 +358,142 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {blocksChartData.series.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Blocks Delivered by Truck (Monthly)</h2>
+          <ReactECharts
+            option={{
+              tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                  type: 'shadow'
+                },
+                formatter: (params: any) => {
+                  let result = `${params[0]?.axisValue}<br/>`
+                  params.forEach((param: any) => {
+                    result += `${param.seriesName}: ${param.value} blocks<br/>`
+                  })
+                  return result
+                },
+                backgroundColor: '#fff',
+                borderColor: '#e5e7eb',
+                borderWidth: 1,
+                borderRadius: 8,
+                padding: [8, 12]
+              },
+              legend: {
+                data: [...blocksChartData.series.map(s => s.name), 'Average'],
+                top: 30,
+                textStyle: {
+                  fontSize: 12
+                }
+              },
+              grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                top: '15%',
+                containLabel: true
+              },
+              xAxis: {
+                type: 'category',
+                data: blocksChartData.months,
+                axisLabel: {
+                  rotate: blocksChartData.months.length > 6 ? 45 : 0,
+                  fontSize: 11
+                }
+              },
+              yAxis: {
+                type: 'value',
+                name: 'Blocks',
+                axisLabel: {
+                  formatter: (value: number) => Math.round(value).toString()
+                }
+              },
+              series: [
+                ...blocksChartData.series.map(series => ({
+                  ...series,
+                  itemStyle: {
+                    borderRadius: [4, 4, 0, 0],
+                    color: (params: any) => {
+                      // Color bars based on whether they meet the 11 blocks target
+                      return params.value >= 11 ? '#10b981' : '#ef4444'
+                    }
+                  },
+                  label: {
+                    show: true,
+                    position: 'inside',
+                    formatter: (params: any) => {
+                      const value = params.value || 0
+                      return value > 0 ? value.toString() : ''
+                    },
+                    fontSize: 10,
+                    color: '#fff'
+                  },
+                  markLine: {
+                    silent: true,
+                    lineStyle: {
+                      color: '#f59e0b',
+                      type: 'dashed',
+                      width: 2
+                    },
+                    label: {
+                      show: true,
+                      position: 'end',
+                      formatter: 'Target: 11 blocks',
+                      color: '#f59e0b',
+                      fontSize: 11,
+                      fontWeight: 'bold'
+                    },
+                    data: [
+                      {
+                        yAxis: 11,
+                        name: 'Target'
+                      }
+                    ]
+                  }
+                })),
+                // Add average line
+                {
+                  name: 'Average',
+                  type: 'line',
+                  data: blocksChartData.averageLine,
+                  lineStyle: {
+                    color: '#6366f1',
+                    width: 2,
+                    type: 'solid'
+                  },
+                  itemStyle: {
+                    color: '#6366f1'
+                  },
+                  symbol: 'circle',
+                  symbolSize: 6,
+                  label: {
+                    show: true,
+                    position: 'top',
+                    formatter: (params: any) => {
+                      const value = params.value || 0
+                      return value > 0 ? value.toFixed(1) : ''
+                    },
+                    fontSize: 10,
+                    color: '#6366f1',
+                    fontWeight: 'bold'
+                  },
+                  tooltip: {
+                    formatter: (params: any) => {
+                      const value = params.value || 0
+                      return `Average: ${value.toFixed(2)} blocks`
+                    }
+                  }
+                }
+              ]
+            }}
+            style={{ height: '450px', width: '100%' }}
+            opts={{ renderer: 'svg' }}
+          />
+        </div>
+      )}
     </div>
   )
 }

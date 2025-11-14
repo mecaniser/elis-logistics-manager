@@ -4,7 +4,7 @@ PDF parser for Amazon Relay settlement files
 import pdfplumber
 import re
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 
 
 def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
@@ -216,8 +216,10 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                     (r'Deductions\s+\$?([\d,]+\.?\d*)', 'custom'),
                 ]
             
-            # Special handling for NBM settlement type: look for "driver's pay" and "driver's pay fee" rows
-            if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+            # Special handling for settlement types that explicitly list "driver's pay" and "driver's pay fee"
+            # NBM Transport LLC and 277 Logistics both have these fields explicitly listed
+            settlement_type_upper = settlement_type.upper() if settlement_type else ""
+            if settlement_type_upper in ["NBM TRANSPORT LLC", "277 LOGISTICS"]:
                 # Look for "DRIVER'S PAY" and "DRIVER'S PAY FEE" rows specifically
                 # Format 2 (income sheet): amounts in parentheses like "($ 1,234.56)"
                 drivers_pay_match = re.search(r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)", text, re.IGNORECASE)
@@ -243,8 +245,9 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
             if is_income_sheet_format:
                 lines = text.split('\n')
                 for line in lines:
-                    # Skip processing driver's pay and payroll fee for NBM if already found above
-                    if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+                    # Skip processing driver's pay and payroll fee for settlement types that explicitly list them
+                    settlement_type_upper = settlement_type.upper() if settlement_type else ""
+                    if settlement_type_upper in ["NBM TRANSPORT LLC", "277 LOGISTICS"]:
                         if re.search(r"DRIVER'S PAY", line, re.IGNORECASE) or re.search(r"DRIVER'S PAY FEE", line, re.IGNORECASE):
                             continue
                     
@@ -264,8 +267,9 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                                 amount = float(amount_str)
                                 
                                 # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
-                                # Skip this for NBM as we handle it separately above
-                                if category == 'driver_pay' and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
+                                # Skip this for settlement types that explicitly list driver's pay and payroll fee
+                                settlement_type_upper = settlement_type.upper() if settlement_type else ""
+                                if category == 'driver_pay' and settlement_type_upper not in ["NBM TRANSPORT LLC", "277 LOGISTICS"]:
                                     driver_pay_gross = amount
                                     # Check if payroll fee was already found (e.g., from DISPATCH FEE line)
                                     if expense_categories["payroll_fee"] > 0:
@@ -305,8 +309,9 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                             amount = float(amount_str)
                             
                             # Special handling: if driver's pay is found, treat as gross and calculate base + payroll fee
-                            # Skip this for NBM as we handle it separately above
-                            if category == 'driver_pay' and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
+                            # Skip this for settlement types that explicitly list driver's pay and payroll fee
+                            settlement_type_upper = settlement_type.upper() if settlement_type else ""
+                            if category == 'driver_pay' and settlement_type_upper not in ["NBM TRANSPORT LLC", "277 LOGISTICS"]:
                                 driver_pay_gross = amount
                                 # Check if payroll fee was already found
                                 if expense_categories["payroll_fee"] > 0:
@@ -327,8 +332,9 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                                 total_expenses += amount
                 
                 # Format 1: Also check for Driver's Pay separately (in case it wasn't caught above)
-                # Skip this for NBM as we handle it separately above
-                if expense_categories["driver_pay"] == 0 and not (settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC"):
+                # Skip this for settlement types that explicitly list driver's pay and payroll fee
+                settlement_type_upper = settlement_type.upper() if settlement_type else ""
+                if expense_categories["driver_pay"] == 0 and settlement_type_upper not in ["NBM TRANSPORT LLC", "277 LOGISTICS"]:
                     drivers_pay_match = re.search(r"Driver's Pay\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
                     if drivers_pay_match:
                         driver_pay_gross = float(drivers_pay_match.group(1).replace(",", ""))
@@ -431,11 +437,16 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                 except Exception:
                     pass
                 
-                # Fallback: Count unique P/L values from text using regex
+                # Fallback: Count unique P/L values from text using regex (more strict)
                 if not blocks_found:
-                    # Find all route codes (e.g., "VDF2-CLT5", "18BV-GSP1")
-                    route_codes = re.findall(r'\b([A-Z0-9]+-[A-Z0-9]+)\b', text)
-                    # Find all date ranges (e.g., "06/04-06/06/2025")
+                    # Find route codes (e.g., "VDF2-CLT5", "18BV-GSP1") - must have letters and numbers
+                    # Pattern: 2-4 uppercase letters/numbers, dash, 2-4 uppercase letters/numbers
+                    route_codes = re.findall(r'\b([A-Z0-9]{2,4}-[A-Z0-9]{2,4})\b', text)
+                    # Filter out false positives (like "23-02" which are just numbers)
+                    # Route codes should have at least one letter
+                    route_codes = [rc for rc in route_codes if re.search(r'[A-Z]', rc)]
+                    
+                    # Find date ranges (e.g., "06/04-06/06/2025") - must be full date format
                     date_ranges = re.findall(r'\b(\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4})\b', text)
                     
                     # Combine and count unique values
@@ -517,4 +528,252 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
         raise Exception(f"Error parsing PDF: {str(e)}")
     
     return settlement_data
+
+
+def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = None) -> List[Dict]:
+    """
+    Parse Amazon Relay settlement PDF that contains multiple trucks (e.g., NBM with vv9952 and vw1503).
+    Returns a list of settlement data dictionaries, one for each truck/license plate.
+    """
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            # Extract text from all pages
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+            
+            # Extract common date information
+            settlement_date = None
+            week_start = None
+            week_end = None
+            
+            # Extract Pay Period date
+            pay_period_match = re.search(r'Pay Period:\s*(\d{1,2}/\d{1,2}/\d{4})', text, re.IGNORECASE)
+            if pay_period_match:
+                try:
+                    settlement_date = datetime.strptime(pay_period_match.group(1), "%m/%d/%Y").date()
+                    week_end = settlement_date
+                except ValueError:
+                    pass
+            
+            # Find license plates from "Plate#:" line
+            plate_line_match = re.search(r'Plate#:\s*([^\n]+)', text, re.IGNORECASE)
+            license_plates = set()
+            
+            if plate_line_match:
+                plate_text = plate_line_match.group(1).strip()
+                # Extract all license plates from the plate line (e.g., "VV9952 VW1503")
+                plate_matches = re.findall(r'\b([A-Z]{2,3}\d{3,6})\b', plate_text, re.IGNORECASE)
+                for plate in plate_matches:
+                    license_plates.add(plate.upper())
+            
+            # Also search for plates in block rows (B-XXXXX rows)
+            # Handle cases where plate might be concatenated with driver name (e.g., "VereenVW1503")
+            block_plate_matches = re.findall(r'B-[A-Z0-9]+\s+[^\n]*?([A-Z]{2,3}\d{3,6})\b', text, re.IGNORECASE)
+            for plate in block_plate_matches:
+                license_plates.add(plate.upper())
+            
+            # Also search for plates that might be concatenated (no space before plate)
+            # Pattern: letters followed immediately by plate pattern
+            concatenated_plates = re.findall(r'([A-Z][a-z]+)([A-Z]{2,3}\d{3,6})', text)
+            for _, plate in concatenated_plates:
+                license_plates.add(plate.upper())
+            
+            if len(license_plates) < 2:
+                # If we don't find multiple plates, fallback to single truck parsing
+                single_settlement = parse_amazon_relay_pdf(file_path, settlement_type)
+                return [single_settlement]
+            
+            # Extract shared expenses (to be divided by 2)
+            shared_expenses = {
+                "safety": 0.0,
+                "prepass": 0.0,
+                "insurance": 0.0
+            }
+            
+            # Extract shared expenses from summary section
+            safety_match = re.search(r'Safety\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            if safety_match:
+                shared_expenses["safety"] = float(safety_match.group(1).replace(",", ""))
+            
+            prepass_match = re.search(r'Prepass\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            if prepass_match:
+                shared_expenses["prepass"] = float(prepass_match.group(1).replace(",", ""))
+            
+            insurance_match = re.search(r'Insurance\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            if insurance_match:
+                shared_expenses["insurance"] = float(insurance_match.group(1).replace(",", ""))
+            
+            # Extract other shared expenses
+            ifta_match = re.search(r'IFTA\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            ifta_total = float(ifta_match.group(1).replace(",", "")) if ifta_match else 0.0
+            
+            dispatch_fee_match = re.search(r'Dispatch Fee\s+\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+            dispatch_fee_total = float(dispatch_fee_match.group(1).replace(",", "")) if dispatch_fee_match else 0.0
+            
+            # Parse block rows to get per-truck data
+            # Format: B-XXXXX Driver Name PLATE Pay Amount Driver's pay Fuel amount
+            # Group blocks by license plate
+            plate_data = {}
+            for plate in license_plates:
+                plate_data[plate] = {
+                    "gross_revenue": 0.0,
+                    "driver_pay": 0.0,
+                    "fuel": 0.0,
+                    "blocks": 0
+                }
+            
+            # Parse each block row - need to handle multi-line fuel entries
+            lines = text.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                # Look for block rows (B-XXXXX pattern)
+                if re.search(r'B-[A-Z0-9]+', line):
+                    # Extract license plate from this line (handle concatenated cases)
+                    plate_match = None
+                    # Try normal pattern first
+                    plate_match = re.search(r'\b([A-Z]{2,3}\d{3,6})\b', line, re.IGNORECASE)
+                    if not plate_match:
+                        # Try concatenated pattern (e.g., "VereenVW1503")
+                        concat_match = re.search(r'([A-Z][a-z]+)([A-Z]{2,3}\d{3,6})', line)
+                        if concat_match:
+                            plate_match = type('obj', (object,), {'group': lambda self, n: concat_match.group(2)})()
+                    
+                    if plate_match:
+                        plate = plate_match.group(1).upper()
+                        if plate in plate_data:
+                            # Extract all dollar amounts from this line
+                            dollar_amounts = re.findall(r'\$([\d,]+\.?\d*)', line)
+                            
+                            if len(dollar_amounts) >= 1:
+                                # First $ amount is Pay Amount
+                                pay_amount = float(dollar_amounts[0].replace(",", ""))
+                                plate_data[plate]["gross_revenue"] += pay_amount
+                                plate_data[plate]["blocks"] += 1
+                            
+                            if len(dollar_amounts) >= 2:
+                                # Second $ amount is Driver's pay
+                                driver_pay = float(dollar_amounts[1].replace(",", ""))
+                                plate_data[plate]["driver_pay"] += driver_pay
+                            
+                            # Extract fuel amount - look for pattern: date time $amount
+                            # Fuel can be on same line after date/time or on next line(s)
+                            fuel_found = False
+                            
+                            # Check for fuel on same line (after date/time pattern)
+                            fuel_on_line = re.search(r'\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+\$([\d,]+\.?\d*)', line)
+                            if fuel_on_line:
+                                fuel_amount = float(fuel_on_line.group(1).replace(",", ""))
+                                plate_data[plate]["fuel"] += fuel_amount
+                                fuel_found = True
+                            
+                            # If no fuel found with date/time pattern, check if 4th dollar amount is fuel
+                            # (Some blocks have: Pay Amount, Driver's pay, Miles, Fuel)
+                            if not fuel_found and len(dollar_amounts) >= 4:
+                                # The 4th amount might be fuel (skip the 3rd which is usually miles)
+                                fuel_amount = float(dollar_amounts[3].replace(",", ""))
+                                # Only add if it's a reasonable fuel amount (less than $10,000)
+                                if fuel_amount < 10000:
+                                    plate_data[plate]["fuel"] += fuel_amount
+                                    fuel_found = True
+                            
+                            # Check next line(s) for fuel amount (common pattern)
+                            # Keep checking until we hit another block or summary section
+                            check_idx = i + 1
+                            while check_idx < len(lines) and check_idx < i + 5:  # Check up to 4 lines ahead
+                                next_line = lines[check_idx]
+                                
+                                # Stop if we hit another block or summary section
+                                if re.search(r'B-[A-Z0-9]+', next_line) or re.search(r'^(Gross Pay|Driver|Fuel|Safety|Prepass|Insurance|IFTA|Dispatch)', next_line, re.IGNORECASE):
+                                    break
+                                
+                                # Look for fuel pattern: date time $amount
+                                fuel_match = re.search(r'\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}:\d{2}\s+\$([\d,]+\.?\d*)', next_line)
+                                if fuel_match:
+                                    fuel_amount = float(fuel_match.group(1).replace(",", ""))
+                                    plate_data[plate]["fuel"] += fuel_amount
+                                    check_idx += 1
+                                else:
+                                    check_idx += 1
+                            
+                            # Update i if we skipped fuel lines
+                            if check_idx > i + 1:
+                                i = check_idx - 1  # Will be incremented at end of loop
+                i += 1
+            
+            # Extract Driver's Pay Fee from summary (divide proportionally by driver pay)
+            drivers_pay_fee_match = re.search(r"Driver's Pay Fee\s+\$?([\d,]+\.?\d*)", text, re.IGNORECASE)
+            drivers_pay_fee_total = float(drivers_pay_fee_match.group(1).replace(",", "")) if drivers_pay_fee_match else 0.0
+            
+            # Calculate total driver pay for proportional division
+            total_driver_pay = sum(data["driver_pay"] for data in plate_data.values())
+            
+            # Parse data for each license plate
+            settlements = []
+            
+            # Create settlement for each license plate using parsed block data
+            for license_plate in license_plates:
+                if license_plate not in plate_data or plate_data[license_plate]["gross_revenue"] == 0:
+                    continue
+                
+                data = plate_data[license_plate]
+                
+                # Create base settlement data
+                plate_settlement = {
+                    "settlement_date": settlement_date,
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "miles_driven": None,
+                    "blocks_delivered": data["blocks"],
+                    "gross_revenue": data["gross_revenue"],
+                    "expenses": None,
+                    "net_profit": None,
+                    "driver_id": None,
+                    "license_plate": license_plate,
+                }
+                
+                # Initialize expense categories
+                expense_categories = {
+                    "fuel": data["fuel"],
+                    "dispatch_fee": 0.0,
+                    "insurance": shared_expenses["insurance"] / 2.0,  # Divide by 2
+                    "safety": shared_expenses["safety"] / 2.0,  # Divide by 2
+                    "prepass": shared_expenses["prepass"] / 2.0,  # Divide by 2
+                    "ifta": ifta_total / 2.0,  # Divide by 2
+                    "driver_pay": data["driver_pay"],
+                    "payroll_fee": 0.0,
+                    "truck_parking": 0.0,
+                    "service_on_truck": 0.0,
+                    "custom": 0.0
+                }
+                
+                # Calculate dispatch fee proportionally by gross revenue
+                total_gross = sum(pd["gross_revenue"] for pd in plate_data.values())
+                if total_gross > 0:
+                    expense_categories["dispatch_fee"] = (dispatch_fee_total * data["gross_revenue"]) / total_gross
+                
+                # Calculate payroll fee proportionally by driver pay
+                if total_driver_pay > 0:
+                    expense_categories["payroll_fee"] = (drivers_pay_fee_total * data["driver_pay"]) / total_driver_pay
+                
+                # Calculate total expenses
+                total_expenses = sum(expense_categories.values())
+                
+                # Calculate net profit
+                plate_settlement["net_profit"] = data["gross_revenue"] - total_expenses
+                plate_settlement["expenses"] = total_expenses
+                plate_settlement["expense_categories"] = expense_categories
+                
+                settlements.append(plate_settlement)
+            
+            # If no settlements found, fallback to single truck parsing
+            if not settlements:
+                single_settlement = parse_amazon_relay_pdf(file_path, settlement_type)
+                return [single_settlement]
+            
+            return settlements
+            
+    except Exception as e:
+        raise Exception(f"Error parsing multi-truck PDF: {str(e)}")
 

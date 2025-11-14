@@ -121,6 +121,69 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
             "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)
         })
     
+    # Get blocks by truck and month
+    blocks_by_truck_month = []
+    trucks_for_blocks = trucks_query.all()
+    
+    for truck in trucks_for_blocks:
+        truck_settlements = db.query(Settlement).filter(Settlement.truck_id == truck.id)
+        if truck_id is not None:
+            # Already filtered above
+            pass
+        
+        # Group settlements by month based on week_start if available, otherwise settlement_date
+        # Apply 28th cutoff: if week_start is >= 28th, count in next month
+        # If week_start is in previous month, count in that month (not settlement_date month)
+        settlements_by_month = {}
+        for settlement in truck_settlements.all():
+            if settlement.blocks_delivered:
+                date_to_use = None
+                
+                if settlement.week_start:
+                    # Use week_start to determine month
+                    # If week_start is >= 28th, move to next month
+                    if settlement.week_start.day >= 28:
+                        if settlement.week_start.month == 12:
+                            date_to_use = settlement.week_start.replace(year=settlement.week_start.year + 1, month=1, day=1)
+                        else:
+                            date_to_use = settlement.week_start.replace(month=settlement.week_start.month + 1, day=1)
+                    else:
+                        # Use week_start's actual month
+                        date_to_use = settlement.week_start
+                elif settlement.settlement_date:
+                    # Fallback to settlement_date if week_start not available
+                    # Apply same 28th cutoff
+                    if settlement.settlement_date.day >= 28:
+                        if settlement.settlement_date.month == 12:
+                            date_to_use = settlement.settlement_date.replace(year=settlement.settlement_date.year + 1, month=1, day=1)
+                        else:
+                            date_to_use = settlement.settlement_date.replace(month=settlement.settlement_date.month + 1, day=1)
+                    else:
+                        date_to_use = settlement.settlement_date
+                
+                if date_to_use:
+                    month_key = date_to_use.strftime("%Y-%m")
+                    month_label = date_to_use.strftime("%b %Y")
+                    
+                    if month_key not in settlements_by_month:
+                        settlements_by_month[month_key] = {
+                            "month": month_label,
+                            "month_key": month_key,
+                            "blocks": 0
+                        }
+                    
+                    settlements_by_month[month_key]["blocks"] += int(settlement.blocks_delivered) if settlement.blocks_delivered else 0
+        
+        # Convert to list and sort by month
+        for month_key in sorted(settlements_by_month.keys()):
+            blocks_by_truck_month.append({
+                "truck_id": truck.id,
+                "truck_name": truck.name,
+                "month": settlements_by_month[month_key]["month"],
+                "month_key": settlements_by_month[month_key]["month_key"],
+                "blocks": settlements_by_month[month_key]["blocks"]
+            })
+    
     return {
         "total_trucks": total_trucks,
         "total_settlements": total_settlements,
@@ -128,6 +191,7 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "total_expenses": float(total_expenses_sum),
         "net_profit": net_profit,
         "expense_categories": expense_categories,
-        "truck_profits": truck_profits
+        "truck_profits": truck_profits,
+        "blocks_by_truck_month": blocks_by_truck_month
     }
 

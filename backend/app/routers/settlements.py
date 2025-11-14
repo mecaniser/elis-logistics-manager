@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.truck import Truck
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
-from app.utils.pdf_parser import parse_amazon_relay_pdf
+from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_multi_truck
 import os
 from datetime import datetime
 
@@ -45,63 +45,105 @@ async def upload_settlement_pdf(
     
     # Parse PDF
     try:
-        settlement_data = parse_amazon_relay_pdf(file_path, settlement_type)
-        
-        # Determine truck_id - use provided, or auto-detect from license plate
-        if truck_id:
-            settlement_data["truck_id"] = truck_id
+        # Use multi-truck parser ONLY for NBM Transport LLC settlements (multiple trucks per PDF)
+        # All other settlement types (e.g., "277 Logistics") have one truck per PDF - use single-truck parser
+        if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+            settlements_data = parse_amazon_relay_pdf_multi_truck(file_path, settlement_type)
         else:
-            # Auto-detect truck from license plate
-            license_plate = settlement_data.get("license_plate")
-            if license_plate:
-                # Try to find truck by current license plate
-                truck = db.query(Truck).filter(Truck.license_plate == license_plate).first()
-                if not truck and hasattr(Truck, 'license_plate_history'):
-                    # Try to find in license plate history (if JSON column exists)
-                    trucks = db.query(Truck).all()
-                    for t in trucks:
-                        if t.license_plate_history and license_plate in t.license_plate_history:
-                            truck = t
-                            break
-                
-                if truck:
-                    settlement_data["truck_id"] = truck.id
-                else:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Could not find truck with license plate '{license_plate}'. Please select a truck manually."
-                    )
+            # Single-truck parser for all other settlement types (277 Logistics, etc.)
+            settlements_data = [parse_amazon_relay_pdf(file_path, settlement_type)]
+        
+        created_settlements = []
+        
+        for settlement_data in settlements_data:
+            # Determine truck_id - use provided, or auto-detect from license plate
+            if truck_id:
+                settlement_data["truck_id"] = truck_id
             else:
+                # Auto-detect truck from license plate (check both current and historic plates)
+                license_plate = settlement_data.get("license_plate")
+                if license_plate:
+                    license_plate_upper = license_plate.upper()
+                    # Try to find truck by current license plate
+                    truck = db.query(Truck).filter(Truck.license_plate.ilike(license_plate_upper)).first()
+                    if not truck:
+                        # Try to find in license plate history
+                        trucks = db.query(Truck).all()
+                        for t in trucks:
+                            # Check current plate (case insensitive)
+                            if t.license_plate and t.license_plate.upper() == license_plate_upper:
+                                truck = t
+                                break
+                            # Check historic plates
+                            if t.license_plate_history:
+                                if isinstance(t.license_plate_history, list):
+                                    if any(plate.upper() == license_plate_upper for plate in t.license_plate_history if plate):
+                                        truck = t
+                                        break
+                                elif isinstance(t.license_plate_history, dict):
+                                    # Handle dict format if needed
+                                    pass
+                    
+                    if truck:
+                        settlement_data["truck_id"] = truck.id
+                    else:
+                        # For multi-truck PDFs, skip trucks we can't match instead of failing
+                        if len(settlements_data) > 1:
+                            continue
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"Could not find truck with license plate '{license_plate}'. Please select a truck manually."
+                        )
+                else:
+                    # For multi-truck PDFs, skip settlements without license plate
+                    if len(settlements_data) > 1:
+                        continue
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Could not extract license plate from PDF. Please select a truck manually."
+                    )
+            
+            settlement_data["pdf_file_path"] = file_path
+            if settlement_type:
+                settlement_data["settlement_type"] = settlement_type
+            
+            # Check for duplicates
+            existing = db.query(Settlement).filter(
+                Settlement.truck_id == settlement_data["truck_id"],
+                Settlement.settlement_date == settlement_data.get("settlement_date")
+            ).first()
+            
+            if existing:
+                # For multi-truck PDFs, skip duplicates instead of failing
+                if len(settlements_data) > 1:
+                    continue
+                # Clean up uploaded file
+                if os.path.exists(file_path):
+                    os.remove(file_path)
                 raise HTTPException(
                     status_code=400,
-                    detail="Could not extract license plate from PDF. Please select a truck manually."
+                    detail=f"Settlement for truck ID {settlement_data['truck_id']} on {settlement_data.get('settlement_date')} already exists"
                 )
+            
+            # Create settlement
+            db_settlement = Settlement(**settlement_data)
+            db.add(db_settlement)
+            created_settlements.append(db_settlement)
         
-        settlement_data["pdf_file_path"] = file_path
-        if settlement_type:
-            settlement_data["settlement_type"] = settlement_type
-        
-        # Check for duplicates
-        existing = db.query(Settlement).filter(
-            Settlement.truck_id == settlement_data["truck_id"],
-            Settlement.settlement_date == settlement_data.get("settlement_date")
-        ).first()
-        
-        if existing:
-            # Clean up uploaded file
-            if os.path.exists(file_path):
-                os.remove(file_path)
+        if not created_settlements:
             raise HTTPException(
                 status_code=400,
-                detail=f"Settlement for truck ID {settlement_data['truck_id']} on {settlement_data.get('settlement_date')} already exists"
+                detail="No valid settlements could be created from this PDF. Check that trucks exist and settlements aren't duplicates."
             )
         
-        # Create settlement
-        db_settlement = Settlement(**settlement_data)
-        db.add(db_settlement)
         db.commit()
-        db.refresh(db_settlement)
-        return db_settlement
+        
+        # Refresh all created settlements
+        for settlement in created_settlements:
+            db.refresh(settlement)
+        
+        # Return the first settlement (or only one if single truck)
+        return created_settlements[0]
     except HTTPException:
         raise
     except Exception as e:
@@ -134,83 +176,137 @@ async def upload_settlement_pdf_bulk(
                 content = await file.read()
                 buffer.write(content)
             
-            # Parse PDF
-            settlement_data = parse_amazon_relay_pdf(file_path, settlement_type)
-            
-            # Determine truck_id - use provided, or auto-detect from license plate
-            if truck_id:
-                settlement_data["truck_id"] = truck_id
+            # Parse PDF - use multi-truck parser ONLY for NBM Transport LLC settlements (multiple trucks per PDF)
+            # All other settlement types (e.g., "277 Logistics") have one truck per PDF - use single-truck parser
+            if settlement_type and settlement_type.upper() == "NBM TRANSPORT LLC":
+                settlements_data = parse_amazon_relay_pdf_multi_truck(file_path, settlement_type)
             else:
-                # Auto-detect truck from license plate
-                license_plate = settlement_data.get("license_plate")
-                if license_plate:
-                    # Try to find truck by current license plate
-                    truck = db.query(Truck).filter(Truck.license_plate == license_plate).first()
-                    if not truck and hasattr(Truck, 'license_plate_history'):
-                        # Try to find in license plate history
-                        trucks = db.query(Truck).all()
-                        for t in trucks:
-                            if t.license_plate_history and license_plate in t.license_plate_history:
-                                truck = t
-                                break
-                    
-                    if truck:
-                        settlement_data["truck_id"] = truck.id
+                # Single-truck parser for all other settlement types (277 Logistics, etc.)
+                settlements_data = [parse_amazon_relay_pdf(file_path, settlement_type)]
+            
+            file_successful = 0
+            file_failed = 0
+            
+            for settlement_data in settlements_data:
+                try:
+                    # Determine truck_id - use provided, or auto-detect from license plate
+                    if truck_id:
+                        settlement_data["truck_id"] = truck_id
                     else:
+                        # Auto-detect truck from license plate (check both current and historic plates)
+                        license_plate = settlement_data.get("license_plate")
+                        if license_plate:
+                            license_plate_upper = license_plate.upper()
+                            # Try to find truck by current license plate
+                            truck = db.query(Truck).filter(Truck.license_plate.ilike(license_plate_upper)).first()
+                            if not truck:
+                                # Try to find in license plate history
+                                trucks = db.query(Truck).all()
+                                for t in trucks:
+                                    # Check current plate (case insensitive)
+                                    if t.license_plate and t.license_plate.upper() == license_plate_upper:
+                                        truck = t
+                                        break
+                                    # Check historic plates
+                                    if t.license_plate_history:
+                                        if isinstance(t.license_plate_history, list):
+                                            if any(plate.upper() == license_plate_upper for plate in t.license_plate_history if plate):
+                                                truck = t
+                                                break
+                                        elif isinstance(t.license_plate_history, dict):
+                                            # Handle dict format if needed
+                                            pass
+                            
+                            if truck:
+                                settlement_data["truck_id"] = truck.id
+                            else:
+                                # For multi-truck PDFs, skip trucks we can't match
+                                if len(settlements_data) > 1:
+                                    file_failed += 1
+                                    continue
+                                results.append({
+                                    "filename": file.filename,
+                                    "success": False,
+                                    "error": f"Could not find truck with license plate '{license_plate}'. Please select a truck manually."
+                                })
+                                file_failed += 1
+                                continue
+                        else:
+                            # For multi-truck PDFs, skip settlements without license plate
+                            if len(settlements_data) > 1:
+                                file_failed += 1
+                                continue
+                            results.append({
+                                "filename": file.filename,
+                                "success": False,
+                                "error": "Could not extract license plate from PDF. Please select a truck manually."
+                            })
+                            file_failed += 1
+                            continue
+                    
+                    settlement_data["pdf_file_path"] = file_path
+                    if settlement_type:
+                        settlement_data["settlement_type"] = settlement_type
+                    
+                    # Check for duplicates
+                    existing = db.query(Settlement).filter(
+                        Settlement.truck_id == settlement_data["truck_id"],
+                        Settlement.settlement_date == settlement_data.get("settlement_date")
+                    ).first()
+                    
+                    if existing:
+                        # For multi-truck PDFs, skip duplicates
+                        if len(settlements_data) > 1:
+                            file_failed += 1
+                            continue
+                        # Clean up uploaded file
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
                         results.append({
                             "filename": file.filename,
                             "success": False,
-                            "error": f"Could not find truck with license plate '{license_plate}'. Please select a truck manually."
+                            "error": f"Settlement for truck ID {settlement_data['truck_id']} on {settlement_data.get('settlement_date')} already exists"
                         })
-                        failed += 1
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
+                        file_failed += 1
                         continue
+                    
+                    # Create settlement
+                    db_settlement = Settlement(**settlement_data)
+                    db.add(db_settlement)
+                    file_successful += 1
+                except Exception as e:
+                    file_failed += 1
+                    if len(settlements_data) == 1:
+                        results.append({
+                            "filename": file.filename,
+                            "success": False,
+                            "error": str(e)
+                        })
+            
+            # Commit all settlements for this file
+            if file_successful > 0:
+                db.commit()
+                successful += file_successful
+                if len(settlements_data) > 1:
+                    results.append({
+                        "filename": file.filename,
+                        "success": True,
+                        "settlements_created": file_successful,
+                        "settlements_skipped": file_failed
+                    })
                 else:
                     results.append({
                         "filename": file.filename,
-                        "success": False,
-                        "error": "Could not extract license plate from PDF. Please select a truck manually."
+                        "success": True
                     })
-                    failed += 1
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    continue
-            
-            settlement_data["pdf_file_path"] = file_path
-            if settlement_type:
-                settlement_data["settlement_type"] = settlement_type
-            
-            # Check for duplicates
-            existing = db.query(Settlement).filter(
-                Settlement.truck_id == settlement_data["truck_id"],
-                Settlement.settlement_date == settlement_data.get("settlement_date")
-            ).first()
-            
-            if existing:
-                # Clean up uploaded file
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                results.append({
-                    "filename": file.filename,
-                    "success": False,
-                    "error": f"Settlement for truck ID {settlement_data['truck_id']} on {settlement_data.get('settlement_date')} already exists"
-                })
-                failed += 1
-                continue
-            
-            # Create settlement
-            db_settlement = Settlement(**settlement_data)
-            db.add(db_settlement)
-            db.commit()
-            db.refresh(db_settlement)
-            
-            results.append({
-                "filename": file.filename,
-                "success": True,
-                "settlement": db_settlement
-            })
-            successful += 1
+            else:
+                failed += file_failed
+                if not any(r.get("filename") == file.filename and not r.get("success", True) for r in results):
+                    results.append({
+                        "filename": file.filename,
+                        "success": False,
+                        "error": "No valid settlements could be created from this PDF."
+                    })
             
         except HTTPException as e:
             results.append({
