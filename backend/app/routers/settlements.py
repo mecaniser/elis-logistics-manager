@@ -261,6 +261,26 @@ def get_settlement(settlement_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Settlement not found")
     return settlement
 
+@router.put("/{settlement_id}", response_model=SettlementResponse)
+def update_settlement(
+    settlement_id: int,
+    settlement_update: SettlementUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update a settlement"""
+    settlement = db.query(Settlement).filter(Settlement.id == settlement_id).first()
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    
+    # Update settlement fields
+    update_data = settlement_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(settlement, field, value)
+    
+    db.commit()
+    db.refresh(settlement)
+    return settlement
+
 @router.delete("/{settlement_id}")
 def delete_settlement(settlement_id: int, db: Session = Depends(get_db)):
     """Delete a settlement"""

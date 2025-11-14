@@ -372,30 +372,34 @@ export default function Settlements() {
   
   const handleDispatchFeePercentChange = (percent: 6 | 8) => {
     setDispatchFeePercent(percent)
-    const grossRevenue = editFormData.gross_revenue
-    if (grossRevenue) {
+    setEditFormData(prev => {
+      const grossRevenue = prev.gross_revenue
+      if (!grossRevenue) return prev
+      
       const dispatchFee = calculateDispatchFee(grossRevenue, percent)
-      const updatedCategories = { ...editFormData.expense_categories }
+      const updatedCategories = { ...(prev.expense_categories || {}) }
       updatedCategories.dispatch_fee = dispatchFee
       
       // Recalculate total expenses
       const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
       const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
       
-      setEditFormData({
-        ...editFormData,
-        expense_categories: updatedCategories,
+      const updatedFormData = {
+        ...prev,
+        expense_categories: { ...updatedCategories },
         expenses: totalExpenses,
         net_profit: netProfit
-      })
+      }
       
       // Update input values
-      setExpenseCategoryInputs(prev => ({ ...prev, dispatch_fee: formatCurrency(dispatchFee) }))
+      setExpenseCategoryInputs(prevInputs => ({ ...prevInputs, dispatch_fee: formatCurrency(dispatchFee) }))
       setTotalExpensesInput(formatCurrency(totalExpenses))
       if (netProfit !== undefined) {
         setNetProfitInput(formatCurrency(netProfit))
       }
-    }
+      
+      return updatedFormData
+    })
   }
 
   const handleCancelEdit = () => {
@@ -916,13 +920,13 @@ export default function Settlements() {
       />
 
       {editingSettlement && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCancelEdit} />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div
-              className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-7xl mx-4 max-h-[95vh] lg:max-h-[98vh] flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCancelEdit} />
+              <div className="flex min-h-full items-center justify-center p-4">
+                <div
+                  className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-[66vw] max-h-[95vh] lg:max-h-[98vh] flex flex-col"
+                  onClick={(e) => e.stopPropagation()}
+                >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-4">
                   {/* Previous/Next Navigation */}
@@ -966,30 +970,37 @@ export default function Settlements() {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="lg:sticky lg:top-0">
-                    <h4 className="text-lg font-medium text-gray-900 mb-3">PDF Document</h4>
+                <div className="space-y-6">
+                  {/* PDF Document Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-lg font-medium text-gray-900">PDF Document</h4>
+                    </div>
                     {editingSettlement.pdf_file_path ? (
-                      <iframe
-                        src={getPdfUrl(editingSettlement.pdf_file_path)}
-                        className="w-full h-[600px] lg:h-[80vh] border border-gray-300 rounded-lg"
-                        title="Settlement PDF"
-                      />
+                      <div className="w-full h-[500px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
+                        <iframe
+                          src={getPdfUrl(editingSettlement.pdf_file_path)}
+                          className="w-full h-full border-0"
+                          title="Settlement PDF"
+                        />
+                      </div>
                     ) : (
-                      <div className="w-full h-[600px] lg:h-[80vh] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
+                      <div className="w-full h-[500px] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
                         <p className="text-gray-500">No PDF available</p>
                       </div>
                     )}
                   </div>
+                  
+                  {/* Settlement Data Section */}
                   <div className="space-y-4">
                     <h4 className="text-lg font-medium text-gray-900 mb-3">Settlement Data</h4>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-5 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Truck</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Truck</label>
                         <select
                           value={editFormData.truck_id || ''}
                           onChange={(e) => setEditFormData({ ...editFormData, truck_id: Number(e.target.value) })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           {trucks.map((truck) => (
                             <option key={truck.id} value={truck.id}>{truck.name}</option>
@@ -997,16 +1008,16 @@ export default function Settlements() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Date</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Settlement Date</label>
                         <input
                           type="date"
                           value={editFormData.settlement_date || ''}
                           onChange={(e) => setEditFormData({ ...editFormData, settlement_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-blue-600 mb-1">Gross Revenue</label>
+                        <label className="block text-xs font-medium text-blue-600 mb-1">Gross Revenue</label>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -1060,12 +1071,12 @@ export default function Settlements() {
                               }
                             }
                           }}
-                          className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 font-medium"
+                          className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 font-medium"
                           placeholder="$0.00"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-red-600 mb-1">Total Expenses</label>
+                        <label className="block text-xs font-medium text-red-600 mb-1">Total Expenses</label>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -1099,12 +1110,12 @@ export default function Settlements() {
                               }
                             }
                           }}
-                          className="w-full px-3 py-2 border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
+                          className="w-full px-2 py-1.5 text-sm border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
                           placeholder="$0.00"
                         />
                       </div>
                       <div>
-                        <label className={`block text-sm font-medium mb-1 ${
+                        <label className={`block text-xs font-medium mb-1 ${
                           editFormData.net_profit !== undefined && editFormData.net_profit < 0 
                             ? 'text-red-600' 
                             : 'text-green-600'
@@ -1142,7 +1153,7 @@ export default function Settlements() {
                               }
                             }
                           }}
-                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-medium ${
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 font-medium ${
                             editFormData.net_profit !== undefined && editFormData.net_profit < 0
                               ? 'border-red-300 text-red-700 focus:ring-red-500'
                               : 'border-green-300 text-green-700 focus:ring-green-500'
@@ -1154,39 +1165,29 @@ export default function Settlements() {
                     
                     {/* Dispatch Fee Percentage Toggle */}
                     {editFormData.gross_revenue && (
-                      <div className="border-t pt-4">
-                        <h5 className="text-md font-medium text-gray-900 mb-3">Dispatch Fee Calculation</h5>
-                        <div className="p-3 bg-gray-50 rounded-md">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Select Dispatch Fee Percentage
+                      <div className="border-t pt-2 mt-2">
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-gray-600 font-medium">Dispatch Fee:</span>
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="radio"
+                              name="dispatchFeePercent"
+                              checked={dispatchFeePercent === 6}
+                              onChange={() => handleDispatchFeePercentChange(6)}
+                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
+                            />
+                            <span className="ml-1.5 text-gray-700">6%</span>
                           </label>
-                          <div className="flex items-center gap-4">
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="dispatchFeePercent"
-                                checked={dispatchFeePercent === 6}
-                                onChange={() => handleDispatchFeePercentChange(6)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">6%</span>
-                            </label>
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name="dispatchFeePercent"
-                                checked={dispatchFeePercent === 8}
-                                onChange={() => handleDispatchFeePercentChange(8)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <span className="ml-2 text-sm text-gray-700">8%</span>
-                            </label>
-                            {editFormData.expense_categories?.dispatch_fee && (
-                              <span className="ml-auto text-sm font-medium text-gray-700">
-                                Dispatch Fee: ${editFormData.expense_categories.dispatch_fee.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="radio"
+                              name="dispatchFeePercent"
+                              checked={dispatchFeePercent === 8}
+                              onChange={() => handleDispatchFeePercentChange(8)}
+                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
+                            />
+                            <span className="ml-1.5 text-gray-700">8%</span>
+                          </label>
                         </div>
                       </div>
                     )}

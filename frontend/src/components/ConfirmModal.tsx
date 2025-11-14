@@ -27,7 +27,7 @@ export default function ConfirmModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[60] overflow-y-auto">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"

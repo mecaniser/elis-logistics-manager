@@ -73,7 +73,7 @@ export default function Modal({ isOpen, onClose, title, children, type = 'info' 
   const styles = typeStyles[type]
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div
         className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
         onClick={onClose}
