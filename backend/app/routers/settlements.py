@@ -7,7 +7,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.truck import Truck
-from app.schemas.settlement import SettlementCreate, SettlementResponse
+from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
 from app.utils.pdf_parser import parse_amazon_relay_pdf
 import os
 from datetime import datetime

@@ -65,10 +65,10 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "ifta": 0.0,
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
-        "truck_parking": 0.0,
-        "repairs": 0.0,
-        "other": 0.0
-    }
+               "truck_parking": 0.0,
+               "repairs": 0.0,
+               "custom": 0.0
+           }
     
     # Add expenses from settlements (already categorized)
     settlements = settlements_query.all()
@@ -78,16 +78,19 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
                 try:
                     amount_float = float(amount) if amount is not None else 0.0
                     if amount_float > 0:
-                        if category == "fees":
-                            expense_categories["other"] += amount_float
-                        elif category in expense_categories:
-                            expense_categories[category] += amount_float
-                        else:
-                            expense_categories["other"] += amount_float
+                           if category == "fees":
+                               expense_categories["custom"] += amount_float
+                           elif category in expense_categories:
+                               expense_categories[category] += amount_float
+                           elif category == "other":
+                               # Backward compatibility: map old "other" to "custom"
+                               expense_categories["custom"] += amount_float
+                           else:
+                               expense_categories["custom"] += amount_float
                 except (ValueError, TypeError):
                     continue
         elif settlement.expenses and float(settlement.expenses) > 0:
-            expense_categories["other"] += float(settlement.expenses)
+            expense_categories["custom"] += float(settlement.expenses)
     
     # Add all repairs to the "repairs" category
     repairs = repairs_query.all()

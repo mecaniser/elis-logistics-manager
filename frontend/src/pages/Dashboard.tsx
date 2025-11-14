@@ -53,7 +53,7 @@ export default function Dashboard() {
     { name: "Driver's Pay", value: data.expense_categories.driver_pay, color: '#8b5cf6' },
     { name: 'Payroll Fee', value: data.expense_categories.payroll_fee, color: '#ec4899' },
     { name: 'Truck Parking', value: data.expense_categories.truck_parking, color: '#a855f7' },
-    { name: 'Other', value: data.expense_categories.other, color: '#6b7280' },
+    { name: 'Custom', value: data.expense_categories.custom || data.expense_categories.other || 0, color: '#6b7280' },
   ].filter(item => item.value > 0) : []
 
   const truckProfitsData = data.truck_profits || []

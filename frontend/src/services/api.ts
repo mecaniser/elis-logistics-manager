@@ -61,7 +61,7 @@ export interface DashboardData {
     payroll_fee: number
     truck_parking: number
     repairs: number
-    other: number
+    custom: number
   }
   truck_profits: Array<{
     truck_id: number
