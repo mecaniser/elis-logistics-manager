@@ -8,8 +8,9 @@ from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.truck import Truck
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 router = APIRouter()
 
@@ -277,5 +278,219 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "blocks_by_truck_month": blocks_by_truck_month,
         "repairs_by_month": repairs_by_month,
         "pm_status": pm_status
+    }
+
+@router.get("/time-series")
+def get_time_series(
+    group_by: Optional[str] = "week_start",
+    truck_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get time-series data grouped by week and month.
+    
+    Args:
+        group_by: How to group weekly data - "week_start" or "settlement_date" (default: "week_start")
+        truck_id: Optional truck filter
+    """
+    # Validate group_by parameter
+    if group_by not in ["week_start", "settlement_date"]:
+        group_by = "week_start"
+    
+    # Build query with optional truck filter
+    settlements_query = db.query(Settlement)
+    if truck_id is not None:
+        settlements_query = settlements_query.filter(Settlement.truck_id == truck_id)
+    
+    settlements = settlements_query.order_by(Settlement.settlement_date).all()
+    
+    # Get truck names for reference
+    trucks = db.query(Truck).all()
+    truck_map = {truck.id: truck.name for truck in trucks}
+    
+    # Initialize data structures
+    weekly_data = defaultdict(lambda: {
+        "gross_revenue": 0.0,
+        "net_profit": 0.0,
+        "driver_pay": 0.0,
+        "payroll_fee": 0.0,
+        "fuel": 0.0,
+        "dispatch_fee": 0.0,
+        "insurance": 0.0,
+        "safety": 0.0,
+        "prepass": 0.0,
+        "ifta": 0.0,
+        "truck_parking": 0.0,
+        "custom": 0.0,
+        "trucks": set(),
+        "week_start": None,
+        "week_end": None,
+        "settlement_date": None
+    })
+    
+    monthly_data = defaultdict(lambda: {
+        "gross_revenue": 0.0,
+        "net_profit": 0.0,
+        "driver_pay": 0.0,
+        "payroll_fee": 0.0,
+        "fuel": 0.0,
+        "dispatch_fee": 0.0,
+        "insurance": 0.0,
+        "safety": 0.0,
+        "prepass": 0.0,
+        "ifta": 0.0,
+        "truck_parking": 0.0,
+        "custom": 0.0,
+        "trucks": set()
+    })
+    
+    # Process each settlement
+    for settlement in settlements:
+        # Determine week key based on group_by parameter
+        if group_by == "week_start" and settlement.week_start:
+            week_key = settlement.week_start.isoformat()
+            week_start = settlement.week_start
+            week_end = settlement.week_end if settlement.week_end else settlement.settlement_date
+        else:
+            week_key = settlement.settlement_date.isoformat()
+            week_start = settlement.week_start if settlement.week_start else settlement.settlement_date
+            week_end = settlement.week_end if settlement.week_end else settlement.settlement_date
+        
+        # Determine month key (using existing logic with 28th cutoff)
+        date_to_use = None
+        if settlement.week_start:
+            if settlement.week_start.day >= 28:
+                if settlement.week_start.month == 12:
+                    date_to_use = settlement.week_start.replace(year=settlement.week_start.year + 1, month=1, day=1)
+                else:
+                    date_to_use = settlement.week_start.replace(month=settlement.week_start.month + 1, day=1)
+            else:
+                date_to_use = settlement.week_start
+        elif settlement.settlement_date:
+            if settlement.settlement_date.day >= 28:
+                if settlement.settlement_date.month == 12:
+                    date_to_use = settlement.settlement_date.replace(year=settlement.settlement_date.year + 1, month=1, day=1)
+                else:
+                    date_to_use = settlement.settlement_date.replace(month=settlement.settlement_date.month + 1, day=1)
+            else:
+                date_to_use = settlement.settlement_date
+        
+        month_key = date_to_use.strftime("%Y-%m") if date_to_use else None
+        
+        # Aggregate weekly data
+        weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+        weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+        weekly_data[week_key]["trucks"].add(settlement.truck_id)
+        if not weekly_data[week_key]["week_start"]:
+            weekly_data[week_key]["week_start"] = week_start
+        if not weekly_data[week_key]["week_end"]:
+            weekly_data[week_key]["week_end"] = week_end
+        if not weekly_data[week_key]["settlement_date"]:
+            weekly_data[week_key]["settlement_date"] = settlement.settlement_date
+        
+        # Aggregate monthly data
+        if month_key:
+            monthly_data[month_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+            monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            monthly_data[month_key]["trucks"].add(settlement.truck_id)
+        
+        # Process expense categories
+        if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
+            for category, amount in settlement.expense_categories.items():
+                try:
+                    amount_float = float(amount) if amount is not None else 0.0
+                    if amount_float > 0:
+                        # Map category names
+                        mapped_category = category
+                        if category == "fees" or category == "other":
+                            mapped_category = "custom"
+                        
+                        if mapped_category in weekly_data[week_key]:
+                            weekly_data[week_key][mapped_category] += amount_float
+                        
+                        if month_key and mapped_category in monthly_data[month_key]:
+                            monthly_data[month_key][mapped_category] += amount_float
+                except (ValueError, TypeError):
+                    continue
+    
+    # Format weekly data
+    by_week = []
+    for week_key in sorted(weekly_data.keys()):
+        week_data = weekly_data[week_key]
+        week_start_date = week_data["week_start"]
+        week_end_date = week_data["week_end"]
+        
+        # Format week label
+        if week_start_date and week_end_date and week_start_date != week_end_date:
+            week_label = f"{week_start_date.strftime('%b %d')}-{week_end_date.strftime('%d, %Y')}"
+        elif week_start_date:
+            week_label = week_start_date.strftime('%b %d, %Y')
+        elif week_data["settlement_date"]:
+            week_label = week_data["settlement_date"].strftime('%b %d, %Y')
+        else:
+            week_label = week_key
+        
+        truck_list = [
+            {
+                "truck_id": tid,
+                "truck_name": truck_map.get(tid, f"Truck {tid}")
+            }
+            for tid in sorted(week_data["trucks"])
+        ]
+        
+        by_week.append({
+            "week_key": week_key,
+            "week_label": week_label,
+            "gross_revenue": round(week_data["gross_revenue"], 2),
+            "net_profit": round(week_data["net_profit"], 2),
+            "driver_pay": round(week_data["driver_pay"], 2),
+            "payroll_fee": round(week_data["payroll_fee"], 2),
+            "fuel": round(week_data["fuel"], 2),
+            "dispatch_fee": round(week_data["dispatch_fee"], 2),
+            "insurance": round(week_data["insurance"], 2),
+            "safety": round(week_data["safety"], 2),
+            "prepass": round(week_data["prepass"], 2),
+            "ifta": round(week_data["ifta"], 2),
+            "truck_parking": round(week_data["truck_parking"], 2),
+            "custom": round(week_data["custom"], 2),
+            "trucks": truck_list
+        })
+    
+    # Format monthly data
+    by_month = []
+    for month_key in sorted(monthly_data.keys()):
+        month_data = monthly_data[month_key]
+        month_date = datetime.strptime(month_key, "%Y-%m")
+        month_label = month_date.strftime("%b %Y")
+        
+        truck_list = [
+            {
+                "truck_id": tid,
+                "truck_name": truck_map.get(tid, f"Truck {tid}")
+            }
+            for tid in sorted(month_data["trucks"])
+        ]
+        
+        by_month.append({
+            "month_key": month_key,
+            "month_label": month_label,
+            "gross_revenue": round(month_data["gross_revenue"], 2),
+            "net_profit": round(month_data["net_profit"], 2),
+            "driver_pay": round(month_data["driver_pay"], 2),
+            "payroll_fee": round(month_data["payroll_fee"], 2),
+            "fuel": round(month_data["fuel"], 2),
+            "dispatch_fee": round(month_data["dispatch_fee"], 2),
+            "insurance": round(month_data["insurance"], 2),
+            "safety": round(month_data["safety"], 2),
+            "prepass": round(month_data["prepass"], 2),
+            "ifta": round(month_data["ifta"], 2),
+            "truck_parking": round(month_data["truck_parking"], 2),
+            "custom": round(month_data["custom"], 2),
+            "trucks": truck_list
+        })
+    
+    return {
+        "by_week": by_week,
+        "by_month": by_month
     }
 

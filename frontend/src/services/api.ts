@@ -207,6 +207,43 @@ export const repairsApi = {
   delete: (id: number) => api.delete(`/repairs/${id}`),
 }
 
+export interface TimeSeriesData {
+  by_week: Array<{
+    week_key: string
+    week_label: string
+    gross_revenue: number
+    net_profit: number
+    driver_pay: number
+    payroll_fee: number
+    fuel: number
+    dispatch_fee: number
+    insurance: number
+    safety: number
+    prepass: number
+    ifta: number
+    truck_parking: number
+    custom: number
+    trucks: Array<{ truck_id: number; truck_name: string }>
+  }>
+  by_month: Array<{
+    month_key: string
+    month_label: string
+    gross_revenue: number
+    net_profit: number
+    driver_pay: number
+    payroll_fee: number
+    fuel: number
+    dispatch_fee: number
+    insurance: number
+    safety: number
+    prepass: number
+    ifta: number
+    truck_parking: number
+    custom: number
+    trucks: Array<{ truck_id: number; truck_name: string }>
+  }>
+}
+
 // Analytics API
 export const analyticsApi = {
   getDashboard: (truckId?: number) => {
@@ -220,4 +257,10 @@ export const analyticsApi = {
       repairs_total: number
       net_profit: number
     }>(`/analytics/truck-profit/${truckId}`),
+  getTimeSeries: (groupBy?: 'week_start' | 'settlement_date', truckId?: number) => {
+    const params: any = {}
+    if (groupBy) params.group_by = groupBy
+    if (truckId) params.truck_id = truckId
+    return api.get<TimeSeriesData>('/analytics/time-series', { params })
+  },
 }

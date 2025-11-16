@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Settlement Extraction JSON Schema",
+  "description": "Schema for extracted settlement data from PDFs",
+  "type": "object",
+  "required": ["source_file", "extraction_date", "settlements"],
+  "properties": {
+    "source_file": {
+      "type": "string",
+      "description": "Original PDF filename"
+    },
+    "extraction_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of extraction"
+    },
+    "settlement_type": {
+      "type": "string",
+      "enum": ["Owner Operator Income Sheet", "277 Logistics", "NBM Transport LLC"],
+      "description": "Type of settlement document"
+    },
+    "settlements": {
+      "type": "array",
+      "description": "Array of settlement records (one per truck for multi-truck PDFs)",
+      "items": {
+        "type": "object",
+        "required": ["metadata", "revenue", "expenses", "metrics"],
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "settlement_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Date of settlement (YYYY-MM-DD)"
+              },
+              "week_start": {
+                "type": "string",
+                "format": "date",
+                "description": "Start of work week (YYYY-MM-DD)"
+              },
+              "week_end": {
+                "type": "string",
+                "format": "date",
+                "description": "End of work week (YYYY-MM-DD)"
+              },
+              "settlement_type": {
+                "type": "string",
+                "description": "Type of settlement"
+              },
+              "license_plate": {
+                "type": "string",
+                "description": "License plate number for truck matching"
+              },
+              "driver_id": {
+                "type": ["integer", "null"],
+                "description": "Driver ID if available"
+              },
+              "driver_name": {
+                "type": ["string", "null"],
+                "description": "Driver name if available in PDF"
+              }
+            }
+          },
+          "revenue": {
+            "type": "object",
+            "properties": {
+              "gross_revenue": {
+                "type": "number",
+                "description": "Total gross revenue"
+              },
+              "net_profit": {
+                "type": "number",
+                "description": "Net profit after expenses"
+              }
+            }
+          },
+          "expenses": {
+            "type": "object",
+            "properties": {
+              "total_expenses": {
+                "type": "number",
+                "description": "Total expenses"
+              },
+              "categories": {
+                "type": "object",
+                "description": "Categorized expenses",
+                "properties": {
+                  "fuel": {"type": "number"},
+                  "dispatch_fee": {"type": "number"},
+                  "insurance": {"type": "number"},
+                  "safety": {"type": "number"},
+                  "prepass": {"type": "number"},
+                  "ifta": {"type": "number"},
+                  "driver_pay": {"type": "number"},
+                  "payroll_fee": {"type": "number"},
+                  "truck_parking": {"type": "number"},
+                  "service_on_truck": {"type": "number"}
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "miles_driven": {
+                "type": "number",
+                "description": "Total miles driven"
+              },
+              "blocks_delivered": {
+                "type": "integer",
+                "description": "Number of blocks delivered"
+              }
+            }
+          },
+          "driver_pay": {
+            "type": "object",
+            "properties": {
+              "driver_pay": {
+                "type": "number",
+                "description": "Driver's pay amount"
+              },
+              "payroll_fee": {
+                "type": "number",
+                "description": "Payroll fee amount"
+              }
+            }
+          },
+          "raw_data": {
+            "type": "object",
+            "description": "Original extracted data for reference",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}
+

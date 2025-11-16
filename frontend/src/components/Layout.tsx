@@ -14,6 +14,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/trucks', label: 'Trucks' },
     { path: '/settlements', label: 'Settlements' },
     { path: '/repairs', label: 'Repairs' },
+    { path: '/extractor', label: 'Extractor' },
   ]
 
   return (

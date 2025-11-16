@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.database import engine, Base
-from app.routers import trucks, settlements, repairs, analytics
+from app.routers import trucks, settlements, repairs, analytics, extractor
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -36,6 +36,7 @@ app.include_router(trucks.router, prefix="/api/trucks", tags=["trucks"])
 app.include_router(settlements.router, prefix="/api/settlements", tags=["settlements"])
 app.include_router(repairs.router, prefix="/api/repairs", tags=["repairs"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"])
 
 # Serve uploaded files
 # Determine uploads directory - backend runs from backend/ directory

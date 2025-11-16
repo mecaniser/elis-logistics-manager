@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { analyticsApi, trucksApi, Truck } from '../services/api'
+import { analyticsApi, trucksApi, Truck, TimeSeriesData } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 
 export default function Dashboard() {
@@ -7,11 +7,16 @@ export default function Dashboard() {
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
+  const [groupBy, setGroupBy] = useState<'week_start' | 'settlement_date'>('week_start')
+  const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
+  const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
 
   useEffect(() => {
     loadTrucks()
     loadDashboard()
-  }, [selectedTruck])
+    loadTimeSeries()
+  }, [selectedTruck, groupBy])
 
   const loadTrucks = async () => {
     try {
@@ -31,6 +36,18 @@ export default function Dashboard() {
       console.error('Failed to load dashboard:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadTimeSeries = async () => {
+    try {
+      setTimeSeriesLoading(true)
+      const response = await analyticsApi.getTimeSeries(groupBy, selectedTruck || undefined)
+      setTimeSeriesData(response.data)
+    } catch (err) {
+      console.error('Failed to load time-series data:', err)
+    } finally {
+      setTimeSeriesLoading(false)
     }
   }
 
@@ -150,26 +167,122 @@ export default function Dashboard() {
   const trucksDueForPM = filteredPMStatus.filter(pm => pm.is_due)
   const trucksNotDueForPM = filteredPMStatus.filter(pm => !pm.is_due)
 
+  // Helper functions for time-series data processing
+  const formatWeekLabel = (weekKey: string, weekEnd?: string) => {
+    // Labels are already formatted from backend
+    return weekKey
+  }
+
+  const formatMonthLabel = (monthKey: string) => {
+    // Labels are already formatted from backend
+    return monthKey
+  }
+
+  const processWeeklyData = (data: TimeSeriesData | null) => {
+    if (!data || !data.by_week || data.by_week.length === 0) {
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: {} }
+    }
+    
+    const labels = data.by_week.map(item => item.week_label)
+    const grossRevenue = data.by_week.map(item => item.gross_revenue)
+    const netProfit = data.by_week.map(item => item.net_profit)
+    const driverPay = data.by_week.map(item => item.driver_pay)
+    const payrollFee = data.by_week.map(item => item.payroll_fee)
+    
+    const expenses = {
+      fuel: data.by_week.map(item => item.fuel),
+      dispatch_fee: data.by_week.map(item => item.dispatch_fee),
+      insurance: data.by_week.map(item => item.insurance),
+      safety: data.by_week.map(item => item.safety),
+      prepass: data.by_week.map(item => item.prepass),
+      ifta: data.by_week.map(item => item.ifta),
+      truck_parking: data.by_week.map(item => item.truck_parking),
+      custom: data.by_week.map(item => item.custom),
+    }
+    
+    return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
+  }
+
+  const processMonthlyData = (data: TimeSeriesData | null) => {
+    if (!data || !data.by_month || data.by_month.length === 0) {
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: {} }
+    }
+    
+    const labels = data.by_month.map(item => item.month_label)
+    const grossRevenue = data.by_month.map(item => item.gross_revenue)
+    const netProfit = data.by_month.map(item => item.net_profit)
+    const driverPay = data.by_month.map(item => item.driver_pay)
+    const payrollFee = data.by_month.map(item => item.payroll_fee)
+    
+    const expenses = {
+      fuel: data.by_month.map(item => item.fuel),
+      dispatch_fee: data.by_month.map(item => item.dispatch_fee),
+      insurance: data.by_month.map(item => item.insurance),
+      safety: data.by_month.map(item => item.safety),
+      prepass: data.by_month.map(item => item.prepass),
+      ifta: data.by_month.map(item => item.ifta),
+      truck_parking: data.by_month.map(item => item.truck_parking),
+      custom: data.by_month.map(item => item.custom),
+    }
+    
+    return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
+  }
+
+  const weeklyData = processWeeklyData(timeSeriesData)
+  const monthlyData = processMonthlyData(timeSeriesData)
+  const currentData = activeTimeView === 'weekly' ? weeklyData : monthlyData
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-        <div className="w-full sm:w-auto">
-          <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-0 sm:inline-block sm:mr-2">
-            Filter by Truck:
-          </label>
-          <select
-            value={selectedTruck || ''}
-            onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
-            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="">All Trucks</option>
-            {trucks.map((truck) => (
-              <option key={truck.id} value={truck.id}>
-                {truck.name}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-auto">
+            <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-0 sm:inline-block sm:mr-2">
+              Filter by Truck:
+            </label>
+            <select
+              value={selectedTruck || ''}
+              onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
+              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="">All Trucks</option>
+              {trucks.map((truck) => (
+                <option key={truck.id} value={truck.id}>
+                  {truck.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full sm:w-auto">
+            <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-0 sm:inline-block sm:mr-2">
+              Week Grouping:
+            </label>
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => setGroupBy('week_start')}
+                className={`px-3 py-2 text-sm font-medium border rounded-l-lg ${
+                  groupBy === 'week_start'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Week Start
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupBy('settlement_date')}
+                className={`px-3 py-2 text-sm font-medium border rounded-r-lg ${
+                  groupBy === 'settlement_date'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Settlement Date
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -902,6 +1015,319 @@ export default function Dashboard() {
             style={{ height: '450px', width: '100%' }}
             opts={{ renderer: 'svg' }}
           />
+        </div>
+      )}
+
+      {/* Time-Series Charts Section */}
+      {timeSeriesData && (
+        <div className="mt-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900">Time-Series Analytics</h2>
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => setActiveTimeView('weekly')}
+                className={`px-4 py-2 text-sm font-medium border rounded-l-lg ${
+                  activeTimeView === 'weekly'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Weekly
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTimeView('monthly')}
+                className={`px-4 py-2 text-sm font-medium border rounded-r-lg ${
+                  activeTimeView === 'monthly'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Revenue Chart */}
+            {currentData.labels.length > 0 && (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Revenue Over Time</h3>
+                {timeSeriesLoading ? (
+                  <div className="text-center py-8 text-gray-500">Loading...</div>
+                ) : (
+                  <ReactECharts
+                    option={{
+                      tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' },
+                        formatter: (params: any) => {
+                          let result = `${params[0]?.axisValue}<br/>`
+                          params.forEach((param: any) => {
+                            const value = param.value || 0
+                            result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                          })
+                          return result
+                        },
+                        backgroundColor: '#fff',
+                        borderColor: '#e5e7eb',
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        padding: [8, 12]
+                      },
+                      legend: {
+                        data: ['Gross Revenue', 'Net Profit'],
+                        top: 10
+                      },
+                      grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        top: '15%',
+                        containLabel: true
+                      },
+                      xAxis: {
+                        type: 'category',
+                        data: currentData.labels,
+                        axisLabel: {
+                          rotate: currentData.labels.length > 10 ? 45 : 0,
+                          fontSize: 11
+                        }
+                      },
+                      yAxis: {
+                        type: 'value',
+                        name: 'Amount ($)',
+                        axisLabel: {
+                          formatter: (value: number) => `$${value.toLocaleString()}`
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Gross Revenue',
+                          type: 'line',
+                          smooth: true,
+                          data: currentData.grossRevenue,
+                          itemStyle: { color: '#3b82f6' },
+                          lineStyle: { width: 2 }
+                        },
+                        {
+                          name: 'Net Profit',
+                          type: 'line',
+                          smooth: true,
+                          data: currentData.netProfit,
+                          itemStyle: { color: '#10b981' },
+                          lineStyle: { width: 2 }
+                        }
+                      ]
+                    }}
+                    style={{ height: '400px', width: '100%' }}
+                    opts={{ renderer: 'svg' }}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Driver Pay Chart */}
+            {currentData.labels.length > 0 && (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Driver Pay Over Time</h3>
+                {timeSeriesLoading ? (
+                  <div className="text-center py-8 text-gray-500">Loading...</div>
+                ) : (
+                  <ReactECharts
+                    option={{
+                      tooltip: {
+                        trigger: 'axis',
+                        axisPointer: { type: 'cross' },
+                        formatter: (params: any) => {
+                          let result = `${params[0]?.axisValue}<br/>`
+                          params.forEach((param: any) => {
+                            const value = param.value || 0
+                            result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                          })
+                          return result
+                        },
+                        backgroundColor: '#fff',
+                        borderColor: '#e5e7eb',
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        padding: [8, 12]
+                      },
+                      legend: {
+                        data: ["Driver's Pay", 'Payroll Fee'],
+                        top: 10
+                      },
+                      grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        top: '15%',
+                        containLabel: true
+                      },
+                      xAxis: {
+                        type: 'category',
+                        data: currentData.labels,
+                        axisLabel: {
+                          rotate: currentData.labels.length > 10 ? 45 : 0,
+                          fontSize: 11
+                        }
+                      },
+                      yAxis: {
+                        type: 'value',
+                        name: 'Amount ($)',
+                        axisLabel: {
+                          formatter: (value: number) => `$${value.toLocaleString()}`
+                        }
+                      },
+                      series: [
+                        {
+                          name: "Driver's Pay",
+                          type: 'line',
+                          smooth: true,
+                          data: currentData.driverPay,
+                          itemStyle: { color: '#3b82f6' },
+                          lineStyle: { width: 2 }
+                        },
+                        {
+                          name: 'Payroll Fee',
+                          type: 'line',
+                          smooth: true,
+                          data: currentData.payrollFee,
+                          itemStyle: { color: '#f97316' },
+                          lineStyle: { width: 2 }
+                        }
+                      ]
+                    }}
+                    style={{ height: '400px', width: '100%' }}
+                    opts={{ renderer: 'svg' }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Expenses Chart - Full Width */}
+          {currentData.labels.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow mb-6">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Expenses Over Time</h3>
+              {timeSeriesLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading...</div>
+              ) : (
+                <ReactECharts
+                  option={{
+                    tooltip: {
+                      trigger: 'axis',
+                      axisPointer: { type: 'cross' },
+                      formatter: (params: any) => {
+                        let result = `${params[0]?.axisValue}<br/>`
+                        params.forEach((param: any) => {
+                          const value = param.value || 0
+                          if (value > 0) {
+                            result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                          }
+                        })
+                        return result
+                      },
+                      backgroundColor: '#fff',
+                      borderColor: '#e5e7eb',
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      padding: [8, 12]
+                    },
+                    legend: {
+                      data: ['Fuel', 'Dispatch Fee', 'Insurance', 'Safety', 'Prepass', 'IFTA', 'Truck Parking', 'Custom'],
+                      top: 10,
+                      type: 'scroll',
+                      orient: 'horizontal'
+                    },
+                    grid: {
+                      left: '3%',
+                      right: '4%',
+                      bottom: '15%',
+                      top: '20%',
+                      containLabel: true
+                    },
+                    xAxis: {
+                      type: 'category',
+                      data: currentData.labels,
+                      axisLabel: {
+                        rotate: currentData.labels.length > 10 ? 45 : 0,
+                        fontSize: 11
+                      }
+                    },
+                    yAxis: {
+                      type: 'value',
+                      name: 'Amount ($)',
+                      axisLabel: {
+                        formatter: (value: number) => `$${value.toLocaleString()}`
+                      }
+                    },
+                    series: [
+                      {
+                        name: 'Fuel',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.fuel,
+                        itemStyle: { color: '#3b82f6' }
+                      },
+                      {
+                        name: 'Dispatch Fee',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.dispatch_fee,
+                        itemStyle: { color: '#f59e0b' }
+                      },
+                      {
+                        name: 'Insurance',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.insurance,
+                        itemStyle: { color: '#f97316' }
+                      },
+                      {
+                        name: 'Safety',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.safety,
+                        itemStyle: { color: '#eab308' }
+                      },
+                      {
+                        name: 'Prepass',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.prepass,
+                        itemStyle: { color: '#84cc16' }
+                      },
+                      {
+                        name: 'IFTA',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.ifta,
+                        itemStyle: { color: '#10b981' }
+                      },
+                      {
+                        name: 'Truck Parking',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.truck_parking,
+                        itemStyle: { color: '#a855f7' }
+                      },
+                      {
+                        name: 'Custom',
+                        type: 'line',
+                        smooth: true,
+                        data: currentData.expenses.custom,
+                        itemStyle: { color: '#6b7280' }
+                      }
+                    ]
+                  }}
+                  style={{ height: '450px', width: '100%' }}
+                  opts={{ renderer: 'svg' }}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

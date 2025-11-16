@@ -54,3 +54,13 @@ htmlcov/
 # PDF files and invoices (keep local)
 *.pdf
 
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.svg
+*.webp
+*.ico
+

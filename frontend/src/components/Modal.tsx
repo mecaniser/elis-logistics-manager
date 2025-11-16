@@ -3,13 +3,20 @@ import { ReactNode, useEffect } from 'react'
 interface ModalProps {
   isOpen: boolean
   onClose: () => void
-  title: string
+  title: string | ReactNode
   children: ReactNode
   type?: 'success' | 'error' | 'warning' | 'info'
   showFooter?: boolean
+  size?: 'small' | 'medium' | 'large' | 'xlarge'
 }
 
-export default function Modal({ isOpen, onClose, title, children, type = 'info', showFooter = true }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, type = 'info', showFooter = true, size = 'medium' }: ModalProps) {
+  const sizeClasses = {
+    small: 'max-w-md',
+    medium: 'max-w-2xl',
+    large: 'max-w-4xl',
+    xlarge: 'max-w-6xl'
+  }
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden'
@@ -79,9 +86,9 @@ export default function Modal({ isOpen, onClose, title, children, type = 'info',
         className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
         onClick={onClose}
       />
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-full items-center justify-center p-2">
         <div
-          className={`relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-md mx-4 ${styles.border} border-2`}
+          className={`relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full ${sizeClasses[size]} mx-4 ${styles.border} border-2 max-h-[98vh] flex flex-col`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
@@ -89,7 +96,11 @@ export default function Modal({ isOpen, onClose, title, children, type = 'info',
               <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full flex-shrink-0 ${styles.iconBg}`}>
                 <span className={`text-lg sm:text-xl font-bold ${styles.iconText}`}>{styles.icon}</span>
               </div>
-              <h3 className={`text-base sm:text-lg font-semibold ${styles.titleText} truncate`}>{title}</h3>
+              {typeof title === 'string' ? (
+                <h3 className={`text-base sm:text-lg font-semibold ${styles.titleText} truncate`}>{title}</h3>
+              ) : (
+                <div className={`text-base sm:text-lg font-semibold ${styles.titleText} flex-1 min-w-0`}>{title}</div>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -111,7 +122,7 @@ export default function Modal({ isOpen, onClose, title, children, type = 'info',
               </svg>
             </button>
           </div>
-          <div className="px-4 sm:px-6 py-3 sm:py-4">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 overflow-y-auto flex-1 min-h-0">
             <div className="text-sm text-gray-700 break-words">{children}</div>
           </div>
           {showFooter && (

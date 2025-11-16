@@ -24,6 +24,7 @@ export default function Settlements() {
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
   const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
+  const [extractOnly, setExtractOnly] = useState<boolean>(true) // Default to JSON extraction (no PDF storage)
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
@@ -146,8 +147,8 @@ export default function Settlements() {
           showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
         }
       } else if (uploadFile) {
-        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType)
-        showToast('Settlement uploaded successfully!', 'success')
+        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType, extractOnly)
+        showToast(`Settlement uploaded successfully! ${extractOnly ? '(Extracted to JSON, PDF not stored)' : ''}`, 'success')
       } else {
         showModal('Error', 'Please select a file to upload', 'error')
         setUploading(false)
@@ -871,6 +872,23 @@ export default function Settlements() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="mb-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extractOnly}
+                  onChange={(e) => setExtractOnly(e.target.checked)}
+                  disabled={uploading}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Extract to JSON (don't store PDF file)
+                </span>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 ml-6">
+                When enabled, data is extracted to structured JSON format and imported to the database without storing the PDF file. This keeps your database clean and efficient.
+              </p>
             </div>
             {uploadMode === 'single' ? (
               <div className="mb-4">
