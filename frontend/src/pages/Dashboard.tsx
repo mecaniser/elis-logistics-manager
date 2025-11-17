@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [groupBy, setGroupBy] = useState<'week_start' | 'settlement_date'>('week_start')
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
+  const [showProfitDetails, setShowProfitDetails] = useState(false)
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('monthly')
@@ -1596,9 +1597,31 @@ export default function Dashboard() {
       {/* Net Profit vs Repair Costs Chart - Enhanced */}
       {truckProfitsData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Profit Analysis by Truck</h2>
-            <p className="text-sm text-gray-600">Showing profit before repairs, repair costs, and final net profit after repairs. Percentage indicates repair cost as % of profit before repairs.</p>
+          <div className="mb-6 flex justify-between items-start">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Profit Analysis by Truck</h2>
+              <p className="text-sm text-gray-600">Showing profit before repairs, repair costs, and final net profit after repairs. Percentage indicates repair cost as % of profit before repairs.</p>
+            </div>
+            <button
+              onClick={() => setShowProfitDetails(!showProfitDetails)}
+              className="ml-4 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors flex items-center gap-2"
+            >
+              {showProfitDetails ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  Hide Details
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  Show Details
+                </>
+              )}
+            </button>
           </div>
           <ReactECharts
             option={{
@@ -1608,7 +1631,7 @@ export default function Dashboard() {
                   type: 'shadow'
                 },
                 formatter: (params: any) => {
-                  const truck = truckProfitsData.find((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name === params[0]?.axisValue)
+                  const truck = truckProfitsData.find((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name === params[0]?.axisValue)
                   let result = `<strong>${params[0]?.axisValue}</strong><br/>`
                   
                   params.forEach((param: any) => {
@@ -1657,7 +1680,7 @@ export default function Dashboard() {
               },
               xAxis: {
                 type: 'category',
-                data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name),
+                data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name),
                 axisLabel: {
                   rotate: truckProfitsData.length > 6 ? 45 : 0,
                   fontSize: 11
@@ -1681,7 +1704,7 @@ export default function Dashboard() {
                 {
                   name: 'Profit Before Repairs',
                   type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
                   itemStyle: {
                     color: '#3b82f6',  // Blue for profit before repairs
                     borderRadius: [4, 4, 0, 0]
@@ -1700,7 +1723,7 @@ export default function Dashboard() {
                 {
                   name: 'Repair Costs',
                   type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => ({
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => ({
                     value: t.repair_costs || 0,
                     profitBeforeRepairs: t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))
                   })),
@@ -1740,7 +1763,7 @@ export default function Dashboard() {
                 {
                   name: 'Net Profit (After Repairs)',
                   type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.net_profit),
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.net_profit),
                   itemStyle: {
                     color: (params: any) => {
                       const value = params.value || 0
@@ -1768,9 +1791,10 @@ export default function Dashboard() {
             opts={{ renderer: 'svg' }}
           />
           
-          {/* Summary Stats */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-gray-200">
-            {truckProfitsData.map((truck: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => {
+          {/* Summary Stats - Collapsible */}
+          {showProfitDetails && (
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-gray-200">
+            {truckProfitsData.map((truck: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => {
               const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
               const repairRatio = profitBeforeRepairs > 0 && truck.repair_costs > 0 
                 ? ((truck.repair_costs / profitBeforeRepairs) * 100).toFixed(1)
@@ -1778,7 +1802,14 @@ export default function Dashboard() {
               
               return (
                 <div key={truck.truck_id} className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">{truck.truck_name}</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1">{truck.truck_name}</h3>
+                  {(truck.license_plate || truck.vin) && (
+                    <div className="text-xs text-gray-500 mb-2">
+                      {truck.license_plate && <span>Plate: {truck.license_plate}</span>}
+                      {truck.license_plate && truck.vin && <span className="mx-2">•</span>}
+                      {truck.vin && <span>VIN: {truck.vin}</span>}
+                    </div>
+                  )}
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Profit Before Repairs:</span>
@@ -1808,7 +1839,8 @@ export default function Dashboard() {
                 </div>
               )
             })}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

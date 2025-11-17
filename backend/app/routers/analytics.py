@@ -120,6 +120,8 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         truck_profits.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
+            "license_plate": truck.license_plate,  # Include license plate
+            "vin": truck.vin,  # Include VIN if available
             "total_revenue": float(truck_revenue),
             "total_expenses": float(truck_expenses) + float(truck_repairs_cost),
             "settlement_expenses": float(truck_expenses),  # Expenses from settlements only (excluding repairs)
