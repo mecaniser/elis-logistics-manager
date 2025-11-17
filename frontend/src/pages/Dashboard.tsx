@@ -9,6 +9,19 @@ interface RepairByMonth {
   month: string
   category?: string
   cost: number
+  truck_name?: string
+  description?: string
+}
+
+interface PMStatus {
+  truck_id: number
+  truck_name: string
+  last_pm_date: string | null
+  last_pm_repair_id: number | null
+  is_due: boolean
+  days_since_pm: number | null
+  days_overdue: number | null
+  pm_threshold_months: number
 }
 
 interface BlockByTruckMonth {
@@ -263,16 +276,16 @@ export default function Dashboard() {
   }
 
   const blocksChartData = processBlocksData()
-  const pmStatus = data.pm_status || []
+  const pmStatus: PMStatus[] = data.pm_status || []
 
   // Filter PM status by selected truck if applicable
   const filteredPMStatus = selectedTruck 
-    ? pmStatus.filter((pm) => pm.truck_id === selectedTruck)
+    ? pmStatus.filter((pm: PMStatus) => pm.truck_id === selectedTruck)
     : pmStatus
 
   // Separate trucks due vs not due
-  const trucksDueForPM = filteredPMStatus.filter((pm) => pm.is_due)
-  const trucksNotDueForPM = filteredPMStatus.filter((pm) => !pm.is_due)
+  const trucksDueForPM = filteredPMStatus.filter((pm: PMStatus) => pm.is_due)
+  const trucksNotDueForPM = filteredPMStatus.filter((pm: PMStatus) => !pm.is_due)
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !data.by_week || data.by_week.length === 0) {
@@ -555,7 +568,7 @@ export default function Dashboard() {
               <div className="text-2xl font-bold text-red-600">{trucksDueForPM.length}</div>
               {trucksDueForPM.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {trucksDueForPM.map((pm) => (
+                  {trucksDueForPM.map((pm: PMStatus) => (
                     <div key={pm.truck_id} className="text-sm text-gray-700">
                       {pm.truck_name}
                       {pm.days_overdue !== null && (
@@ -575,7 +588,7 @@ export default function Dashboard() {
               <div className="text-2xl font-bold text-green-600">{trucksNotDueForPM.length}</div>
               {trucksNotDueForPM.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  {trucksNotDueForPM.map((pm) => (
+                  {trucksNotDueForPM.map((pm: PMStatus) => (
                     <div key={pm.truck_id} className="text-sm text-gray-700">
                       {pm.truck_name}
                       {pm.last_pm_date && pm.days_since_pm !== null && (
@@ -916,7 +929,6 @@ export default function Dashboard() {
 
                   const sortedLabels = expenseCategories.map(cat => cat.label)
                   const sortedValues = expenseCategories.map(cat => cat.value)
-                  const sortedKeys = expenseCategories.map(cat => cat.key)
                   const sortedAverages = expenseCategories.map(cat => averagePercentages[cat.key] || 0)
 
                   return (
@@ -1596,7 +1608,7 @@ export default function Dashboard() {
                   type: 'shadow'
                 },
                 formatter: (params: any) => {
-                  const truck = truckProfitsData.find((t) => t.truck_name === params[0]?.axisValue)
+                  const truck = truckProfitsData.find((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name === params[0]?.axisValue)
                   let result = `<strong>${params[0]?.axisValue}</strong><br/>`
                   
                   params.forEach((param: any) => {
@@ -1645,7 +1657,7 @@ export default function Dashboard() {
               },
               xAxis: {
                 type: 'category',
-                data: truckProfitsData.map((t) => t.truck_name),
+                data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name),
                 axisLabel: {
                   rotate: truckProfitsData.length > 6 ? 45 : 0,
                   fontSize: 11
@@ -1669,7 +1681,7 @@ export default function Dashboard() {
                 {
                   name: 'Profit Before Repairs',
                   type: 'bar',
-                  data: truckProfitsData.map((t) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
                   itemStyle: {
                     color: '#3b82f6',  // Blue for profit before repairs
                     borderRadius: [4, 4, 0, 0]
@@ -1688,7 +1700,7 @@ export default function Dashboard() {
                 {
                   name: 'Repair Costs',
                   type: 'bar',
-                  data: truckProfitsData.map((t) => ({
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => ({
                     value: t.repair_costs || 0,
                     profitBeforeRepairs: t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))
                   })),
@@ -1728,7 +1740,7 @@ export default function Dashboard() {
                 {
                   name: 'Net Profit (After Repairs)',
                   type: 'bar',
-                  data: truckProfitsData.map((t) => t.net_profit),
+                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.net_profit),
                   itemStyle: {
                     color: (params: any) => {
                       const value = params.value || 0
