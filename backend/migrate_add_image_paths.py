@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 # Get database path
-db_path = Path(__file__).parent / "logistics.db"
+db_path = Path(__file__).parent / "elisogistics.db"
 
 if not db_path.exists():
     print(f"Database file not found at {db_path}")

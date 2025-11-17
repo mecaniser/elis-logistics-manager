@@ -118,7 +118,7 @@ The PDF parser (`app/utils/pdf_parser.py`) is a template. You'll need to customi
 
 ### Database
 
-- **Development:** Uses SQLite (`logistics.db`)
+- **Development:** Uses SQLite (`elisogistics.db`)
 - **Production:** Uses PostgreSQL (Railway)
 
 Tables are auto-created on first run via `Base.metadata.create_all()` in `main.py`.

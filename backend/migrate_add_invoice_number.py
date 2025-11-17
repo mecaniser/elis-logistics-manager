@@ -15,7 +15,7 @@ from app.models.repair import Repair
 
 def migrate_add_invoice_number():
     """Add invoice_number column to repairs table if it doesn't exist"""
-    db_path = os.path.join(backend_dir, "logistics.db")
+    db_path = os.path.join(backend_dir, "elisogistics.db")
     
     if not os.path.exists(db_path):
         print("Database file not found. Creating new database with all tables...")

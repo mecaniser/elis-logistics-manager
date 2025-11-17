@@ -187,7 +187,7 @@ elis-logistics-app/
 ## 📚 Important Notes
 
 ### Database
-- **Development:** SQLite (`logistics.db` file)
+- **Development:** SQLite (`elisogistics.db` file)
 - **Production:** PostgreSQL (Railway auto-provides `DATABASE_URL`)
 - Tables auto-created on startup (see `main.py`)
 
@@ -223,7 +223,7 @@ curl http://localhost:8000/api/health
 ## 💡 Development Tips
 
 1. **API Testing:** Use FastAPI's auto-generated docs at `/docs` (Swagger UI)
-2. **Database Inspection:** Use SQLite browser or `sqlite3` CLI for `logistics.db`
+2. **Database Inspection:** Use SQLite browser or `sqlite3` CLI for `elisogistics.db`
 3. **PDF Testing:** Upload sample PDFs via `/api/settlements/upload` endpoint
 4. **CORS:** Frontend URL configured in `main.py` CORS middleware
 

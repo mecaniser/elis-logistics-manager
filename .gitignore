@@ -54,6 +54,9 @@ htmlcov/
 # PDF files and invoices (keep local)
 *.pdf
 
+# Extracted settlement data (keep local)
+backend/settlements_extracted/
+
 # Image files
 *.jpg
 *.jpeg
