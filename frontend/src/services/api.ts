@@ -19,6 +19,7 @@ export interface Truck {
 export interface Settlement {
   id: number
   truck_id: number
+  driver_id?: number
   settlement_date: string
   week_start?: string
   week_end?: string
@@ -30,6 +31,7 @@ export interface Settlement {
   net_profit?: number
   pdf_file_path?: string
   settlement_type?: string
+  license_plate?: string
 }
 
 export interface Repair {

@@ -2,6 +2,34 @@ import { useEffect, useState } from 'react'
 import { analyticsApi, trucksApi, Truck, TimeSeriesData } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 
+// Type definitions for dashboard data structures
+interface RepairByMonth {
+  truck_id: number
+  month_key: string
+  month: string
+  category?: string
+  cost: number
+}
+
+interface BlockByTruckMonth {
+  truck_id: number
+  month_key: string
+  month: string
+  blocks: number
+  truck_name?: string
+}
+
+interface ExpenseData {
+  fuel: number[]
+  dispatch_fee: number[]
+  insurance: number[]
+  safety: number[]
+  prepass: number[]
+  ifta: number[]
+  truck_parking: number[]
+  custom: number[]
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<any>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
@@ -153,14 +181,14 @@ export default function Dashboard() {
   ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
 
   const truckProfitsData = data.truck_profits || []
-  const blocksByTruckMonth = data.blocks_by_truck_month || []
-  const repairsByMonth = data.repairs_by_month || []
+  const blocksByTruckMonth: BlockByTruckMonth[] = data.blocks_by_truck_month || []
+  const repairsByMonth: RepairByMonth[] = data.repairs_by_month || []
 
   // Identify months with PM (preventive maintenance) repairs by truck
   const getPMMonthsByTruck = () => {
     const pmMonths: { [truckId: number]: Set<string> } = {}
     
-    repairsByMonth.forEach(repair => {
+    repairsByMonth.forEach((repair: RepairByMonth) => {
       // PM repairs are categorized as "maintenance"
       if (repair.category === 'maintenance' && repair.month_key) {
         if (!pmMonths[repair.truck_id]) {
@@ -181,14 +209,14 @@ export default function Dashboard() {
     
     // Get all unique months
     const monthSet = new Set<string>()
-    blocksByTruckMonth.forEach(item => {
+    blocksByTruckMonth.forEach((item: BlockByTruckMonth) => {
       monthSet.add(item.month_key)
     })
     const months = Array.from(monthSet).sort()
     
     // Get all unique trucks
     const truckSet = new Set<number>()
-    blocksByTruckMonth.forEach(item => {
+    blocksByTruckMonth.forEach((item: BlockByTruckMonth) => {
       truckSet.add(item.truck_id)
     })
     const truckIds = Array.from(truckSet)
@@ -204,7 +232,7 @@ export default function Dashboard() {
       const truckName = truckMap.get(truckId) || `Truck ${truckId}`
       const data = months.map(monthKey => {
         const item = blocksByTruckMonth.find(
-          d => d.truck_id === truckId && d.month_key === monthKey
+          (d: BlockByTruckMonth) => d.truck_id === truckId && d.month_key === monthKey
         )
         return item ? item.blocks : 0
       })
@@ -218,16 +246,16 @@ export default function Dashboard() {
     
     // Calculate average blocks per month across all trucks
     const averageLine = months.map(monthKey => {
-      const monthData = blocksByTruckMonth.filter(d => d.month_key === monthKey)
+      const monthData = blocksByTruckMonth.filter((d: BlockByTruckMonth) => d.month_key === monthKey)
       if (monthData.length === 0) return 0
-      const totalBlocks = monthData.reduce((sum, d) => sum + d.blocks, 0)
+      const totalBlocks = monthData.reduce((sum: number, d: BlockByTruckMonth) => sum + d.blocks, 0)
       const avgBlocks = totalBlocks / monthData.length
       return Math.round(avgBlocks * 100) / 100 // Round to 2 decimal places
     })
     
     // Format month labels
     const monthLabels = months.map(monthKey => {
-      const item = blocksByTruckMonth.find(d => d.month_key === monthKey)
+      const item = blocksByTruckMonth.find((d: BlockByTruckMonth) => d.month_key === monthKey)
       return item ? item.month : monthKey
     })
     
@@ -239,69 +267,58 @@ export default function Dashboard() {
 
   // Filter PM status by selected truck if applicable
   const filteredPMStatus = selectedTruck 
-    ? pmStatus.filter(pm => pm.truck_id === selectedTruck)
+    ? pmStatus.filter((pm) => pm.truck_id === selectedTruck)
     : pmStatus
 
   // Separate trucks due vs not due
-  const trucksDueForPM = filteredPMStatus.filter(pm => pm.is_due)
-  const trucksNotDueForPM = filteredPMStatus.filter(pm => !pm.is_due)
+  const trucksDueForPM = filteredPMStatus.filter((pm) => pm.is_due)
+  const trucksNotDueForPM = filteredPMStatus.filter((pm) => !pm.is_due)
 
-  // Helper functions for time-series data processing
-  const formatWeekLabel = (weekKey: string, weekEnd?: string) => {
-    // Labels are already formatted from backend
-    return weekKey
-  }
-
-  const formatMonthLabel = (monthKey: string) => {
-    // Labels are already formatted from backend
-    return monthKey
-  }
-
-  const processWeeklyData = (data: TimeSeriesData | null) => {
+  const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !data.by_week || data.by_week.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: {} }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
     }
     
-    const labels = data.by_week.map(item => item.week_label)
-    const grossRevenue = data.by_week.map(item => item.gross_revenue)
-    const netProfit = data.by_week.map(item => item.net_profit)
-    const driverPay = data.by_week.map(item => item.driver_pay)
-    const payrollFee = data.by_week.map(item => item.payroll_fee)
+    const labels = data.by_week.map((item) => item.week_label)
+    const grossRevenue = data.by_week.map((item) => item.gross_revenue)
+    const netProfit = data.by_week.map((item) => item.net_profit)
+    const driverPay = data.by_week.map((item) => item.driver_pay)
+    const payrollFee = data.by_week.map((item) => item.payroll_fee)
     
-    const expenses = {
-      fuel: data.by_week.map(item => item.fuel),
-      dispatch_fee: data.by_week.map(item => item.dispatch_fee),
-      insurance: data.by_week.map(item => item.insurance),
-      safety: data.by_week.map(item => item.safety),
-      prepass: data.by_week.map(item => item.prepass),
-      ifta: data.by_week.map(item => item.ifta),
-      truck_parking: data.by_week.map(item => item.truck_parking),
-      custom: data.by_week.map(item => item.custom),
+    const expenses: ExpenseData = {
+      fuel: data.by_week.map((item) => item.fuel),
+      dispatch_fee: data.by_week.map((item) => item.dispatch_fee),
+      insurance: data.by_week.map((item) => item.insurance),
+      safety: data.by_week.map((item) => item.safety),
+      prepass: data.by_week.map((item) => item.prepass),
+      ifta: data.by_week.map((item) => item.ifta),
+      truck_parking: data.by_week.map((item) => item.truck_parking),
+      custom: data.by_week.map((item) => item.custom),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
   }
 
-  const processMonthlyData = (data: TimeSeriesData | null) => {
+  const processMonthlyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !data.by_month || data.by_month.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: {} }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
     }
     
-    const labels = data.by_month.map(item => item.month_label)
-    const grossRevenue = data.by_month.map(item => item.gross_revenue)
-    const netProfit = data.by_month.map(item => item.net_profit)
-    const driverPay = data.by_month.map(item => item.driver_pay)
-    const payrollFee = data.by_month.map(item => item.payroll_fee)
+    const labels = data.by_month.map((item) => item.month_label)
+    const grossRevenue = data.by_month.map((item) => item.gross_revenue)
+    const netProfit = data.by_month.map((item) => item.net_profit)
+    const driverPay = data.by_month.map((item) => item.driver_pay)
+    const payrollFee = data.by_month.map((item) => item.payroll_fee)
     
-    const expenses = {
-      fuel: data.by_month.map(item => item.fuel),
-      dispatch_fee: data.by_month.map(item => item.dispatch_fee),
-      insurance: data.by_month.map(item => item.insurance),
-      safety: data.by_month.map(item => item.safety),
-      prepass: data.by_month.map(item => item.prepass),
-      ifta: data.by_month.map(item => item.ifta),
-      truck_parking: data.by_month.map(item => item.truck_parking),
-      custom: data.by_month.map(item => item.custom),
+    const expenses: ExpenseData = {
+      fuel: data.by_month.map((item) => item.fuel),
+      dispatch_fee: data.by_month.map((item) => item.dispatch_fee),
+      insurance: data.by_month.map((item) => item.insurance),
+      safety: data.by_month.map((item) => item.safety),
+      prepass: data.by_month.map((item) => item.prepass),
+      ifta: data.by_month.map((item) => item.ifta),
+      truck_parking: data.by_month.map((item) => item.truck_parking),
+      custom: data.by_month.map((item) => item.custom),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
@@ -1256,8 +1273,8 @@ export default function Dashboard() {
 
       {repairsByMonth.length > 0 && (() => {
         // Group repairs by month
-        const repairsByMonthGrouped: { [key: string]: any[] } = {}
-        repairsByMonth.forEach(repair => {
+        const repairsByMonthGrouped: { [key: string]: RepairByMonth[] } = {}
+        repairsByMonth.forEach((repair: RepairByMonth) => {
           if (!repairsByMonthGrouped[repair.month_key]) {
             repairsByMonthGrouped[repair.month_key] = []
           }
@@ -1265,7 +1282,7 @@ export default function Dashboard() {
         })
         
         // Get unique months sorted
-        const uniqueMonths = Array.from(new Set(repairsByMonth.map(r => r.month_key))).sort()
+        const uniqueMonths = Array.from(new Set(repairsByMonth.map((r: RepairByMonth) => r.month_key))).sort()
         
         // Create x-axis categories: each repair gets its own position, grouped by month
         const xAxisData: string[] = []
@@ -1273,12 +1290,12 @@ export default function Dashboard() {
         const repairTooltips: string[] = []
         const repairColors: string[] = []
         
-        uniqueMonths.forEach(monthKey => {
+        uniqueMonths.forEach((monthKey: string) => {
           const repairsInMonth = repairsByMonthGrouped[monthKey] || []
           const firstRepair = repairsInMonth[0]
           const monthLabel = firstRepair ? firstRepair.month : monthKey
           
-          repairsInMonth.forEach((repair, idx) => {
+          repairsInMonth.forEach((repair: RepairByMonth, idx: number) => {
             // Create label: "Month - Repair #" or just show month if only one repair
             const label = repairsInMonth.length > 1 
               ? `${monthLabel} - #${idx + 1}` 
@@ -1453,10 +1470,10 @@ export default function Dashboard() {
                   // Create markArea data for PM months
                   const markAreaData: any[] = []
                   if (pmMonths && pmMonths.size > 0) {
-                    blocksChartData.months.forEach((monthLabel, index) => {
+                    blocksChartData.months.forEach((monthLabel: string, index: number) => {
                       // Extract month_key from month label or use index
                       const monthKey = blocksByTruckMonth.find(
-                        d => d.month === monthLabel && d.truck_name === series.name
+                        (d: BlockByTruckMonth) => d.month === monthLabel && d.truck_name === series.name
                       )?.month_key
                       
                       if (monthKey && pmMonths.has(monthKey)) {
@@ -1579,7 +1596,7 @@ export default function Dashboard() {
                   type: 'shadow'
                 },
                 formatter: (params: any) => {
-                  const truck = truckProfitsData.find(t => t.truck_name === params[0]?.axisValue)
+                  const truck = truckProfitsData.find((t) => t.truck_name === params[0]?.axisValue)
                   let result = `<strong>${params[0]?.axisValue}</strong><br/>`
                   
                   params.forEach((param: any) => {
@@ -1628,7 +1645,7 @@ export default function Dashboard() {
               },
               xAxis: {
                 type: 'category',
-                data: truckProfitsData.map(t => t.truck_name),
+                data: truckProfitsData.map((t) => t.truck_name),
                 axisLabel: {
                   rotate: truckProfitsData.length > 6 ? 45 : 0,
                   fontSize: 11
@@ -1652,7 +1669,7 @@ export default function Dashboard() {
                 {
                   name: 'Profit Before Repairs',
                   type: 'bar',
-                  data: truckProfitsData.map(t => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
+                  data: truckProfitsData.map((t) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
                   itemStyle: {
                     color: '#3b82f6',  // Blue for profit before repairs
                     borderRadius: [4, 4, 0, 0]
@@ -1711,7 +1728,7 @@ export default function Dashboard() {
                 {
                   name: 'Net Profit (After Repairs)',
                   type: 'bar',
-                  data: truckProfitsData.map(t => t.net_profit),
+                  data: truckProfitsData.map((t) => t.net_profit),
                   itemStyle: {
                     color: (params: any) => {
                       const value = params.value || 0
@@ -2033,56 +2050,56 @@ export default function Dashboard() {
                         name: 'Fuel',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.fuel,
+                        data: currentData.expenses?.fuel || [],
                         itemStyle: { color: '#3b82f6' }
                       },
                       {
                         name: 'Dispatch Fee',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.dispatch_fee,
+                        data: currentData.expenses?.dispatch_fee || [],
                         itemStyle: { color: '#f59e0b' }
                       },
                       {
                         name: 'Insurance',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.insurance,
+                        data: currentData.expenses?.insurance || [],
                         itemStyle: { color: '#f97316' }
                       },
                       {
                         name: 'Safety',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.safety,
+                        data: currentData.expenses?.safety || [],
                         itemStyle: { color: '#eab308' }
                       },
                       {
                         name: 'Prepass',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.prepass,
+                        data: currentData.expenses?.prepass || [],
                         itemStyle: { color: '#84cc16' }
                       },
                       {
                         name: 'IFTA',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.ifta,
+                        data: currentData.expenses?.ifta || [],
                         itemStyle: { color: '#10b981' }
                       },
                       {
                         name: 'Truck Parking',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.truck_parking,
+                        data: currentData.expenses?.truck_parking || [],
                         itemStyle: { color: '#a855f7' }
                       },
                       {
                         name: 'Custom',
                         type: 'line',
                         smooth: true,
-                        data: currentData.expenses.custom,
+                        data: currentData.expenses?.custom || [],
                         itemStyle: { color: '#6b7280' }
                       }
                     ]

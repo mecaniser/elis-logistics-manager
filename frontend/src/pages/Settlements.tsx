@@ -9,7 +9,7 @@ export default function Settlements() {
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
+  const [selectedTruck] = useState<number | null>(null)
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
@@ -1223,7 +1223,7 @@ export default function Settlements() {
                           src={getPdfUrl(editingSettlement.pdf_file_path)}
                           className="w-full h-full border-0"
                           title="Settlement PDF"
-                          onError={(e) => {
+                          onError={() => {
                             console.error('Error loading PDF:', editingSettlement.pdf_file_path)
                           }}
                         />
