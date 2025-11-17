@@ -1462,7 +1462,7 @@ export default function Dashboard() {
                 }
               },
               series: [
-                ...blocksChartData.series.map((series, seriesIndex) => {
+                ...blocksChartData.series.map((series) => {
                   // Get truck ID from series name or data
                   const truckId = trucks.find(t => t.name === series.name)?.id
                   const pmMonths = truckId ? pmMonthsByTruck[truckId] : null
