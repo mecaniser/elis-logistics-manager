@@ -29,12 +29,11 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Copy backend code
 COPY backend/ ./backend/
 
-# Copy startup script
-COPY backend/start.sh ./backend/start.sh
-RUN chmod +x ./backend/start.sh
-
 # Set working directory to backend
 WORKDIR /app/backend
+
+# Make sure start.sh is executable
+RUN chmod +x /app/backend/start.sh
 
 # Expose port (Railway will set PORT env var at runtime)
 EXPOSE 8000
@@ -42,5 +41,5 @@ EXPOSE 8000
 # Start the application using exec form (best practice)
 # PORT is read from environment by start.sh
 # Use absolute path to ensure Railway finds the script
-CMD ["/app/backend/start.sh"]
+ENTRYPOINT ["/app/backend/start.sh"]
 
