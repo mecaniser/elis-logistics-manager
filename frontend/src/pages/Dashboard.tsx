@@ -1770,7 +1770,7 @@ export default function Dashboard() {
           
           {/* Summary Stats */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-gray-200">
-            {truckProfitsData.map((truck) => {
+            {truckProfitsData.map((truck: { truck_id: number; truck_name: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => {
               const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
               const repairRatio = profitBeforeRepairs > 0 && truck.repair_costs > 0 
                 ? ((truck.repair_costs / profitBeforeRepairs) * 100).toFixed(1)
