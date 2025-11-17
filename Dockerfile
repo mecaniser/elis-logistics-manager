@@ -29,12 +29,17 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Copy backend code
 COPY backend/ ./backend/
 
+# Copy startup script
+COPY backend/start.sh ./backend/start.sh
+RUN chmod +x ./backend/start.sh
+
 # Set working directory to backend
 WORKDIR /app/backend
 
 # Expose port (Railway will set PORT env var at runtime)
 EXPOSE 8000
 
-# Start the application (Railway sets PORT env var)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Start the application using exec form (best practice)
+# PORT is read from environment by start.sh
+CMD ["./start.sh"]
 
