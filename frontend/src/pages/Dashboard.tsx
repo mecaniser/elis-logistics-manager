@@ -529,7 +529,7 @@ export default function Dashboard() {
                 ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} Due for D13 Full PM
               </h3>
               <div className="mt-2 space-y-1">
-                {trucksDueForPM.map((pm) => (
+                {trucksDueForPM.map((pm: PMStatus) => (
                   <div key={pm.truck_id} className="text-sm text-red-700">
                     <span className="font-semibold">{pm.truck_name}</span>
                     {pm.last_pm_date ? (
