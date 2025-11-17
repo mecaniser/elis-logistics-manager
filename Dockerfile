@@ -41,5 +41,6 @@ EXPOSE 8000
 
 # Start the application using exec form (best practice)
 # PORT is read from environment by start.sh
-CMD ["./start.sh"]
+# Use absolute path to ensure Railway finds the script
+CMD ["/app/backend/start.sh"]
 
