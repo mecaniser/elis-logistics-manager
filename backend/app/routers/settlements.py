@@ -36,13 +36,16 @@ async def upload_settlement_pdf(
     truck_id: Optional[int] = Form(None),
     settlement_type: Optional[str] = Form(None),
     extract_only: Optional[bool] = Form(False),  # If True, extract to JSON and don't store PDF
+    store_pdf_only: Optional[bool] = Form(False),  # If True, store PDF only without extracting data
     db: Session = Depends(get_db)
 ):
     """
     Upload and parse Amazon Relay settlement PDF.
     
-    If extract_only=True, extracts data to JSON format and imports to database
-    without storing the PDF file.
+    Options:
+    - extract_only=True: Extracts data to JSON format and imports to database without storing the PDF file.
+    - store_pdf_only=True: Stores PDF file only without extracting or importing any data (for archival).
+    - Both False (default): Extracts data AND stores PDF file.
     """
     # Save uploaded file temporarily
     timestamp = datetime.now().timestamp()
@@ -50,6 +53,22 @@ async def upload_settlement_pdf(
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
+    
+    # If store_pdf_only mode, just save the PDF and return (no data extraction)
+    if store_pdf_only:
+        # PDF is already saved at file_path
+        # Note: This doesn't create a settlement record, just stores the file
+        # Return a minimal settlement response (won't be saved to DB, just for API response)
+        from app.schemas.settlement import SettlementResponse
+        return SettlementResponse(
+            id=0,
+            truck_id=truck_id or 0,
+            settlement_date=datetime.now().date(),
+            pdf_file_path=file_path,
+            gross_revenue=None,
+            expenses=None,
+            net_profit=None
+        )
     
     # If extract_only mode, use JSON extraction workflow
     if extract_only:

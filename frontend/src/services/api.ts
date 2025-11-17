@@ -68,7 +68,9 @@ export interface DashboardData {
     truck_name: string
     total_revenue: number
     total_expenses: number
+    settlement_expenses: number
     repair_costs: number
+    profit_before_repairs: number
     net_profit: number
   }>
   pm_status?: Array<{
@@ -105,7 +107,7 @@ export const settlementsApi = {
     api.post<Settlement>('/settlements', data),
   update: (id: number, data: Partial<Settlement>) =>
     api.put<Settlement>(`/settlements/${id}`, data),
-  upload: (file: File, truckId?: number, settlementType?: string) => {
+  upload: (file: File, truckId?: number, settlementType?: string, extractOnly?: boolean, storePdfOnly?: boolean) => {
     const formData = new FormData()
     formData.append('file', file)
     if (truckId !== undefined) {
@@ -113,6 +115,12 @@ export const settlementsApi = {
     }
     if (settlementType) {
       formData.append('settlement_type', settlementType)
+    }
+    if (extractOnly !== undefined) {
+      formData.append('extract_only', extractOnly.toString())
+    }
+    if (storePdfOnly !== undefined) {
+      formData.append('store_pdf_only', storePdfOnly.toString())
     }
     return api.post<Settlement>(
       `/settlements/upload`,
@@ -165,16 +173,45 @@ export const repairsApi = {
     return api.get<Repair[]>('/repairs', { params })
   },
   getById: (id: number) => api.get<Repair>(`/repairs/${id}`),
-  create: (data: Partial<Repair>) => api.post<Repair>('/repairs', data),
-  upload: (file: File, images: File[]) => {
+  create: (data: Partial<Repair>, images?: File[]) => {
+    const formData = new FormData()
+    
+    // Clean data - remove undefined values before stringifying
+    const cleanedData: any = {}
+    Object.keys(data).forEach(key => {
+      const value = data[key as keyof Repair]
+      if (value !== undefined && value !== null && value !== '') {
+        cleanedData[key] = value
+      }
+    })
+    
+    formData.append('repair_json', JSON.stringify(cleanedData))
+    if (images && images.length > 0) {
+      images.forEach((img) => {
+        formData.append('images', img)
+      })
+    }
+    return api.post<Repair>('/repairs', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+  upload: (file: File, images: File[], truckId?: number) => {
     const formData = new FormData()
     formData.append('file', file)
     images.forEach((img) => {
       formData.append('images', img)
     })
+    if (truckId !== undefined) {
+      formData.append('truck_id', truckId.toString())
+    }
     return api.post<{
-      repair: Repair
+      repair: Repair | null
       warning?: string
+      vin_found?: boolean
+      vin?: string
+      requires_truck_selection?: boolean
     }>(
       `/repairs/upload`,
       formData,
@@ -240,6 +277,34 @@ export interface TimeSeriesData {
     ifta: number
     truck_parking: number
     custom: number
+    trucks: Array<{ truck_id: number; truck_name: string }>
+    settlement_count?: number
+    settlements?: Array<{
+      settlement_id: number
+      settlement_date: string | null
+      week_start: string | null
+      truck_id: number
+      truck_name: string
+      insurance: number
+      driver_pay: number
+    }>
+  }>
+  by_year: Array<{
+    year_key: string
+    year_label: string
+    gross_revenue: number
+    net_profit: number
+    driver_pay: number
+    payroll_fee: number
+    fuel: number
+    dispatch_fee: number
+    insurance: number
+    safety: number
+    prepass: number
+    ifta: number
+    truck_parking: number
+    custom: number
+    repairs?: number
     trucks: Array<{ truck_id: number; truck_name: string }>
   }>
 }

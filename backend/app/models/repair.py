@@ -11,10 +11,10 @@ class Repair(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     truck_id = Column(Integer, ForeignKey("trucks.id"), nullable=False)
-    repair_date = Column(Date, nullable=False)
+    repair_date = Column(Date, nullable=True)  # Made optional - can be set manually if PDF parsing fails
     description = Column(Text)
     category = Column(String(50))  # engine, tires, maintenance, etc
-    cost = Column(Numeric(10, 2), nullable=False)
+    cost = Column(Numeric(10, 2), nullable=True)  # Made optional - can be set manually if PDF parsing fails
     receipt_path = Column(String(255))
     invoice_number = Column(String(50), nullable=True)  # Invoice number from PDF
     image_paths = Column(JSON, nullable=True)  # List of image file paths

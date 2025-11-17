@@ -70,7 +70,7 @@ API docs at: http://localhost:8000/docs
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 ## API Endpoints

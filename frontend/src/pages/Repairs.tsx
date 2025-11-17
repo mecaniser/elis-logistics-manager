@@ -28,6 +28,22 @@ export default function Repairs() {
     isVisible: false
   })
   const [searchFilter, setSearchFilter] = useState<string>('')
+  const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
+  const [extractedVin, setExtractedVin] = useState<string | null>(null)
+  const [requiresTruckSelection, setRequiresTruckSelection] = useState(false)
+  const [showManualForm, setShowManualForm] = useState(false)
+  const [manualFormData, setManualFormData] = useState<Partial<Repair>>({
+    truck_id: undefined,
+    repair_date: undefined,
+    description: '',
+    category: '',
+    cost: undefined,
+    invoice_number: ''
+  })
+  const [manualFormImages, setManualFormImages] = useState<File[]>([])
+  const [creating, setCreating] = useState(false)
+  const [manualCustomCategory, setManualCustomCategory] = useState<string>('')
+  const [editCustomCategory, setEditCustomCategory] = useState<string>('')
 
   useEffect(() => {
     loadTrucks()
@@ -73,35 +89,135 @@ export default function Repairs() {
       return
     }
 
+    // If VIN was not found, require truck selection
+    if (requiresTruckSelection && !selectedTruckForUpload) {
+      showModal('Error', 'Please select a truck for this repair', 'error')
+      return
+    }
+
     try {
       setUploading(true)
-      const response = await repairsApi.upload(uploadFile, uploadImages)
+      const response = await repairsApi.upload(uploadFile, uploadImages, selectedTruckForUpload || undefined)
+      
+      // Check if truck selection is required
+      if (response.data.requires_truck_selection) {
+        setRequiresTruckSelection(true)
+        setExtractedVin(response.data.vin || null)
+        showModal(
+          'Truck Selection Required',
+          response.data.warning || 'Please select a truck for this repair.',
+          'warning'
+        )
+        return
+      }
+      
       if (response.data.warning) {
         showToast(`Repair uploaded successfully. ${response.data.warning}`, 'warning')
       } else {
-        showToast('Repair uploaded successfully! Truck identified by VIN from invoice.', 'success')
+        const vinMessage = response.data.vin_found 
+          ? 'Truck identified by VIN from invoice.' 
+          : 'Truck selected manually.'
+        showToast(`Repair uploaded successfully! ${vinMessage}`, 'success')
       }
       setUploadFile(null)
       setUploadImages([])
+      setSelectedTruckForUpload(null)
+      setExtractedVin(null)
+      setRequiresTruckSelection(false)
       setShowUploadForm(false)
       loadRepairs()
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to upload repair'
-      showModal('Upload Failed', errorMessage, 'error')
+      
+      // Check if error indicates VIN not found - allow truck selection
+      if (errorMessage.includes('Could not extract VIN') || errorMessage.includes('select a truck manually')) {
+        setRequiresTruckSelection(true)
+        setExtractedVin(null)
+        showModal(
+          'VIN Not Found',
+          'VIN could not be extracted from the invoice. Please select a truck manually.',
+          'warning'
+        )
+      } else {
+        showModal('Upload Failed', errorMessage, 'error')
+      }
     } finally {
       setUploading(false)
     }
   }
 
+  const handleCreateManual = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!manualFormData.truck_id) {
+      showModal('Error', 'Please select a truck', 'error')
+      return
+    }
+
+    // If "other" category is selected, use custom category value
+    const categoryToSave = manualFormData.category === 'other' && manualCustomCategory 
+      ? manualCustomCategory 
+      : manualFormData.category
+
+    try {
+      setCreating(true)
+      // Clean up the data - remove undefined values and format dates
+      const cleanedData: Partial<Repair> = {
+        truck_id: manualFormData.truck_id,
+        repair_date: manualFormData.repair_date || undefined,
+        description: manualFormData.description || undefined,
+        category: categoryToSave || undefined,
+        cost: manualFormData.cost || undefined,
+        invoice_number: manualFormData.invoice_number || undefined
+      }
+      
+      // Remove undefined values
+      Object.keys(cleanedData).forEach(key => {
+        if (cleanedData[key as keyof Repair] === undefined) {
+          delete cleanedData[key as keyof Repair]
+        }
+      })
+      
+      await repairsApi.create(
+        cleanedData, 
+        manualFormImages.length > 0 ? manualFormImages : undefined
+      )
+      showToast('Repair created successfully!', 'success')
+      setManualFormData({
+        truck_id: undefined,
+        repair_date: undefined,
+        description: '',
+        category: '',
+        cost: undefined,
+        invoice_number: ''
+      })
+      setManualCustomCategory('')
+      setManualFormImages([])
+      setShowManualForm(false)
+      loadRepairs()
+    } catch (err: any) {
+      console.error('Error creating repair:', err)
+      const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to create repair'
+      showModal('Creation Failed', errorMessage, 'error')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const handleEdit = (repair: Repair) => {
     setRepairToEdit(repair)
+    const category = repair.category || ''
+    // Check if category is not in the standard list (i.e., it's a custom "other" category)
+    const standardCategories = ['engine', 'tires', 'maintenance', 'electrical', 'brakes', 'suspension', 'body', 'other']
+    const isCustomCategory = category && !standardCategories.includes(category.toLowerCase())
+    
     setEditFormData({
       truck_id: repair.truck_id,
       repair_date: repair.repair_date,
       description: repair.description || '',
-      category: repair.category || '',
+      category: isCustomCategory ? 'other' : category,
       cost: repair.cost
     })
+    setEditCustomCategory(isCustomCategory ? category : '')
     setEditImages([])
   }
 
@@ -109,12 +225,22 @@ export default function Repairs() {
     e.preventDefault()
     if (!repairToEdit) return
 
+    // If "other" category is selected, use custom category value
+    const categoryToSave = editFormData.category === 'other' && editCustomCategory 
+      ? editCustomCategory 
+      : editFormData.category
+
     try {
       setSaving(true)
-      await repairsApi.update(repairToEdit.id, editFormData, editImages.length > 0 ? editImages : undefined)
+      await repairsApi.update(
+        repairToEdit.id, 
+        { ...editFormData, category: categoryToSave }, 
+        editImages.length > 0 ? editImages : undefined
+      )
       showToast('Repair updated successfully!', 'success')
       setRepairToEdit(null)
       setEditFormData({})
+      setEditCustomCategory('')
       setEditImages([])
       loadRepairs()
     } catch (err: any) {
@@ -201,12 +327,46 @@ export default function Repairs() {
               </button>
             )}
           </div>
-          <button
-            onClick={() => setShowUploadForm(!showUploadForm)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 whitespace-nowrap"
-          >
-            {showUploadForm ? 'Cancel' : 'Upload Repair'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setShowManualForm(!showManualForm)
+                setShowUploadForm(false)
+                if (showManualForm) {
+                  // Reset manual form state when closing
+                  setManualFormData({
+                    truck_id: undefined,
+                    repair_date: undefined,
+                    description: '',
+                    category: '',
+                    cost: undefined,
+                    invoice_number: ''
+                  })
+                  setManualFormImages([])
+                }
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 whitespace-nowrap"
+            >
+              {showManualForm ? 'Cancel' : 'Add Repair Manually'}
+            </button>
+            <button
+              onClick={() => {
+                setShowUploadForm(!showUploadForm)
+                setShowManualForm(false)
+                if (showUploadForm) {
+                  // Reset form state when closing
+                  setUploadFile(null)
+                  setUploadImages([])
+                  setSelectedTruckForUpload(null)
+                  setExtractedVin(null)
+                  setRequiresTruckSelection(false)
+                }
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 whitespace-nowrap"
+            >
+              {showUploadForm ? 'Cancel' : 'Upload Repair'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -214,9 +374,42 @@ export default function Repairs() {
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Upload Repair Invoice</h2>
           <p className="text-sm text-gray-600 mb-4">
-            The truck will be automatically identified by the VIN number extracted from the invoice.
+            {requiresTruckSelection 
+              ? 'VIN could not be extracted from the invoice. Please select a truck manually.'
+              : extractedVin
+              ? `VIN found: ${extractedVin}. The truck will be matched automatically, or you can select manually.`
+              : 'The truck will be automatically identified by the VIN number extracted from the invoice. If no VIN is found, you must select a truck manually.'}
           </p>
           <form onSubmit={handleUpload}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Truck {requiresTruckSelection ? '*' : '(Optional - will auto-detect from VIN if available)'}
+              </label>
+              <select
+                value={selectedTruckForUpload || ''}
+                onChange={(e) => setSelectedTruckForUpload(e.target.value ? Number(e.target.value) : null)}
+                required={requiresTruckSelection}
+                disabled={uploading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Auto-detect from VIN (or select manually)</option>
+                {trucks.map((truck) => (
+                  <option key={truck.id} value={truck.id}>
+                    {truck.name} {truck.vin ? `(VIN: ${truck.vin})` : ''}
+                  </option>
+                ))}
+              </select>
+              {extractedVin && (
+                <p className="mt-1 text-xs text-gray-500">
+                  VIN {extractedVin} was found in the invoice. {requiresTruckSelection ? 'Please select a truck.' : 'Truck will be matched automatically if VIN matches.'}
+                </p>
+              )}
+              {requiresTruckSelection && !extractedVin && (
+                <p className="mt-1 text-xs text-red-600">
+                  VIN not found - truck selection is required
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">PDF Invoice *</label>
@@ -242,7 +435,11 @@ export default function Repairs() {
                     className="hidden"
                   />
                 </label>
-                <p className="text-xs text-gray-500 mt-1">Invoice must contain a VIN number</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {requiresTruckSelection 
+                    ? 'VIN not found - truck selection required'
+                    : 'VIN will be extracted automatically if present in invoice'}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Images (optional)</label>
@@ -276,6 +473,137 @@ export default function Repairs() {
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
               {uploading ? 'Uploading...' : 'Upload'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {showManualForm && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">Add Repair Manually</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Use this form to add repairs when PDF invoices cannot be parsed or when adding repairs without invoices.
+          </p>
+          <form onSubmit={handleCreateManual}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Truck *</label>
+                <select
+                  value={manualFormData.truck_id || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, truck_id: e.target.value ? Number(e.target.value) : undefined })}
+                  required
+                  disabled={creating}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a truck...</option>
+                  {trucks.map((truck) => (
+                    <option key={truck.id} value={truck.id}>
+                      {truck.name} {truck.vin ? `(VIN: ${truck.vin})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Repair Date</label>
+                <input
+                  type="date"
+                  value={manualFormData.repair_date || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, repair_date: e.target.value || undefined })}
+                  disabled={creating}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cost</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manualFormData.cost || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, cost: e.target.value ? Number(e.target.value) : undefined })}
+                  disabled={creating}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <select
+                  value={manualFormData.category || ''}
+                  onChange={(e) => {
+                    const selectedCategory = e.target.value || undefined
+                    setManualFormData({ ...manualFormData, category: selectedCategory })
+                    // Reset custom category if not "other"
+                    if (selectedCategory !== 'other') {
+                      setManualCustomCategory('')
+                    }
+                  }}
+                  disabled={creating}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select category...</option>
+                  <option value="engine">Engine</option>
+                  <option value="tires">Tires</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="electrical">Electrical</option>
+                  <option value="brakes">Brakes</option>
+                  <option value="suspension">Suspension</option>
+                  <option value="body">Body</option>
+                  <option value="other">Other</option>
+                </select>
+                {manualFormData.category === 'other' && (
+                  <input
+                    type="text"
+                    value={manualCustomCategory}
+                    onChange={(e) => setManualCustomCategory(e.target.value)}
+                    disabled={creating}
+                    placeholder="Enter custom category..."
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <textarea
+                  value={manualFormData.description || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, description: e.target.value || undefined })}
+                  disabled={creating}
+                  rows={3}
+                  placeholder="Description of repair work..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Number</label>
+                <input
+                  type="text"
+                  value={manualFormData.invoice_number || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, invoice_number: e.target.value || undefined })}
+                  disabled={creating}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Images (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => setManualFormImages(Array.from(e.target.files || []))}
+                  disabled={creating}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {manualFormImages.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">{manualFormImages.length} image(s) selected</p>
+                )}
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={creating || !manualFormData.truck_id}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create Repair'}
             </button>
           </form>
         </div>
@@ -381,6 +709,7 @@ export default function Repairs() {
           onClose={() => {
             setRepairToEdit(null)
             setEditFormData({})
+            setEditCustomCategory('')
             setEditImages([])
           }}
           title="Edit Repair"
@@ -453,7 +782,14 @@ export default function Repairs() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
               <select
                 value={editFormData.category || ''}
-                onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                onChange={(e) => {
+                  const selectedCategory = e.target.value
+                  setEditFormData({ ...editFormData, category: selectedCategory })
+                  // Reset custom category if not "other"
+                  if (selectedCategory !== 'other') {
+                    setEditCustomCategory('')
+                  }
+                }}
                 disabled={saving}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -463,8 +799,20 @@ export default function Repairs() {
                 <option value="electrical">Electrical</option>
                 <option value="brakes">Brakes</option>
                 <option value="maintenance">Maintenance</option>
+                <option value="suspension">Suspension</option>
+                <option value="body">Body</option>
                 <option value="other">Other</option>
               </select>
+              {editFormData.category === 'other' && (
+                <input
+                  type="text"
+                  value={editCustomCategory}
+                  onChange={(e) => setEditCustomCategory(e.target.value)}
+                  disabled={saving}
+                  placeholder="Enter custom category..."
+                  className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Cost ($)</label>

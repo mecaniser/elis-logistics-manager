@@ -24,7 +24,8 @@ export default function Settlements() {
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
   const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
-  const [extractOnly, setExtractOnly] = useState<boolean>(true) // Default to JSON extraction (no PDF storage)
+  const [extractOnly, setExtractOnly] = useState<boolean>(false) // Default to storing PDFs (recommended - PDFs are small ~74KB each)
+  const [storePdfOnly, setStorePdfOnly] = useState<boolean>(false) // Store PDF only, don't extract data
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
@@ -147,8 +148,14 @@ export default function Settlements() {
           showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
         }
       } else if (uploadFile) {
-        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType, extractOnly)
-        showToast(`Settlement uploaded successfully! ${extractOnly ? '(Extracted to JSON, PDF not stored)' : ''}`, 'success')
+        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType, extractOnly, storePdfOnly)
+        let message = 'Settlement uploaded successfully!'
+        if (storePdfOnly) {
+          message = 'PDF stored successfully! No data was extracted or imported.'
+        } else if (extractOnly) {
+          message = 'Settlement uploaded successfully! (Extracted to JSON, PDF not stored)'
+        }
+        showToast(message, 'success')
       } else {
         showModal('Error', 'Please select a file to upload', 'error')
         setUploading(false)
@@ -157,6 +164,8 @@ export default function Settlements() {
       
       setUploadFile(null)
       setUploadFiles([])
+      setExtractOnly(false)
+      setStorePdfOnly(false)
       setSelectedTruckForUpload(null)
       setSelectedSettlementType('')
       setShowUploadForm(false)
@@ -248,8 +257,29 @@ export default function Settlements() {
   }
 
   const getPdfUrl = (pdfPath: string) => {
+    if (!pdfPath) return ''
     if (pdfPath.startsWith('http')) return pdfPath
-    const filename = pdfPath.split('/').pop() || pdfPath
+    
+    // Handle different path formats:
+    // - Full path: "uploads/1234567890_filename.pdf"
+    // - Relative path: "1234567890_filename.pdf"
+    // - Just filename: "filename.pdf"
+    let filename = pdfPath
+    
+    // Remove "uploads/" prefix if present
+    if (pdfPath.startsWith('uploads/')) {
+      filename = pdfPath.replace('uploads/', '')
+    } else if (pdfPath.includes('/')) {
+      // Extract filename from path
+      filename = pdfPath.split('/').pop() || pdfPath
+    }
+    
+    // Validate filename has proper extension
+    if (!filename.includes('.') || filename.length < 5) {
+      console.warn('Invalid PDF path:', pdfPath)
+      return ''
+    }
+    
     return `/uploads/${encodeURIComponent(filename)}`
   }
 
@@ -787,7 +817,18 @@ export default function Settlements() {
                 Delete
               </button>
               <button
-                onClick={() => setShowUploadForm(!showUploadForm)}
+                onClick={() => {
+                  setShowUploadForm(!showUploadForm)
+                  if (showUploadForm) {
+                    // Reset form when closing
+                    setUploadFile(null)
+                    setUploadFiles([])
+                    setExtractOnly(false)
+                    setStorePdfOnly(false)
+                    setSelectedTruckForUpload(null)
+                    setSelectedSettlementType('')
+                  }
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 {showUploadForm ? 'Cancel' : 'Upload Settlement'}
@@ -873,26 +914,58 @@ export default function Settlements() {
                 ))}
               </select>
             </div>
-            <div className="mb-4">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={extractOnly}
-                  onChange={(e) => setExtractOnly(e.target.checked)}
-                  disabled={uploading}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span className="ml-2 text-sm text-gray-700">
-                  Extract to JSON (don't store PDF file)
-                </span>
-              </label>
-              <p className="mt-1 text-xs text-gray-500 ml-6">
-                When enabled, data is extracted to structured JSON format and imported to the database without storing the PDF file. This keeps your database clean and efficient.
-              </p>
+            <div className="mb-4 space-y-3">
+              <div>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={storePdfOnly}
+                    onChange={(e) => {
+                      setStorePdfOnly(e.target.checked)
+                      if (e.target.checked) setExtractOnly(false) // Mutually exclusive
+                    }}
+                    disabled={uploading}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Store PDF only (don't extract data)
+                  </span>
+                </label>
+                <p className="mt-1 text-xs text-gray-500 ml-6">
+                  When enabled, the PDF file is stored but no data is extracted or imported. 
+                  This is useful for archival purposes or when you want to keep the PDF without creating/updating settlement records. 
+                  <strong className="text-gray-700"> Existing data will NOT be overwritten.</strong>
+                </p>
+              </div>
+              <div>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={extractOnly}
+                    onChange={(e) => {
+                      setExtractOnly(e.target.checked)
+                      if (e.target.checked) setStorePdfOnly(false) // Mutually exclusive
+                    }}
+                    disabled={uploading}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Extract to JSON only (don't store PDF file)
+                  </span>
+                </label>
+                <p className="mt-1 text-xs text-gray-500 ml-6">
+                  When enabled, data is extracted to structured JSON format and imported to the database without storing the PDF file. 
+                  Note: PDFs are stored on the filesystem (not in database), so storage is very efficient (~74KB per PDF). 
+                  Only enable this if you don't need to view the original PDFs later.
+                </p>
+              </div>
             </div>
             {uploadMode === 'single' ? (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">PDF File *</label>
+                <p className="text-xs text-gray-500 mb-2">
+                  PDFs are stored on the filesystem (not in database). Each PDF is ~74KB - very small and efficient to store.
+                </p>
                 <input
                   type="file"
                   accept=".pdf"
@@ -1130,25 +1203,33 @@ export default function Settlements() {
               </div>
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
-                  {/* PDF Document Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-lg font-medium text-gray-900">PDF Document</h4>
-                    </div>
-                    {editingSettlement.pdf_file_path ? (
+                  {/* PDF Document Section - Only show if PDF exists and is valid */}
+                  {editingSettlement.pdf_file_path && getPdfUrl(editingSettlement.pdf_file_path) && (
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-lg font-medium text-gray-900">PDF Document</h4>
+                        <button
+                          onClick={() => {
+                            const url = getPdfUrl(editingSettlement.pdf_file_path!)
+                            if (url) window.open(url, '_blank')
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-800"
+                        >
+                          Open in New Tab
+                        </button>
+                      </div>
                       <div className="w-full h-[750px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
                         <iframe
                           src={getPdfUrl(editingSettlement.pdf_file_path)}
                           className="w-full h-full border-0"
                           title="Settlement PDF"
+                          onError={(e) => {
+                            console.error('Error loading PDF:', editingSettlement.pdf_file_path)
+                          }}
                         />
                       </div>
-                    ) : (
-                      <div className="w-full h-[750px] border border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
-                        <p className="text-gray-500">No PDF available</p>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   
                   {/* Settlement Data Section */}
                   <div className="space-y-4">

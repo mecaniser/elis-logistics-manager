@@ -42,7 +42,7 @@ class SettlementUpdate(BaseModel):
 class SettlementResponse(SettlementBase):
     id: int
     pdf_file_path: Optional[str] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

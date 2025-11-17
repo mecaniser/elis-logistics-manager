@@ -1001,6 +1001,7 @@ export default function Extractor() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {Object.entries(selectedSettlement.settlement.expenses.categories)
                       .filter(([_, value]) => value > 0)
+                      .sort(([_, a], [__, b]) => (b as number) - (a as number))
                       .map(([key, value]) => {
                         const isDeduction = key === 'custom' && value > 0
                         return (

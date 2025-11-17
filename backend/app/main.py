@@ -4,7 +4,9 @@ FastAPI application for Logistics Management System
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import os
+from pathlib import Path
 
 from app.database import engine, Base
 from app.routers import trucks, settlements, repairs, analytics, extractor
@@ -18,13 +20,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Get frontend URL from environment or use default
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        os.getenv("FRONTEND_URL", "http://localhost:3000"),
+        FRONTEND_URL,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -57,8 +62,12 @@ else:
     print(f"  Backend dir: {backend_dir}")
     print(f"  Attempted uploads path: {uploads_dir}")
 
-@app.get("/")
-async def root():
+# Serve frontend static files (for production)
+# This will be added after all routes are registered
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
+@app.get("/api")
+async def api_info():
     return {
         "message": "Elis Logistics Manager API",
         "version": "1.0.0",
@@ -68,4 +77,31 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+# Serve frontend static files (for production) - must be last
+if frontend_dist.exists():
+    # Serve static assets (JS, CSS, images, etc.)
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+    
+    # Serve index.html for all non-API routes (SPA routing)
+    # This catch-all route must be registered last, after all API routes
+    # Note: StaticFiles mounts (like /uploads, /assets) are handled before this route
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Don't serve frontend for API routes or other backend routes
+        # Note: /uploads and /assets are handled by StaticFiles mounts above, so they won't reach here
+        if (full_path.startswith("api") or 
+            full_path.startswith("docs") or 
+            full_path.startswith("openapi.json")):
+            return {"detail": "Not Found"}
+        
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        return {"detail": "Frontend not built"}
+    
+    print(f"✓ Serving frontend from: {frontend_dist}")
+else:
+    print(f"⚠ Frontend dist directory not found at: {frontend_dist}")
+    print(f"  Frontend will not be served. Build frontend with: cd frontend && npm run build")
 

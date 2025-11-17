@@ -11,12 +11,91 @@ export default function Dashboard() {
   const [groupBy, setGroupBy] = useState<'week_start' | 'settlement_date'>('week_start')
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
+  const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
+  const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
+  const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('monthly')
+  const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(false) // Collapsed by default
 
   useEffect(() => {
     loadTrucks()
     loadDashboard()
     loadTimeSeries()
   }, [selectedTruck, groupBy])
+
+  // Initialize selected categories when expense data changes
+  useEffect(() => {
+    if (data?.expense_categories) {
+      const categories = [
+        { name: 'Fuel', value: data.expense_categories.fuel },
+        { name: 'Repairs', value: data.expense_categories.repairs },
+        { name: 'Dispatch Fee', value: data.expense_categories.dispatch_fee },
+        { name: 'Insurance', value: data.expense_categories.insurance },
+        { name: 'Safety', value: data.expense_categories.safety },
+        { name: 'Prepass', value: data.expense_categories.prepass },
+        { name: 'IFTA', value: data.expense_categories.ifta },
+        { name: "Driver's Pay", value: data.expense_categories.driver_pay },
+        { name: 'Payroll Fee', value: data.expense_categories.payroll_fee },
+        { name: 'Truck Parking', value: data.expense_categories.truck_parking },
+        { name: 'Custom', value: data.expense_categories.custom || data.expense_categories.other || 0 },
+      ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
+      
+      if (categories.length > 0) {
+        const initial: { [key: string]: boolean } = {}
+        categories.forEach(item => {
+          initial[item.name] = true
+        })
+        setSelectedCategories(initial)
+      }
+    }
+  }, [data])
+
+  // Initialize selected period to most recent
+  useEffect(() => {
+    if (timeSeriesData && !selectedExpensePeriod) {
+      // For "All Time", don't set a period
+      if (expenseAnalysisView === 'all_time') {
+        return
+      }
+      
+      const periods = expenseAnalysisView === 'weekly' 
+        ? timeSeriesData.by_week 
+        : expenseAnalysisView === 'monthly'
+        ? timeSeriesData.by_month
+        : timeSeriesData.by_year
+      
+      if (periods.length > 0) {
+        const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+        setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
+      }
+    }
+  }, [timeSeriesData, expenseAnalysisView, selectedExpensePeriod])
+
+  // Reset selected period when view changes
+  useEffect(() => {
+    if (timeSeriesData) {
+      // For "All Time", clear the selected period
+      if (expenseAnalysisView === 'all_time') {
+        setSelectedExpensePeriod('')
+        return
+      }
+      
+      const periods = expenseAnalysisView === 'weekly' 
+        ? timeSeriesData.by_week 
+        : expenseAnalysisView === 'monthly'
+        ? timeSeriesData.by_month
+        : timeSeriesData.by_year
+      
+      if (periods.length > 0) {
+        const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+        const currentPeriod = periods.find(p => (p as any)[periodKey] === selectedExpensePeriod)
+        if (!currentPeriod) {
+          setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
+        }
+      }
+    }
+    // Collapse settlements info when view or period changes
+    setSettlementsInfoExpanded(false)
+  }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod])
 
   const loadTrucks = async () => {
     try {
@@ -71,7 +150,7 @@ export default function Dashboard() {
     { name: 'Payroll Fee', value: data.expense_categories.payroll_fee, color: '#ec4899' },
     { name: 'Truck Parking', value: data.expense_categories.truck_parking, color: '#a855f7' },
     { name: 'Custom', value: data.expense_categories.custom || data.expense_categories.other || 0, color: '#6b7280' },
-  ].filter(item => item.value > 0) : []
+  ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
 
   const truckProfitsData = data.truck_profits || []
   const blocksByTruckMonth = data.blocks_by_truck_month || []
@@ -232,6 +311,126 @@ export default function Dashboard() {
   const monthlyData = processMonthlyData(timeSeriesData)
   const currentData = activeTimeView === 'weekly' ? weeklyData : monthlyData
 
+  // Helper functions for category selection
+  const handleSelectAllCategories = () => {
+    const allSelected: { [key: string]: boolean } = {}
+    expenseCategoriesData.forEach(item => {
+      allSelected[item.name] = true
+    })
+    setSelectedCategories(allSelected)
+  }
+
+  const handleDeselectAllCategories = () => {
+    const allDeselected: { [key: string]: boolean } = {}
+    expenseCategoriesData.forEach(item => {
+      allDeselected[item.name] = false
+    })
+    setSelectedCategories(allDeselected)
+  }
+
+  const handleLegendSelectChange = (params: any) => {
+    if (params && params.selected) {
+      setSelectedCategories(params.selected)
+    }
+  }
+
+  const allCategoriesSelected = expenseCategoriesData.length > 0 && 
+    expenseCategoriesData.every(item => selectedCategories[item.name] !== false)
+  
+  const noCategoriesSelected = expenseCategoriesData.length > 0 && 
+    expenseCategoriesData.every(item => selectedCategories[item.name] === false)
+
+  // Calculate average expense percentages from all data
+  const calculateAveragePercentages = () => {
+    if (!timeSeriesData) return {}
+    
+    const allPeriods = expenseAnalysisView === 'weekly' 
+      ? timeSeriesData.by_week 
+      : expenseAnalysisView === 'monthly'
+      ? timeSeriesData.by_month
+      : timeSeriesData.by_year
+    
+    if (allPeriods.length === 0) return {}
+    
+    const totals: { [key: string]: { total: number; count: number } } = {}
+    
+    allPeriods.forEach(period => {
+      const revenue = period.gross_revenue || 0
+      if (revenue > 0) {
+        const categories = ['fuel', 'dispatch_fee', 'insurance', 'safety', 'prepass', 'ifta', 'truck_parking', 'custom', 'driver_pay', 'payroll_fee']
+        categories.forEach(cat => {
+          const amount = (period as any)[cat] || 0
+          const percent = (amount / revenue) * 100
+          if (!totals[cat]) {
+            totals[cat] = { total: 0, count: 0 }
+          }
+          totals[cat].total += percent
+          totals[cat].count += 1
+        })
+      }
+    })
+    
+    const averages: { [key: string]: number } = {}
+    Object.keys(totals).forEach(cat => {
+      if (totals[cat].count > 0) {
+        averages[cat] = totals[cat].total / totals[cat].count
+      }
+    })
+    
+    return averages
+  }
+
+  const averagePercentages = calculateAveragePercentages()
+
+  // Get selected period data
+  const getSelectedPeriodData = () => {
+    // For "All Time", use dashboard data directly (includes repairs and all settlements)
+    if (expenseAnalysisView === 'all_time') {
+      if (!data) return null
+      
+      // Use dashboard data which already has correct totals from all settlements
+      const expenseCategories = data.expense_categories || {}
+      const aggregated = {
+        all_time_key: 'all_time',
+        all_time_label: 'All Time',
+        gross_revenue: data.total_revenue || 0,
+        net_profit: data.net_profit || 0,
+        driver_pay: expenseCategories.driver_pay || 0,
+        payroll_fee: expenseCategories.payroll_fee || 0,
+        fuel: expenseCategories.fuel || 0,
+        dispatch_fee: expenseCategories.dispatch_fee || 0,
+        insurance: expenseCategories.insurance || 0,
+        safety: expenseCategories.safety || 0,
+        prepass: expenseCategories.prepass || 0,
+        ifta: expenseCategories.ifta || 0,
+        truck_parking: expenseCategories.truck_parking || 0,
+        custom: expenseCategories.custom || 0,
+        repairs: expenseCategories.repairs || 0, // Include repairs
+        trucks: (data.truck_profits || []).map((tp: any) => ({
+          truck_id: tp.truck_id,
+          truck_name: tp.truck_name
+        }))
+      }
+      
+      return aggregated
+    }
+    
+    if (!timeSeriesData) return null
+    
+    if (!selectedExpensePeriod) return null
+    
+    const periods = expenseAnalysisView === 'weekly' 
+      ? timeSeriesData.by_week 
+      : expenseAnalysisView === 'monthly'
+      ? timeSeriesData.by_month
+      : timeSeriesData.by_year
+    
+    const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+    return periods.find(p => (p as any)[periodKey] === selectedExpensePeriod) || null
+  }
+
+  const selectedPeriodData = getSelectedPeriodData()
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
@@ -379,6 +578,10 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Summary Cards - Always show All Time totals */}
+      <div className="mb-4">
+        <p className="text-xs text-gray-500 mb-2">📊 Summary (All Time)</p>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
         <div className="bg-white overflow-hidden shadow rounded-lg">
           <div className="p-4 sm:p-5">
@@ -390,6 +593,7 @@ export default function Dashboard() {
               </div>
               <div className="ml-4 sm:ml-5 w-0 flex-1">
                 <p className="text-sm font-medium text-gray-500 truncate">Total Trucks</p>
+                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
               </div>
             </div>
           </div>
@@ -405,6 +609,7 @@ export default function Dashboard() {
               </div>
               <div className="ml-4 sm:ml-5 w-0 flex-1">
                 <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
+                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
               </div>
             </div>
           </div>
@@ -420,6 +625,7 @@ export default function Dashboard() {
               </div>
               <div className="ml-4 sm:ml-5 w-0 flex-1">
                 <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
+                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
               </div>
             </div>
           </div>
@@ -435,16 +641,534 @@ export default function Dashboard() {
               </div>
               <div className="ml-4 sm:ml-5 w-0 flex-1">
                 <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
+                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      {/* Detailed Expense Analysis Section - First Chart */}
+      {timeSeriesData && (
+        <div className="bg-white p-6 rounded-lg shadow mb-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="inline-flex rounded-md shadow-sm" role="group">
+                <button
+                  type="button"
+                  onClick={() => setExpenseAnalysisView('weekly')}
+                  className={`px-4 py-2 text-sm font-medium border rounded-l-lg ${
+                    expenseAnalysisView === 'weekly'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Weekly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpenseAnalysisView('monthly')}
+                  className={`px-4 py-2 text-sm font-medium border-t border-b ${
+                    expenseAnalysisView === 'monthly'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpenseAnalysisView('yearly')}
+                  className={`px-4 py-2 text-sm font-medium border-t border-b ${
+                    expenseAnalysisView === 'yearly'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Yearly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpenseAnalysisView('all_time')}
+                  className={`px-4 py-2 text-sm font-medium border rounded-r-lg ${
+                    expenseAnalysisView === 'all_time'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  All Time
+                </button>
+              </div>
+              {expenseAnalysisView !== 'all_time' && (
+              <select
+                value={selectedExpensePeriod}
+                onChange={(e) => setSelectedExpensePeriod(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                {(expenseAnalysisView === 'weekly' 
+                  ? (timeSeriesData?.by_week || []) 
+                  : expenseAnalysisView === 'monthly'
+                  ? (timeSeriesData?.by_month || [])
+                  : (timeSeriesData?.by_year || [])
+                ).map((period: any) => {
+                  const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
+                  const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
+                  return (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  )
+                })}
+              </select>
+              )}
+            </div>
+          </div>
+
+          {!timeSeriesData.by_week?.length && !timeSeriesData.by_month?.length ? (
+            <div className="text-center py-8 text-gray-500">
+              No time-series data available. Please ensure you have settlements with dates.
+            </div>
+          ) : selectedPeriodData ? (
+            <div className="space-y-6">
+              {/* Period Summary */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                <p className="text-sm text-gray-700">
+                  <strong>Period Selected:</strong> {expenseAnalysisView === 'all_time'
+                    ? 'All Time'
+                    : expenseAnalysisView === 'weekly' 
+                    ? (selectedPeriodData as any).week_label 
+                    : expenseAnalysisView === 'monthly'
+                    ? (selectedPeriodData as any).month_label
+                    : (selectedPeriodData as any).year_label}
+                  {' '}
+                  ({expenseAnalysisView === 'all_time'
+                    ? 'Cumulative totals from all periods'
+                    : expenseAnalysisView === 'weekly' 
+                    ? 'This week only' 
+                    : expenseAnalysisView === 'monthly'
+                    ? 'This month only - not cumulative'
+                    : 'This year only - not cumulative'})
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  {expenseAnalysisView === 'all_time'
+                    ? 'All amounts below are cumulative totals from all settlements across all time periods.'
+                    : `All amounts below are totals for this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only, aggregated from all settlements in the selected period.`}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-600">Gross Revenue</div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-600">Total Expenses</div>
+                  <div className="text-2xl font-bold text-red-600">
+                    ${(
+                      (selectedPeriodData as any).fuel +
+                      (selectedPeriodData as any).dispatch_fee +
+                      (selectedPeriodData as any).insurance +
+                      (selectedPeriodData as any).safety +
+                      (selectedPeriodData as any).prepass +
+                      (selectedPeriodData as any).ifta +
+                      (selectedPeriodData as any).truck_parking +
+                      (selectedPeriodData as any).custom +
+                      (selectedPeriodData as any).driver_pay +
+                      (selectedPeriodData as any).payroll_fee +
+                      ((selectedPeriodData as any).repairs || 0) // Include repairs (for All Time and Yearly)
+                    ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-600">Net Profit</div>
+                  <div className={`text-2xl font-bold ${selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                </div>
+              </div>
+
+              {/* Trucks Involved */}
+              {(selectedPeriodData as any).trucks && (selectedPeriodData as any).trucks.length > 0 && (
+                <div className="mb-4">
+                  <div className="text-sm font-medium text-gray-700 mb-2">
+                    Trucks Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(selectedPeriodData as any).trucks.map((truck: any) => (
+                      <span
+                        key={truck.truck_id}
+                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                      >
+                        {truck.truck_name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Settlement Breakdown - Show which settlements contribute */}
+              {expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && (selectedPeriodData as any).settlements.length > 0 && (
+                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <button
+                    onClick={() => setSettlementsInfoExpanded(!settlementsInfoExpanded)}
+                    className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
+                  >
+                    <div className="text-sm font-medium text-gray-700">
+                      Settlements Included (this month): {(selectedPeriodData as any).settlement_count || (selectedPeriodData as any).settlements.length}
+                    </div>
+                    <svg
+                      className={`w-5 h-5 text-gray-600 transition-transform ${settlementsInfoExpanded ? 'transform rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {settlementsInfoExpanded && (
+                    <>
+                      <div className="text-xs text-gray-600 mb-3 mt-2">
+                        This shows which individual settlements are being aggregated into this month's totals.
+                        Note: Settlements with week_start on/after the 28th are counted in the next month.
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-yellow-100 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left font-medium">Settlement Date</th>
+                          <th className="px-2 py-1 text-left font-medium">Week Start</th>
+                          <th className="px-2 py-1 text-left font-medium">Truck</th>
+                          <th className="px-2 py-1 text-right font-medium">Insurance</th>
+                          <th className="px-2 py-1 text-right font-medium">Driver's Pay</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-yellow-200">
+                        {(selectedPeriodData as any).settlements.map((settlement: any, idx: number) => (
+                          <tr key={settlement.settlement_id || idx} className="bg-white">
+                            <td className="px-2 py-1">{settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : '-'}</td>
+                            <td className="px-2 py-1">{settlement.week_start ? new Date(settlement.week_start).toLocaleDateString() : '-'}</td>
+                            <td className="px-2 py-1">{settlement.truck_name}</td>
+                            <td className="px-2 py-1 text-right">${settlement.insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="px-2 py-1 text-right">${settlement.driver_pay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-yellow-100 font-medium">
+                        <tr>
+                          <td colSpan={3} className="px-2 py-1 text-right">Totals:</td>
+                          <td className="px-2 py-1 text-right">
+                            ${(selectedPeriodData as any).settlements.reduce((sum: number, s: any) => sum + (s.insurance || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            ${(selectedPeriodData as any).settlements.reduce((sum: number, s: any) => sum + (s.driver_pay || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Expense Breakdown Chart */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Expenses by Category - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                </h3>
+                {(() => {
+                  // Create sorted expense categories based on values (biggest to smallest)
+                  const expenseCategories = [
+                    { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
+                    { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
+                    { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
+                    { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
+                    { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
+                    { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
+                    { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
+                    { key: 'custom', label: 'Custom', value: (selectedPeriodData as any).custom || 0 },
+                    { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
+                    { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
+                    ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
+                  ].filter(cat => cat.value > 0).sort((a, b) => b.value - a.value)
+
+                  const sortedLabels = expenseCategories.map(cat => cat.label)
+                  const sortedValues = expenseCategories.map(cat => cat.value)
+                  const sortedKeys = expenseCategories.map(cat => cat.key)
+                  const sortedAverages = expenseCategories.map(cat => averagePercentages[cat.key] || 0)
+
+                  return (
+                    <ReactECharts
+                      option={{
+                        tooltip: {
+                          trigger: 'axis',
+                          axisPointer: { type: 'shadow' },
+                          formatter: (params: any) => {
+                            let result = `${params[0]?.axisValue}<br/>`
+                            params.forEach((param: any) => {
+                              const value = param.value || 0
+                              const seriesName = param.seriesName
+                              if (seriesName === 'Selected Period') {
+                                const percent = selectedPeriodData.gross_revenue > 0 
+                                  ? ((value / selectedPeriodData.gross_revenue) * 100).toFixed(1)
+                                  : '0'
+                                result += `${param.marker}${seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${percent}%)<br/>`
+                              } else {
+                                result += `${param.marker}${seriesName}: ${value.toFixed(1)}%<br/>`
+                              }
+                            })
+                            return result
+                          },
+                          backgroundColor: '#fff',
+                          borderColor: '#e5e7eb',
+                          borderWidth: 1,
+                          borderRadius: 8,
+                          padding: [8, 12]
+                        },
+                        legend: {
+                          data: ['Selected Period', 'Average %'],
+                          top: 10
+                        },
+                        grid: {
+                          left: '3%',
+                          right: '4%',
+                          bottom: '3%',
+                          top: '15%',
+                          containLabel: true
+                        },
+                        xAxis: {
+                          type: 'category',
+                          data: sortedLabels,
+                          axisLabel: {
+                            rotate: 45,
+                            fontSize: 11
+                          }
+                        },
+                        yAxis: [
+                          {
+                            type: 'value',
+                            name: 'Amount ($)',
+                            position: 'left',
+                            axisLabel: {
+                              formatter: (value: number) => `$${value.toLocaleString()}`
+                            }
+                          },
+                          {
+                            type: 'value',
+                            name: 'Percentage (%)',
+                            position: 'right',
+                            axisLabel: {
+                              formatter: (value: number) => `${value.toFixed(1)}%`
+                            }
+                          }
+                        ],
+                        series: [
+                          {
+                            name: 'Selected Period',
+                            type: 'bar',
+                            data: sortedValues,
+                        itemStyle: {
+                          color: (params: any) => {
+                            const categoryIndex = params.dataIndex
+                            const amount = params.value
+                            const revenue = selectedPeriodData.gross_revenue || 1
+                            const percent = (amount / revenue) * 100
+                            const avgPercent = sortedAverages[categoryIndex] || 0
+                            
+                            // Highlight if significantly above average (more than 20% higher)
+                            if (avgPercent > 0 && percent > avgPercent * 1.2) {
+                              return '#ef4444' // Red for unusual high spending
+                            } else if (avgPercent > 0 && percent < avgPercent * 0.8) {
+                              return '#10b981' // Green for lower than average
+                            }
+                            return '#3b82f6' // Blue for normal
+                          },
+                          borderRadius: [4, 4, 0, 0]
+                        },
+                        label: {
+                          show: true,
+                          position: 'top',
+                          formatter: (params: any) => {
+                            const value = params.value || 0
+                            const revenue = selectedPeriodData.gross_revenue || 1
+                            const percent = ((value / revenue) * 100).toFixed(1)
+                            return value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}\n(${percent}%)` : ''
+                          },
+                          fontSize: 9
+                        }
+                      },
+                      {
+                        name: 'Average %',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: sortedAverages,
+                        lineStyle: {
+                          color: '#f59e0b',
+                          width: 2,
+                          type: 'dashed'
+                        },
+                        itemStyle: {
+                          color: '#f59e0b'
+                        },
+                        symbol: 'circle',
+                        symbolSize: 6,
+                        label: {
+                          show: true,
+                          position: 'top',
+                          formatter: (params: any) => {
+                            const value = params.value || 0
+                            return value > 0 ? `${value.toFixed(1)}%` : ''
+                          },
+                          fontSize: 9,
+                          color: '#f59e0b'
+                        }
+                      }
+                    ]
+                  }}
+                  style={{ height: '500px', width: '100%' }}
+                  opts={{ renderer: 'svg' }}
+                />
+                  )
+                })()}
+              </div>
+
+              {/* Expense Details Table */}
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Expense Details - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  {expenseAnalysisView === 'all_time'
+                    ? 'All amounts shown are cumulative totals from all settlements across all time periods.'
+                    : `All amounts shown are for <strong>${expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}</strong> only, aggregated from all settlements in the selected period.`}
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% of Revenue</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Average %</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {[
+                        { key: 'fuel', label: 'Fuel' },
+                        { key: 'dispatch_fee', label: 'Dispatch Fee' },
+                        { key: 'insurance', label: 'Insurance' },
+                        { key: 'safety', label: 'Safety' },
+                        { key: 'prepass', label: 'Prepass' },
+                        { key: 'ifta', label: 'IFTA' },
+                        { key: 'truck_parking', label: 'Truck Parking' },
+                        { key: 'custom', label: 'Custom' },
+                        { key: 'driver_pay', label: "Driver's Pay" },
+                        { key: 'payroll_fee', label: 'Payroll Fee' },
+                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
+                      ]
+                        .map(({ key, label }) => ({
+                          key,
+                          label,
+                          amount: (selectedPeriodData as any)[key] || 0
+                        }))
+                        .sort((a, b) => b.amount - a.amount)
+                        .map(({ key, label }) => {
+                        const amount = (selectedPeriodData as any)[key] || 0
+                        const revenue = selectedPeriodData.gross_revenue || 1
+                        const percent = (amount / revenue) * 100
+                        const avgPercent = averagePercentages[key] || 0
+                        const diff = avgPercent > 0 ? percent - avgPercent : 0
+                        const diffPercent = avgPercent > 0 ? ((diff / avgPercent) * 100) : 0
+                        
+                        let status = 'normal'
+                        let statusColor = 'text-gray-600'
+                        let statusBg = 'bg-gray-100'
+                        
+                        if (avgPercent > 0) {
+                          if (percent > avgPercent * 1.2) {
+                            status = 'high'
+                            statusColor = 'text-red-700'
+                            statusBg = 'bg-red-100'
+                          } else if (percent < avgPercent * 0.8) {
+                            status = 'low'
+                            statusColor = 'text-green-700'
+                            statusBg = 'bg-green-100'
+                          }
+                        }
+                        
+                        return (
+                          <tr key={key} className={amount > 0 ? '' : 'opacity-50'}>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{label}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                              ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                              {percent.toFixed(1)}%
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-500">
+                              {avgPercent > 0 ? `${avgPercent.toFixed(1)}%` : '-'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-center">
+                              {avgPercent > 0 && amount > 0 && (
+                                <span className={`px-2 py-1 text-xs font-medium rounded ${statusBg} ${statusColor}`}>
+                                  {status === 'high' && `↑ ${Math.abs(diffPercent).toFixed(0)}% above avg`}
+                                  {status === 'low' && `↓ ${Math.abs(diffPercent).toFixed(0)}% below avg`}
+                                  {status === 'normal' && 'Normal'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              Please select a period from the dropdown above.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 mb-6">
         {expenseCategoriesData.length > 0 && (
           <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Expenses by Category</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">Expenses by Category</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSelectAllCategories}
+                  disabled={allCategoriesSelected}
+                  className={`px-3 py-1 text-xs font-medium rounded ${
+                    allCategoriesSelected
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={handleDeselectAllCategories}
+                  disabled={noCategoriesSelected}
+                  className={`px-3 py-1 text-xs font-medium rounded ${
+                    noCategoriesSelected
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-600 text-white hover:bg-gray-700'
+                  }`}
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
             <ReactECharts
               option={{
                 tooltip: {
@@ -477,7 +1201,8 @@ export default function Dashboard() {
                     const total = expenseCategoriesData.reduce((sum, d) => sum + d.value, 0)
                     const percent = item ? ((item.value / total) * 100).toFixed(1) : '0'
                     return `${name} (${percent}%)`
-                  }
+                  },
+                  selected: selectedCategories
                 },
                 series: [
                   {
@@ -521,75 +1246,9 @@ export default function Dashboard() {
               }}
               style={{ height: '450px', width: '100%' }}
               opts={{ renderer: 'svg' }}
-            />
-          </div>
-        )}
-
-        {truckProfitsData.length > 0 && (
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Profit by Truck</h2>
-            <ReactECharts
-              option={{
-                tooltip: {
-                  trigger: 'axis',
-                  axisPointer: {
-                    type: 'shadow'
-                  },
-                  formatter: (params: any) => {
-                    const value = params[0]?.value || 0
-                    return `${params[0]?.name}<br/>$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  },
-                  backgroundColor: '#fff',
-                  borderColor: '#e5e7eb',
-                  borderWidth: 1,
-                  borderRadius: 8,
-                  padding: [8, 12]
-                },
-                grid: {
-                  left: '3%',
-                  right: '4%',
-                  bottom: '3%',
-                  containLabel: true
-                },
-                xAxis: {
-                  type: 'category',
-                  data: truckProfitsData.map(item => item.truck_name),
-                  axisLabel: {
-                    rotate: truckProfitsData.length > 5 ? 45 : 0,
-                    fontSize: 11
-                  }
-                },
-                yAxis: {
-                  type: 'value',
-                  axisLabel: {
-                    formatter: (value: number) => `$${value.toLocaleString()}`
-                  }
-                },
-                series: [
-                  {
-                    name: 'Net Profit',
-                    type: 'bar',
-                    data: truckProfitsData.map(item => item.net_profit),
-                    itemStyle: {
-                      color: (params: any) => {
-                        return params.value >= 0 ? '#10b981' : '#ef4444'
-                      },
-                      borderRadius: [4, 4, 0, 0]
-                    },
-                    label: {
-                      show: true,
-                      position: 'top',
-                      formatter: (params: any) => {
-                        const value = params.value || 0
-                        return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                      },
-                      fontSize: 10
-                    }
-                  }
-                ]
+              onEvents={{
+                legendselectchanged: handleLegendSelectChange
               }}
-              style={{ height: '400px', width: '100%' }}
-              opts={{ renderer: 'svg' }}
             />
           </div>
         )}
@@ -905,10 +1564,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Net Profit vs Repair Costs Chart */}
+      {/* Net Profit vs Repair Costs Chart - Enhanced */}
       {truckProfitsData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Net Profit vs Repair Costs by Truck</h2>
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Profit Analysis by Truck</h2>
+            <p className="text-sm text-gray-600">Showing profit before repairs, repair costs, and final net profit after repairs. Percentage indicates repair cost as % of profit before repairs.</p>
+          </div>
           <ReactECharts
             option={{
               tooltip: {
@@ -917,12 +1579,30 @@ export default function Dashboard() {
                   type: 'shadow'
                 },
                 formatter: (params: any) => {
-                  let result = `${params[0]?.axisValue}<br/>`
+                  const truck = truckProfitsData.find(t => t.truck_name === params[0]?.axisValue)
+                  let result = `<strong>${params[0]?.axisValue}</strong><br/>`
+                  
                   params.forEach((param: any) => {
                     const value = param.value || 0
                     const formatted = `$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     result += `${param.marker}${param.seriesName}: ${formatted}<br/>`
                   })
+                  
+                  // Add additional context
+                  if (truck) {
+                    const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
+                    result += `<hr style="margin: 8px 0; border-color: #e5e7eb;"/>`
+                    result += `Total Revenue: $${truck.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                    result += `Settlement Expenses: $${(truck.settlement_expenses || truck.total_expenses - truck.repair_costs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                    result += `Profit Before Repairs: $${profitBeforeRepairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                    result += `Repair Costs: $${truck.repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
+                    result += `<strong>Net Profit (After Repairs): $${truck.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`
+                    if (truck.repair_costs > 0 && profitBeforeRepairs > 0) {
+                      const ratio = (truck.repair_costs / profitBeforeRepairs) * 100
+                      result += `<br/>Repair Ratio: ${ratio.toFixed(1)}% of profit before repairs`
+                    }
+                  }
+                  
                   return result
                 },
                 backgroundColor: '#fff',
@@ -932,11 +1612,12 @@ export default function Dashboard() {
                 padding: [8, 12]
               },
               legend: {
-                data: ['Net Profit', 'Repair Costs'],
+                data: ['Profit Before Repairs', 'Repair Costs', 'Net Profit (After Repairs)'],
                 top: 30,
                 textStyle: {
                   fontSize: 12
-                }
+                },
+                selectedMode: true
               },
               grid: {
                 left: '3%',
@@ -969,12 +1650,72 @@ export default function Dashboard() {
               },
               series: [
                 {
-                  name: 'Net Profit',
+                  name: 'Profit Before Repairs',
+                  type: 'bar',
+                  data: truckProfitsData.map(t => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
+                  itemStyle: {
+                    color: '#3b82f6',  // Blue for profit before repairs
+                    borderRadius: [4, 4, 0, 0]
+                  },
+                  label: {
+                    show: true,
+                    position: 'top',
+                    formatter: (params: any) => {
+                      const value = params.value || 0
+                      return value !== 0 ? `$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
+                    },
+                    fontSize: 9,
+                    color: '#3b82f6'
+                  }
+                },
+                {
+                  name: 'Repair Costs',
+                  type: 'bar',
+                  data: truckProfitsData.map((t) => ({
+                    value: t.repair_costs || 0,
+                    profitBeforeRepairs: t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))
+                  })),
+                  itemStyle: {
+                    color: '#f97316',
+                    borderRadius: [4, 4, 0, 0]
+                  },
+                  label: {
+                    show: true,
+                    position: 'inside',
+                    formatter: (params: any) => {
+                      const repairCost = params.value?.value || params.value || 0
+                      const profitBeforeRepairs = params.value?.profitBeforeRepairs || truckProfitsData[params.dataIndex]?.profit_before_repairs || (truckProfitsData[params.dataIndex]?.total_revenue - (truckProfitsData[params.dataIndex]?.settlement_expenses || truckProfitsData[params.dataIndex]?.total_expenses - truckProfitsData[params.dataIndex]?.repair_costs))
+                      
+                      if (repairCost === 0) return ''
+                      
+                      // Calculate percentage: (repair_cost / profit_before_repairs) * 100
+                      let percentage = ''
+                      if (profitBeforeRepairs > 0) {
+                        const ratio = (repairCost / profitBeforeRepairs) * 100
+                        percentage = `${ratio.toFixed(1)}%`
+                      } else if (profitBeforeRepairs < 0) {
+                        percentage = 'N/A'
+                      } else {
+                        percentage = profitBeforeRepairs === 0 && repairCost > 0 ? '∞' : ''
+                      }
+                      
+                      return percentage
+                    },
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    color: '#fff',
+                    textBorderColor: '#000',
+                    textBorderWidth: 1
+                  }
+                },
+                {
+                  name: 'Net Profit (After Repairs)',
                   type: 'bar',
                   data: truckProfitsData.map(t => t.net_profit),
                   itemStyle: {
                     color: (params: any) => {
-                      return params.value >= 0 ? '#10b981' : '#ef4444'
+                      const value = params.value || 0
+                      return value >= 0 ? '#10b981' : '#ef4444'  // Green for positive, red for negative
                     },
                     borderRadius: [4, 4, 0, 0]
                   },
@@ -987,34 +1728,58 @@ export default function Dashboard() {
                     },
                     fontSize: 9,
                     color: (params: any) => {
-                      return params.value >= 0 ? '#10b981' : '#ef4444'
-                    }
-                  }
-                },
-                {
-                  name: 'Repair Costs',
-                  type: 'bar',
-                  data: truckProfitsData.map(t => t.repair_costs || 0),
-                  itemStyle: {
-                    color: '#f97316',
-                    borderRadius: [4, 4, 0, 0]
-                  },
-                  label: {
-                    show: true,
-                    position: 'top',
-                    formatter: (params: any) => {
                       const value = params.value || 0
-                      return value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
-                    },
-                    fontSize: 9,
-                    color: '#f97316'
+                      return value >= 0 ? '#10b981' : '#ef4444'
+                    }
                   }
                 }
               ]
             }}
-            style={{ height: '450px', width: '100%' }}
+            style={{ height: '500px', width: '100%' }}
             opts={{ renderer: 'svg' }}
           />
+          
+          {/* Summary Stats */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-gray-200">
+            {truckProfitsData.map((truck) => {
+              const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
+              const repairRatio = profitBeforeRepairs > 0 && truck.repair_costs > 0 
+                ? ((truck.repair_costs / profitBeforeRepairs) * 100).toFixed(1)
+                : truck.repair_costs > 0 ? 'N/A' : '0'
+              
+              return (
+                <div key={truck.truck_id} className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">{truck.truck_name}</h3>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Profit Before Repairs:</span>
+                      <span className="font-medium text-blue-600">
+                        ${profitBeforeRepairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Repair Costs:</span>
+                      <span className="font-medium text-orange-600">
+                        ${truck.repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-gray-200">
+                      <span className="text-gray-700 font-medium">Actual Profit (After Repairs):</span>
+                      <span className={`font-semibold ${truck.net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${truck.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {truck.repair_costs > 0 && profitBeforeRepairs > 0 && (
+                      <div className="flex justify-between pt-1 border-t border-gray-200">
+                        <span className="text-gray-600">Repair Ratio:</span>
+                        <span className="font-semibold text-gray-900">{repairRatio}%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

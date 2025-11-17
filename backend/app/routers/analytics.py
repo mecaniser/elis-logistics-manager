@@ -9,7 +9,7 @@ from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.truck import Truck
 from typing import List, Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from collections import defaultdict
 
 router = APIRouter()
@@ -114,13 +114,18 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         truck_expenses = truck_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
         truck_repairs_cost = truck_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
         
+        # Calculate profit before repairs (revenue - settlement expenses only)
+        profit_before_repairs = float(truck_revenue) - float(truck_expenses)
+        
         truck_profits.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
             "total_revenue": float(truck_revenue),
             "total_expenses": float(truck_expenses) + float(truck_repairs_cost),
+            "settlement_expenses": float(truck_expenses),  # Expenses from settlements only (excluding repairs)
             "repair_costs": float(truck_repairs_cost),
-            "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)
+            "profit_before_repairs": profit_before_repairs,  # Revenue - settlement expenses
+            "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)  # Final profit after repairs
         })
     
     # Get blocks by truck and month
@@ -166,6 +171,12 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
                 if date_to_use:
                     month_key = date_to_use.strftime("%Y-%m")
                     month_label = date_to_use.strftime("%b %Y")
+                    
+                    # Filter out future months (beyond current date)
+                    current_date = date.today()
+                    month_date = date_to_use.replace(day=1) if date_to_use else None
+                    if month_date and month_date > current_date.replace(day=1):
+                        continue  # Skip future months
                     
                     if month_key not in settlements_by_month:
                         settlements_by_month[month_key] = {
@@ -341,17 +352,41 @@ def get_time_series(
         "ifta": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
+        "repairs": 0.0,
+        "trucks": set()
+    })
+    
+    yearly_data = defaultdict(lambda: {
+        "gross_revenue": 0.0,
+        "net_profit": 0.0,
+        "driver_pay": 0.0,
+        "payroll_fee": 0.0,
+        "fuel": 0.0,
+        "dispatch_fee": 0.0,
+        "insurance": 0.0,
+        "safety": 0.0,
+        "prepass": 0.0,
+        "ifta": 0.0,
+        "truck_parking": 0.0,
+        "custom": 0.0,
+        "repairs": 0.0,
         "trucks": set()
     })
     
     # Process each settlement
     for settlement in settlements:
         # Determine week key based on group_by parameter
-        if group_by == "week_start" and settlement.week_start:
-            week_key = settlement.week_start.isoformat()
-            week_start = settlement.week_start
+        # When grouping by "week_start", we actually group by settlement_date (pay period end date)
+        # because settlements with the same pay period should be grouped together,
+        # even if their week_start dates differ slightly
+        if group_by == "week_start":
+            # Use settlement_date as the key to group by pay period
+            week_key = settlement.settlement_date.isoformat()
+            # Use week_start/week_end from the settlement if available, otherwise use settlement_date
+            week_start = settlement.week_start if settlement.week_start else settlement.settlement_date
             week_end = settlement.week_end if settlement.week_end else settlement.settlement_date
         else:
+            # When grouping by settlement_date, use settlement_date as key
             week_key = settlement.settlement_date.isoformat()
             week_start = settlement.week_start if settlement.week_start else settlement.settlement_date
             week_end = settlement.week_end if settlement.week_end else settlement.settlement_date
@@ -377,6 +412,13 @@ def get_time_series(
         
         month_key = date_to_use.strftime("%Y-%m") if date_to_use else None
         
+        # Determine year key
+        year_key = None
+        if date_to_use:
+            year_key = date_to_use.strftime("%Y")
+        elif settlement.settlement_date:
+            year_key = settlement.settlement_date.strftime("%Y")
+        
         # Aggregate weekly data
         weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
         weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
@@ -394,6 +436,12 @@ def get_time_series(
             monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
         
+        # Aggregate yearly data
+        if year_key:
+            yearly_data[year_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+            yearly_data[year_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            yearly_data[year_key]["trucks"].add(settlement.truck_id)
+        
         # Process expense categories
         if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
             for category, amount in settlement.expense_categories.items():
@@ -410,23 +458,35 @@ def get_time_series(
                         
                         if month_key and mapped_category in monthly_data[month_key]:
                             monthly_data[month_key][mapped_category] += amount_float
+                        
+                        if year_key and mapped_category in yearly_data[year_key]:
+                            yearly_data[year_key][mapped_category] += amount_float
                 except (ValueError, TypeError):
                     continue
     
     # Format weekly data
+    # Filter out future weeks (only show weeks up to current date)
+    current_date = datetime.now().date()
+    
     by_week = []
     for week_key in sorted(weekly_data.keys()):
         week_data = weekly_data[week_key]
         week_start_date = week_data["week_start"]
         week_end_date = week_data["week_end"]
+        settlement_date = week_data["settlement_date"]
+        
+        # Skip future weeks - check if week_start or settlement_date is in the future
+        date_to_check = week_start_date or settlement_date
+        if date_to_check and date_to_check > current_date:
+            continue
         
         # Format week label
         if week_start_date and week_end_date and week_start_date != week_end_date:
             week_label = f"{week_start_date.strftime('%b %d')}-{week_end_date.strftime('%d, %Y')}"
         elif week_start_date:
             week_label = week_start_date.strftime('%b %d, %Y')
-        elif week_data["settlement_date"]:
-            week_label = week_data["settlement_date"].strftime('%b %d, %Y')
+        elif settlement_date:
+            week_label = settlement_date.strftime('%b %d, %Y')
         else:
             week_label = week_key
         
@@ -457,8 +517,50 @@ def get_time_series(
         })
     
     # Format monthly data
+    # Filter out future months (only show months up to current month)
+    current_date = datetime.now().date()
+    current_month_key = current_date.strftime("%Y-%m")
+    
+    # Build a map of which settlements contribute to each month for debugging
+    month_settlements_map = defaultdict(list)
+    for settlement in settlements:
+        # Recalculate month_key for this settlement to match what we used above
+        date_to_use = None
+        if settlement.week_start:
+            if settlement.week_start.day >= 28:
+                if settlement.week_start.month == 12:
+                    date_to_use = settlement.week_start.replace(year=settlement.week_start.year + 1, month=1, day=1)
+                else:
+                    date_to_use = settlement.week_start.replace(month=settlement.week_start.month + 1, day=1)
+            else:
+                date_to_use = settlement.week_start
+        elif settlement.settlement_date:
+            if settlement.settlement_date.day >= 28:
+                if settlement.settlement_date.month == 12:
+                    date_to_use = settlement.settlement_date.replace(year=settlement.settlement_date.year + 1, month=1, day=1)
+                else:
+                    date_to_use = settlement.settlement_date.replace(month=settlement.settlement_date.month + 1, day=1)
+            else:
+                date_to_use = settlement.settlement_date
+        
+        if date_to_use:
+            month_key = date_to_use.strftime("%Y-%m")
+            month_settlements_map[month_key].append({
+                "settlement_id": settlement.id,
+                "settlement_date": settlement.settlement_date.isoformat() if settlement.settlement_date else None,
+                "week_start": settlement.week_start.isoformat() if settlement.week_start else None,
+                "truck_id": settlement.truck_id,
+                "truck_name": truck_map.get(settlement.truck_id, f"Truck {settlement.truck_id}"),
+                "insurance": float(settlement.expense_categories.get("insurance", 0)) if settlement.expense_categories and isinstance(settlement.expense_categories, dict) else 0.0,
+                "driver_pay": float(settlement.expense_categories.get("driver_pay", 0)) if settlement.expense_categories and isinstance(settlement.expense_categories, dict) else 0.0,
+            })
+    
     by_month = []
     for month_key in sorted(monthly_data.keys()):
+        # Skip future months
+        if month_key > current_month_key:
+            continue
+            
         month_data = monthly_data[month_key]
         month_date = datetime.strptime(month_key, "%Y-%m")
         month_label = month_date.strftime("%b %Y")
@@ -486,11 +588,75 @@ def get_time_series(
             "ifta": round(month_data["ifta"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
+            "trucks": truck_list,
+            "settlement_count": len(month_settlements_map.get(month_key, [])),
+            "settlements": month_settlements_map.get(month_key, [])  # Include settlement details for debugging
+        })
+    
+    # Add repairs to yearly/monthly data and subtract from net profit
+    repairs_query = db.query(Repair)
+    if truck_id is not None:
+        repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
+    
+    repairs = repairs_query.all()
+    for repair in repairs:
+        if repair.cost and repair.repair_date:
+            repair_year = repair.repair_date.strftime("%Y")
+            if repair_year in yearly_data:
+                yearly_data[repair_year]["repairs"] += float(repair.cost)
+                # Subtract repairs from net profit to match dashboard calculation
+                yearly_data[repair_year]["net_profit"] -= float(repair.cost)
+            
+            # Also add to monthly if needed (for consistency)
+            repair_month = repair.repair_date.strftime("%Y-%m")
+            if repair_month in monthly_data:
+                monthly_data[repair_month]["repairs"] += float(repair.cost)
+                monthly_data[repair_month]["net_profit"] -= float(repair.cost)
+    
+    # Format yearly data
+    # Filter out future years (only show years up to current year)
+    current_year = datetime.now().year
+    
+    by_year = []
+    for year_key in sorted(yearly_data.keys()):
+        year_int = int(year_key)
+        # Skip future years
+        if year_int > current_year:
+            continue
+        
+        year_data = yearly_data[year_key]
+        year_label = year_key  # e.g., "2025"
+        
+        truck_list = [
+            {
+                "truck_id": tid,
+                "truck_name": truck_map.get(tid, f"Truck {tid}")
+            }
+            for tid in sorted(year_data["trucks"])
+        ]
+        
+        by_year.append({
+            "year_key": year_key,
+            "year_label": year_label,
+            "gross_revenue": round(year_data["gross_revenue"], 2),
+            "net_profit": round(year_data["net_profit"], 2),
+            "driver_pay": round(year_data["driver_pay"], 2),
+            "payroll_fee": round(year_data["payroll_fee"], 2),
+            "fuel": round(year_data["fuel"], 2),
+            "dispatch_fee": round(year_data["dispatch_fee"], 2),
+            "insurance": round(year_data["insurance"], 2),
+            "safety": round(year_data["safety"], 2),
+            "prepass": round(year_data["prepass"], 2),
+            "ifta": round(year_data["ifta"], 2),
+            "truck_parking": round(year_data["truck_parking"], 2),
+            "custom": round(year_data["custom"], 2),
+            "repairs": round(year_data.get("repairs", 0.0), 2),
             "trucks": truck_list
         })
     
     return {
         "by_week": by_week,
-        "by_month": by_month
+        "by_month": by_month,
+        "by_year": by_year
     }
 
