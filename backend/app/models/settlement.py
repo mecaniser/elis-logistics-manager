@@ -20,6 +20,7 @@ class Settlement(Base):
     gross_revenue = Column(Numeric(10, 2))
     expenses = Column(Numeric(10, 2))  # Fuel, tolls, etc from Amazon
     expense_categories = Column(JSON)  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
+    custom_expense_descriptions = Column(JSON, nullable=True)  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
     net_profit = Column(Numeric(10, 2))
     pdf_file_path = Column(String(255))
     license_plate = Column(String(20), nullable=True)  # License plate from this settlement

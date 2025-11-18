@@ -17,6 +17,7 @@ class SettlementBase(BaseModel):
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
+    custom_expense_descriptions: Optional[Dict[str, str]] = None  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None  # License plate from this settlement
     settlement_type: Optional[str] = None  # Type of settlement PDF
@@ -35,6 +36,7 @@ class SettlementUpdate(BaseModel):
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None
+    custom_expense_descriptions: Optional[Dict[str, str]] = None
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None
     settlement_type: Optional[str] = None
