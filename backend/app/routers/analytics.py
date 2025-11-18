@@ -56,6 +56,12 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
     total_expenses = settlements_query.with_entities(func.sum(Settlement.expenses)).scalar() or 0
     total_repairs_cost = repairs_query.with_entities(func.sum(Repair.cost)).scalar() or 0
     
+    # Standard expense categories
+    STANDARD_CATEGORIES = [
+        "fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
+        "driver_pay", "payroll_fee", "truck_parking", "service_on_truck"
+    ]
+    
     # Combine expenses from settlements and repairs by category
     expense_categories = {
         "fuel": 0.0,
@@ -66,10 +72,23 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "ifta": 0.0,
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
-               "truck_parking": 0.0,
-               "repairs": 0.0,
-               "custom": 0.0
-           }
+        "truck_parking": 0.0,
+        "repairs": 0.0,
+        "custom": 0.0
+    }
+    
+    # Track custom expense descriptions: {category_key: description}
+    # e.g., {"custom_truck_parking": "Truck Parking", "custom_repair": "Repair"}
+    custom_descriptions = {}  # {category_key: description}
+    
+    # Helper function to extract description from custom category key
+    def extract_custom_description(category_key: str) -> str:
+        """Extract description from custom category key (e.g., 'custom_truck_parking' -> 'Truck Parking')"""
+        if category_key.startswith("custom_"):
+            desc = category_key.replace("custom_", "")
+            # Convert snake_case to Title Case
+            return " ".join(word.capitalize() for word in desc.split("_"))
+        return "Custom"
     
     # Add expenses from settlements (already categorized)
     settlements = settlements_query.all()
@@ -79,15 +98,25 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
                 try:
                     amount_float = float(amount) if amount is not None else 0.0
                     if amount_float > 0:
-                           if category == "fees":
-                               expense_categories["custom"] += amount_float
-                           elif category in expense_categories:
-                               expense_categories[category] += amount_float
-                           elif category == "other":
-                               # Backward compatibility: map old "other" to "custom"
-                               expense_categories["custom"] += amount_float
-                           else:
-                               expense_categories["custom"] += amount_float
+                        # Handle legacy categories
+                        if category == "fees":
+                            expense_categories["custom"] += amount_float
+                        elif category == "other":
+                            # Backward compatibility: map old "other" to "custom"
+                            expense_categories["custom"] += amount_float
+                        elif category in expense_categories:
+                            # Standard category
+                            expense_categories[category] += amount_float
+                        elif category.startswith("custom_"):
+                            # Custom category with description - aggregate into "custom" but track description
+                            expense_categories["custom"] += amount_float
+                            if category not in custom_descriptions:
+                                custom_descriptions[category] = extract_custom_description(category)
+                        else:
+                            # Other non-standard category - treat as custom
+                            expense_categories["custom"] += amount_float
+                            if category not in custom_descriptions:
+                                custom_descriptions[category] = extract_custom_description(category)
                 except (ValueError, TypeError):
                     continue
         elif settlement.expenses and float(settlement.expenses) > 0:
@@ -287,6 +316,7 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "total_expenses": float(total_expenses_sum),
         "net_profit": net_profit,
         "expense_categories": expense_categories,
+        "custom_descriptions": custom_descriptions,  # Descriptions for custom expense categories
         "truck_profits": truck_profits,
         "blocks_by_truck_month": blocks_by_truck_month,
         "repairs_by_month": repairs_by_month,
@@ -321,6 +351,18 @@ def get_time_series(
     trucks = db.query(Truck).all()
     truck_map = {truck.id: truck.name for truck in trucks}
     
+    # Helper function to extract description from custom category key
+    def extract_custom_description(category_key: str) -> str:
+        """Extract description from custom category key (e.g., 'custom_truck_parking' -> 'Truck Parking')"""
+        if category_key.startswith("custom_"):
+            desc = category_key.replace("custom_", "")
+            # Convert snake_case to Title Case
+            return " ".join(word.capitalize() for word in desc.split("_"))
+        return "Custom"
+    
+    # Standard expense categories
+    STANDARD_CATEGORIES = ["fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee"]
+    
     # Initialize data structures
     weekly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
@@ -338,7 +380,8 @@ def get_time_series(
         "trucks": set(),
         "week_start": None,
         "week_end": None,
-        "settlement_date": None
+        "settlement_date": None,
+        "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
     monthly_data = defaultdict(lambda: {
@@ -355,7 +398,8 @@ def get_time_series(
         "truck_parking": 0.0,
         "custom": 0.0,
         "repairs": 0.0,
-        "trucks": set()
+        "trucks": set(),
+        "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
     yearly_data = defaultdict(lambda: {
@@ -372,7 +416,8 @@ def get_time_series(
         "truck_parking": 0.0,
         "custom": 0.0,
         "repairs": 0.0,
-        "trucks": set()
+        "trucks": set(),
+        "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
     # Process each settlement
@@ -454,6 +499,16 @@ def get_time_series(
                         mapped_category = category
                         if category == "fees" or category == "other":
                             mapped_category = "custom"
+                        elif category.startswith("custom_") or (category not in STANDARD_CATEGORIES and category != "custom"):
+                            # Custom category - aggregate into "custom" and track description
+                            mapped_category = "custom"
+                            # Track custom description for this period
+                            if category not in weekly_data[week_key]["custom_descriptions"]:
+                                weekly_data[week_key]["custom_descriptions"][category] = extract_custom_description(category)
+                            if month_key and category not in monthly_data[month_key]["custom_descriptions"]:
+                                monthly_data[month_key]["custom_descriptions"][category] = extract_custom_description(category)
+                            if year_key and category not in yearly_data[year_key]["custom_descriptions"]:
+                                yearly_data[year_key]["custom_descriptions"][category] = extract_custom_description(category)
                         
                         if mapped_category in weekly_data[week_key]:
                             weekly_data[week_key][mapped_category] += amount_float
@@ -500,6 +555,11 @@ def get_time_series(
             for tid in sorted(week_data["trucks"])
         ]
         
+        # Convert custom_descriptions dict to format expected by frontend
+        custom_descriptions_formatted = {}
+        for key, desc in week_data["custom_descriptions"].items():
+            custom_descriptions_formatted[key] = desc
+        
         by_week.append({
             "week_key": week_key,
             "week_label": week_label,
@@ -515,6 +575,7 @@ def get_time_series(
             "ifta": round(week_data["ifta"], 2),
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
+            "custom_descriptions": custom_descriptions_formatted,
             "trucks": truck_list
         })
     
@@ -575,6 +636,11 @@ def get_time_series(
             for tid in sorted(month_data["trucks"])
         ]
         
+        # Convert custom_descriptions dict to format expected by frontend
+        custom_descriptions_formatted = {}
+        for key, desc in month_data["custom_descriptions"].items():
+            custom_descriptions_formatted[key] = desc
+        
         by_month.append({
             "month_key": month_key,
             "month_label": month_label,
@@ -590,6 +656,7 @@ def get_time_series(
             "ifta": round(month_data["ifta"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
+            "custom_descriptions": custom_descriptions_formatted,
             "trucks": truck_list,
             "settlement_count": len(month_settlements_map.get(month_key, [])),
             "settlements": month_settlements_map.get(month_key, [])  # Include settlement details for debugging
@@ -637,6 +704,11 @@ def get_time_series(
             for tid in sorted(year_data["trucks"])
         ]
         
+        # Convert custom_descriptions dict to format expected by frontend
+        custom_descriptions_formatted = {}
+        for key, desc in year_data["custom_descriptions"].items():
+            custom_descriptions_formatted[key] = desc
+        
         by_year.append({
             "year_key": year_key,
             "year_label": year_label,
@@ -652,6 +724,7 @@ def get_time_series(
             "ifta": round(year_data["ifta"], 2),
             "truck_parking": round(year_data["truck_parking"], 2),
             "custom": round(year_data["custom"], 2),
+            "custom_descriptions": custom_descriptions_formatted,
             "repairs": round(year_data.get("repairs", 0.0), 2),
             "trucks": truck_list
         })
