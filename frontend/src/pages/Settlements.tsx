@@ -283,6 +283,33 @@ export default function Settlements() {
     return `/uploads/${encodeURIComponent(filename)}`
   }
 
+  // Helper function to get description from custom_expense_descriptions
+  const getCustomDescription = (key: string): string => {
+    if (key === 'custom') return ''
+    if (editFormData.custom_expense_descriptions && editFormData.custom_expense_descriptions[key]) {
+      return editFormData.custom_expense_descriptions[key]
+    }
+    // Fallback: try to extract from key for backward compatibility
+    if (key.startsWith('custom_')) {
+      return key.replace('custom_', '').split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ')
+    }
+    return ''
+  }
+  
+  // Helper function to generate unique custom key
+  const generateCustomKey = (): string => {
+    const currentCategories = editFormData.expense_categories || {}
+    let counter = 1
+    let key = `custom_${counter}`
+    while (currentCategories[key] !== undefined) {
+      counter++
+      key = `custom_${counter}`
+    }
+    return key
+  }
+
   const handleEditSettlement = (settlement: Settlement) => {
     setEditingSettlement(settlement)
     // Ensure expense_categories is always an object with all standard categories
@@ -296,8 +323,8 @@ export default function Settlements() {
     // Map old category names to new ones (for backward compatibility)
     const categoryMapping: { [key: string]: string[] } = {
       'fees': ['dispatch_fee', 'safety', 'prepass', 'insurance'], // Old "fees" category might contain multiple
-      'other': ['service_on_truck', 'truck_parking'], // Old "other" category
-      'custom': [] // Old "custom" category - ignore it
+      'other': ['service_on_truck', 'truck_parking'] // Old "other" category
+      // Note: 'custom' is no longer ignored - it will be preserved and can be renamed
     }
     
     STANDARD_EXPENSE_CATEGORIES.forEach(category => {
@@ -323,6 +350,7 @@ export default function Settlements() {
     })
     
     // Also include any non-standard categories that might exist (preserve them)
+    // This includes "custom" and any other custom category names
     Object.keys(existingCategories).forEach(key => {
       if (!STANDARD_EXPENSE_CATEGORIES.includes(key) && !categoryMapping[key]) {
         const value = existingCategories[key]
@@ -341,6 +369,7 @@ export default function Settlements() {
       gross_revenue: settlement.gross_revenue || undefined,
       expenses: settlement.expenses || undefined,
       expense_categories: categories,
+      custom_expense_descriptions: settlement.custom_expense_descriptions || {},
       net_profit: settlement.net_profit || undefined,
       license_plate: settlement.license_plate || undefined,
       settlement_type: settlement.settlement_type || undefined,
@@ -370,7 +399,24 @@ export default function Settlements() {
       
       // Initialize category name inputs for non-standard categories
       if (!STANDARD_EXPENSE_CATEGORIES.includes(key)) {
-        categoryNameValues[key] = key
+        // For custom categories, get description from settlement's custom_expense_descriptions
+        if (key === 'custom' || key.startsWith('custom_')) {
+          // Read directly from settlement's custom_expense_descriptions
+          if (settlement.custom_expense_descriptions && settlement.custom_expense_descriptions[key]) {
+            categoryNameValues[key] = settlement.custom_expense_descriptions[key]
+          } else {
+            // Fallback: try to extract from key for backward compatibility
+            if (key.startsWith('custom_')) {
+              categoryNameValues[key] = key.replace('custom_', '').split('_').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+              ).join(' ')
+            } else {
+              categoryNameValues[key] = ''
+            }
+          }
+        } else {
+          categoryNameValues[key] = key
+        }
       }
     })
     setExpenseCategoryInputs(inputValues)
@@ -716,24 +762,24 @@ export default function Settlements() {
 
   const handleAddExpenseCategory = () => {
     const currentCategories = editFormData.expense_categories || {}
-    // Generate a unique temporary key for the new category
-    let tempKey = 'new_category'
-    let counter = 1
-    while (currentCategories[tempKey]) {
-      tempKey = `new_category_${counter}`
-      counter++
-    }
+    const customKey = generateCustomKey()
     
     const updated = {
       ...currentCategories,
-      [tempKey]: 0
+      [customKey]: 0
     }
+    
+    // Initialize custom_expense_descriptions if it doesn't exist
+    const updatedDescriptions = editFormData.custom_expense_descriptions || {}
+    
     setEditFormData({
       ...editFormData,
-      expense_categories: updated
+      expense_categories: updated,
+      custom_expense_descriptions: updatedDescriptions
     })
-    setExpenseCategoryInputs(prev => ({ ...prev, [tempKey]: '' }))
-    setCategoryNameInputs(prev => ({ ...prev, [tempKey]: '' }))
+    setExpenseCategoryInputs(prev => ({ ...prev, [customKey]: '' }))
+    // Initialize with empty description - user will fill it in
+    setCategoryNameInputs(prev => ({ ...prev, [customKey]: '' }))
   }
 
   const handleRemoveExpenseCategory = (key: string) => {
@@ -754,9 +800,14 @@ export default function Settlements() {
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
     
+    // Also remove description if it exists
+    const updatedDescriptions = { ...(editFormData.custom_expense_descriptions || {}) }
+    delete updatedDescriptions[key]
+    
     setEditFormData({
       ...editFormData,
       expense_categories: updated,
+      custom_expense_descriptions: updatedDescriptions,
       expenses: totalExpenses,
       net_profit: netProfit
     })
@@ -1203,34 +1254,6 @@ export default function Settlements() {
               </div>
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
-                  {/* PDF Document Section - Only show if PDF exists and is valid */}
-                  {editingSettlement.pdf_file_path && getPdfUrl(editingSettlement.pdf_file_path) && (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-lg font-medium text-gray-900">PDF Document</h4>
-                        <button
-                          onClick={() => {
-                            const url = getPdfUrl(editingSettlement.pdf_file_path!)
-                            if (url) window.open(url, '_blank')
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          Open in New Tab
-                        </button>
-                      </div>
-                      <div className="w-full h-[750px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
-                        <iframe
-                          src={getPdfUrl(editingSettlement.pdf_file_path)}
-                          className="w-full h-full border-0"
-                          title="Settlement PDF"
-                          onError={() => {
-                            console.error('Error loading PDF:', editingSettlement.pdf_file_path)
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  
                   {/* Settlement Data Section */}
                   <div className="space-y-4">
                     <h4 className="text-lg font-medium text-gray-900 mb-3">Settlement Data</h4>
@@ -1546,48 +1569,88 @@ export default function Settlements() {
                             {Object.entries(editFormData.expense_categories)
                               .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
                               .map(([key, value]) => {
-                                const categoryNameInput = categoryNameInputs[key] !== undefined ? categoryNameInputs[key] : key
+                                // For custom categories, show description input instead of renaming
+                                const isCustomCategory = key === 'custom' || key.startsWith('custom_')
+                                // Get description from categoryNameInputs (initialized from settlement), or from editFormData, or fallback
+                                const currentDescription = categoryNameInputs[key] !== undefined && categoryNameInputs[key] !== ''
+                                  ? categoryNameInputs[key] 
+                                  : isCustomCategory 
+                                    ? (editFormData.custom_expense_descriptions?.[key] || getCustomDescription(key))
+                                    : key
+                                
                                 return (
                                   <div key={key} className="flex flex-col gap-1.5">
                                     <div className="flex items-center gap-1">
-                                      <input
-                                        type="text"
-                                        value={categoryNameInput}
-                                        onChange={(e) => {
-                                          // Only update the input state, don't change the category key yet
-                                          setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
-                                        }}
-                                        onBlur={(e) => {
-                                          const newKey = e.target.value.trim()
-                                          if (newKey && newKey !== key) {
-                                            // Check if new key already exists
-                                            const currentCategories = editFormData.expense_categories || {}
-                                            if (currentCategories[newKey] !== undefined && newKey !== key) {
-                                              showModal('Error', `Category "${newKey}" already exists.`, 'error')
-                                              // Reset to original key
+                                      {isCustomCategory ? (
+                                        <>
+                                          <span className="px-2 py-1.5 text-sm text-gray-700 bg-gray-100 border border-gray-300 rounded-md whitespace-nowrap">
+                                            Custom
+                                          </span>
+                                          <input
+                                            type="text"
+                                            value={currentDescription}
+                                            onChange={(e) => {
+                                              setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                            }}
+                                            onBlur={(e) => {
+                                              const description = e.target.value.trim()
+                                              
+                                              // Update custom_expense_descriptions
+                                              const updatedDescriptions = {
+                                                ...(editFormData.custom_expense_descriptions || {}),
+                                                [key]: description
+                                              }
+                                              
+                                              // If description is empty, remove it from descriptions
+                                              if (!description) {
+                                                delete updatedDescriptions[key]
+                                              }
+                                              
+                                              setEditFormData({
+                                                ...editFormData,
+                                                custom_expense_descriptions: updatedDescriptions
+                                              })
+                                              
+                                              // Update the category name input state
+                                              setCategoryNameInputs(prev => ({ ...prev, [key]: description }))
+                                            }}
+                                            className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            placeholder="Description (e.g., Truck Parking, Repair)"
+                                          />
+                                        </>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          value={currentDescription}
+                                          onChange={(e) => {
+                                            setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                          }}
+                                          onBlur={(e) => {
+                                            const newKey = e.target.value.trim()
+                                            if (newKey && newKey !== key) {
+                                              const currentCategories = editFormData.expense_categories || {}
+                                              if (currentCategories[newKey] !== undefined && newKey !== key) {
+                                                showModal('Error', `Category "${newKey}" already exists.`, 'error')
+                                                setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
+                                                return
+                                              }
+                                              handleExpenseCategoryChange(key, newKey, value || 0)
+                                              setCategoryNameInputs(prev => {
+                                                const updated = { ...prev }
+                                                delete updated[key]
+                                                updated[newKey] = newKey
+                                                return updated
+                                              })
+                                            } else if (!newKey) {
                                               setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                              return
+                                            } else {
+                                              setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
                                             }
-                                            // Update the category key
-                                            handleExpenseCategoryChange(key, newKey, value || 0)
-                                            // Update the category name input state with the new key
-                                            setCategoryNameInputs(prev => {
-                                              const updated = { ...prev }
-                                              delete updated[key]
-                                              updated[newKey] = newKey
-                                              return updated
-                                            })
-                                          } else if (!newKey) {
-                                            // Empty name - reset to original key
-                                            setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                          } else {
-                                            // Same key, just update the input state
-                                            setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
-                                          }
-                                        }}
-                                        className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                        placeholder="Category name"
-                                      />
+                                          }}
+                                          className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                          placeholder="Category name"
+                                        />
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => handleRemoveExpenseCategory(key)}

@@ -28,6 +28,7 @@ export interface Settlement {
   gross_revenue?: number
   expenses?: number
   expense_categories?: { [key: string]: number }
+  custom_expense_descriptions?: { [key: string]: string }  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
   net_profit?: number
   pdf_file_path?: string
   settlement_type?: string
@@ -65,6 +66,7 @@ export interface DashboardData {
     repairs: number
     custom: number
   }
+  custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories (e.g., {"custom_truck_parking": "Truck Parking"})
   truck_profits: Array<{
     truck_id: number
     truck_name: string

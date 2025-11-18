@@ -913,8 +913,8 @@ export default function Dashboard() {
                   Expenses by Category - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
                 </h3>
                 {(() => {
-                  // Create sorted expense categories based on values (biggest to smallest)
-                  const expenseCategories = [
+                  // Standard expense categories
+                  const standardCategories = [
                     { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
                     { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
                     { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
@@ -926,7 +926,15 @@ export default function Dashboard() {
                     { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
                     { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
                     ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
-                  ].filter(cat => cat.value > 0).sort((a, b) => b.value - a.value)
+                  ]
+                  
+                  // Keep "Custom" label simple - descriptions are shown in settlement details, not in chart
+                  const updatedStandardCategories = standardCategories
+                  
+                  // Combine standard categories, filter out zero values, and sort
+                  const expenseCategories = updatedStandardCategories
+                    .filter(cat => cat.value > 0)
+                    .sort((a, b) => b.value - a.value)
 
                   const sortedLabels = expenseCategories.map(cat => cat.label)
                   const sortedValues = expenseCategories.map(cat => cat.value)
