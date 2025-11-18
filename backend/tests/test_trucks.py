@@ -78,3 +78,4 @@ def test_create_truck_duplicate_name(client: TestClient):
     )
     assert response.status_code == 400 or response.status_code == 500
 
+

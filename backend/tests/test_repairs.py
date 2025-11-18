@@ -164,3 +164,4 @@ def test_get_repair_not_found(client: TestClient):
     response = client.get("/api/repairs/999")
     assert response.status_code == 404
 
+

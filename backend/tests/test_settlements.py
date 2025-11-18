@@ -151,3 +151,4 @@ def test_get_settlement_not_found(client: TestClient):
     response = client.get("/api/settlements/999")
     assert response.status_code == 404
 
+
