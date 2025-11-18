@@ -25,6 +25,7 @@ build/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -56,6 +57,9 @@ htmlcov/
 
 # Extracted settlement data (keep local)
 backend/settlements_extracted/
+
+# Export JSON files (keep local)
+*_export.json
 
 # Image files
 *.jpg
