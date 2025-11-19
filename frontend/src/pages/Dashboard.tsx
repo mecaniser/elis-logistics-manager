@@ -100,10 +100,10 @@ export default function Dashboard() {
       }
       
       const periods = expenseAnalysisView === 'weekly' 
-        ? timeSeriesData.by_week 
+        ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
         : expenseAnalysisView === 'monthly'
-        ? timeSeriesData.by_month
-        : timeSeriesData.by_year
+        ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
+        : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
       
       if (periods.length > 0) {
         const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
@@ -122,10 +122,10 @@ export default function Dashboard() {
       }
       
       const periods = expenseAnalysisView === 'weekly' 
-        ? timeSeriesData.by_week 
+        ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
         : expenseAnalysisView === 'monthly'
-        ? timeSeriesData.by_month
-        : timeSeriesData.by_year
+        ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
+        : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
       
       if (periods.length > 0) {
         const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
@@ -142,9 +142,10 @@ export default function Dashboard() {
   const loadTrucks = async () => {
     try {
       const response = await trucksApi.getAll()
-      setTrucks(response.data)
+      setTrucks(Array.isArray(response.data) ? response.data : [])
     } catch (err) {
       console.error(err)
+      setTrucks([])
     }
   }
 
@@ -164,9 +165,20 @@ export default function Dashboard() {
     try {
       setTimeSeriesLoading(true)
       const response = await analyticsApi.getTimeSeries(groupBy, selectedTruck || undefined)
-      setTimeSeriesData(response.data)
+      // Ensure response.data has array properties
+      const data = response.data || {}
+      setTimeSeriesData({
+        by_week: Array.isArray(data.by_week) ? data.by_week : [],
+        by_month: Array.isArray(data.by_month) ? data.by_month : [],
+        by_year: Array.isArray(data.by_year) ? data.by_year : [],
+      })
     } catch (err) {
       console.error('Failed to load time-series data:', err)
+      setTimeSeriesData({
+        by_week: [],
+        by_month: [],
+        by_year: [],
+      })
     } finally {
       setTimeSeriesLoading(false)
     }
@@ -289,7 +301,7 @@ export default function Dashboard() {
   const trucksNotDueForPM = filteredPMStatus.filter((pm: PMStatus) => !pm.is_due)
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
-    if (!data || !data.by_week || data.by_week.length === 0) {
+    if (!data || !Array.isArray(data.by_week) || data.by_week.length === 0) {
       return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
     }
     
@@ -314,7 +326,7 @@ export default function Dashboard() {
   }
 
   const processMonthlyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
-    if (!data || !data.by_month || data.by_month.length === 0) {
+    if (!data || !Array.isArray(data.by_month) || data.by_month.length === 0) {
       return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
     }
     
@@ -437,7 +449,7 @@ export default function Dashboard() {
         truck_parking: expenseCategories.truck_parking || 0,
         custom: expenseCategories.custom || 0,
         repairs: expenseCategories.repairs || 0, // Include repairs
-        trucks: (data.truck_profits || []).map((tp: any) => ({
+        trucks: (Array.isArray(data.truck_profits) ? data.truck_profits : []).map((tp: any) => ({
           truck_id: tp.truck_id,
           truck_name: tp.truck_name
         }))
@@ -451,10 +463,10 @@ export default function Dashboard() {
     if (!selectedExpensePeriod) return null
     
     const periods = expenseAnalysisView === 'weekly' 
-      ? timeSeriesData.by_week 
+      ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
       : expenseAnalysisView === 'monthly'
-      ? timeSeriesData.by_month
-      : timeSeriesData.by_year
+      ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
+      : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
     
     const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
     return periods.find(p => (p as any)[periodKey] === selectedExpensePeriod) || null
@@ -824,7 +836,7 @@ export default function Dashboard() {
               </div>
 
               {/* Trucks Involved */}
-              {(selectedPeriodData as any).trucks && (selectedPeriodData as any).trucks.length > 0 && (
+              {(selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
                 <div className="mb-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">
                     Trucks Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
@@ -843,7 +855,7 @@ export default function Dashboard() {
               )}
 
               {/* Settlement Breakdown - Show which settlements contribute */}
-              {expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && (selectedPeriodData as any).settlements.length > 0 && (
+              {expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && Array.isArray((selectedPeriodData as any).settlements) && (selectedPeriodData as any).settlements.length > 0 && (
                 <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <button
                     onClick={() => setSettlementsInfoExpanded(!settlementsInfoExpanded)}

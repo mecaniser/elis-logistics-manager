@@ -152,7 +152,7 @@ export default function Extractor() {
         }
 
         const dataResult = await dataResponse.json()
-        setExtractedSettlements(dataResult.extracted_data || [])
+        setExtractedSettlements(Array.isArray(dataResult.extracted_data) ? dataResult.extracted_data : [])
 
         // Also download file (ZIP or consolidated JSON)
         const downloadFormData = new FormData()

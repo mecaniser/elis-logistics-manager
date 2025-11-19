@@ -24,9 +24,10 @@ export default function Trucks() {
     try {
       setLoading(true)
       const response = await trucksApi.getAll()
-      setTrucks(response.data)
+      setTrucks(Array.isArray(response.data) ? response.data : [])
     } catch (err: any) {
       setError(err.message || 'Failed to load trucks')
+      setTrucks([])
     } finally {
       setLoading(false)
     }

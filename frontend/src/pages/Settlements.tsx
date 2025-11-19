@@ -91,9 +91,10 @@ export default function Settlements() {
   const loadTrucks = async () => {
     try {
       const response = await trucksApi.getAll()
-      setTrucks(response.data)
+      setTrucks(Array.isArray(response.data) ? response.data : [])
     } catch (err) {
       console.error(err)
+      setTrucks([])
     }
   }
 
@@ -101,7 +102,7 @@ export default function Settlements() {
     try {
       setLoading(true)
       const response = await settlementsApi.getAll(selectedTruck || undefined)
-      const newSettlements = response.data
+      const newSettlements = Array.isArray(response.data) ? response.data : []
       setSettlements(newSettlements)
       
       // Clear selections if any selected IDs don't exist in the new settlements
@@ -112,6 +113,7 @@ export default function Settlements() {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load settlements')
+      setSettlements([])
     } finally {
       setLoading(false)
     }
@@ -136,14 +138,15 @@ export default function Settlements() {
       if (uploadMode === 'bulk' && uploadFiles.length > 0) {
         const response = await settlementsApi.uploadBulk(uploadFiles, selectedTruckForUpload || undefined, selectedSettlementType)
         const { successful, failed, results } = response.data
+        const resultsArray = Array.isArray(results) ? results : []
         
         if (failed > 0) {
-          const errorList = results
+          const errorList = resultsArray
             .filter(r => !r.success)
             .map(r => `${r.filename}: ${r.error || 'Unknown error'}`)
             .join(', ')
           
-          showToast(`Uploaded ${successful} of ${results.length} settlement(s). ${failed} failed. Errors: ${errorList}`, 'warning')
+          showToast(`Uploaded ${successful} of ${resultsArray.length} settlement(s). ${failed} failed. Errors: ${errorList}`, 'warning')
         } else {
           showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
         }
@@ -242,6 +245,7 @@ export default function Settlements() {
   }
 
   const handleSelectAll = () => {
+    if (!Array.isArray(settlements)) return
     if (selectedSettlements.size === settlements.length) {
       // Deselect all - this will hide the delete button
       setSelectedSettlements(new Set())
@@ -1054,7 +1058,7 @@ export default function Settlements() {
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
-          {settlements.length === 0 ? (
+          {!Array.isArray(settlements) || settlements.length === 0 ? (
             <li className="px-6 py-4 text-gray-500 text-center">No settlements found.</li>
           ) : (
             <>

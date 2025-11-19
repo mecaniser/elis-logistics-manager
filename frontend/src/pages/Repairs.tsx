@@ -53,9 +53,10 @@ export default function Repairs() {
   const loadTrucks = async () => {
     try {
       const response = await trucksApi.getAll()
-      setTrucks(response.data)
+      setTrucks(Array.isArray(response.data) ? response.data : [])
     } catch (err) {
       console.error(err)
+      setTrucks([])
     }
   }
 
@@ -63,9 +64,10 @@ export default function Repairs() {
     try {
       setLoading(true)
       const response = await repairsApi.getAll()
-      setRepairs(response.data)
+      setRepairs(Array.isArray(response.data) ? response.data : [])
     } catch (err: any) {
       setError(err.message || 'Failed to load repairs')
+      setRepairs([])
     } finally {
       setLoading(false)
     }
@@ -655,7 +657,7 @@ export default function Repairs() {
                         </button>
                       </div>
                     )}
-                    {repair.image_paths && repair.image_paths.length > 0 && (
+                    {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {repair.image_paths.map((img, idx) => (
                           <button
@@ -836,7 +838,7 @@ export default function Repairs() {
                 disabled={saving}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               />
-              {repairToEdit.image_paths && repairToEdit.image_paths.length > 0 && (
+              {repairToEdit.image_paths && Array.isArray(repairToEdit.image_paths) && repairToEdit.image_paths.length > 0 && (
                 <div className="mt-2">
                   <p className="text-xs text-gray-500 mb-2">Existing images ({repairToEdit.image_paths.length}):</p>
                   <div className="flex gap-2 flex-wrap">
