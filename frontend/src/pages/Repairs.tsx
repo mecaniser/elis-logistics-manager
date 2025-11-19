@@ -320,6 +320,10 @@ export default function Repairs() {
     return `/uploads/${encodeURIComponent(filename)}`
   }
 
+  const isCloudinaryImage = (imagePath: string): boolean => {
+    return imagePath.startsWith('http://') || imagePath.startsWith('https://')
+  }
+
   if (loading) return <div className="text-center py-8">Loading repairs...</div>
   if (error) return <div className="text-center py-8 text-red-600">{error}</div>
 
@@ -744,6 +748,22 @@ export default function Repairs() {
                               alt={`Repair ${idx + 1}`}
                               className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
                             />
+                            {/* Storage indicator badge */}
+                            {isCloudinaryImage(img) ? (
+                              <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1 shadow-md">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                                </svg>
+                                Cloud
+                              </div>
+                            ) : (
+                              <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1 shadow-md">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h12a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+                                </svg>
+                                Local
+                              </div>
+                            )}
                             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
                               <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -945,6 +965,22 @@ export default function Repairs() {
                           alt={`Existing ${idx + 1}`}
                           className="w-16 h-16 object-cover rounded border"
                         />
+                        {/* Storage indicator badge */}
+                        {isCloudinaryImage(img) ? (
+                          <div className="absolute top-0 left-0 bg-green-500 text-white text-xs px-1 py-0.5 rounded-tl rounded-br flex items-center gap-1">
+                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                            </svg>
+                            Cloud
+                          </div>
+                        ) : (
+                          <div className="absolute top-0 left-0 bg-gray-500 text-white text-xs px-1 py-0.5 rounded-tl rounded-br flex items-center gap-1">
+                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h12a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+                            </svg>
+                            Local
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
