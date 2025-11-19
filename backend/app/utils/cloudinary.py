@@ -175,24 +175,44 @@ def get_authenticated_url(cloudinary_url: str) -> Optional[str]:
         import time
         
         # Extract public_id from Cloudinary URL
-        # For raw files: /raw/upload/v123/folder/file.pdf
-        match = re.search(r'/raw/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', cloudinary_url)
-        resource_type = "raw"
+        # For raw files: https://res.cloudinary.com/{cloud}/raw/upload/v{version}/{folder}/{filename}.pdf
+        # We need to extract everything after /raw/upload/v{version}/ or /raw/upload/
+        # and keep the full path including folder and extension
         
-        if not match:
-            # Try image pattern as fallback
-            match = re.search(r'/image/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', cloudinary_url)
-            resource_type = "image"
+        # Parse the URL to extract the path after /raw/upload/
+        url_parts = cloudinary_url.split('/raw/upload/')
+        if len(url_parts) == 2:
+            resource_type = "raw"
+            # Get everything after /raw/upload/
+            after_upload = url_parts[1]
+            # Remove version if present (v1234567890/)
+            after_upload = re.sub(r'^v\d+/', '', after_upload)
+            # Remove query parameters if any
+            after_upload = after_upload.split('?')[0]
+            # Remove fragment if any
+            after_upload = after_upload.split('#')[0]
+            # This is the public_id - includes folder path and filename with extension
+            public_id = after_upload
+        else:
+            # Try image pattern
+            url_parts = cloudinary_url.split('/image/upload/')
+            if len(url_parts) == 2:
+                resource_type = "image"
+                after_upload = url_parts[1]
+                after_upload = re.sub(r'^v\d+/', '', after_upload)
+                after_upload = after_upload.split('?')[0]
+                after_upload = after_upload.split('#')[0]
+                public_id = after_upload
+            else:
+                logger.error(f"Could not extract public_id from URL: {cloudinary_url}")
+                return None
         
-        if not match:
-            logger.error(f"Could not extract public_id from URL: {cloudinary_url}")
-            return None
-        
-        public_id = match.group(1)
+        logger.info(f"Extracted public_id: {public_id} from URL: {cloudinary_url[:100]}...")
         
         # Generate signed URL using Cloudinary SDK
         # sign_url=True will add a signature parameter to the URL using API secret
         try:
+            logger.info(f"Generating Cloudinary URL for public_id: {public_id}, resource_type: {resource_type}")
             authenticated_url = cloudinary.utils.cloudinary_url(
                 public_id,
                 resource_type=resource_type,
@@ -200,7 +220,7 @@ def get_authenticated_url(cloudinary_url: str) -> Optional[str]:
                 sign_url=True  # This will add signature to the URL using API secret
             )[0]
             
-            logger.info(f"Generated authenticated URL for: {public_id}")
+            logger.info(f"Generated authenticated URL: {authenticated_url[:100]}...")
             return authenticated_url
         except Exception as sign_error:
             logger.warning(f"Failed to sign URL, trying without signature: {str(sign_error)}")
