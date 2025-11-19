@@ -12,6 +12,7 @@ from app.models.repair import Repair
 from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
+from app.utils.cloudinary import upload_image, upload_pdf, CLOUDINARY_CONFIGURED
 
 router = APIRouter()
 
@@ -44,17 +45,26 @@ async def create_repair(
     else:
         raise HTTPException(status_code=400, detail="Repair data is required")
     
-    # Save image files if provided
+    # Upload image files to Cloudinary or save locally
     image_paths = []
     if images:
         for img in images:
+            img_content = await img.read()
             img_timestamp = datetime.now().timestamp()
             img_filename = f"{img_timestamp}_{img.filename}"
-            img_path = os.path.join(UPLOAD_DIR, img_filename)
-            with open(img_path, "wb") as img_buffer:
-                img_content = await img.read()
-                img_buffer.write(img_content)
-            image_paths.append(img_filename)
+            
+            # Try Cloudinary upload first
+            cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
+            
+            if cloudinary_url:
+                # Store Cloudinary URL
+                image_paths.append(cloudinary_url)
+            else:
+                # Fallback to local storage if Cloudinary not configured
+                img_path = os.path.join(UPLOAD_DIR, img_filename)
+                with open(img_path, "wb") as img_buffer:
+                    img_buffer.write(img_content)
+                image_paths.append(img_filename)
     
     # Validate required fields
     if not repair_data.get("truck_id"):
@@ -131,20 +141,29 @@ async def update_repair(
         except (json.JSONDecodeError, ValueError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid repair data: {str(e)}")
     
-    # Save new image files and add to existing images
+    # Upload new image files to Cloudinary or save locally, and add to existing images
     if images:
         existing_images = repair.image_paths if repair.image_paths else []
         new_image_paths = []
         
         for img in images:
+            img_content = await img.read()
             img_timestamp = datetime.now().timestamp()
             img_filename = f"{img_timestamp}_{img.filename}"
-            img_path = os.path.join(UPLOAD_DIR, img_filename)
-            with open(img_path, "wb") as img_buffer:
-                img_content = await img.read()
-                img_buffer.write(img_content)
-            # Store relative path without "uploads/" prefix
-            new_image_paths.append(img_filename)
+            
+            # Try Cloudinary upload first
+            cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
+            
+            if cloudinary_url:
+                # Store Cloudinary URL
+                new_image_paths.append(cloudinary_url)
+            else:
+                # Fallback to local storage if Cloudinary not configured
+                img_path = os.path.join(UPLOAD_DIR, img_filename)
+                with open(img_path, "wb") as img_buffer:
+                    img_buffer.write(img_content)
+                # Store relative path without "uploads/" prefix
+                new_image_paths.append(img_filename)
         
         # Merge existing and new images
         update_data["image_paths"] = list(existing_images) + new_image_paths
@@ -279,18 +298,44 @@ async def upload_repair_invoice(
                 detail=f"Duplicate repair detected: A repair for {truck.name} on {existing_date_str} with cost ${float(cost):.2f} already exists (ID: {existing_by_details.id})."
             )
     
-    # Save image files
+    # Upload image files to Cloudinary or save locally
     image_paths = []
     if images:
         for img in images:
+            img_content = await img.read()
             img_timestamp = datetime.now().timestamp()
             img_filename = f"{img_timestamp}_{img.filename}"
-            img_path = os.path.join(UPLOAD_DIR, img_filename)
-            with open(img_path, "wb") as img_buffer:
-                img_content = await img.read()
-                img_buffer.write(img_content)
-            # Store relative path without "uploads/" prefix (matches how settlements store paths)
-            image_paths.append(img_filename)
+            
+            # Try Cloudinary upload first
+            cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
+            
+            if cloudinary_url:
+                # Store Cloudinary URL
+                image_paths.append(cloudinary_url)
+            else:
+                # Fallback to local storage if Cloudinary not configured
+                img_path = os.path.join(UPLOAD_DIR, img_filename)
+                with open(img_path, "wb") as img_buffer:
+                    img_buffer.write(img_content)
+                # Store relative path without "uploads/" prefix
+                image_paths.append(img_filename)
+    
+    # Upload PDF receipt to Cloudinary or save locally
+    receipt_path = None
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as pdf_file:
+            pdf_content = pdf_file.read()
+            pdf_filename = os.path.basename(file_path)
+            
+            # Try Cloudinary upload first
+            cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="repairs/receipts")
+            
+            if cloudinary_pdf_url:
+                # Store Cloudinary URL
+                receipt_path = cloudinary_pdf_url
+            else:
+                # Fallback to local storage if Cloudinary not configured
+                receipt_path = os.path.basename(file_path)  # Store just filename, frontend adds /uploads/ prefix
     
     # Create repair record
     try:
@@ -300,7 +345,7 @@ async def upload_repair_invoice(
             description=repair_data.get("description"),
             category=repair_data.get("category"),
             cost=repair_data.get("cost"),
-            receipt_path=os.path.basename(file_path),  # Store just filename, frontend adds /uploads/ prefix
+            receipt_path=receipt_path,
             invoice_number=repair_data.get("invoice_number"),
             image_paths=image_paths if image_paths else None
         )

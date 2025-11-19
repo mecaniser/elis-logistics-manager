@@ -10,6 +10,7 @@ from app.models.truck import Truck
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
 from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_multi_truck
 from app.utils.settlement_extractor import SettlementExtractor
+from app.utils.cloudinary import upload_pdf
 import os
 import json
 from datetime import datetime
@@ -57,7 +58,28 @@ async def upload_settlement_pdf(
     
     # If store_pdf_only mode, just save the PDF and return (no data extraction)
     if store_pdf_only:
-        # PDF is already saved at file_path
+        # Upload PDF to Cloudinary or keep local path
+        pdf_path = None
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as pdf_file:
+                pdf_content = pdf_file.read()
+                pdf_filename = os.path.basename(file_path)
+                
+                # Try Cloudinary upload first
+                cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="settlements")
+                
+                if cloudinary_pdf_url:
+                    # Store Cloudinary URL
+                    pdf_path = cloudinary_pdf_url
+                    # Clean up local file after successful upload
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                else:
+                    # Fallback to local storage if Cloudinary not configured
+                    pdf_path = file_path
+        
         # Note: This doesn't create a settlement record, just stores the file
         # Return a minimal settlement response (won't be saved to DB, just for API response)
         from app.schemas.settlement import SettlementResponse
@@ -65,7 +87,7 @@ async def upload_settlement_pdf(
             id=0,
             truck_id=truck_id or 0,
             settlement_date=datetime.now().date(),
-            pdf_file_path=file_path,
+            pdf_file_path=pdf_path,
             gross_revenue=None,
             expenses=None,
             net_profit=None
@@ -160,7 +182,25 @@ async def upload_settlement_pdf(
                         detail="Could not extract license plate from PDF. Please select a truck manually."
                     )
             
-            settlement_data["pdf_file_path"] = file_path
+            # Upload PDF to Cloudinary or keep local path
+            pdf_path = None
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as pdf_file:
+                    pdf_content = pdf_file.read()
+                    pdf_filename = os.path.basename(file_path)
+                    
+                    # Try Cloudinary upload first
+                    cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="settlements")
+                    
+                    if cloudinary_pdf_url:
+                        # Store Cloudinary URL
+                        pdf_path = cloudinary_pdf_url
+                        # Keep local file for now (will be cleaned up after commit)
+                    else:
+                        # Fallback to local storage if Cloudinary not configured
+                        pdf_path = file_path
+            
+            settlement_data["pdf_file_path"] = pdf_path
             if settlement_type:
                 settlement_data["settlement_type"] = settlement_type
             
@@ -198,6 +238,17 @@ async def upload_settlement_pdf(
         # Refresh all created settlements
         for settlement in created_settlements:
             db.refresh(settlement)
+        
+        # Clean up local PDF file if it was uploaded to Cloudinary
+        # (Only delete if all settlements were created successfully and PDF is in Cloudinary)
+        if os.path.exists(file_path):
+            # Check if PDF was uploaded to Cloudinary (URL starts with http/https)
+            first_settlement = created_settlements[0]
+            if first_settlement.pdf_file_path and (first_settlement.pdf_file_path.startswith("http://") or first_settlement.pdf_file_path.startswith("https://")):
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
         
         # Return the first settlement (or only one if single truck)
         return created_settlements[0]
@@ -301,7 +352,24 @@ async def upload_settlement_pdf_bulk(
                             file_failed += 1
                             continue
                     
-                    settlement_data["pdf_file_path"] = file_path
+                    # Upload PDF to Cloudinary or keep local path
+                    pdf_path = None
+                    if os.path.exists(file_path):
+                        with open(file_path, "rb") as pdf_file:
+                            pdf_content = pdf_file.read()
+                            pdf_filename = os.path.basename(file_path)
+                            
+                            # Try Cloudinary upload first
+                            cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="settlements")
+                            
+                            if cloudinary_pdf_url:
+                                # Store Cloudinary URL
+                                pdf_path = cloudinary_pdf_url
+                            else:
+                                # Fallback to local storage if Cloudinary not configured
+                                pdf_path = file_path
+                    
+                    settlement_data["pdf_file_path"] = pdf_path
                     if settlement_type:
                         settlement_data["settlement_type"] = settlement_type
                     

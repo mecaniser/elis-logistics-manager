@@ -35,6 +35,23 @@ The database connection is handled automatically by `backend/app/database.py` - 
    - The app automatically converts `postgres://` to `postgresql://` if needed
    - No manual configuration required!
 
+## Step 2.5: Configure Cloudinary (Optional but Recommended)
+
+For production, configure Cloudinary to store images and PDFs in the cloud instead of local storage:
+
+1. Sign up for a free Cloudinary account at https://cloudinary.com
+2. Get your credentials from the Cloudinary Dashboard:
+   - Cloud Name
+   - API Key
+   - API Secret
+3. In Railway, go to your project → Variables
+4. Add the following environment variables:
+   - `CLOUDINARY_CLOUD_NAME` - Your Cloudinary cloud name
+   - `CLOUDINARY_API_KEY` - Your Cloudinary API key
+   - `CLOUDINARY_API_SECRET` - Your Cloudinary API secret
+
+**Note**: If Cloudinary is not configured, the app will fall back to local file storage. However, files stored locally will be lost on Railway deployments since the filesystem is ephemeral. Cloudinary ensures files persist across deployments and provides CDN delivery.
+
 ### How Database Connection Works
 
 The app uses **environment-based database selection**:
@@ -73,6 +90,11 @@ In Railway project settings, add these environment variables:
 - `FRONTEND_URL` - Your custom domain (e.g., `https://logistics.yourdomain.com`)
   - Used for CORS configuration
   - If not set, defaults to `http://localhost:3000`
+- `CLOUDINARY_CLOUD_NAME` - Cloudinary cloud name (for image/PDF storage)
+- `CLOUDINARY_API_KEY` - Cloudinary API key (for image/PDF storage)
+- `CLOUDINARY_API_SECRET` - Cloudinary API secret (for image/PDF storage)
+  - See Step 2.5 above for setup instructions
+  - If not set, app falls back to local file storage (files will be lost on redeploy)
 - `PORT` - ✅ Railway sets this automatically (don't override)
 
 ### Viewing Database Connection Info
