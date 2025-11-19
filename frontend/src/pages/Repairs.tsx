@@ -315,7 +315,18 @@ export default function Repairs() {
   }
 
   const getPdfUrl = (pdfPath: string) => {
-    if (pdfPath.startsWith('http')) return pdfPath
+    // If it's a Cloudinary URL, add fl_attachment=false to force inline display instead of download
+    if (pdfPath.startsWith('http://') || pdfPath.startsWith('https://')) {
+      // Check if it's a Cloudinary URL
+      if (pdfPath.includes('res.cloudinary.com')) {
+        // Add fl_attachment=false parameter to force inline display
+        const separator = pdfPath.includes('?') ? '&' : '?'
+        return `${pdfPath}${separator}fl_attachment=false`
+      }
+      // For other HTTP URLs, return as-is
+      return pdfPath
+    }
+    // Local file - return with /uploads/ prefix
     const filename = pdfPath.split('/').pop() || pdfPath
     return `/uploads/${encodeURIComponent(filename)}`
   }
