@@ -314,24 +314,19 @@ export default function Repairs() {
     return `/uploads/${encodeURIComponent(imagePath.split('/').pop() || imagePath)}`
   }
 
-  const getPdfUrl = (pdfPath: string) => {
-    // If it's a Cloudinary URL, modify it to force inline display instead of download
+  const getPdfUrl = (pdfPath: string, repairId?: number) => {
+    // If it's a Cloudinary URL, use our backend proxy endpoint to serve with correct headers
     if (pdfPath.startsWith('http://') || pdfPath.startsWith('https://')) {
       // Check if it's a Cloudinary URL
-      if (pdfPath.includes('res.cloudinary.com') && pdfPath.includes('/raw/upload/')) {
-        // For Cloudinary raw files, we need to use a different approach
-        // Instead of modifying the path, we'll use the URL as-is but ensure it has proper format
-        // Cloudinary raw files can be displayed inline by using the URL directly in an iframe
-        // However, if downloads are triggered, we might need to modify the upload settings
-        
-        // Add fl_attachment=false as query parameter to force inline display
-        const separator = pdfPath.includes('?') ? '&' : '?'
-        if (!pdfPath.includes('fl_attachment')) {
-          return `${pdfPath}${separator}fl_attachment=false`
+      if (pdfPath.includes('res.cloudinary.com')) {
+        // Use backend proxy endpoint if we have repairId
+        if (repairId) {
+          return `/api/repairs/${repairId}/invoice`
         }
+        // Fallback to direct URL if repairId not available (shouldn't happen in normal flow)
         return pdfPath
       }
-      // Not a Cloudinary raw file URL, return as-is
+      // Not a Cloudinary URL, return as-is
       return pdfPath
     }
     // Local file - return with /uploads/ prefix
@@ -744,7 +739,7 @@ export default function Repairs() {
                     {repair.receipt_path && (
                       <div className="mt-2">
                         <button
-                          onClick={() => window.open(getPdfUrl(repair.receipt_path!), '_blank')}
+                          onClick={() => window.open(getPdfUrl(repair.receipt_path!, repair.id), '_blank')}
                           className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -838,7 +833,7 @@ export default function Repairs() {
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-lg font-medium text-gray-900">Invoice PDF</h4>
                   <button
-                    onClick={() => window.open(getPdfUrl(repairToEdit.receipt_path!), '_blank')}
+                    onClick={() => window.open(getPdfUrl(repairToEdit.receipt_path!, repairToEdit.id), '_blank')}
                     className="text-sm text-blue-600 hover:text-blue-800"
                   >
                     Open in New Tab
@@ -846,7 +841,7 @@ export default function Repairs() {
                 </div>
                 <div className="w-full h-[600px] border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
                   <iframe
-                    src={getPdfUrl(repairToEdit.receipt_path)}
+                    src={getPdfUrl(repairToEdit.receipt_path, repairToEdit.id)}
                     className="w-full h-full border-0"
                     title="Repair Invoice PDF"
                   />

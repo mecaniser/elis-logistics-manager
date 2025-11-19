@@ -2,6 +2,8 @@
 Repairs router
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response, FileResponse
+import httpx
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
@@ -111,6 +113,59 @@ async def create_repair(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to create repair: {str(e)}")
+
+@router.get("/{repair_id}/invoice")
+async def get_repair_invoice(repair_id: int, db: Session = Depends(get_db)):
+    """Proxy repair invoice PDF from Cloudinary with inline display headers"""
+    repair = db.query(Repair).filter(Repair.id == repair_id).first()
+    if not repair:
+        raise HTTPException(status_code=404, detail="Repair not found")
+    
+    if not repair.receipt_path:
+        raise HTTPException(status_code=404, detail="No invoice found for this repair")
+    
+    # If it's a Cloudinary URL, proxy it through our backend with correct headers
+    if repair.receipt_path.startswith('http://') or repair.receipt_path.startswith('https://'):
+        try:
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                # Fetch PDF from Cloudinary
+                response = await client.get(repair.receipt_path, timeout=30.0)
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=response.status_code, 
+                        detail=f"Failed to fetch invoice from Cloudinary: HTTP {response.status_code}"
+                    )
+                
+                # Verify content type
+                content_type = response.headers.get("content-type", "application/pdf")
+                if "pdf" not in content_type.lower() and not response.content.startswith(b"%PDF"):
+                    # Check if it's actually a PDF by magic bytes
+                    raise HTTPException(status_code=500, detail="Response is not a valid PDF file")
+                
+                # Return PDF with Content-Disposition: inline header to force display instead of download
+                return Response(
+                    content=response.content,
+                    media_type="application/pdf",
+                    headers={
+                        "Content-Disposition": "inline; filename=invoice.pdf",
+                        "Cache-Control": "public, max-age=3600"
+                    }
+                )
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch invoice: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    else:
+        # Local file - serve directly
+        local_file_path = os.path.join(UPLOAD_DIR, repair.receipt_path)
+        if os.path.exists(local_file_path):
+            return FileResponse(
+                local_file_path,
+                media_type="application/pdf",
+                headers={"Content-Disposition": "inline; filename=invoice.pdf"}
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Invoice file not found")
 
 @router.get("/{repair_id}", response_model=RepairResponse)
 def get_repair(repair_id: int, db: Session = Depends(get_db)):
