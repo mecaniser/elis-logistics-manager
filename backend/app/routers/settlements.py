@@ -19,6 +19,7 @@ router = APIRouter()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+@router.get("", response_model=List[SettlementResponse])
 @router.get("/", response_model=List[SettlementResponse])
 def get_settlements(
     truck_id: Optional[int] = None,
