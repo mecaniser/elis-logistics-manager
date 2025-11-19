@@ -153,6 +153,75 @@ def get_cloudinary_url(image_path: str) -> str:
     return image_path
 
 
+def get_authenticated_url(cloudinary_url: str) -> Optional[str]:
+    """
+    Generate an authenticated/signed URL for a Cloudinary resource.
+    Uses Cloudinary API credentials to sign the URL.
+    
+    Args:
+        cloudinary_url: Cloudinary URL of the file
+    
+    Returns:
+        Authenticated URL if successful, None on error
+    """
+    if not CLOUDINARY_CONFIGURED:
+        logger.warning("Cloudinary not configured, cannot generate authenticated URL")
+        return None
+    
+    try:
+        import re
+        import cloudinary.utils
+        import hashlib
+        import time
+        
+        # Extract public_id from Cloudinary URL
+        # For raw files: /raw/upload/v123/folder/file.pdf
+        match = re.search(r'/raw/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', cloudinary_url)
+        resource_type = "raw"
+        
+        if not match:
+            # Try image pattern as fallback
+            match = re.search(r'/image/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', cloudinary_url)
+            resource_type = "image"
+        
+        if not match:
+            logger.error(f"Could not extract public_id from URL: {cloudinary_url}")
+            return None
+        
+        public_id = match.group(1)
+        
+        # Generate signed URL using Cloudinary SDK
+        # sign_url=True will add a signature parameter to the URL using API secret
+        try:
+            authenticated_url = cloudinary.utils.cloudinary_url(
+                public_id,
+                resource_type=resource_type,
+                secure=True,
+                sign_url=True  # This will add signature to the URL using API secret
+            )[0]
+            
+            logger.info(f"Generated authenticated URL for: {public_id}")
+            return authenticated_url
+        except Exception as sign_error:
+            logger.warning(f"Failed to sign URL, trying without signature: {str(sign_error)}")
+            # Try without signing - might work if PDF delivery is enabled
+            try:
+                unsigned_url = cloudinary.utils.cloudinary_url(
+                    public_id,
+                    resource_type=resource_type,
+                    secure=True
+                )[0]
+                return unsigned_url
+            except:
+                # Last resort: return original URL
+                return cloudinary_url
+            
+    except Exception as e:
+        logger.error(f"Failed to generate authenticated URL: {str(e)}", exc_info=True)
+        # Fallback: return original URL
+        return cloudinary_url
+
+
 def delete_image(image_url: str) -> bool:
     """
     Delete an image from Cloudinary.

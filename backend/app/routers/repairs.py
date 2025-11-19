@@ -14,7 +14,7 @@ from app.models.repair import Repair
 from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
-from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
+from app.utils.cloudinary import upload_image, upload_pdf, delete_image, get_authenticated_url, CLOUDINARY_CONFIGURED
 
 router = APIRouter()
 
@@ -133,10 +133,20 @@ async def get_repair_invoice(repair_id: int, db: Session = Depends(get_db)):
         # If it's a Cloudinary URL, proxy it through our backend with correct headers
         if repair.receipt_path.startswith('http://') or repair.receipt_path.startswith('https://'):
             try:
+                # Generate authenticated URL if it's a Cloudinary URL
+                fetch_url = repair.receipt_path
+                if "res.cloudinary.com" in repair.receipt_path:
+                    authenticated_url = get_authenticated_url(repair.receipt_path)
+                    if authenticated_url:
+                        fetch_url = authenticated_url
+                        logger.info(f"Using authenticated URL for Cloudinary file")
+                    else:
+                        logger.warning(f"Could not generate authenticated URL, using original URL")
+                
                 async with httpx.AsyncClient(follow_redirects=True) as client:
                     # Fetch PDF from Cloudinary
-                    logger.info(f"Fetching PDF from Cloudinary: {repair.receipt_path}")
-                    response = await client.get(repair.receipt_path, timeout=30.0)
+                    logger.info(f"Fetching PDF from Cloudinary: {fetch_url}")
+                    response = await client.get(fetch_url, timeout=30.0)
                     
                     if response.status_code != 200:
                         logger.error(f"Cloudinary returned status {response.status_code}")
