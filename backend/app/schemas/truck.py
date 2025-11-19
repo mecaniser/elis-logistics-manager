@@ -14,6 +14,12 @@ class TruckBase(BaseModel):
 class TruckCreate(TruckBase):
     pass
 
+class TruckUpdate(BaseModel):
+    name: Optional[str] = None
+    license_plate: Optional[str] = None
+    vin: Optional[str] = None
+    license_plate_history: Optional[List[str]] = None
+
 class TruckResponse(TruckBase):
     id: int
     created_at: datetime

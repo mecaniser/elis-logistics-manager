@@ -44,7 +44,11 @@ export default function Trucks() {
     e.preventDefault()
     try {
       if (editingTruck) {
-        await trucksApi.update(editingTruck.id, { name: formData.name })
+        await trucksApi.update(editingTruck.id, {
+          name: formData.name,
+          vin: formData.vin || undefined,
+          license_plate: formData.license_plate || undefined,
+        })
         showModal('Success', 'Truck updated successfully!', 'success')
       } else {
         await trucksApi.create({
@@ -109,28 +113,26 @@ export default function Trucks() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            {!editingTruck && (
-              <>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
-                  <input
-                    type="text"
-                    value={formData.vin}
-                    onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
-                  <input
-                    type="text"
-                    value={formData.license_plate}
-                    onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </>
-            )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+              <input
+                type="text"
+                value={formData.vin}
+                onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
+                placeholder="Enter 17-character VIN"
+                maxLength={17}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
+              <input
+                type="text"
+                value={formData.license_plate}
+                onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <div className="flex gap-3">
               <button
                 type="submit"
