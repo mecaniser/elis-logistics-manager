@@ -93,6 +93,8 @@ async def create_repair(
     db_repair = Repair(
         truck_id=repair_data.get("truck_id"),
         repair_date=repair_date,
+        title=repair_data.get("title") or None,
+        details=repair_data.get("details") or None,
         description=repair_data.get("description") or None,
         category=repair_data.get("category") or None,
         cost=cost,
@@ -342,6 +344,8 @@ async def upload_repair_invoice(
         db_repair = Repair(
             truck_id=truck.id,
             repair_date=repair_data.get("repair_date"),
+            title=repair_data.get("title"),
+            details=repair_data.get("details"),
             description=repair_data.get("description"),
             category=repair_data.get("category"),
             cost=repair_data.get("cost"),

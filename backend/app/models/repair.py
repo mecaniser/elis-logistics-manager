@@ -12,7 +12,9 @@ class Repair(Base):
     id = Column(Integer, primary_key=True, index=True)
     truck_id = Column(Integer, ForeignKey("trucks.id"), nullable=False)
     repair_date = Column(Date, nullable=True)  # Made optional - can be set manually if PDF parsing fails
-    description = Column(Text)
+    title = Column(String(200), nullable=True)  # Short title for the repair
+    details = Column(Text, nullable=True)  # Detailed description of the repair
+    description = Column(Text)  # Legacy field - kept for backward compatibility
     category = Column(String(50))  # engine, tires, maintenance, etc
     cost = Column(Numeric(10, 2), nullable=True)  # Made optional - can be set manually if PDF parsing fails
     receipt_path = Column(String(255))

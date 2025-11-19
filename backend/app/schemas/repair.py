@@ -9,7 +9,9 @@ from decimal import Decimal
 class RepairBase(BaseModel):
     truck_id: int
     repair_date: Optional[date] = None  # Optional - can be set manually if PDF parsing fails
-    description: Optional[str] = None
+    title: Optional[str] = None  # Short title for the repair
+    details: Optional[str] = None  # Detailed description of the repair
+    description: Optional[str] = None  # Legacy field - kept for backward compatibility
     category: Optional[str] = None
     cost: Optional[Decimal] = None  # Optional - can be set manually if PDF parsing fails
     receipt_path: Optional[str] = None
@@ -22,6 +24,8 @@ class RepairCreate(RepairBase):
 class RepairUpdate(BaseModel):
     truck_id: Optional[int] = None
     repair_date: Optional[date] = None
+    title: Optional[str] = None
+    details: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
     cost: Optional[Decimal] = None

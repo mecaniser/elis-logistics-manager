@@ -39,6 +39,8 @@ export interface Repair {
   id: number
   truck_id: number
   repair_date: string
+  title?: string
+  details?: string
   description: string
   cost: number
   category?: string

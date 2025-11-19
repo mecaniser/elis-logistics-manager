@@ -35,6 +35,8 @@ export default function Repairs() {
   const [manualFormData, setManualFormData] = useState<Partial<Repair>>({
     truck_id: undefined,
     repair_date: undefined,
+    title: '',
+    details: '',
     description: '',
     category: '',
     cost: undefined,
@@ -218,6 +220,8 @@ export default function Repairs() {
     setEditFormData({
       truck_id: repair.truck_id,
       repair_date: repair.repair_date,
+      title: repair.title || '',
+      details: repair.details || '',
       description: repair.description || '',
       category: isCustomCategory ? 'other' : category,
       cost: repair.cost
@@ -293,12 +297,16 @@ export default function Repairs() {
     
     const searchLower = searchFilter.toLowerCase()
     const truckName = getTruckName(repair.truck_id).toLowerCase()
+    const title = (repair.title || '').toLowerCase()
+    const details = (repair.details || '').toLowerCase()
     const description = (repair.description || '').toLowerCase()
     const invoiceNumber = (repair.invoice_number || '').toLowerCase()
     const truckId = repair.truck_id.toString()
     
     return (
       truckName.includes(searchLower) ||
+      title.includes(searchLower) ||
+      details.includes(searchLower) ||
       description.includes(searchLower) ||
       invoiceNumber.includes(searchLower) ||
       truckId.includes(searchLower)
@@ -342,6 +350,8 @@ export default function Repairs() {
                   setManualFormData({
                     truck_id: undefined,
                     repair_date: undefined,
+                    title: '',
+                    details: '',
                     description: '',
                     category: '',
                     cost: undefined,
@@ -569,7 +579,29 @@ export default function Repairs() {
                 )}
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                <input
+                  type="text"
+                  value={manualFormData.title || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, title: e.target.value || undefined })}
+                  disabled={creating}
+                  placeholder="Short title for this repair..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Details</label>
+                <textarea
+                  value={manualFormData.details || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, details: e.target.value || undefined })}
+                  disabled={creating}
+                  rows={4}
+                  placeholder="Detailed description of the repair work..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description (Legacy)</label>
                 <textarea
                   value={manualFormData.description || ''}
                   onChange={(e) => setManualFormData({ ...manualFormData, description: e.target.value || undefined })}
@@ -635,7 +667,12 @@ export default function Repairs() {
                   <div className="flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <h3 className="text-lg font-medium text-gray-900">{repair.description}</h3>
+                        <h3 className="text-xl font-semibold text-gray-900 mb-1">
+                          {repair.title || repair.description || 'Untitled Repair'}
+                        </h3>
+                        {repair.details && (
+                          <p className="text-sm text-gray-600 mb-2">{repair.details}</p>
+                        )}
                         <p className="text-sm text-gray-500">
                           {getTruckName(repair.truck_id)} - {new Date(repair.repair_date).toLocaleDateString()}
                           {repair.category && <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded">{repair.category}</span>}
@@ -776,7 +813,29 @@ export default function Repairs() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input
+                type="text"
+                value={editFormData.title || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                disabled={saving}
+                placeholder="Short title for this repair..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Details</label>
+              <textarea
+                value={editFormData.details || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, details: e.target.value })}
+                disabled={saving}
+                rows={4}
+                placeholder="Detailed description of the repair work..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description (Legacy)</label>
               <textarea
                 value={editFormData.description || ''}
                 onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
