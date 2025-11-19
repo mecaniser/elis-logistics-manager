@@ -14,6 +14,7 @@ export default function Repairs() {
   const [uploadImages, setUploadImages] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [repairToDelete, setRepairToDelete] = useState<number | null>(null)
+  const [imageToDelete, setImageToDelete] = useState<{ repairId: number; imageIndex: number } | null>(null)
   const [repairToEdit, setRepairToEdit] = useState<Repair | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Repair>>({})
   const [editImages, setEditImages] = useState<File[]>([])
@@ -269,6 +270,37 @@ export default function Repairs() {
     } catch (err: any) {
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete repair', 'error')
       setRepairToDelete(null)
+    }
+  }
+
+  const handleDeleteImage = async () => {
+    if (!imageToDelete) return
+    const wasInEditMode = repairToEdit && repairToEdit.id === imageToDelete.repairId
+    try {
+      await repairsApi.deleteImage(imageToDelete.repairId, imageToDelete.imageIndex)
+      showToast('Image deleted successfully!', 'success')
+      
+      // Reload repairs to get updated data
+      await loadRepairs()
+      
+      // If we were in edit mode, refresh the edit form with updated repair data
+      if (wasInEditMode) {
+        // Wait a moment for state to update, then refresh edit form
+        setTimeout(async () => {
+          // Reload repairs again to ensure we have the latest data
+          const response = await repairsApi.getAll()
+          const updatedRepairs = Array.isArray(response.data) ? response.data : []
+          const updatedRepair = updatedRepairs.find(r => r.id === imageToDelete.repairId)
+          if (updatedRepair) {
+            handleEdit(updatedRepair)
+          }
+        }, 100)
+      }
+      
+      setImageToDelete(null)
+    } catch (err: any) {
+      showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
+      setImageToDelete(null)
     }
   }
 
@@ -719,17 +751,9 @@ export default function Repairs() {
                               </div>
                             </button>
                             <button
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation()
-                                if (window.confirm('Are you sure you want to delete this image?')) {
-                                  try {
-                                    await repairsApi.deleteImage(repair.id, idx)
-                                    showToast('Image deleted successfully!', 'success')
-                                    loadRepairs()
-                                  } catch (err: any) {
-                                    showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
-                                  }
-                                }
+                                setImageToDelete({ repairId: repair.id, imageIndex: idx })
                               }}
                               className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700 transition-colors shadow-lg z-10"
                               title="Delete image"
@@ -936,22 +960,8 @@ export default function Repairs() {
                         />
                         <button
                           type="button"
-                          onClick={async () => {
-                            if (window.confirm('Are you sure you want to delete this image?')) {
-                              try {
-                                await repairsApi.deleteImage(repairToEdit.id, idx)
-                                showToast('Image deleted successfully!', 'success')
-                                // Reload repairs to get updated data
-                                await loadRepairs()
-                                // Update repairToEdit to reflect the change
-                                const updatedRepairs = repairs.filter(r => r.id === repairToEdit.id)
-                                if (updatedRepairs.length > 0) {
-                                  handleEdit(updatedRepairs[0])
-                                }
-                              } catch (err: any) {
-                                showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
-                              }
-                            }
+                          onClick={() => {
+                            setImageToDelete({ repairId: repairToEdit.id, imageIndex: idx })
                           }}
                           className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-700 shadow-lg"
                           title="Delete image"
@@ -1019,6 +1029,16 @@ export default function Repairs() {
         onConfirm={handleDelete}
         title="Delete Repair"
         message="Are you sure you want to delete this repair? This action cannot be undone."
+        confirmText="Delete"
+        type="danger"
+      />
+
+      <ConfirmModal
+        isOpen={imageToDelete !== null}
+        onClose={() => setImageToDelete(null)}
+        onConfirm={handleDeleteImage}
+        title="Delete Image"
+        message="Are you sure you want to delete this image? This action cannot be undone."
         confirmText="Delete"
         type="danger"
       />
