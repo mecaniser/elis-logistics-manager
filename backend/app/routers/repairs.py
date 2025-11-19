@@ -220,7 +220,7 @@ async def upload_repair_invoice(
                     pass
             return RepairUploadResponse(
                 repair=None,  # Will be created after truck selection on re-upload
-                warning=f"VIN {vin} found in invoice but no matching truck found. Please select a truck and upload again.",
+                warning=f"VIN {vin} found in invoice but no matching truck found in database. Please select the correct truck from the dropdown and upload the file again. If this VIN belongs to an existing truck, you may need to update that truck's VIN in the Trucks page.",
                 vin_found=True,
                 vin=vin,
                 requires_truck_selection=True

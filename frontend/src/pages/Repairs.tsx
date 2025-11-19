@@ -105,9 +105,12 @@ export default function Repairs() {
       if (response.data.requires_truck_selection) {
         setRequiresTruckSelection(true)
         setExtractedVin(response.data.vin || null)
+        const message = response.data.vin 
+          ? `${response.data.warning || `VIN ${response.data.vin} found but no matching truck.`}\n\nPlease select the correct truck from the dropdown below and upload the file again.`
+          : response.data.warning || 'Please select a truck for this repair and upload again.'
         showModal(
           'Truck Selection Required',
-          response.data.warning || 'Please select a truck for this repair.',
+          message,
           'warning'
         )
         return
@@ -377,7 +380,9 @@ export default function Repairs() {
           <h2 className="text-lg font-semibold mb-4">Upload Repair Invoice</h2>
           <p className="text-sm text-gray-600 mb-4">
             {requiresTruckSelection 
-              ? 'VIN could not be extracted from the invoice. Please select a truck manually.'
+              ? extractedVin
+                ? `VIN ${extractedVin} was found in the invoice but doesn't match any truck. Please select the correct truck below and upload the file again.`
+                : 'VIN could not be extracted from the invoice. Please select a truck manually and upload again.'
               : extractedVin
               ? `VIN found: ${extractedVin}. The truck will be matched automatically, or you can select manually.`
               : 'The truck will be automatically identified by the VIN number extracted from the invoice. If no VIN is found, you must select a truck manually.'}
