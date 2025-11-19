@@ -14,7 +14,7 @@ from app.models.repair import Repair
 from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
-from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
+from app.utils.cloudinary import upload_image, upload_pdf, delete_image, download_file_content, CLOUDINARY_CONFIGURED
 
 router = APIRouter()
 
@@ -133,9 +133,32 @@ async def get_repair_invoice(repair_id: int, db: Session = Depends(get_db)):
         # If it's a Cloudinary URL, proxy it through our backend with correct headers
         if repair.receipt_path.startswith('http://') or repair.receipt_path.startswith('https://'):
             try:
-                # Use the original stored URL directly - no signing/transformation needed
+                # Try downloading via Cloudinary API first (uses API credentials)
+                if "res.cloudinary.com" in repair.receipt_path:
+                    logger.info(f"Attempting to download PDF via Cloudinary API: {repair.receipt_path[:100]}...")
+                    file_content = await download_file_content(repair.receipt_path)
+                    
+                    if file_content:
+                        logger.info(f"Successfully downloaded PDF via API, size: {len(file_content)} bytes")
+                        # Verify it's a PDF
+                        if not file_content.startswith(b"%PDF"):
+                            logger.warning(f"Downloaded content doesn't start with PDF magic bytes")
+                        
+                        # Return PDF with Content-Disposition: inline header
+                        return Response(
+                            content=file_content,
+                            media_type="application/pdf",
+                            headers={
+                                "Content-Disposition": "inline; filename=invoice.pdf",
+                                "Cache-Control": "public, max-age=3600"
+                            }
+                        )
+                    else:
+                        logger.warning(f"API download failed, trying direct HTTP...")
+                
+                # Fallback: Try direct HTTP fetch
                 fetch_url = repair.receipt_path
-                logger.info(f"Fetching PDF from Cloudinary using stored URL: {fetch_url[:100]}...")
+                logger.info(f"Fetching PDF from Cloudinary using direct HTTP: {fetch_url[:100]}...")
                 
                 async with httpx.AsyncClient(follow_redirects=True) as client:
                     # Fetch PDF from Cloudinary

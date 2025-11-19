@@ -153,6 +153,74 @@ def get_cloudinary_url(image_path: str) -> str:
     return image_path
 
 
+async def download_file_content(cloudinary_url: str) -> Optional[bytes]:
+    """
+    Download file content from Cloudinary using API-generated URL.
+    Uses Cloudinary SDK to generate URL, then fetches via HTTP.
+    
+    Args:
+        cloudinary_url: Cloudinary URL of the file
+    
+    Returns:
+        File content as bytes if successful, None on error
+    """
+    if not CLOUDINARY_CONFIGURED:
+        logger.warning("Cloudinary not configured, cannot download file")
+        return None
+    
+    try:
+        import re
+        import httpx
+        import cloudinary.utils
+        
+        # Extract public_id from Cloudinary URL
+        url_parts = cloudinary_url.split('/raw/upload/')
+        if len(url_parts) == 2:
+            resource_type = "raw"
+            after_upload = url_parts[1]
+            after_upload = re.sub(r'^v\d+/', '', after_upload)
+            after_upload = after_upload.split('?')[0]
+            after_upload = after_upload.split('#')[0]
+            public_id = after_upload
+        else:
+            url_parts = cloudinary_url.split('/image/upload/')
+            if len(url_parts) == 2:
+                resource_type = "image"
+                after_upload = url_parts[1]
+                after_upload = re.sub(r'^v\d+/', '', after_upload)
+                after_upload = after_upload.split('?')[0]
+                after_upload = after_upload.split('#')[0]
+                public_id = after_upload
+            else:
+                logger.error(f"Could not extract public_id from URL: {cloudinary_url}")
+                return None
+        
+        logger.info(f"Extracted public_id: {public_id}, generating download URL...")
+        
+        # Use Cloudinary SDK to generate URL (uses API credentials)
+        download_url = cloudinary.utils.cloudinary_url(
+            public_id,
+            resource_type=resource_type,
+            secure=True
+        )[0]
+        
+        logger.info(f"Generated download URL: {download_url[:100]}...")
+        
+        # Fetch using httpx async
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(download_url, timeout=30.0)
+            if response.status_code == 200:
+                logger.info(f"Successfully downloaded file from Cloudinary: {public_id}, size: {len(response.content)} bytes")
+                return response.content
+            else:
+                logger.error(f"Failed to download file, status: {response.status_code}")
+                return None
+            
+    except Exception as e:
+        logger.error(f"Failed to download file from Cloudinary: {str(e)}", exc_info=True)
+        return None
+
+
 def get_authenticated_url(cloudinary_url: str) -> Optional[str]:
     """
     Generate an authenticated/signed URL for a Cloudinary resource.
