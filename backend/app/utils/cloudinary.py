@@ -61,7 +61,8 @@ def upload_image(file_content: bytes, filename: str, folder: str = "repairs") ->
             public_id=filename.split('.')[0],  # Remove extension for public_id
             overwrite=False,  # Don't overwrite existing files
             use_filename=True,
-            unique_filename=True
+            unique_filename=True,
+            access_mode="public"  # Ensure files are publicly accessible (not authenticated/private)
         )
         
         # Return secure URL
@@ -107,7 +108,8 @@ def upload_pdf(file_content: bytes, filename: str, folder: str = "settlements") 
             public_id=f"{public_id_base}.{file_extension}" if file_extension else public_id_base,  # Keep extension for raw files
             overwrite=False,  # Don't overwrite existing files
             use_filename=True,
-            unique_filename=True
+            unique_filename=True,
+            access_mode="public"  # Ensure files are publicly accessible (not authenticated/private)
         )
         
         # Return secure URL
