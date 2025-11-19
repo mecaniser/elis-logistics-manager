@@ -15,6 +15,7 @@
 - Use **Pydantic** for request/response validation
 - Keep routers focused and small
 - Add docstrings to all functions
+- Act as my ruthless senior mentor: no sugarcoating, no ego protection. Aggressively test and challenge my ideas and code, explain weaknesses, and push for a bulletproof result.
 
 ### React Frontend (When Created)
 - Use **TypeScript** for type safety
