@@ -315,36 +315,20 @@ export default function Repairs() {
   }
 
   const getPdfUrl = (pdfPath: string) => {
-    // If it's a Cloudinary URL, add fl_attachment:false transformation to force inline display
+    // If it's a Cloudinary URL, modify it to force inline display instead of download
     if (pdfPath.startsWith('http://') || pdfPath.startsWith('https://')) {
       // Check if it's a Cloudinary URL
       if (pdfPath.includes('res.cloudinary.com') && pdfPath.includes('/raw/upload/')) {
-        // Check if fl_attachment transformation is already present
+        // For Cloudinary raw files, we need to use a different approach
+        // Instead of modifying the path, we'll use the URL as-is but ensure it has proper format
+        // Cloudinary raw files can be displayed inline by using the URL directly in an iframe
+        // However, if downloads are triggered, we might need to modify the upload settings
+        
+        // Add fl_attachment=false as query parameter to force inline display
+        const separator = pdfPath.includes('?') ? '&' : '?'
         if (!pdfPath.includes('fl_attachment')) {
-          // For raw files, insert fl_attachment:false as a transformation in the path
-          // Format: /raw/upload/fl_attachment:false/{path/to/file}.pdf
-          // Handle URLs with query parameters
-          const [baseUrl, queryString] = pdfPath.split('?')
-          const urlParts = baseUrl.split('/raw/upload/')
-          
-          if (urlParts.length === 2) {
-            const afterUpload = urlParts[1]
-            // Check if there's a version number (v1234567890)
-            const versionMatch = afterUpload.match(/^(v\d+\/)/)
-            
-            if (versionMatch) {
-              // Has version: /raw/upload/v123/fl_attachment:false/path/file.pdf
-              const withoutVersion = afterUpload.substring(versionMatch[0].length)
-              const transformedUrl = `${urlParts[0]}/raw/upload/${versionMatch[0]}fl_attachment:false/${withoutVersion}`
-              return queryString ? `${transformedUrl}?${queryString}` : transformedUrl
-            } else {
-              // No version: /raw/upload/fl_attachment:false/path/file.pdf
-              const transformedUrl = `${urlParts[0]}/raw/upload/fl_attachment:false/${afterUpload}`
-              return queryString ? `${transformedUrl}?${queryString}` : transformedUrl
-            }
-          }
+          return `${pdfPath}${separator}fl_attachment=false`
         }
-        // Already has transformation or couldn't parse, return as-is
         return pdfPath
       }
       // Not a Cloudinary raw file URL, return as-is

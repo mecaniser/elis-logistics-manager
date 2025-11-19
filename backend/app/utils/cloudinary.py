@@ -95,11 +95,16 @@ def upload_pdf(file_content: bytes, filename: str, folder: str = "settlements") 
         resource_id = f"{folder}/{filename}"
         
         # Upload to Cloudinary as raw file (PDF)
+        # For raw files, public_id should include the extension
+        # Extract extension from filename
+        file_extension = filename.split('.')[-1] if '.' in filename else ''
+        public_id_base = filename.rsplit('.', 1)[0] if '.' in filename else filename
+        
         result = cloudinary.uploader.upload(
             file_content,
             resource_type="raw",  # PDFs are stored as raw files
             folder=folder,
-            public_id=filename.split('.')[0],  # Remove extension for public_id
+            public_id=f"{public_id_base}.{file_extension}" if file_extension else public_id_base,  # Keep extension for raw files
             overwrite=False,  # Don't overwrite existing files
             use_filename=True,
             unique_filename=True
