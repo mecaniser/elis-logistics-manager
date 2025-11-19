@@ -54,14 +54,18 @@ def upload_image(file_content: bytes, filename: str, folder: str = "repairs") ->
         resource_id = f"{folder}/{filename}"
         
         # Upload to Cloudinary
+        # Use the full filename (including extension) as public_id to ensure uniqueness
+        # Extract base name without extension for public_id, but keep it unique
+        base_name = os.path.splitext(filename)[0]  # Remove extension but keep UUID/timestamp
+        
         result = cloudinary.uploader.upload(
             file_content,
             resource_type="image",
             folder=folder,
-            public_id=filename.split('.')[0],  # Remove extension for public_id
+            public_id=base_name,  # Use full base name (includes UUID/timestamp for uniqueness)
             overwrite=False,  # Don't overwrite existing files
-            use_filename=True,
-            unique_filename=True,
+            use_filename=False,  # Don't use original filename, use our unique public_id
+            unique_filename=False,  # We're already generating unique names
             access_mode="public"  # Ensure files are publicly accessible (not authenticated/private)
         )
         

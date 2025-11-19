@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 import json
+import logging
 from datetime import datetime
 from app.database import get_db
 from app.models.repair import Repair
@@ -15,6 +16,8 @@ from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
 from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -50,23 +53,37 @@ async def create_repair(
     # Upload image files to Cloudinary or save locally
     image_paths = []
     if images:
-        for img in images:
+        import uuid
+        logger.info(f"Processing {len(images)} image(s) for repair creation")
+        for idx, img in enumerate(images):
+            # Read file content once
             img_content = await img.read()
+            original_filename = img.filename or f"image_{idx}"
+            logger.info(f"Processing image {idx + 1}/{len(images)}: {original_filename}, size: {len(img_content)} bytes")
+            
+            # Generate truly unique filename using UUID + timestamp + index
             img_timestamp = datetime.now().timestamp()
-            img_filename = f"{img_timestamp}_{img.filename}"
+            unique_id = str(uuid.uuid4())[:8]  # Short UUID for uniqueness
+            file_ext = os.path.splitext(original_filename)[1] or '.jpg'
+            img_filename = f"{img_timestamp}_{unique_id}_{idx}{file_ext}"
+            logger.info(f"Generated unique filename: {img_filename}")
             
             # Try Cloudinary upload first
             cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
             
             if cloudinary_url:
                 # Store Cloudinary URL
+                logger.info(f"Successfully uploaded image {idx + 1} to Cloudinary: {cloudinary_url[:100]}...")
                 image_paths.append(cloudinary_url)
             else:
                 # Fallback to local storage if Cloudinary not configured
                 img_path = os.path.join(UPLOAD_DIR, img_filename)
                 with open(img_path, "wb") as img_buffer:
                     img_buffer.write(img_content)
+                logger.info(f"Saved image {idx + 1} locally: {img_filename}")
                 image_paths.append(img_filename)
+        
+        logger.info(f"Total images processed: {len(image_paths)}")
     
     # Validate required fields
     if not repair_data.get("truck_id"):
@@ -234,13 +251,20 @@ async def update_repair(
     
     # Upload new image files to Cloudinary or save locally, and add to existing images
     if images:
+        import uuid
         existing_images = repair.image_paths if repair.image_paths else []
         new_image_paths = []
         
-        for img in images:
+        for idx, img in enumerate(images):
+            # Read file content once
             img_content = await img.read()
+            
+            # Generate truly unique filename using UUID + timestamp + index
             img_timestamp = datetime.now().timestamp()
-            img_filename = f"{img_timestamp}_{img.filename}"
+            unique_id = str(uuid.uuid4())[:8]  # Short UUID for uniqueness
+            original_filename = img.filename or f"image_{idx}"
+            file_ext = os.path.splitext(original_filename)[1] or '.jpg'
+            img_filename = f"{img_timestamp}_{unique_id}_{idx}{file_ext}"
             
             # Try Cloudinary upload first
             cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
@@ -392,24 +416,38 @@ async def upload_repair_invoice(
     # Upload image files to Cloudinary or save locally
     image_paths = []
     if images:
-        for img in images:
+        import uuid
+        logger.info(f"Processing {len(images)} image(s) for repair upload")
+        for idx, img in enumerate(images):
+            # Read file content once
             img_content = await img.read()
+            original_filename = img.filename or f"image_{idx}"
+            logger.info(f"Processing image {idx + 1}/{len(images)}: {original_filename}, size: {len(img_content)} bytes")
+            
+            # Generate truly unique filename using UUID + timestamp + index
             img_timestamp = datetime.now().timestamp()
-            img_filename = f"{img_timestamp}_{img.filename}"
+            unique_id = str(uuid.uuid4())[:8]  # Short UUID for uniqueness
+            file_ext = os.path.splitext(original_filename)[1] or '.jpg'
+            img_filename = f"{img_timestamp}_{unique_id}_{idx}{file_ext}"
+            logger.info(f"Generated unique filename: {img_filename}")
             
             # Try Cloudinary upload first
             cloudinary_url = upload_image(img_content, img_filename, folder="repairs")
             
             if cloudinary_url:
                 # Store Cloudinary URL
+                logger.info(f"Successfully uploaded image {idx + 1} to Cloudinary: {cloudinary_url[:100]}...")
                 image_paths.append(cloudinary_url)
             else:
                 # Fallback to local storage if Cloudinary not configured
                 img_path = os.path.join(UPLOAD_DIR, img_filename)
                 with open(img_path, "wb") as img_buffer:
                     img_buffer.write(img_content)
+                logger.info(f"Saved image {idx + 1} locally: {img_filename}")
                 # Store relative path without "uploads/" prefix
                 image_paths.append(img_filename)
+        
+        logger.info(f"Total images processed: {len(image_paths)}")
     
     # Upload PDF receipt to Cloudinary or save locally
     receipt_path = None
