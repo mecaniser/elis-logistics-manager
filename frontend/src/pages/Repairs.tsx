@@ -702,22 +702,43 @@ export default function Repairs() {
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {repair.image_paths.map((img, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => window.open(getImageUrl(img), '_blank')}
-                            className="relative group cursor-pointer"
-                          >
-                            <img
-                              src={getImageUrl(img)}
-                              alt={`Repair ${idx + 1}`}
-                              className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
-                              <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                          <div key={idx} className="relative group">
+                            <button
+                              onClick={() => window.open(getImageUrl(img), '_blank')}
+                              className="relative cursor-pointer"
+                            >
+                              <img
+                                src={getImageUrl(img)}
+                                alt={`Repair ${idx + 1}`}
+                                className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
+                              />
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
+                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                </svg>
+                              </div>
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation()
+                                if (window.confirm('Are you sure you want to delete this image?')) {
+                                  try {
+                                    await repairsApi.deleteImage(repair.id, idx)
+                                    showToast('Image deleted successfully!', 'success')
+                                    loadRepairs()
+                                  } catch (err: any) {
+                                    showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
+                                  }
+                                }
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700 transition-colors shadow-lg z-10"
+                              title="Delete image"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
-                            </div>
-                          </button>
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -907,12 +928,37 @@ export default function Repairs() {
                   <p className="text-xs text-gray-500 mb-2">Existing images ({repairToEdit.image_paths.length}):</p>
                   <div className="flex gap-2 flex-wrap">
                     {repairToEdit.image_paths.map((img, idx) => (
-                      <img
-                        key={idx}
-                        src={getImageUrl(img)}
-                        alt={`Existing ${idx + 1}`}
-                        className="w-16 h-16 object-cover rounded border"
-                      />
+                      <div key={idx} className="relative">
+                        <img
+                          src={getImageUrl(img)}
+                          alt={`Existing ${idx + 1}`}
+                          className="w-16 h-16 object-cover rounded border"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm('Are you sure you want to delete this image?')) {
+                              try {
+                                await repairsApi.deleteImage(repairToEdit.id, idx)
+                                showToast('Image deleted successfully!', 'success')
+                                // Reload repairs to get updated data
+                                await loadRepairs()
+                                // Update repairToEdit to reflect the change
+                                const updatedRepairs = repairs.filter(r => r.id === repairToEdit.id)
+                                if (updatedRepairs.length > 0) {
+                                  handleEdit(updatedRepairs[0])
+                                }
+                              } catch (err: any) {
+                                showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
+                              }
+                            }
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-700 shadow-lg"
+                          title="Delete image"
+                        >
+                          ×
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

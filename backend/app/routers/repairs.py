@@ -12,7 +12,7 @@ from app.models.repair import Repair
 from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
-from app.utils.cloudinary import upload_image, upload_pdf, CLOUDINARY_CONFIGURED
+from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
 
 router = APIRouter()
 
@@ -390,6 +390,47 @@ async def upload_repair_invoice(
                 except:
                     pass
         raise HTTPException(status_code=400, detail=f"Failed to create repair: {str(e)}")
+
+@router.delete("/{repair_id}/images/{image_index}")
+async def delete_repair_image(
+    repair_id: int,
+    image_index: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a specific image from a repair"""
+    repair = db.query(Repair).filter(Repair.id == repair_id).first()
+    if not repair:
+        raise HTTPException(status_code=404, detail="Repair not found")
+    
+    if not repair.image_paths or not isinstance(repair.image_paths, list):
+        raise HTTPException(status_code=400, detail="No images found for this repair")
+    
+    if image_index < 0 or image_index >= len(repair.image_paths):
+        raise HTTPException(status_code=400, detail="Invalid image index")
+    
+    # Get the image URL/path to delete
+    image_path = repair.image_paths[image_index]
+    
+    # Delete from Cloudinary if it's a Cloudinary URL, otherwise delete local file
+    if "res.cloudinary.com" in image_path:
+        delete_image(image_path)
+    else:
+        # Delete local file if it exists
+        local_file_path = os.path.join(UPLOAD_DIR, image_path)
+        if os.path.exists(local_file_path):
+            try:
+                os.remove(local_file_path)
+            except Exception as e:
+                # Log error but continue - file might already be deleted
+                pass
+    
+    # Remove image from the list
+    updated_images = [img for i, img in enumerate(repair.image_paths) if i != image_index]
+    repair.image_paths = updated_images if updated_images else None
+    
+    db.commit()
+    db.refresh(repair)
+    return {"message": "Image deleted successfully", "repair": repair}
 
 @router.delete("/{repair_id}")
 def delete_repair(repair_id: int, db: Session = Depends(get_db)):

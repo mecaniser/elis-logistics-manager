@@ -248,6 +248,8 @@ export const repairsApi = {
     })
   },
   delete: (id: number) => api.delete(`/repairs/${id}`),
+  deleteImage: (repairId: number, imageIndex: number) => 
+    api.delete(`/repairs/${repairId}/images/${imageIndex}`),
 }
 
 export interface TimeSeriesData {

@@ -147,3 +147,58 @@ def get_cloudinary_url(image_path: str) -> str:
     # Return local path as-is for backward compatibility
     return image_path
 
+
+def delete_image(image_url: str) -> bool:
+    """
+    Delete an image from Cloudinary.
+    
+    Args:
+        image_url: Cloudinary URL of the image to delete
+    
+    Returns:
+        True if deletion was successful or Cloudinary not configured, False on error
+    """
+    if not CLOUDINARY_CONFIGURED:
+        logger.warning("Cloudinary not configured, skipping deletion")
+        return True  # Return True to allow local file deletion to proceed
+    
+    # Check if this is a Cloudinary URL (contains res.cloudinary.com)
+    if "res.cloudinary.com" not in image_url:
+        # Not a Cloudinary URL, might be local file
+        return True
+    
+    try:
+        # Extract public_id from Cloudinary URL
+        # Cloudinary URLs format: https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{version}/{public_id}.{format}
+        # or: https://res.cloudinary.com/{cloud_name}/image/upload/{folder}/{public_id}.{format}
+        import re
+        
+        # Try to extract public_id from URL
+        # Pattern: res.cloudinary.com/{cloud_name}/image/upload/{path}
+        match = re.search(r'/image/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', image_url)
+        if not match:
+            # Try raw file pattern
+            match = re.search(r'/raw/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', image_url)
+        
+        if match:
+            public_id = match.group(1)
+            # public_id might be like "repairs/filename" or "repairs/receipts/filename"
+            # Keep the full path including folder for Cloudinary
+            
+            # Delete from Cloudinary
+            result = cloudinary.uploader.destroy(public_id, resource_type="image", invalidate=True)
+            
+            if result.get("result") == "ok":
+                logger.info(f"Successfully deleted image from Cloudinary: {public_id}")
+                return True
+            else:
+                logger.warning(f"Cloudinary deletion returned: {result.get('result')} for {public_id}")
+                return False
+        else:
+            logger.warning(f"Could not extract public_id from Cloudinary URL: {image_url}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to delete image from Cloudinary: {str(e)}")
+        return False
+
