@@ -315,15 +315,39 @@ export default function Repairs() {
   }
 
   const getPdfUrl = (pdfPath: string) => {
-    // If it's a Cloudinary URL, add fl_attachment=false to force inline display instead of download
+    // If it's a Cloudinary URL, add fl_attachment:false transformation to force inline display
     if (pdfPath.startsWith('http://') || pdfPath.startsWith('https://')) {
       // Check if it's a Cloudinary URL
-      if (pdfPath.includes('res.cloudinary.com')) {
-        // Add fl_attachment=false parameter to force inline display
-        const separator = pdfPath.includes('?') ? '&' : '?'
-        return `${pdfPath}${separator}fl_attachment=false`
+      if (pdfPath.includes('res.cloudinary.com') && pdfPath.includes('/raw/upload/')) {
+        // Check if fl_attachment transformation is already present
+        if (!pdfPath.includes('fl_attachment')) {
+          // For raw files, insert fl_attachment:false as a transformation in the path
+          // Format: /raw/upload/fl_attachment:false/{path/to/file}.pdf
+          // Handle URLs with query parameters
+          const [baseUrl, queryString] = pdfPath.split('?')
+          const urlParts = baseUrl.split('/raw/upload/')
+          
+          if (urlParts.length === 2) {
+            const afterUpload = urlParts[1]
+            // Check if there's a version number (v1234567890)
+            const versionMatch = afterUpload.match(/^(v\d+\/)/)
+            
+            if (versionMatch) {
+              // Has version: /raw/upload/v123/fl_attachment:false/path/file.pdf
+              const withoutVersion = afterUpload.substring(versionMatch[0].length)
+              const transformedUrl = `${urlParts[0]}/raw/upload/${versionMatch[0]}fl_attachment:false/${withoutVersion}`
+              return queryString ? `${transformedUrl}?${queryString}` : transformedUrl
+            } else {
+              // No version: /raw/upload/fl_attachment:false/path/file.pdf
+              const transformedUrl = `${urlParts[0]}/raw/upload/fl_attachment:false/${afterUpload}`
+              return queryString ? `${transformedUrl}?${queryString}` : transformedUrl
+            }
+          }
+        }
+        // Already has transformation or couldn't parse, return as-is
+        return pdfPath
       }
-      // For other HTTP URLs, return as-is
+      // Not a Cloudinary raw file URL, return as-is
       return pdfPath
     }
     // Local file - return with /uploads/ prefix
