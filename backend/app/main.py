@@ -90,10 +90,13 @@ if frontend_dist.exists():
     async def serve_frontend(full_path: str):
         # Don't serve frontend for API routes or other backend routes
         # Note: /uploads and /assets are handled by StaticFiles mounts above, so they won't reach here
-        if (full_path.startswith("api") or 
+        # FastAPI should match registered routes first, but this is a safety check
+        if (full_path.startswith("api/") or 
             full_path.startswith("docs") or 
             full_path.startswith("openapi.json")):
-            return {"detail": "Not Found"}
+            # If we reach here, the API route wasn't found - let FastAPI handle 404
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
         
         index_file = frontend_dist / "index.html"
         if index_file.exists():

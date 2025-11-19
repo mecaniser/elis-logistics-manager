@@ -67,13 +67,32 @@ def import_repairs(input_file: str, skip_existing: bool = True, clear_existing: 
         
         for idx, repair_data in enumerate(repairs_data, 1):
             try:
-                # Check if repair already exists (by truck_id, repair_date, and cost)
+                # Check if repair already exists
+                # Method 1: Check by invoice_number (most reliable if available)
                 if skip_existing and not clear_existing:
-                    existing = db.query(Repair).filter(
-                        Repair.truck_id == repair_data["truck_id"],
-                        Repair.repair_date == datetime.fromisoformat(repair_data["repair_date"]).date() if repair_data.get("repair_date") else None,
-                        Repair.cost == Decimal(str(repair_data["cost"])) if repair_data.get("cost") else None
-                    ).first()
+                    existing = None
+                    invoice_number = repair_data.get("invoice_number")
+                    if invoice_number:
+                        existing = db.query(Repair).filter(
+                            Repair.truck_id == repair_data["truck_id"],
+                            Repair.invoice_number == invoice_number
+                        ).first()
+                    
+                    # Method 2: Check by truck_id + repair_date + cost (fallback)
+                    if not existing:
+                        repair_date = None
+                        if repair_data.get("repair_date"):
+                            repair_date = datetime.fromisoformat(repair_data["repair_date"]).date()
+                        cost = None
+                        if repair_data.get("cost") is not None:
+                            cost = Decimal(str(repair_data["cost"]))
+                        
+                        if repair_date and cost:
+                            existing = db.query(Repair).filter(
+                                Repair.truck_id == repair_data["truck_id"],
+                                Repair.repair_date == repair_date,
+                                Repair.cost == cost
+                            ).first()
                     
                     if existing:
                         skipped += 1
