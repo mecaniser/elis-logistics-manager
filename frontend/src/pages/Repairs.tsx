@@ -734,35 +734,22 @@ export default function Repairs() {
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {repair.image_paths.map((img, idx) => (
-                          <div key={idx} className="relative group">
-                            <button
-                              onClick={() => window.open(getImageUrl(img), '_blank')}
-                              className="relative cursor-pointer"
-                            >
-                              <img
-                                src={getImageUrl(img)}
-                                alt={`Repair ${idx + 1}`}
-                                className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
-                              />
-                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
-                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                </svg>
-                              </div>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setImageToDelete({ repairId: repair.id, imageIndex: idx })
-                              }}
-                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-700 transition-colors shadow-lg z-10"
-                              title="Delete image"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          <button
+                            key={idx}
+                            onClick={() => window.open(getImageUrl(img), '_blank')}
+                            className="relative group cursor-pointer"
+                          >
+                            <img
+                              src={getImageUrl(img)}
+                              alt={`Repair ${idx + 1}`}
+                              className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
+                              <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                               </svg>
-                            </button>
-                          </div>
+                            </div>
+                          </button>
                         ))}
                       </div>
                     )}
