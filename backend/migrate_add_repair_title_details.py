@@ -36,21 +36,19 @@ def migrate_add_repair_title_details():
             cursor.execute("PRAGMA table_info(repairs)")
             columns = [column[1] for column in cursor.fetchall()]
             
-            if 'title' in columns:
-                print("✓ Column 'title' already exists in repairs table")
-            else:
-                # Add the title column (VARCHAR(200))
+            if 'title' not in columns:
                 cursor.execute("ALTER TABLE repairs ADD COLUMN title VARCHAR(200)")
-                conn.commit()
                 print("✓ Added 'title' column to repairs table")
-            
-            if 'details' in columns:
-                print("✓ Column 'details' already exists in repairs table")
             else:
-                # Add the details column (TEXT)
+                print("✓ Column 'title' already exists in repairs table")
+            
+            if 'details' not in columns:
                 cursor.execute("ALTER TABLE repairs ADD COLUMN details TEXT")
-                conn.commit()
                 print("✓ Added 'details' column to repairs table")
+            else:
+                print("✓ Column 'details' already exists in repairs table")
+            
+            conn.commit()
         
         except Exception as e:
             print(f"✗ Error migrating database: {e}")
@@ -64,35 +62,33 @@ def migrate_add_repair_title_details():
         
         with engine.connect() as conn:
             try:
-                # Check if title column already exists
+                # Check if title column exists
                 result = conn.execute(text("""
                     SELECT column_name 
                     FROM information_schema.columns 
                     WHERE table_name='repairs' AND column_name='title'
                 """))
                 
-                if result.fetchone():
-                    print("✓ Column 'title' already exists in repairs table")
-                else:
-                    # Add the title column (VARCHAR(200))
+                if not result.fetchone():
                     conn.execute(text("ALTER TABLE repairs ADD COLUMN title VARCHAR(200)"))
                     conn.commit()
                     print("✓ Added 'title' column to repairs table")
+                else:
+                    print("✓ Column 'title' already exists in repairs table")
                 
-                # Check if details column already exists
+                # Check if details column exists
                 result = conn.execute(text("""
                     SELECT column_name 
                     FROM information_schema.columns 
                     WHERE table_name='repairs' AND column_name='details'
                 """))
                 
-                if result.fetchone():
-                    print("✓ Column 'details' already exists in repairs table")
-                else:
-                    # Add the details column (TEXT)
+                if not result.fetchone():
                     conn.execute(text("ALTER TABLE repairs ADD COLUMN details TEXT"))
                     conn.commit()
                     print("✓ Added 'details' column to repairs table")
+                else:
+                    print("✓ Column 'details' already exists in repairs table")
             
             except Exception as e:
                 print(f"✗ Error migrating database: {e}")
@@ -102,4 +98,3 @@ def migrate_add_repair_title_details():
 if __name__ == "__main__":
     migrate_add_repair_title_details()
     print("\n✓ Migration completed successfully!")
-
