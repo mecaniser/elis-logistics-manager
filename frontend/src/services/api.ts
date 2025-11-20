@@ -11,7 +11,9 @@ const api = axios.create({
 export interface Truck {
   id: number
   name: string
-  license_plate?: string
+  vehicle_type: 'truck' | 'trailer'
+  license_plate?: string  // For trucks
+  tag_number?: string  // For trailers
   vin?: string
   license_plate_history?: string[]
 }
@@ -91,13 +93,16 @@ export interface DashboardData {
   }>
 }
 
-// Truck API
+// Truck API (also handles trailers)
 export const trucksApi = {
-  getAll: () => api.get<Truck[]>('/trucks'),
+  getAll: (vehicleType?: 'truck' | 'trailer') => {
+    const params = vehicleType ? { vehicle_type: vehicleType } : {}
+    return api.get<Truck[]>('/trucks', { params })
+  },
   getById: (id: number) => api.get<Truck>(`/trucks/${id}`),
-  create: (data: { name: string; license_plate?: string; vin?: string }) =>
+  create: (data: { name: string; vehicle_type: 'truck' | 'trailer'; license_plate?: string; tag_number?: string; vin?: string }) =>
     api.post<Truck>('/trucks', data),
-  update: (id: number, data: { name?: string; license_plate?: string; vin?: string }) =>
+  update: (id: number, data: { name?: string; vehicle_type?: 'truck' | 'trailer'; license_plate?: string; tag_number?: string; vin?: string }) =>
     api.put<Truck>(`/trucks/${id}`, data),
   delete: (id: number) => api.delete(`/trucks/${id}`),
 }
