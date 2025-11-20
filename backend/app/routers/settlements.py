@@ -37,17 +37,11 @@ async def upload_settlement_pdf(
     file: UploadFile = File(...),
     truck_id: Optional[int] = Form(None),
     settlement_type: Optional[str] = Form(None),
-    extract_only: Optional[bool] = Form(False),  # If True, extract to JSON and don't store PDF
-    store_pdf_only: Optional[bool] = Form(False),  # If True, store PDF only without extracting data
     db: Session = Depends(get_db)
 ):
     """
     Upload and parse Amazon Relay settlement PDF.
-    
-    Options:
-    - extract_only=True: Extracts data to JSON format and imports to database without storing the PDF file.
-    - store_pdf_only=True: Stores PDF file only without extracting or importing any data (for archival).
-    - Both False (default): Extracts data AND stores PDF file.
+    Always extracts data, stores PDF in Cloudinary, and creates settlement records.
     """
     # Save uploaded file temporarily
     timestamp = datetime.now().timestamp()
@@ -55,72 +49,6 @@ async def upload_settlement_pdf(
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
-    
-    # If store_pdf_only mode, just save the PDF and return (no data extraction)
-    if store_pdf_only:
-        # Upload PDF to Cloudinary or keep local path
-        pdf_path = None
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as pdf_file:
-                pdf_content = pdf_file.read()
-                pdf_filename = os.path.basename(file_path)
-                
-                # Try Cloudinary upload first
-                cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="settlements")
-                
-                if cloudinary_pdf_url:
-                    # Store Cloudinary URL
-                    pdf_path = cloudinary_pdf_url
-                    # Clean up local file after successful upload
-                    try:
-                        os.remove(file_path)
-                    except:
-                        pass
-                else:
-                    # Fallback to local storage if Cloudinary not configured
-                    pdf_path = file_path
-        
-        # Note: This doesn't create a settlement record, just stores the file
-        # Return a minimal settlement response (won't be saved to DB, just for API response)
-        from app.schemas.settlement import SettlementResponse
-        return SettlementResponse(
-            id=0,
-            truck_id=truck_id or 0,
-            settlement_date=datetime.now().date(),
-            pdf_file_path=pdf_path,
-            gross_revenue=None,
-            expenses=None,
-            net_profit=None
-        )
-    
-    # If extract_only mode, use JSON extraction workflow
-    if extract_only:
-        try:
-            extractor = SettlementExtractor()
-            extracted_data = extractor.extract_from_pdf(file_path, settlement_type)
-            
-            # Convert to JSON string and import
-            json_data = json.dumps(extracted_data)
-            created_settlements = upload_settlement_json(json_data, db)
-            
-            # Clean up temporary PDF file
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-            
-            # Return first settlement (or only one)
-            return created_settlements[0] if created_settlements else None
-            
-        except Exception as e:
-            # Clean up temporary file on error
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-            raise HTTPException(status_code=400, detail=f"Failed to extract and import: {str(e)}")
     
     # Parse PDF
     try:
@@ -203,6 +131,9 @@ async def upload_settlement_pdf(
             settlement_data["pdf_file_path"] = pdf_path
             if settlement_type:
                 settlement_data["settlement_type"] = settlement_type
+            
+            # Remove driver_name if present (not a valid Settlement field)
+            settlement_data.pop("driver_name", None)
             
             # Check for duplicates
             existing = db.query(Settlement).filter(
@@ -372,6 +303,9 @@ async def upload_settlement_pdf_bulk(
                     settlement_data["pdf_file_path"] = pdf_path
                     if settlement_type:
                         settlement_data["settlement_type"] = settlement_type
+                    
+                    # Remove driver_name if present (not a valid Settlement field)
+                    settlement_data.pop("driver_name", None)
                     
                     # Check for duplicates
                     existing = db.query(Settlement).filter(
@@ -554,19 +488,32 @@ def upload_settlement_json(
                 if not truck:
                     trucks = db.query(Truck).all()
                     for t in trucks:
-                        history = t.license_plate_history
-                        if isinstance(history, str):
-                            try:
-                                import json
-                                history = json.loads(history)
-                            except:
-                                history = []
-                        elif history is None:
-                            history = []
-                        
-                        if license_plate in history or license_plate == t.license_plate:
+                        # Check current plate (case insensitive)
+                        if t.license_plate and t.license_plate.upper() == license_plate.upper():
                             truck = t
                             break
+                        
+                        # Check historic plates
+                        history = t.license_plate_history
+                        if history:
+                            # Parse history if it's a JSON string
+                            if isinstance(history, str):
+                                try:
+                                    history_list = json.loads(history)
+                                    if isinstance(history_list, list) and any(
+                                        plate and plate.upper() == license_plate.upper() 
+                                        for plate in history_list
+                                    ):
+                                        truck = t
+                                        break
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            elif isinstance(history, list) and any(
+                                plate and plate.upper() == license_plate.upper() 
+                                for plate in history
+                            ):
+                                truck = t
+                                break
                 
                 if truck:
                     truck_id = truck.id
