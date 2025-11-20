@@ -256,9 +256,9 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
     # Sort by month_key and repair_date
     repairs_by_month.sort(key=lambda x: (x["month_key"], x["repair_date"] or ""))
     
-    # Get PM (D13 full pm) status for each truck
+    # Get PM (D13 full pm) status for each truck (exclude trailers)
     pm_status = []
-    trucks_for_pm = trucks_query.all()
+    trucks_for_pm = trucks_query.filter(Truck.vehicle_type == 'truck').all()  # Only trucks, not trailers
     today = datetime.now().date()
     pm_threshold_months = 3
     
