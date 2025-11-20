@@ -113,7 +113,7 @@ export const settlementsApi = {
     api.post<Settlement>('/settlements', data),
   update: (id: number, data: Partial<Settlement>) =>
     api.put<Settlement>(`/settlements/${id}`, data),
-  upload: (file: File, truckId?: number, settlementType?: string, extractOnly?: boolean, storePdfOnly?: boolean) => {
+  upload: (file: File, truckId?: number, settlementType?: string) => {
     const formData = new FormData()
     formData.append('file', file)
     if (truckId !== undefined) {
@@ -121,12 +121,6 @@ export const settlementsApi = {
     }
     if (settlementType) {
       formData.append('settlement_type', settlementType)
-    }
-    if (extractOnly !== undefined) {
-      formData.append('extract_only', extractOnly.toString())
-    }
-    if (storePdfOnly !== undefined) {
-      formData.append('store_pdf_only', storePdfOnly.toString())
     }
     return api.post<Settlement>(
       `/settlements/upload`,

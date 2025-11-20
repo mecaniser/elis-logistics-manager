@@ -24,8 +24,6 @@ export default function Settlements() {
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
   const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
-  const [extractOnly, setExtractOnly] = useState<boolean>(false) // Default to storing PDFs (recommended - PDFs are small ~74KB each)
-  const [storePdfOnly, setStorePdfOnly] = useState<boolean>(false) // Store PDF only, don't extract data
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
@@ -151,14 +149,8 @@ export default function Settlements() {
           showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
         }
       } else if (uploadFile) {
-        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType, extractOnly, storePdfOnly)
-        let message = 'Settlement uploaded successfully!'
-        if (storePdfOnly) {
-          message = 'PDF stored successfully! No data was extracted or imported.'
-        } else if (extractOnly) {
-          message = 'Settlement uploaded successfully! (Extracted to JSON, PDF not stored)'
-        }
-        showToast(message, 'success')
+        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType)
+        showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
       } else {
         showModal('Error', 'Please select a file to upload', 'error')
         setUploading(false)
@@ -167,8 +159,6 @@ export default function Settlements() {
       
       setUploadFile(null)
       setUploadFiles([])
-      setExtractOnly(false)
-      setStorePdfOnly(false)
       setSelectedTruckForUpload(null)
       setSelectedSettlementType('')
       setShowUploadForm(false)
@@ -878,8 +868,6 @@ export default function Settlements() {
                     // Reset form when closing
                     setUploadFile(null)
                     setUploadFiles([])
-                    setExtractOnly(false)
-                    setStorePdfOnly(false)
                     setSelectedTruckForUpload(null)
                     setSelectedSettlementType('')
                   }
@@ -969,51 +957,10 @@ export default function Settlements() {
                 ))}
               </select>
             </div>
-            <div className="mb-4 space-y-3">
-              <div>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={storePdfOnly}
-                    onChange={(e) => {
-                      setStorePdfOnly(e.target.checked)
-                      if (e.target.checked) setExtractOnly(false) // Mutually exclusive
-                    }}
-                    disabled={uploading}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Store PDF only (don't extract data)
-                  </span>
-                </label>
-                <p className="mt-1 text-xs text-gray-500 ml-6">
-                  When enabled, the PDF file is stored but no data is extracted or imported. 
-                  This is useful for archival purposes or when you want to keep the PDF without creating/updating settlement records. 
-                  <strong className="text-gray-700"> Existing data will NOT be overwritten.</strong>
-                </p>
-              </div>
-              <div>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={extractOnly}
-                    onChange={(e) => {
-                      setExtractOnly(e.target.checked)
-                      if (e.target.checked) setStorePdfOnly(false) // Mutually exclusive
-                    }}
-                    disabled={uploading}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">
-                    Extract to JSON only (don't store PDF file)
-                  </span>
-                </label>
-                <p className="mt-1 text-xs text-gray-500 ml-6">
-                  When enabled, data is extracted to structured JSON format and imported to the database without storing the PDF file. 
-                  Note: PDFs are stored on the filesystem (not in database), so storage is very efficient (~74KB per PDF). 
-                  Only enable this if you don't need to view the original PDFs later.
-                </p>
-              </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                PDFs are automatically uploaded to Cloud storage and settlement data is extracted and imported to the database.
+              </p>
             </div>
             {uploadMode === 'single' ? (
               <div className="mb-4">
