@@ -1280,136 +1280,137 @@ export default function Settlements() {
       )}
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {!Array.isArray(settlements) || settlements.length === 0 ? (
-            <li className="px-6 py-4 text-gray-500 text-center">No settlements found.</li>
-          ) : (
-            <>
-              {deleteMode && (
-                <li className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={settlements.length > 0 && selectedSettlements.size === settlements.length}
-                      onChange={handleSelectAll}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label className="ml-3 text-sm font-medium text-gray-700">Select All</label>
-                  </div>
-                </li>
-              )}
-              {settlements.map((settlement) => (
-                <li 
-                  key={settlement.id} 
-                  className={`px-6 py-4 hover:bg-gray-50 transition-colors ${
-                    deleteMode ? '' : 'cursor-pointer'
-                  }`}
-                  onClick={() => !deleteMode && handleEditSettlement(settlement)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-start flex-1">
-                      {deleteMode && (
-                        <input
-                          type="checkbox"
-                          checked={selectedSettlements.has(settlement.id)}
-                          onChange={(e) => {
-                            e.stopPropagation()
-                            handleSelectSettlement(settlement.id)
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                      )}
-                      <div className={deleteMode ? "ml-4 flex-1" : "flex-1"}>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-medium text-gray-900">
-                            {getTruckName(settlement.truck_id)} - {new Date(settlement.settlement_date).toLocaleDateString()}
-                          </h3>
-                          {!deleteMode && (
-                            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                              Click to edit
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          {settlement.miles_driven && (
-                            <div>
-                              <span className="text-gray-500">Miles: </span>
-                              <span className="font-medium">{settlement.miles_driven.toLocaleString()}</span>
-                            </div>
-                          )}
-                          {settlement.blocks_delivered && (
-                            <div>
-                              <span className="text-gray-500">Blocks: </span>
-                              <span className="font-medium">{settlement.blocks_delivered}</span>
-                            </div>
-                          )}
-                          {settlement.gross_revenue && (
-                            <div>
-                              <span className="text-gray-500">Revenue: </span>
-                              <span className="font-medium text-green-600">
-                                ${settlement.gross_revenue.toLocaleString()}
-                              </span>
-                            </div>
-                          )}
-                          {settlement.net_profit !== undefined && (
-                            <div>
-                              <span className="text-gray-500">Profit: </span>
-                              <span className={`font-medium ${
-                                settlement.net_profit < 0 ? 'text-red-600' : 'text-blue-600'
-                              }`}>
-                                ${settlement.net_profit.toLocaleString()}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {settlement.pdf_file_path && (
-                          <div className="mt-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                window.open(getPdfUrl(settlement.pdf_file_path!), '_blank')
-                              }}
-                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-                            >
-                              <span>📄</span>
-                              <span>View PDF</span>
-                            </button>
-                          </div>
-                        )}
-                        {settlement.settlement_type && (
-                          <div className="mt-2">
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                              Type: {settlement.settlement_type}
-                            </span>
-                          </div>
-                        )}
-                        {settlement.custom_expense_descriptions?.total_expenses && (
-                          <div className="mt-2">
-                            <span className="text-xs text-gray-600 italic">
-                              Expenses: {settlement.custom_expense_descriptions.total_expenses}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {!deleteMode && (
-                      <button
-                        onClick={(e) => {
+        {deleteMode && (
+          <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                checked={settlements.length > 0 && selectedSettlements.size === settlements.length}
+                onChange={handleSelectAll}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label className="ml-3 text-sm font-medium text-gray-700">Select All</label>
+            </div>
+          </div>
+        )}
+        {!Array.isArray(settlements) || settlements.length === 0 ? (
+          <div className="px-6 py-4 text-gray-500 text-center">No settlements found.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+            {settlements.map((settlement) => (
+              <div
+                key={settlement.id}
+                className={`bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow ${
+                  deleteMode ? '' : 'cursor-pointer'
+                }`}
+                onClick={() => !deleteMode && handleEditSettlement(settlement)}
+              >
+                <div className="flex flex-col h-full">
+                  {deleteMode && (
+                    <div className="mb-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedSettlements.has(settlement.id)}
+                        onChange={(e) => {
                           e.stopPropagation()
-                          setSettlementToDelete(settlement.id)
+                          handleSelectSettlement(settlement.id)
                         }}
-                        className="text-red-600 hover:text-red-800 ml-4"
-                      >
-                        Delete
-                      </button>
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 className="text-base font-semibold text-gray-900 flex-1">
+                        {getTruckName(settlement.truck_id)}
+                      </h3>
+                      {!deleteMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSettlementToDelete(settlement.id)
+                          }}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 mb-3">
+                      {new Date(settlement.settlement_date).toLocaleDateString()}
+                    </p>
+                    <div className="space-y-2 text-sm mb-3">
+                      {settlement.miles_driven && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Miles:</span>
+                          <span className="font-medium">{settlement.miles_driven.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {settlement.blocks_delivered && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Blocks:</span>
+                          <span className="font-medium">{settlement.blocks_delivered}</span>
+                        </div>
+                      )}
+                      {settlement.gross_revenue && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Revenue:</span>
+                          <span className="font-medium text-green-600">
+                            ${settlement.gross_revenue.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.net_profit !== undefined && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Profit:</span>
+                          <span className={`font-medium ${
+                            settlement.net_profit < 0 ? 'text-red-600' : 'text-blue-600'
+                          }`}>
+                            ${settlement.net_profit.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {settlement.pdf_file_path && (
+                      <div className="mb-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            window.open(getPdfUrl(settlement.pdf_file_path!), '_blank')
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+                        >
+                          <span>📄</span>
+                          <span>View PDF</span>
+                        </button>
+                      </div>
+                    )}
+                    {settlement.settlement_type && (
+                      <div className="mb-2">
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                          {settlement.settlement_type}
+                        </span>
+                      </div>
+                    )}
+                    {settlement.custom_expense_descriptions?.total_expenses && (
+                      <div className="mb-2">
+                        <span className="text-xs text-gray-600 italic">
+                          {settlement.custom_expense_descriptions.total_expenses}
+                        </span>
+                      </div>
+                    )}
+                    {!deleteMode && (
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        <span className="text-xs text-blue-600">Click to edit</span>
+                      </div>
                     )}
                   </div>
-                </li>
-              ))}
-            </>
-          )}
-        </ul>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={modalTitle} type={modalType}>

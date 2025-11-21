@@ -705,42 +705,43 @@ export default function Repairs() {
       )}
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {filteredRepairs.length === 0 ? (
-            <li className="px-6 py-4 text-gray-500 text-center">
-              {searchFilter ? `No repairs found matching "${searchFilter}"` : 'No repairs found.'}
-            </li>
-          ) : (
-            filteredRepairs.map((repair) => (
-              <li key={repair.id} className="px-6 py-4">
-                <div className="flex items-center justify-between">
+        {filteredRepairs.length === 0 ? (
+          <div className="px-6 py-4 text-gray-500 text-center">
+            {searchFilter ? `No repairs found matching "${searchFilter}"` : 'No repairs found.'}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+            {filteredRepairs.map((repair) => (
+              <div key={repair.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div className="flex flex-col h-full">
                   <div className="flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-1">
-                          {repair.title || repair.description || 'Untitled Repair'}
-                        </h3>
-                        {repair.details && (
-                          <p className="text-sm text-gray-600 mb-2">{repair.details}</p>
-                        )}
-                        <p className="text-sm text-gray-500">
-                          {getTruckName(repair.truck_id)} - {new Date(repair.repair_date).toLocaleDateString()}
-                          {repair.category && <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded">{repair.category}</span>}
-                        </p>
-                        <p className="text-sm font-semibold text-red-600">${repair.cost.toLocaleString()}</p>
-                      </div>
-                      {repair.invoice_number && (
-                        <div className="text-right">
-                          <p className="text-xs text-gray-400 mb-1">Invoice #</p>
-                          <p className="text-sm font-mono font-semibold text-gray-700">{repair.invoice_number}</p>
-                        </div>
+                    <h3 className="text-base font-semibold text-gray-900 mb-2">
+                      {repair.title || repair.description || 'Untitled Repair'}
+                    </h3>
+                    {repair.details && (
+                      <p className="text-sm text-gray-600 mb-2 line-clamp-2">{repair.details}</p>
+                    )}
+                    <p className="text-sm text-gray-500 mb-1">
+                      {getTruckName(repair.truck_id)}
+                    </p>
+                    <p className="text-xs text-gray-400 mb-2">
+                      {new Date(repair.repair_date).toLocaleDateString()}
+                      {repair.category && (
+                        <span className="ml-2 text-xs bg-gray-100 px-2 py-0.5 rounded">{repair.category}</span>
                       )}
-                    </div>
+                    </p>
+                    <p className="text-lg font-semibold text-red-600 mb-3">${repair.cost.toLocaleString()}</p>
+                    {repair.invoice_number && (
+                      <div className="mb-2">
+                        <p className="text-xs text-gray-400">Invoice #</p>
+                        <p className="text-sm font-mono font-semibold text-gray-700">{repair.invoice_number}</p>
+                      </div>
+                    )}
                     {repair.receipt_path && (
-                      <div className="mt-2">
+                      <div className="mb-2">
                         <button
                           onClick={() => window.open(getPdfUrl(repair.receipt_path!, repair.id), '_blank')}
-                          className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -750,8 +751,8 @@ export default function Repairs() {
                       </div>
                     )}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
-                      <div className="mt-2 flex gap-2 flex-wrap">
-                        {repair.image_paths.map((img, idx) => (
+                      <div className="mb-3 flex gap-2 flex-wrap">
+                        {repair.image_paths.slice(0, 3).map((img, idx) => (
                           <button
                             key={idx}
                             onClick={() => window.open(getImageUrl(img), '_blank')}
@@ -760,53 +761,46 @@ export default function Repairs() {
                             <img
                               src={getImageUrl(img)}
                               alt={`Repair ${idx + 1}`}
-                              className="w-20 h-20 object-cover rounded border hover:opacity-80 transition-opacity"
+                              className="h-16 w-16 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity"
                             />
-                            {/* Storage indicator badge */}
                             {isCloudinaryImage(img) ? (
-                              <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1 shadow-md">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                                </svg>
+                              <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
                                 Cloud
                               </div>
                             ) : (
-                              <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1 shadow-md">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h12a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
-                                </svg>
+                              <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
                                 Local
                               </div>
                             )}
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 rounded border border-transparent group-hover:border-blue-400 transition-all flex items-center justify-center">
-                              <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                              </svg>
-                            </div>
                           </button>
                         ))}
+                        {repair.image_paths.length > 3 && (
+                          <div className="h-16 w-16 flex items-center justify-center bg-gray-100 rounded border border-gray-200 text-xs text-gray-600">
+                            +{repair.image_paths.length - 3}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
                     <button
                       onClick={() => handleEdit(repair)}
-                      className="text-blue-600 hover:text-blue-800"
+                      className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => setRepairToDelete(repair.id)}
-                      className="text-red-600 hover:text-red-800"
+                      className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors"
                     >
                       Delete
                     </button>
                   </div>
                 </div>
-              </li>
-            ))
-          )}
-        </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={modalTitle} type={modalType}>
