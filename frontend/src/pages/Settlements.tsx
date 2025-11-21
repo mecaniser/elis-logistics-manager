@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
@@ -48,7 +48,7 @@ export default function Settlements() {
     type: 'info',
     isVisible: false
   })
-  
+  const [searchFilter, setSearchFilter] = useState<string>('')
 
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
@@ -89,6 +89,38 @@ export default function Settlements() {
   useEffect(() => {
     loadSettlements()
   }, [selectedTruck])
+
+  const getTruckName = (truckId: number) => {
+    const truck = trucks.find(t => t.id === truckId)
+    return truck ? truck.name : `Truck #${truckId}`
+  }
+
+  // Filter settlements based on search term
+  const filteredSettlements = useMemo(() => {
+    if (!Array.isArray(settlements)) return []
+    if (!searchFilter.trim()) return settlements
+    
+    const searchLower = searchFilter.toLowerCase()
+    return settlements.filter(settlement => {
+      const truckName = getTruckName(settlement.truck_id).toLowerCase()
+      const settlementDate = new Date(settlement.settlement_date).toLocaleDateString().toLowerCase()
+      const settlementType = (settlement.settlement_type || '').toLowerCase()
+      const customExpenses = (settlement.custom_expense_descriptions?.total_expenses || '').toLowerCase()
+      const truckId = settlement.truck_id.toString()
+      const revenue = settlement.gross_revenue?.toString() || ''
+      const profit = settlement.net_profit?.toString() || ''
+      
+      return (
+        truckName.includes(searchLower) ||
+        settlementDate.includes(searchLower) ||
+        settlementType.includes(searchLower) ||
+        customExpenses.includes(searchLower) ||
+        truckId.includes(searchLower) ||
+        revenue.includes(searchLower) ||
+        profit.includes(searchLower)
+      )
+    })
+  }, [settlements, searchFilter, trucks])
 
   const loadTrucks = async () => {
     try {
@@ -218,18 +250,23 @@ export default function Settlements() {
 
   const handleSelectAll = () => {
     if (!Array.isArray(settlements)) return
-    if (selectedSettlements.size === settlements.length) {
-      // Deselect all - this will hide the delete button
-      setSelectedSettlements(new Set())
+    
+    // Use filtered settlements if search is active, otherwise use all settlements
+    const settlementsToUse = searchFilter.trim() ? filteredSettlements : settlements
+    const filteredIds = new Set(settlementsToUse.map(s => s.id))
+    const allFilteredSelected = filteredIds.size > 0 && Array.from(filteredIds).every(id => selectedSettlements.has(id))
+    
+    if (allFilteredSelected) {
+      // Deselect all filtered settlements
+      const newSelection = new Set(selectedSettlements)
+      filteredIds.forEach(id => newSelection.delete(id))
+      setSelectedSettlements(newSelection)
     } else {
-      // Select all - this will show the delete button
-      setSelectedSettlements(new Set(settlements.map(s => s.id)))
+      // Select all filtered settlements
+      const newSelection = new Set(selectedSettlements)
+      filteredIds.forEach(id => newSelection.add(id))
+      setSelectedSettlements(newSelection)
     }
-  }
-
-  const getTruckName = (truckId: number) => {
-    const truck = trucks.find((t) => t.id === truckId)
-    return truck?.name || `Truck ${truckId}`
   }
 
   const getPdfUrl = (pdfPath: string) => {
@@ -891,8 +928,32 @@ export default function Settlements() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlements</h1>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial sm:w-64">
+            <input
+              type="text"
+              placeholder="Search by truck, date, type, or expenses..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {searchFilter && (
+              <button
+                onClick={() => setSearchFilter('')}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
         <div className="flex gap-2 items-center">
           {deleteMode ? (
             <>
@@ -918,9 +979,12 @@ export default function Settlements() {
             <>
               <button
                 onClick={() => setDeleteMode(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium"
+                className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center min-w-[44px]"
+                title="Delete"
               >
-                Delete
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
               </button>
               <button
                 onClick={() => {
@@ -938,9 +1002,24 @@ export default function Settlements() {
                     setVinLookup('')
                   }
                 }}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                className="px-3 py-2 lg:px-4 lg:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto"
+                title={showManualForm ? 'Cancel' : 'Add Manual Settlement'}
               >
-                {showManualForm ? 'Cancel' : 'Add Manual Settlement'}
+                {showManualForm ? (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span className="hidden lg:inline">Cancel</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span className="hidden lg:inline">Add Manual Settlement</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => {
@@ -951,9 +1030,24 @@ export default function Settlements() {
                     setSelectedTruckForUpload(null)
                   }
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="px-3 py-2 lg:px-4 lg:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto"
+                title={showUploadForm ? 'Cancel' : 'Upload Settlement'}
               >
-                {showUploadForm ? 'Cancel' : 'Upload Settlement'}
+                {showUploadForm ? (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span className="hidden lg:inline">Cancel</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <span className="hidden lg:inline">Upload Settlement</span>
+                  </>
+                )}
               </button>
             </>
           )}
@@ -1285,19 +1379,36 @@ export default function Settlements() {
             <div className="flex items-center">
               <input
                 type="checkbox"
-                checked={settlements.length > 0 && selectedSettlements.size === settlements.length}
+                checked={(() => {
+                  const settlementsToUse = searchFilter.trim() ? filteredSettlements : settlements
+                  const filteredIds = new Set(settlementsToUse.map(s => s.id))
+                  return filteredIds.size > 0 && Array.from(filteredIds).every(id => selectedSettlements.has(id))
+                })()}
                 onChange={handleSelectAll}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              <label className="ml-3 text-sm font-medium text-gray-700">Select All</label>
+              <label className="ml-3 text-sm font-medium text-gray-700">
+                Select All {searchFilter.trim() ? `(${filteredSettlements.length})` : ''}
+              </label>
+            </div>
+          </div>
+        )}
+        {searchFilter && (
+          <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="text-sm text-gray-600">
+              Showing {filteredSettlements.length} of {settlements.length} settlement{settlements.length !== 1 ? 's' : ''}
             </div>
           </div>
         )}
         {!Array.isArray(settlements) || settlements.length === 0 ? (
           <div className="px-6 py-4 text-gray-500 text-center">No settlements found.</div>
+        ) : filteredSettlements.length === 0 ? (
+          <div className="px-6 py-4 text-gray-500 text-center">
+            {searchFilter ? `No settlements found matching "${searchFilter}"` : 'No settlements found.'}
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
-            {settlements.map((settlement) => (
+            {filteredSettlements.map((settlement) => (
               <div
                 key={settlement.id}
                 className={`bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow ${
