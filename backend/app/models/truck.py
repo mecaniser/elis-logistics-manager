@@ -18,7 +18,10 @@ class Truck(Base):
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates
     cash_investment = Column(Numeric(10, 2), nullable=True)  # Cash invested in vehicle
     loan_amount = Column(Numeric(10, 2), nullable=True)  # Loan amount (trucks only, null for trailers)
+    current_loan_balance = Column(Numeric(10, 2), nullable=True)  # Current loan balance (reduces as principal is paid)
+    interest_rate = Column(Numeric(5, 4), nullable=True, default=0.07)  # Annual interest rate (default 7% = 0.07)
     total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan for trucks, cash only for trailers)
+    registration_fee = Column(Numeric(10, 2), nullable=True)  # Registration fee for vehicle
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
