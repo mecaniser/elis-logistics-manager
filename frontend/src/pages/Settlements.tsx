@@ -568,8 +568,7 @@ export default function Settlements() {
         settlement_type: manualFormData.settlement_type || 'Manual Entry',
       }
 
-      const response = await settlementsApi.create(settlementData)
-      console.log('Settlement created:', response.data)
+      await settlementsApi.create(settlementData)
       showToast('Settlement created successfully!', 'success')
       setShowManualForm(false)
       setManualFormData({
@@ -585,7 +584,6 @@ export default function Settlements() {
     } catch (err: any) {
       console.error('Error creating settlement:', err)
       console.error('Error response:', err.response?.data)
-      console.error('Settlement data sent:', settlementData)
       showToast(err.response?.data?.detail || err.message || 'Failed to create settlement', 'error')
     } finally {
       setCreatingManual(false)
@@ -1636,11 +1634,12 @@ export default function Settlements() {
                           value={editFormData.custom_expense_descriptions?.total_expenses || ''}
                           onChange={(e) => {
                             const description = e.target.value.trim()
-                            const updatedDescriptions = {
-                              ...(editFormData.custom_expense_descriptions || {}),
-                              total_expenses: description || undefined
+                            const updatedDescriptions: { [key: string]: string } = {
+                              ...(editFormData.custom_expense_descriptions || {})
                             }
-                            if (!description) {
+                            if (description) {
+                              updatedDescriptions.total_expenses = description
+                            } else {
                               delete updatedDescriptions.total_expenses
                             }
                             setEditFormData({
