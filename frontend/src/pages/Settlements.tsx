@@ -12,8 +12,6 @@ export default function Settlements() {
   const [selectedTruck] = useState<number | null>(null)
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadFiles, setUploadFiles] = useState<File[]>([])
-  const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('single')
   const [uploading, setUploading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalTitle, setModalTitle] = useState('')
@@ -23,7 +21,6 @@ export default function Settlements() {
   const [selectedSettlements, setSelectedSettlements] = useState<Set<number>>(new Set())
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
-  const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
   const [showManualForm, setShowManualForm] = useState(false)
   const [manualFormData, setManualFormData] = useState<Partial<Settlement>>({
     truck_id: undefined,
@@ -35,6 +32,7 @@ export default function Settlements() {
   const [expensesDescription, setExpensesDescription] = useState<string>('')
   const [vinLookup, setVinLookup] = useState<string>('')
   const [creatingManual, setCreatingManual] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
@@ -51,11 +49,6 @@ export default function Settlements() {
     isVisible: false
   })
   
-  const SETTLEMENT_TYPES = [
-    'Owner Operator Income Sheet',
-    '277 Logistics',
-    'NBM Transport LLC'
-  ]
 
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
@@ -137,48 +130,26 @@ export default function Settlements() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedSettlementType) {
-      showModal('Error', 'Please select a settlement type', 'error')
+    if (!uploadFile) {
+      showToast('Please select a file to upload', 'error')
       return
     }
 
     try {
       setUploading(true)
-      if (uploadMode === 'bulk' && uploadFiles.length > 0) {
-        const response = await settlementsApi.uploadBulk(uploadFiles, selectedTruckForUpload || undefined, selectedSettlementType)
-        const { successful, failed, results } = response.data
-        const resultsArray = Array.isArray(results) ? results : []
-        
-        if (failed > 0) {
-          const errorList = resultsArray
-            .filter(r => !r.success)
-            .map(r => `${r.filename}: ${r.error || 'Unknown error'}`)
-            .join(', ')
-          
-          showToast(`Uploaded ${successful} of ${resultsArray.length} settlement(s). ${failed} failed. Errors: ${errorList}`, 'warning')
-        } else {
-          showToast(`Successfully uploaded ${successful} settlement(s)!`, 'success')
-        }
-      } else if (uploadFile) {
-        await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, selectedSettlementType)
-        showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
-      } else {
-        showModal('Error', 'Please select a file to upload', 'error')
-        setUploading(false)
-        return
-      }
+      // Settlement type is optional - backend will use default parser
+      await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, undefined)
+      showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
       
       setUploadFile(null)
-      setUploadFiles([])
       setSelectedTruckForUpload(null)
-      setSelectedSettlementType('')
       setShowUploadForm(false)
       setSelectedSettlements(new Set()) // Clear any selected settlements
       loadSettlements()
     } catch (err: any) {
       console.error('Upload error:', err)
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to upload settlement'
-      showModal('Upload Failed', errorMessage, 'error')
+      showToast(errorMessage, 'error')
     } finally {
       setUploading(false)
     }
@@ -979,9 +950,7 @@ export default function Settlements() {
                   if (showUploadForm) {
                     // Reset form when closing
                     setUploadFile(null)
-                    setUploadFiles([])
                     setSelectedTruckForUpload(null)
-                    setSelectedSettlementType('')
                   }
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -996,61 +965,10 @@ export default function Settlements() {
       {showUploadForm && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Upload Settlement</h2>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Mode</label>
-            <div className="flex gap-2">
-              <label className="cursor-pointer">
-                <input
-                  type="radio"
-                  value="single"
-                  checked={uploadMode === 'single'}
-                  onChange={(e) => setUploadMode(e.target.value as 'single' | 'bulk')}
-                  className="sr-only"
-                />
-                <div className={`px-3 py-1.5 border-2 rounded-md text-center text-sm transition-colors whitespace-nowrap ${
-                  uploadMode === 'single'
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}>
-                  Single File
-                </div>
-              </label>
-              <label className="cursor-pointer">
-                <input
-                  type="radio"
-                  value="bulk"
-                  checked={uploadMode === 'bulk'}
-                  onChange={(e) => setUploadMode(e.target.value as 'single' | 'bulk')}
-                  className="sr-only"
-                />
-                <div className={`px-3 py-1.5 border-2 rounded-md text-center text-sm transition-colors whitespace-nowrap ${
-                  uploadMode === 'bulk'
-                    ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}>
-                  Multiple Files
-                </div>
-              </label>
-            </div>
-          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Upload a settlement PDF. The system will automatically extract data, upload the PDF to Cloud storage, and import the settlement to the database.
+          </p>
           <form onSubmit={handleUpload}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Type *</label>
-              <select
-                value={selectedSettlementType}
-                onChange={(e) => setSelectedSettlementType(e.target.value)}
-                required
-                disabled={uploading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select settlement type...</option>
-                {SETTLEMENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Truck/Trailer (Optional - will auto-detect from license plate if not selected)
@@ -1074,42 +992,65 @@ export default function Settlements() {
               </select>
             </div>
             <div className="mb-4">
-              <p className="text-sm text-gray-600">
-                PDFs are automatically uploaded to Cloud storage and settlement data is extracted and imported to the database.
-              </p>
-            </div>
-            {uploadMode === 'single' ? (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">PDF File *</label>
-                <p className="text-xs text-gray-500 mb-2">
-                  PDFs are stored on the filesystem (not in database). Each PDF is ~74KB - very small and efficient to store.
-                </p>
+              <label className="block text-sm font-medium text-gray-700 mb-2">PDF File *</label>
+              <label 
+                className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                  isDragging 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-blue-400'
+                }`}
+                onDragEnter={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsDragging(true)
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsDragging(false)
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsDragging(false)
+                  const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf')
+                  if (files.length > 0) {
+                    setUploadFile(files[0])
+                  }
+                }}
+              >
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <svg className="w-10 h-10 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <p className="mb-2 text-sm text-gray-500">
+                    <span className="font-semibold">Click to upload</span> or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500">PDF file only</p>
+                  {uploadFile && (
+                    <p className="mt-2 text-xs font-medium text-blue-600 truncate max-w-[200px]">{uploadFile.name}</p>
+                  )}
+                </div>
                 <input
                   type="file"
                   accept=".pdf"
                   onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
                   required
                   disabled={uploading}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="hidden"
                 />
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">PDF Files *</label>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  multiple
-                  onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-                  required
-                  disabled={uploading}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-            )}
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                PDFs are automatically uploaded to Cloud storage and settlement data is extracted and imported to the database.
+              </p>
+            </div>
             <button
               type="submit"
-              disabled={uploading || !selectedSettlementType || (uploadMode === 'single' ? !uploadFile : uploadFiles.length === 0)}
+              disabled={uploading || !uploadFile}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
               {uploading ? 'Uploading...' : 'Upload'}
