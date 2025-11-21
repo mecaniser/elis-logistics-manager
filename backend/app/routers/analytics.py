@@ -52,22 +52,37 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
     settlement_expenses = vehicle_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
     repair_costs = vehicle_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
     
-    cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
-    
     # Get investment fields
     cash_investment = float(vehicle.cash_investment) if vehicle.cash_investment else None
     loan_amount = float(vehicle.loan_amount) if vehicle.loan_amount else None
+    current_loan_balance = float(vehicle.current_loan_balance) if vehicle.current_loan_balance is not None else loan_amount
+    interest_rate = float(vehicle.interest_rate) if vehicle.interest_rate else 0.07  # Default 7%
     total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
+    registration_fee = float(vehicle.registration_fee) if vehicle.registration_fee else None
     
-    # Calculate ROI metrics
+    # Calculate cumulative loan interest from stored settlement data
+    # Interest is stored in expense_categories["loan_interest"] for each settlement
+    cumulative_loan_interest = 0.0
+    settlements_list = vehicle_settlements.all()
+    for settlement in settlements_list:
+        if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
+            loan_interest = settlement.expense_categories.get("loan_interest", 0)
+            if loan_interest:
+                cumulative_loan_interest += float(loan_interest)
+    
+    # Net profit: revenue - settlement expenses (which already includes loan interest) - repairs
+    # Note: settlement_expenses already includes loan_interest, so we don't subtract it again
+    cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
+    
+    # Calculate ROI metrics based on total_cost (which includes cash, loan, and registration)
     investment_recovery_percentage = None
     remaining_to_break_even = None
     break_even_achieved = False
     
-    if cash_investment and cash_investment > 0:
-        investment_recovery_percentage = (cumulative_net_profit / cash_investment) * 100
-        remaining_to_break_even = max(0.0, cash_investment - cumulative_net_profit)
-        break_even_achieved = cumulative_net_profit >= cash_investment
+    if total_cost and total_cost > 0:
+        investment_recovery_percentage = (cumulative_net_profit / total_cost) * 100
+        remaining_to_break_even = max(0.0, total_cost - cumulative_net_profit)
+        break_even_achieved = cumulative_net_profit >= total_cost
     
     return {
         "vehicle_id": truck_id,
@@ -75,10 +90,14 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
         "vehicle_type": vehicle.vehicle_type,
         "cash_investment": cash_investment,
         "loan_amount": loan_amount,
+        "current_loan_balance": round(current_loan_balance, 2) if current_loan_balance is not None else None,
+        "interest_rate": interest_rate,
         "total_cost": total_cost,
+        "registration_fee": registration_fee,
         "cumulative_revenue": float(revenue),
         "cumulative_settlement_expenses": float(settlement_expenses),
         "cumulative_repair_costs": float(repair_costs),
+        "cumulative_loan_interest": round(cumulative_loan_interest, 2),
         "cumulative_net_profit": round(cumulative_net_profit, 2),
         "investment_recovery_percentage": round(investment_recovery_percentage, 2) if investment_recovery_percentage is not None else None,
         "remaining_to_break_even": round(remaining_to_break_even, 2) if remaining_to_break_even is not None else None,
@@ -135,7 +154,7 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
     # Standard expense categories
     STANDARD_CATEGORIES = [
         "fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
-        "driver_pay", "payroll_fee", "truck_parking", "service_on_truck"
+        "driver_pay", "payroll_fee", "loan_interest", "truck_parking", "service_on_truck"
     ]
     
     # Helper function to calculate expense categories for a set of settlements
@@ -150,7 +169,9 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
             "ifta": 0.0,
             "driver_pay": 0.0,
             "payroll_fee": 0.0,
+            "loan_interest": 0.0,
             "truck_parking": 0.0,
+            "service_on_truck": 0.0,
             "repairs": 0.0,
             "custom": 0.0
         }
@@ -212,7 +233,9 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
         "ifta": truck_expense_categories["ifta"] + trailer_expense_categories["ifta"],
         "driver_pay": truck_expense_categories["driver_pay"] + trailer_expense_categories["driver_pay"],
         "payroll_fee": truck_expense_categories["payroll_fee"] + trailer_expense_categories["payroll_fee"],
+        "loan_interest": truck_expense_categories["loan_interest"] + trailer_expense_categories["loan_interest"],
         "truck_parking": truck_expense_categories["truck_parking"] + trailer_expense_categories["truck_parking"],
+        "service_on_truck": truck_expense_categories["service_on_truck"] + trailer_expense_categories["service_on_truck"],
         "repairs": truck_expense_categories["repairs"] + trailer_expense_categories["repairs"],
         "custom": truck_expense_categories["custom"] + trailer_expense_categories["custom"]
     }
@@ -509,7 +532,7 @@ def get_time_series(
         return "Custom"
     
     # Standard expense categories
-    STANDARD_CATEGORIES = ["fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee"]
+    STANDARD_CATEGORIES = ["fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee", "loan_interest"]
     
     # Initialize data structures
     weekly_data = defaultdict(lambda: {
@@ -523,6 +546,7 @@ def get_time_series(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
         "trucks": set(),
@@ -543,6 +567,7 @@ def get_time_series(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
         "repairs": 0.0,
@@ -561,6 +586,7 @@ def get_time_series(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
         "repairs": 0.0,
@@ -721,6 +747,7 @@ def get_time_series(
             "safety": round(week_data["safety"], 2),
             "prepass": round(week_data["prepass"], 2),
             "ifta": round(week_data["ifta"], 2),
+            "loan_interest": round(week_data["loan_interest"], 2),
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,
@@ -802,6 +829,7 @@ def get_time_series(
             "safety": round(month_data["safety"], 2),
             "prepass": round(month_data["prepass"], 2),
             "ifta": round(month_data["ifta"], 2),
+            "loan_interest": round(month_data["loan_interest"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,
@@ -870,6 +898,7 @@ def get_time_series(
             "safety": round(year_data["safety"], 2),
             "prepass": round(year_data["prepass"], 2),
             "ifta": round(year_data["ifta"], 2),
+            "loan_interest": round(year_data["loan_interest"], 2),
             "truck_parking": round(year_data["truck_parking"], 2),
             "custom": round(year_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,

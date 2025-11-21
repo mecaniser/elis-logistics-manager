@@ -3,14 +3,17 @@ Settlements router
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.truck import Truck
+from app.models.repair import Repair
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
 from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_multi_truck
 from app.utils.settlement_extractor import SettlementExtractor
 from app.utils.cloudinary import upload_pdf
+from app.utils.loan_interest import calculate_weekly_loan_interest, calculate_principal_payment
 import os
 import json
 from datetime import datetime
@@ -19,6 +22,47 @@ router = APIRouter()
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def update_loan_balance_after_settlement(truck_id: int, db: Session):
+    """
+    Update current_loan_balance after a settlement is created.
+    Principal payments only apply after cash investment is 100% recovered.
+    """
+    truck = db.query(Truck).filter(Truck.id == truck_id).first()
+    if not truck or truck.vehicle_type != 'truck':
+        return
+    
+    cash_investment = float(truck.cash_investment) if truck.cash_investment else None
+    if not cash_investment or cash_investment <= 0:
+        return
+    
+    # Get current loan balance (use loan_amount if current_loan_balance is None)
+    current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+    if not current_balance or current_balance <= 0:
+        return
+    
+    # Calculate cumulative net profit
+    settlements = db.query(Settlement).filter(Settlement.truck_id == truck_id)
+    repairs = db.query(Repair).filter(Repair.truck_id == truck_id)
+    
+    revenue = settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+    settlement_expenses = settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
+    repair_costs = repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+    
+    cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
+    
+    # Calculate principal payment
+    principal_payment, new_loan_balance = calculate_principal_payment(
+        cumulative_net_profit,
+        cash_investment,
+        current_balance
+    )
+    
+    # Update truck's current_loan_balance
+    if principal_payment > 0:
+        truck.current_loan_balance = new_loan_balance
+        db.commit()
 
 @router.get("", response_model=List[SettlementResponse])
 @router.get("/", response_model=List[SettlementResponse])
@@ -135,6 +179,35 @@ async def upload_settlement_pdf(
             # Remove driver_name if present (not a valid Settlement field)
             settlement_data.pop("driver_name", None)
             
+            # Calculate and add loan interest to expense_categories
+            truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
+            if truck and truck.vehicle_type == 'truck':
+                # Use current_loan_balance if available, otherwise use loan_amount
+                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
+                
+                if current_balance and current_balance > 0:
+                    weekly_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+                    
+                    # Initialize expense_categories if not present
+                    if "expense_categories" not in settlement_data or not settlement_data["expense_categories"]:
+                        settlement_data["expense_categories"] = {}
+                    
+                    # Ensure expense_categories is a dict
+                    if not isinstance(settlement_data["expense_categories"], dict):
+                        settlement_data["expense_categories"] = {}
+                    
+                    # Add loan interest to expense categories
+                    settlement_data["expense_categories"]["loan_interest"] = weekly_interest
+                    
+                    # Update total expenses to include interest
+                    current_expenses = float(settlement_data.get("expenses", 0) or 0)
+                    settlement_data["expenses"] = current_expenses + weekly_interest
+                    
+                    # Recalculate net profit
+                    revenue = float(settlement_data.get("gross_revenue", 0) or 0)
+                    settlement_data["net_profit"] = revenue - settlement_data["expenses"]
+            
             # Check for duplicates
             existing = db.query(Settlement).filter(
                 Settlement.truck_id == settlement_data["truck_id"],
@@ -225,6 +298,7 @@ async def upload_settlement_pdf_bulk(
             
             file_successful = 0
             file_failed = 0
+            file_settlements = []  # Track settlements created for this file
             
             for settlement_data in settlements_data:
                 try:
@@ -307,6 +381,35 @@ async def upload_settlement_pdf_bulk(
                     # Remove driver_name if present (not a valid Settlement field)
                     settlement_data.pop("driver_name", None)
                     
+                    # Calculate and add loan interest to expense_categories
+                    truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
+                    if truck and truck.vehicle_type == 'truck':
+                        # Use current_loan_balance if available, otherwise use loan_amount
+                        current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                        interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
+                        
+                        if current_balance and current_balance > 0:
+                            weekly_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+                            
+                            # Initialize expense_categories if not present
+                            if "expense_categories" not in settlement_data or not settlement_data["expense_categories"]:
+                                settlement_data["expense_categories"] = {}
+                            
+                            # Ensure expense_categories is a dict
+                            if not isinstance(settlement_data["expense_categories"], dict):
+                                settlement_data["expense_categories"] = {}
+                            
+                            # Add loan interest to expense categories
+                            settlement_data["expense_categories"]["loan_interest"] = weekly_interest
+                            
+                            # Update total expenses to include interest
+                            current_expenses = float(settlement_data.get("expenses", 0) or 0)
+                            settlement_data["expenses"] = current_expenses + weekly_interest
+                            
+                            # Recalculate net profit
+                            revenue = float(settlement_data.get("gross_revenue", 0) or 0)
+                            settlement_data["net_profit"] = revenue - settlement_data["expenses"]
+                    
                     # Check for duplicates
                     existing = db.query(Settlement).filter(
                         Settlement.truck_id == settlement_data["truck_id"],
@@ -332,6 +435,7 @@ async def upload_settlement_pdf_bulk(
                     # Create settlement
                     db_settlement = Settlement(**settlement_data)
                     db.add(db_settlement)
+                    file_settlements.append(db_settlement)  # Track for loan balance update
                     file_successful += 1
                 except Exception as e:
                     file_failed += 1
@@ -345,6 +449,12 @@ async def upload_settlement_pdf_bulk(
             # Commit all settlements for this file
             if file_successful > 0:
                 db.commit()
+                # Update loan balances for trucks after settlements are created
+                truck_ids_updated = set()
+                for settlement in file_settlements:
+                    if settlement.truck_id not in truck_ids_updated:
+                        update_loan_balance_after_settlement(settlement.truck_id, db)
+                        truck_ids_updated.add(settlement.truck_id)
                 successful += file_successful
                 if len(settlements_data) > 1:
                     results.append({
@@ -424,9 +534,42 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         
         # Use model_dump() for Pydantic v2
         settlement_dict = settlement.model_dump()
+        
+        # Calculate and add loan interest to expense_categories
+        if truck.vehicle_type == 'truck':
+            # Use current_loan_balance if available, otherwise use loan_amount
+            current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+            interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
+            
+            if current_balance and current_balance > 0:
+                weekly_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+                
+                # Initialize expense_categories if not present
+                if "expense_categories" not in settlement_dict or not settlement_dict["expense_categories"]:
+                    settlement_dict["expense_categories"] = {}
+                
+                # Ensure expense_categories is a dict
+                if not isinstance(settlement_dict["expense_categories"], dict):
+                    settlement_dict["expense_categories"] = {}
+                
+                # Add loan interest to expense categories
+                settlement_dict["expense_categories"]["loan_interest"] = weekly_interest
+                
+                # Update total expenses to include interest
+                current_expenses = float(settlement_dict.get("expenses", 0) or 0)
+                settlement_dict["expenses"] = current_expenses + weekly_interest
+                
+                # Recalculate net profit
+                revenue = float(settlement_dict.get("gross_revenue", 0) or 0)
+                settlement_dict["net_profit"] = revenue - settlement_dict["expenses"]
+        
         db_settlement = Settlement(**settlement_dict)
         db.add(db_settlement)
         db.commit()
+        
+        # Update loan balance if cash investment is recovered
+        update_loan_balance_after_settlement(truck.id, db)
+        
         db.refresh(db_settlement)
         return db_settlement
     except HTTPException:
@@ -559,6 +702,17 @@ def upload_settlement_json(
             if driver_pay.get("payroll_fee"):
                 expense_categories["payroll_fee"] = driver_pay["payroll_fee"]
             
+            # Calculate and add loan interest
+            truck = db.query(Truck).filter(Truck.id == truck_id).first()
+            if truck and truck.vehicle_type == 'truck':
+                # Use current_loan_balance if available, otherwise use loan_amount
+                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
+                
+                if current_balance and current_balance > 0:
+                    weekly_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+                    expense_categories["loan_interest"] = weekly_interest
+            
             # Check for duplicates
             if settlement_date:
                 existing = db.query(Settlement).filter(
@@ -582,9 +736,9 @@ def upload_settlement_json(
                 "miles_driven": metrics.get("miles_driven"),
                 "blocks_delivered": metrics.get("blocks_delivered"),
                 "gross_revenue": revenue.get("gross_revenue"),
-                "expenses": expenses.get("total_expenses"),
+                "expenses": expenses.get("total_expenses") + (expense_categories.get("loan_interest", 0) if expense_categories.get("loan_interest") else 0),
                 "expense_categories": expense_categories,
-                "net_profit": revenue.get("net_profit"),
+                "net_profit": revenue.get("gross_revenue", 0) - (expenses.get("total_expenses", 0) + (expense_categories.get("loan_interest", 0) if expense_categories.get("loan_interest") else 0)),
                 "license_plate": license_plate,
                 "settlement_type": metadata.get("settlement_type") or data.get("settlement_type"),
                 "pdf_file_path": None  # No PDF stored
@@ -595,6 +749,13 @@ def upload_settlement_json(
             created_settlements.append(db_settlement)
         
         db.commit()
+        
+        # Update loan balances for trucks after settlements are created
+        truck_ids_updated = set()
+        for settlement in created_settlements:
+            if settlement.truck_id not in truck_ids_updated:
+                update_loan_balance_after_settlement(settlement.truck_id, db)
+                truck_ids_updated.add(settlement.truck_id)
         
         # Refresh all created settlements
         for settlement in created_settlements:
