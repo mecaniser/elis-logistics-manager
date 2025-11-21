@@ -39,6 +39,7 @@ interface ExpenseData {
   safety: number[]
   prepass: number[]
   ifta: number[]
+  loan_interest: number[]
   truck_parking: number[]
   custom: number[]
 }
@@ -87,6 +88,7 @@ export default function Dashboard() {
         { name: 'IFTA', value: expenseCategories.ifta || 0 },
         { name: "Driver's Pay", value: expenseCategories.driver_pay || 0 },
         { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0 },
+        { name: 'Loan Interest', value: expenseCategories.loan_interest || 0 },
         { name: 'Truck Parking', value: expenseCategories.truck_parking || 0 },
         { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0 },
       ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
@@ -223,6 +225,7 @@ export default function Dashboard() {
       { name: 'IFTA', value: expenseCategories.ifta || 0, color: '#10b981' },
       { name: "Driver's Pay", value: expenseCategories.driver_pay || 0, color: '#8b5cf6' },
       { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0, color: '#ec4899' },
+      { name: 'Loan Interest', value: expenseCategories.loan_interest || 0, color: '#fbbf24' },
       { name: 'Truck Parking', value: expenseCategories.truck_parking || 0, color: '#a855f7' },
       { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0, color: '#6b7280' },
     ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
@@ -326,7 +329,7 @@ export default function Dashboard() {
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_week) || data.by_week.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_week.map((item) => item.week_label)
@@ -342,6 +345,7 @@ export default function Dashboard() {
       safety: data.by_week.map((item) => item.safety),
       prepass: data.by_week.map((item) => item.prepass),
       ifta: data.by_week.map((item) => item.ifta),
+      loan_interest: data.by_week.map((item) => item.loan_interest || 0),
       truck_parking: data.by_week.map((item) => item.truck_parking),
       custom: data.by_week.map((item) => item.custom),
     }
@@ -351,7 +355,7 @@ export default function Dashboard() {
 
   const processMonthlyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_month) || data.by_month.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_month.map((item) => item.month_label)
@@ -367,6 +371,7 @@ export default function Dashboard() {
       safety: data.by_month.map((item) => item.safety),
       prepass: data.by_month.map((item) => item.prepass),
       ifta: data.by_month.map((item) => item.ifta),
+      loan_interest: data.by_month.map((item) => item.loan_interest || 0),
       truck_parking: data.by_month.map((item) => item.truck_parking),
       custom: data.by_month.map((item) => item.custom),
     }
@@ -1090,6 +1095,7 @@ export default function Dashboard() {
                     { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
                     { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
                     { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
+                    { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as any).loan_interest || 0 },
                     { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
                     { key: 'custom', label: 'Custom', value: (selectedPeriodData as any).custom || 0 },
                     { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
@@ -1273,10 +1279,11 @@ export default function Dashboard() {
                         { key: 'safety', label: 'Safety' },
                         { key: 'prepass', label: 'Prepass' },
                         { key: 'ifta', label: 'IFTA' },
-                        { key: 'truck_parking', label: 'Truck Parking' },
-                        { key: 'custom', label: 'Custom' },
                         { key: 'driver_pay', label: "Driver's Pay" },
                         { key: 'payroll_fee', label: 'Payroll Fee' },
+                        { key: 'loan_interest', label: 'Loan Interest' },
+                        { key: 'truck_parking', label: 'Truck Parking' },
+                        { key: 'custom', label: 'Custom' },
                         ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
                       ]
                         .map(({ key, label }) => ({

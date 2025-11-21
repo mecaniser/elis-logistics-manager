@@ -53,16 +53,44 @@ export default function Settlements() {
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
     'fuel',
+    'driver_pay',
+    'payroll_fee',
     'dispatch_fee',
     'insurance',
     'safety',
     'prepass',
     'ifta',
-    'driver_pay',
-    'payroll_fee',
+    'loan_interest',
     'truck_parking',
     'service_on_truck'
   ]
+
+  // Helper function to format category display names
+  const getCategoryDisplayName = (category: string): string => {
+    const displayNameMap: { [key: string]: string } = {
+      fuel: 'Fuel',
+      dispatch_fee: 'Dispatch Fee',
+      insurance: 'Insurance',
+      safety: 'Safety',
+      prepass: 'Prepass',
+      ifta: 'IFTA',
+      driver_pay: 'Driver Pay',
+      payroll_fee: 'Payroll Fee',
+      loan_interest: 'Loan Interest',
+      truck_parking: 'Truck Parking',
+      service_on_truck: 'Service on Truck',
+    }
+    
+    // Return mapped name if exists, otherwise format the key
+    if (displayNameMap[category]) {
+      return displayNameMap[category]
+    }
+    
+    // Fallback: format key by splitting on underscore and capitalizing
+    return category.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ')
+  }
 
   // Color codes for expense categories
   const getCategoryColor = (category: string) => {
@@ -75,6 +103,7 @@ export default function Settlements() {
       ifta: { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
       driver_pay: { bg: 'bg-pink-50', border: 'border-pink-300', text: 'text-pink-700' },
       payroll_fee: { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-700' },
+      loan_interest: { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700' },
       truck_parking: { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-700' },
       service_on_truck: { bg: 'bg-cyan-50', border: 'border-cyan-300', text: 'text-cyan-700' },
     }
@@ -1869,9 +1898,7 @@ export default function Settlements() {
                             {/* Display standard categories */}
                             {STANDARD_EXPENSE_CATEGORIES.map((category) => {
                               const value = editFormData.expense_categories![category] || 0
-                              const displayName = category.split('_').map(word => 
-                                word.charAt(0).toUpperCase() + word.slice(1)
-                              ).join(' ')
+                              const displayName = getCategoryDisplayName(category)
                               
                               // Calculate payroll fee percentage if this is payroll_fee and driver_pay exists
                               let percentageDisplay = null

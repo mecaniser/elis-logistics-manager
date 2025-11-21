@@ -107,10 +107,10 @@ export default function VehicleDetail() {
       </div>
 
       {/* Investment Information */}
-      {(roiData.cash_investment || roiData.total_cost) && (
+      {(roiData.cash_investment || roiData.total_cost || vehicle.registration_fee) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-900">Investment Information</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <div>
               <span className="text-sm font-medium text-gray-600">Cash Investment</span>
               <p className="text-xl font-semibold text-gray-900 mt-1">
@@ -118,13 +118,47 @@ export default function VehicleDetail() {
               </p>
             </div>
             {vehicle.vehicle_type === 'truck' && roiData.loan_amount && (
-              <div>
-                <span className="text-sm font-medium text-gray-600">Loan Amount</span>
-                <p className="text-xl font-semibold text-gray-900 mt-1">
-                  ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
+              <>
+                <div>
+                  <span className="text-sm font-medium text-gray-600">Original Loan Amount</span>
+                  <p className="text-xl font-semibold text-gray-900 mt-1">
+                    ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                {roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-600">Remaining Loan Balance</span>
+                    <p className={`text-xl font-semibold mt-1 ${
+                      roiData.current_loan_balance === 0 ? 'text-green-600' : 
+                      roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' : 
+                      'text-gray-900'
+                    }`}>
+                      ${roiData.current_loan_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    {roiData.current_loan_balance < roiData.loan_amount && roiData.current_loan_balance > 0 && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        ${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} principal paid
+                      </p>
+                    )}
+                    {roiData.current_loan_balance === 0 && (
+                      <p className="text-xs text-green-600 font-medium mt-1">✓ Loan fully paid off!</p>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <span className="text-sm font-medium text-gray-600">Interest Rate</span>
+                  <p className="text-xl font-semibold text-gray-900 mt-1">
+                    {(roiData.interest_rate * 100).toFixed(2)}%
+                  </p>
+                </div>
+              </>
             )}
+            <div>
+              <span className="text-sm font-medium text-gray-600">Registration Fee</span>
+              <p className="text-xl font-semibold text-gray-900 mt-1">
+                ${vehicle.registration_fee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+              </p>
+            </div>
             <div>
               <span className="text-sm font-medium text-gray-600">Total Cost</span>
               <p className="text-xl font-semibold text-gray-900 mt-1">
@@ -152,7 +186,10 @@ export default function VehicleDetail() {
             </div>
             <div className="text-xs text-gray-500">
               Revenue: ${roiData.cumulative_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - 
-              Expenses: ${(roiData.cumulative_settlement_expenses + roiData.cumulative_repair_costs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Expenses: ${(roiData.cumulative_settlement_expenses + roiData.cumulative_repair_costs + roiData.cumulative_loan_interest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {roiData.cumulative_loan_interest > 0 && (
+                <span> (Settlement: ${roiData.cumulative_settlement_expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Repairs: ${roiData.cumulative_repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Interest: ${roiData.cumulative_loan_interest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+              )}
             </div>
           </div>
 
@@ -185,11 +222,61 @@ export default function VehicleDetail() {
 
           {/* Remaining to Break-Even */}
           {!isBreakEven && (
-            <div>
+            <div className="mb-4">
               <span className="text-sm font-medium text-gray-600">Remaining to Break-Even</span>
               <p className="text-xl font-semibold text-orange-600 mt-1">
                 ${remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+            </div>
+          )}
+
+          {/* Loan Balance After Cash Recovery */}
+          {vehicle.vehicle_type === 'truck' && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
+            <div className={`mt-4 p-4 rounded-lg ${
+              roiData.current_loan_balance === 0 ? 'bg-green-50 border-2 border-green-200' :
+              roiData.current_loan_balance < roiData.loan_amount ? 'bg-orange-50 border-2 border-orange-200' :
+              'bg-gray-50 border-2 border-gray-200'
+            }`}>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">Loan Balance After Cash Recovery</span>
+                <span className={`text-2xl font-bold ${
+                  roiData.current_loan_balance === 0 ? 'text-green-600' :
+                  roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' :
+                  'text-gray-900'
+                }`}>
+                  ${roiData.current_loan_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              {roiData.current_loan_balance > 0 && (
+                <>
+                  <div className="w-full bg-gray-200 rounded-full h-3 mb-2">
+                    <div
+                      className={`h-3 rounded-full transition-all ${
+                        roiData.current_loan_balance === 0 ? 'bg-green-600' :
+                        roiData.current_loan_balance < roiData.loan_amount ? 'bg-orange-600' :
+                        'bg-gray-400'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, ((roiData.loan_amount - roiData.current_loan_balance) / roiData.loan_amount) * 100))}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {roiData.current_loan_balance < roiData.loan_amount ? (
+                      <>
+                        <span className="font-medium">${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> principal paid of ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                        <br />
+                        <span className="text-gray-500">Principal payments start after cash investment is 100% recovered</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">Cash investment not yet recovered - no principal payments applied</span>
+                    )}
+                  </div>
+                </>
+              )}
+              {roiData.current_loan_balance === 0 && (
+                <div className="text-xs text-green-600 font-medium">
+                  ✓ Loan fully paid off! All excess profit after cash recovery was applied to principal.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -208,11 +295,14 @@ export default function VehicleDetail() {
           <div className="bg-red-50 p-4 rounded-lg">
             <div className="text-sm font-medium text-gray-600">Total Expenses</div>
             <div className="text-2xl font-bold text-red-600 mt-1">
-              ${(roiData.cumulative_settlement_expenses + roiData.cumulative_repair_costs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${(roiData.cumulative_settlement_expenses + roiData.cumulative_repair_costs + roiData.cumulative_loan_interest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-xs text-gray-500 mt-1">
               Settlement: ${roiData.cumulative_settlement_expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | 
               Repairs: ${roiData.cumulative_repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {roiData.cumulative_loan_interest > 0 && (
+                <span> | Interest: ${roiData.cumulative_loan_interest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              )}
             </div>
           </div>
           <div className={`p-4 rounded-lg ${

@@ -18,7 +18,10 @@ export interface Truck {
   license_plate_history?: string[]
   cash_investment?: number  // Cash invested in vehicle
   loan_amount?: number  // Loan amount (trucks only, null for trailers)
+  current_loan_balance?: number  // Current loan balance (reduces as principal is paid)
+  interest_rate?: number  // Annual interest rate (default 0.07 = 7%)
   total_cost?: number  // Total purchase cost (cash + loan for trucks, cash only for trailers)
+  registration_fee?: number  // Registration fee for vehicle
 }
 
 export interface VehicleROI {
@@ -27,10 +30,14 @@ export interface VehicleROI {
   vehicle_type: 'truck' | 'trailer'
   cash_investment: number | null
   loan_amount: number | null
+  current_loan_balance: number | null
+  interest_rate: number
   total_cost: number | null
+  registration_fee: number | null
   cumulative_revenue: number
   cumulative_settlement_expenses: number
   cumulative_repair_costs: number
+  cumulative_loan_interest: number
   cumulative_net_profit: number
   investment_recovery_percentage: number | null
   remaining_to_break_even: number | null
@@ -284,6 +291,7 @@ export interface TimeSeriesData {
     safety: number
     prepass: number
     ifta: number
+    loan_interest: number
     truck_parking: number
     custom: number
     trucks: Array<{ truck_id: number; truck_name: string }>
@@ -301,6 +309,7 @@ export interface TimeSeriesData {
     safety: number
     prepass: number
     ifta: number
+    loan_interest: number
     truck_parking: number
     custom: number
     trucks: Array<{ truck_id: number; truck_name: string }>
@@ -328,6 +337,7 @@ export interface TimeSeriesData {
     safety: number
     prepass: number
     ifta: number
+    loan_interest: number
     truck_parking: number
     custom: number
     repairs?: number
