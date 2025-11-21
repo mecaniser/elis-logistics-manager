@@ -16,6 +16,25 @@ export interface Truck {
   tag_number?: string  // For trailers
   vin?: string
   license_plate_history?: string[]
+  cash_investment?: number  // Cash invested in vehicle
+  loan_amount?: number  // Loan amount (trucks only, null for trailers)
+  total_cost?: number  // Total purchase cost (cash + loan for trucks, cash only for trailers)
+}
+
+export interface VehicleROI {
+  vehicle_id: number
+  vehicle_name: string
+  vehicle_type: 'truck' | 'trailer'
+  cash_investment: number | null
+  loan_amount: number | null
+  total_cost: number | null
+  cumulative_revenue: number
+  cumulative_settlement_expenses: number
+  cumulative_repair_costs: number
+  cumulative_net_profit: number
+  investment_recovery_percentage: number | null
+  remaining_to_break_even: number | null
+  break_even_achieved: boolean
 }
 
 export interface Settlement {
@@ -100,9 +119,9 @@ export const trucksApi = {
     return api.get<Truck[]>('/trucks', { params })
   },
   getById: (id: number) => api.get<Truck>(`/trucks/${id}`),
-  create: (data: { name: string; vehicle_type: 'truck' | 'trailer'; license_plate?: string; tag_number?: string; vin?: string }) =>
+  create: (data: Partial<Truck>) =>
     api.post<Truck>('/trucks', data),
-  update: (id: number, data: { name?: string; vehicle_type?: 'truck' | 'trailer'; license_plate?: string; tag_number?: string; vin?: string }) =>
+  update: (id: number, data: Partial<Truck>) =>
     api.put<Truck>(`/trucks/${id}`, data),
   delete: (id: number) => api.delete(`/trucks/${id}`),
 }
@@ -329,6 +348,8 @@ export const analyticsApi = {
       repairs_total: number
       net_profit: number
     }>(`/analytics/truck-profit/${truckId}`),
+  getVehicleROI: (vehicleId: number) =>
+    api.get<VehicleROI>(`/analytics/vehicle/${vehicleId}/roi`),
   getTimeSeries: (groupBy?: 'week_start' | 'settlement_date', truckId?: number) => {
     const params: any = {}
     if (groupBy) params.group_by = groupBy

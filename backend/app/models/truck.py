@@ -1,7 +1,7 @@
 """
 Truck model - Also supports trailers
 """
-from sqlalchemy import Column, Integer, String, DateTime, JSON, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Numeric, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -16,6 +16,9 @@ class Truck(Base):
     tag_number = Column(String(20), nullable=True)  # For trailers (trailer tag number)
     vin = Column(String(17), nullable=True)  # Vehicle Identification Number
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates
+    cash_investment = Column(Numeric(10, 2), nullable=True)  # Cash invested in vehicle
+    loan_amount = Column(Numeric(10, 2), nullable=True)  # Loan amount (trucks only, null for trailers)
+    total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan for trucks, cash only for trailers)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

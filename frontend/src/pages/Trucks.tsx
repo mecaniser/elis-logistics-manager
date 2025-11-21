@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { trucksApi, Truck } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function Trucks() {
+  const navigate = useNavigate()
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -15,7 +17,10 @@ export default function Trucks() {
     vehicle_type: 'truck' as 'truck' | 'trailer',
     vin: '', 
     license_plate: '',
-    tag_number: ''
+    tag_number: '',
+    cash_investment: '',
+    loan_amount: '',
+    total_cost: ''
   })
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
@@ -53,6 +58,19 @@ export default function Trucks() {
     try {
       const vehicleLabel = formData.vehicle_type === 'truck' ? 'Truck' : 'Trailer'
       
+      const investmentData: any = {}
+      if (formData.cash_investment) {
+        investmentData.cash_investment = parseFloat(formData.cash_investment)
+      }
+      if (formData.vehicle_type === 'truck' && formData.loan_amount) {
+        investmentData.loan_amount = parseFloat(formData.loan_amount)
+      } else if (formData.vehicle_type === 'trailer') {
+        investmentData.loan_amount = null
+      }
+      if (formData.total_cost) {
+        investmentData.total_cost = parseFloat(formData.total_cost)
+      }
+
       if (editingTruck) {
         await trucksApi.update(editingTruck.id, {
           name: formData.name,
@@ -60,6 +78,7 @@ export default function Trucks() {
           vin: formData.vin || undefined,
           license_plate: formData.vehicle_type === 'truck' ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
+          ...investmentData
         })
         showToast(`${vehicleLabel} updated successfully!`, 'success')
       } else {
@@ -69,6 +88,7 @@ export default function Trucks() {
           vin: formData.vin || undefined,
           license_plate: formData.vehicle_type === 'truck' ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
+          ...investmentData
         })
         showToast(`${vehicleLabel} created successfully!`, 'success')
       }
@@ -88,7 +108,10 @@ export default function Trucks() {
       vehicle_type: 'truck',
       vin: '', 
       license_plate: '',
-      tag_number: ''
+      tag_number: '',
+      cash_investment: '',
+      loan_amount: '',
+      total_cost: ''
     })
   }
 
@@ -237,6 +260,59 @@ export default function Trucks() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            
+            {/* Investment Fields */}
+            <div className="mb-4 border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Investment Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cash Investment ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.cash_investment}
+                    onChange={(e) => setFormData({ ...formData, cash_investment: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {formData.vehicle_type === 'truck' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.loan_amount}
+                      onChange={(e) => setFormData({ ...formData, loan_amount: e.target.value })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Cost ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.total_cost}
+                    onChange={(e) => setFormData({ ...formData, total_cost: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {formData.vehicle_type === 'truck' && formData.cash_investment && formData.loan_amount && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Should equal: ${(parseFloat(formData.cash_investment || '0') + parseFloat(formData.loan_amount || '0')).toFixed(2)}
+                    </p>
+                  )}
+                  {formData.vehicle_type === 'trailer' && formData.cash_investment && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Should equal cash investment for trailers
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -280,8 +356,28 @@ export default function Trucks() {
                           History: {truck.license_plate_history.join(', ')}
                         </p>
                       )}
+                      {(truck.cash_investment || truck.total_cost) && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <span className="font-medium">Investment: </span>
+                          {truck.cash_investment && (
+                            <span>Cash: ${truck.cash_investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
+                          {truck.loan_amount && truck.loan_amount > 0 && (
+                            <span className="ml-2">Loan: ${truck.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
+                          {truck.total_cost && (
+                            <span className="ml-2">Total: ${truck.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/vehicles/${truck.id}`)}
+                        className="text-green-600 hover:text-green-800"
+                      >
+                        View Details
+                      </button>
                       <button
                         onClick={() => {
                           setEditingTruck(truck)
@@ -290,7 +386,10 @@ export default function Trucks() {
                             vehicle_type: truck.vehicle_type,
                             vin: truck.vin || '', 
                             license_plate: truck.license_plate || '',
-                            tag_number: truck.tag_number || ''
+                            tag_number: truck.tag_number || '',
+                            cash_investment: truck.cash_investment?.toString() || '',
+                            loan_amount: truck.loan_amount?.toString() || '',
+                            total_cost: truck.total_cost?.toString() || ''
                           })
                           setShowForm(true)
                         }}
@@ -331,8 +430,25 @@ export default function Trucks() {
                       {trailer.tag_number && (
                         <p className="text-sm text-gray-500">Tag Number: {trailer.tag_number}</p>
                       )}
+                      {(trailer.cash_investment || trailer.total_cost) && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <span className="font-medium">Investment: </span>
+                          {trailer.cash_investment && (
+                            <span>Cash: ${trailer.cash_investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
+                          {trailer.total_cost && (
+                            <span className="ml-2">Total: ${trailer.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/vehicles/${trailer.id}`)}
+                        className="text-green-600 hover:text-green-800"
+                      >
+                        View Details
+                      </button>
                       <button
                         onClick={() => {
                           setEditingTruck(trailer)
@@ -341,7 +457,10 @@ export default function Trucks() {
                             vehicle_type: trailer.vehicle_type,
                             vin: trailer.vin || '', 
                             license_plate: trailer.license_plate || '',
-                            tag_number: trailer.tag_number || ''
+                            tag_number: trailer.tag_number || '',
+                            cash_investment: trailer.cash_investment?.toString() || '',
+                            loan_amount: trailer.loan_amount?.toString() || '',
+                            total_cost: trailer.total_cost?.toString() || ''
                           })
                           setShowForm(true)
                         }}
@@ -350,7 +469,10 @@ export default function Trucks() {
                         Edit
                       </button>
                       <button
-                        onClick={() => setTruckToDelete(trailer.id)}
+                        onClick={() => {
+                          setTruckToDelete(trailer.id)
+                          setTruckToDeleteName(trailer.name)
+                        }}
                         className="text-red-600 hover:text-red-800"
                       >
                         Delete

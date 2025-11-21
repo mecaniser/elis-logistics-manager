@@ -1,7 +1,7 @@
 """
 Analytics router
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from app.database import get_db
@@ -34,6 +34,55 @@ def get_truck_profit(truck_id: int, db: Session = Depends(get_db)):
         "settlements_total": float(settlements_total),
         "repairs_total": float(repairs_total),
         "net_profit": net_profit
+    }
+
+@router.get("/vehicle/{truck_id}/roi")
+def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
+    """Calculate ROI metrics for a specific vehicle (truck or trailer)"""
+    # Get the vehicle
+    vehicle = db.query(Truck).filter(Truck.id == truck_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    
+    # Get cumulative net profit (revenue - settlement expenses - repairs)
+    vehicle_settlements = db.query(Settlement).filter(Settlement.truck_id == truck_id)
+    vehicle_repairs = db.query(Repair).filter(Repair.truck_id == truck_id)
+    
+    revenue = vehicle_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+    settlement_expenses = vehicle_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
+    repair_costs = vehicle_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+    
+    cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
+    
+    # Get investment fields
+    cash_investment = float(vehicle.cash_investment) if vehicle.cash_investment else None
+    loan_amount = float(vehicle.loan_amount) if vehicle.loan_amount else None
+    total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
+    
+    # Calculate ROI metrics
+    investment_recovery_percentage = None
+    remaining_to_break_even = None
+    break_even_achieved = False
+    
+    if cash_investment and cash_investment > 0:
+        investment_recovery_percentage = (cumulative_net_profit / cash_investment) * 100
+        remaining_to_break_even = max(0.0, cash_investment - cumulative_net_profit)
+        break_even_achieved = cumulative_net_profit >= cash_investment
+    
+    return {
+        "vehicle_id": truck_id,
+        "vehicle_name": vehicle.name,
+        "vehicle_type": vehicle.vehicle_type,
+        "cash_investment": cash_investment,
+        "loan_amount": loan_amount,
+        "total_cost": total_cost,
+        "cumulative_revenue": float(revenue),
+        "cumulative_settlement_expenses": float(settlement_expenses),
+        "cumulative_repair_costs": float(repair_costs),
+        "cumulative_net_profit": round(cumulative_net_profit, 2),
+        "investment_recovery_percentage": round(investment_recovery_percentage, 2) if investment_recovery_percentage is not None else None,
+        "remaining_to_break_even": round(remaining_to_break_even, 2) if remaining_to_break_even is not None else None,
+        "break_even_achieved": break_even_achieved
     }
 
 @router.get("/dashboard")

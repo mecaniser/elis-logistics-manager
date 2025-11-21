@@ -44,6 +44,34 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db)):
         # Tag number is recommended for trailers
         pass
     
+    # Validate investment fields
+    if vehicle_type == 'trailer':
+        # Trailers should not have loans
+        if truck.loan_amount and truck.loan_amount > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
+            )
+        # For trailers, total_cost should equal cash_investment (if provided)
+        if truck.cash_investment is not None and truck.total_cost is not None:
+            if abs(float(truck.total_cost) - float(truck.cash_investment)) > 0.01:
+                raise HTTPException(
+                    status_code=400,
+                    detail="For trailers, total_cost must equal cash_investment"
+                )
+    elif vehicle_type == 'truck':
+        # For trucks, validate total_cost = cash_investment + loan_amount (if all provided)
+        if truck.cash_investment is not None and truck.total_cost is not None:
+            cash = float(truck.cash_investment)
+            total = float(truck.total_cost)
+            loan = float(truck.loan_amount) if truck.loan_amount else 0.0
+            
+            if abs(total - (cash + loan)) > 0.01:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan})"
+                )
+    
     # Check for duplicate name within same vehicle type
     existing = db.query(Truck).filter(
         Truck.name == truck.name,
@@ -83,6 +111,42 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     # Ensure vehicle_type is lowercase if provided
     if 'vehicle_type' in update_data:
         update_data['vehicle_type'] = update_data['vehicle_type'].lower()
+        vehicle_type = update_data['vehicle_type']
+    else:
+        vehicle_type = truck.vehicle_type
+    
+    # Validate investment fields if being updated
+    if 'loan_amount' in update_data or 'cash_investment' in update_data or 'total_cost' in update_data:
+        cash_investment = update_data.get('cash_investment', truck.cash_investment)
+        loan_amount = update_data.get('loan_amount', truck.loan_amount)
+        total_cost = update_data.get('total_cost', truck.total_cost)
+        
+        if vehicle_type == 'trailer':
+            # Trailers should not have loans
+            if loan_amount and float(loan_amount) > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
+                )
+            # For trailers, total_cost should equal cash_investment (if both provided)
+            if cash_investment is not None and total_cost is not None:
+                if abs(float(total_cost) - float(cash_investment)) > 0.01:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="For trailers, total_cost must equal cash_investment"
+                    )
+        elif vehicle_type == 'truck':
+            # For trucks, validate total_cost = cash_investment + loan_amount (if all provided)
+            if cash_investment is not None and total_cost is not None:
+                cash = float(cash_investment)
+                total = float(total_cost)
+                loan = float(loan_amount) if loan_amount else 0.0
+                
+                if abs(total - (cash + loan)) > 0.01:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan})"
+                    )
     
     for field, value in update_data.items():
         setattr(truck, field, value)

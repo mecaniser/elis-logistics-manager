@@ -5,6 +5,7 @@ import Trucks from './pages/Trucks'
 import Settlements from './pages/Settlements'
 import Repairs from './pages/Repairs'
 import Extractor from './pages/Extractor'
+import VehicleDetail from './pages/VehicleDetail'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/settlements" element={<Settlements />} />
           <Route path="/repairs" element={<Repairs />} />
           <Route path="/extractor" element={<Extractor />} />
+          <Route path="/vehicles/:id" element={<VehicleDetail />} />
         </Routes>
       </Layout>
     </Router>
