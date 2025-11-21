@@ -37,8 +37,8 @@ def get_truck_profit(truck_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/dashboard")
-def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
-    """Get dashboard summary data with expense categories"""
+def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get dashboard summary data with expense categories. Separates trucks and trailers."""
     # Build queries with optional truck filter
     trucks_query = db.query(Truck)
     settlements_query = db.query(Settlement)
@@ -49,8 +49,35 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         settlements_query = settlements_query.filter(Settlement.truck_id == truck_id)
         repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
     
-    # Get totals
-    total_trucks = trucks_query.count()
+    # Separate trucks and trailers queries
+    trucks_only_query = trucks_query.filter(Truck.vehicle_type == 'truck')
+    trailers_only_query = trucks_query.filter(Truck.vehicle_type == 'trailer')
+    
+    # Get truck totals
+    truck_ids = [t.id for t in trucks_only_query.all()]
+    trailer_ids = [t.id for t in trailers_only_query.all()]
+    
+    truck_settlements_query = settlements_query.filter(Settlement.truck_id.in_(truck_ids)) if truck_ids else settlements_query.filter(False)
+    trailer_settlements_query = settlements_query.filter(Settlement.truck_id.in_(trailer_ids)) if trailer_ids else settlements_query.filter(False)
+    
+    truck_repairs_query = repairs_query.filter(Repair.truck_id.in_(truck_ids)) if truck_ids else repairs_query.filter(False)
+    trailer_repairs_query = repairs_query.filter(Repair.truck_id.in_(trailer_ids)) if trailer_ids else repairs_query.filter(False)
+    
+    # Get totals for trucks
+    total_trucks = trucks_only_query.count()
+    truck_settlements_count = truck_settlements_query.count()
+    truck_revenue = truck_settlements_query.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+    truck_expenses = truck_settlements_query.with_entities(func.sum(Settlement.expenses)).scalar() or 0
+    truck_repairs_cost = truck_repairs_query.with_entities(func.sum(Repair.cost)).scalar() or 0
+    
+    # Get totals for trailers
+    total_trailers = trailers_only_query.count()
+    trailer_settlements_count = trailer_settlements_query.count()
+    trailer_revenue = trailer_settlements_query.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+    trailer_expenses = trailer_settlements_query.with_entities(func.sum(Settlement.expenses)).scalar() or 0
+    trailer_repairs_cost = trailer_repairs_query.with_entities(func.sum(Repair.cost)).scalar() or 0
+    
+    # Combined totals (for backward compatibility)
     total_settlements = settlements_query.count()
     total_revenue = settlements_query.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
     total_expenses = settlements_query.with_entities(func.sum(Settlement.expenses)).scalar() or 0
@@ -62,79 +89,101 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         "driver_pay", "payroll_fee", "truck_parking", "service_on_truck"
     ]
     
-    # Combine expenses from settlements and repairs by category
+    # Helper function to calculate expense categories for a set of settlements
+    def calculate_expense_categories(settlements_list, repairs_list):
+        """Calculate expense categories from settlements and repairs"""
+        expense_cats = {
+            "fuel": 0.0,
+            "dispatch_fee": 0.0,
+            "insurance": 0.0,
+            "safety": 0.0,
+            "prepass": 0.0,
+            "ifta": 0.0,
+            "driver_pay": 0.0,
+            "payroll_fee": 0.0,
+            "truck_parking": 0.0,
+            "repairs": 0.0,
+            "custom": 0.0
+        }
+        custom_descs = {}
+        
+        def extract_custom_description(category_key: str) -> str:
+            if category_key.startswith("custom_"):
+                desc = category_key.replace("custom_", "")
+                return " ".join(word.capitalize() for word in desc.split("_"))
+            return "Custom"
+        
+        # Add expenses from settlements
+        for settlement in settlements_list:
+            if settlement.expense_categories and isinstance(settlement.expense_categories, dict) and len(settlement.expense_categories) > 0:
+                for category, amount in settlement.expense_categories.items():
+                    try:
+                        amount_float = float(amount) if amount is not None else 0.0
+                        if amount_float > 0:
+                            if category == "fees" or category == "other":
+                                expense_cats["custom"] += amount_float
+                            elif category in expense_cats:
+                                expense_cats[category] += amount_float
+                            elif category.startswith("custom_"):
+                                expense_cats["custom"] += amount_float
+                                if category not in custom_descs:
+                                    custom_descs[category] = extract_custom_description(category)
+                            else:
+                                expense_cats["custom"] += amount_float
+                                if category not in custom_descs:
+                                    custom_descs[category] = extract_custom_description(category)
+                    except (ValueError, TypeError):
+                        continue
+            elif settlement.expenses and float(settlement.expenses) > 0:
+                expense_cats["custom"] += float(settlement.expenses)
+        
+        # Add repairs
+        for repair in repairs_list:
+            if repair.cost:
+                expense_cats["repairs"] += float(repair.cost)
+        
+        return expense_cats, custom_descs
+    
+    # Calculate expense categories separately for trucks and trailers
+    truck_settlements = truck_settlements_query.all()
+    trailer_settlements = trailer_settlements_query.all()
+    truck_repairs = truck_repairs_query.all()
+    trailer_repairs = trailer_repairs_query.all()
+    
+    truck_expense_categories, truck_custom_descriptions = calculate_expense_categories(truck_settlements, truck_repairs)
+    trailer_expense_categories, trailer_custom_descriptions = calculate_expense_categories(trailer_settlements, trailer_repairs)
+    
+    # Combined expense categories (for backward compatibility)
     expense_categories = {
-        "fuel": 0.0,
-        "dispatch_fee": 0.0,
-        "insurance": 0.0,
-        "safety": 0.0,
-        "prepass": 0.0,
-        "ifta": 0.0,
-        "driver_pay": 0.0,
-        "payroll_fee": 0.0,
-        "truck_parking": 0.0,
-        "repairs": 0.0,
-        "custom": 0.0
+        "fuel": truck_expense_categories["fuel"] + trailer_expense_categories["fuel"],
+        "dispatch_fee": truck_expense_categories["dispatch_fee"] + trailer_expense_categories["dispatch_fee"],
+        "insurance": truck_expense_categories["insurance"] + trailer_expense_categories["insurance"],
+        "safety": truck_expense_categories["safety"] + trailer_expense_categories["safety"],
+        "prepass": truck_expense_categories["prepass"] + trailer_expense_categories["prepass"],
+        "ifta": truck_expense_categories["ifta"] + trailer_expense_categories["ifta"],
+        "driver_pay": truck_expense_categories["driver_pay"] + trailer_expense_categories["driver_pay"],
+        "payroll_fee": truck_expense_categories["payroll_fee"] + trailer_expense_categories["payroll_fee"],
+        "truck_parking": truck_expense_categories["truck_parking"] + trailer_expense_categories["truck_parking"],
+        "repairs": truck_expense_categories["repairs"] + trailer_expense_categories["repairs"],
+        "custom": truck_expense_categories["custom"] + trailer_expense_categories["custom"]
     }
     
-    # Track custom expense descriptions: {category_key: description}
-    # e.g., {"custom_truck_parking": "Truck Parking", "custom_repair": "Repair"}
-    custom_descriptions = {}  # {category_key: description}
+    # Merge custom descriptions
+    custom_descriptions = {**truck_custom_descriptions, **trailer_custom_descriptions}
     
-    # Helper function to extract description from custom category key
-    def extract_custom_description(category_key: str) -> str:
-        """Extract description from custom category key (e.g., 'custom_truck_parking' -> 'Truck Parking')"""
-        if category_key.startswith("custom_"):
-            desc = category_key.replace("custom_", "")
-            # Convert snake_case to Title Case
-            return " ".join(word.capitalize() for word in desc.split("_"))
-        return "Custom"
+    # Calculate net profits
+    truck_expenses_sum = sum(truck_expense_categories.values())
+    trailer_expenses_sum = sum(trailer_expense_categories.values())
+    truck_net_profit = float(truck_revenue) - float(truck_expenses_sum)
+    trailer_net_profit = float(trailer_revenue) - float(trailer_expenses_sum)
     
-    # Add expenses from settlements (already categorized)
-    settlements = settlements_query.all()
-    for settlement in settlements:
-        if settlement.expense_categories and isinstance(settlement.expense_categories, dict) and len(settlement.expense_categories) > 0:
-            for category, amount in settlement.expense_categories.items():
-                try:
-                    amount_float = float(amount) if amount is not None else 0.0
-                    if amount_float > 0:
-                        # Handle legacy categories
-                        if category == "fees":
-                            expense_categories["custom"] += amount_float
-                        elif category == "other":
-                            # Backward compatibility: map old "other" to "custom"
-                            expense_categories["custom"] += amount_float
-                        elif category in expense_categories:
-                            # Standard category
-                            expense_categories[category] += amount_float
-                        elif category.startswith("custom_"):
-                            # Custom category with description - aggregate into "custom" but track description
-                            expense_categories["custom"] += amount_float
-                            if category not in custom_descriptions:
-                                custom_descriptions[category] = extract_custom_description(category)
-                        else:
-                            # Other non-standard category - treat as custom
-                            expense_categories["custom"] += amount_float
-                            if category not in custom_descriptions:
-                                custom_descriptions[category] = extract_custom_description(category)
-                except (ValueError, TypeError):
-                    continue
-        elif settlement.expenses and float(settlement.expenses) > 0:
-            expense_categories["custom"] += float(settlement.expenses)
-    
-    # Add all repairs to the "repairs" category
-    repairs = repairs_query.all()
-    for repair in repairs:
-        if repair.cost:
-            expense_categories["repairs"] += float(repair.cost)
-    
-    # Calculate net profit
+    # Combined net profit (for backward compatibility)
     total_expenses_sum = sum(expense_categories.values())
     net_profit = float(total_revenue) - float(total_expenses_sum)
     
-    # Get truck profits
+    # Get truck profits (only trucks, not trailers)
     truck_profits = []
-    trucks = trucks_query.all()
+    trucks = trucks_only_query.all()
     for truck in trucks:
         truck_settlements = db.query(Settlement).filter(Settlement.truck_id == truck.id)
         truck_repairs = db.query(Repair).filter(Repair.truck_id == truck.id)
@@ -149,14 +198,41 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         truck_profits.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
-            "license_plate": truck.license_plate,  # Include license plate
-            "vin": truck.vin,  # Include VIN if available
+            "license_plate": truck.license_plate,
+            "vin": truck.vin,
             "total_revenue": float(truck_revenue),
             "total_expenses": float(truck_expenses) + float(truck_repairs_cost),
-            "settlement_expenses": float(truck_expenses),  # Expenses from settlements only (excluding repairs)
+            "settlement_expenses": float(truck_expenses),
             "repair_costs": float(truck_repairs_cost),
-            "profit_before_repairs": profit_before_repairs,  # Revenue - settlement expenses
-            "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)  # Final profit after repairs
+            "profit_before_repairs": profit_before_repairs,
+            "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)
+        })
+    
+    # Get trailer profits
+    trailer_profits = []
+    trailers = trailers_only_query.all()
+    for trailer in trailers:
+        trailer_settlements = db.query(Settlement).filter(Settlement.truck_id == trailer.id)
+        trailer_repairs = db.query(Repair).filter(Repair.truck_id == trailer.id)
+        
+        trailer_revenue = trailer_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+        trailer_expenses = trailer_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
+        trailer_repairs_cost = trailer_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+        
+        # Calculate profit before repairs (revenue - settlement expenses only)
+        profit_before_repairs = float(trailer_revenue) - float(trailer_expenses)
+        
+        trailer_profits.append({
+            "truck_id": trailer.id,
+            "truck_name": trailer.name,
+            "tag_number": trailer.tag_number,
+            "vin": trailer.vin,
+            "total_revenue": float(trailer_revenue),
+            "total_expenses": float(trailer_expenses) + float(trailer_repairs_cost),
+            "settlement_expenses": float(trailer_expenses),
+            "repair_costs": float(trailer_repairs_cost),
+            "profit_before_repairs": profit_before_repairs,
+            "net_profit": float(trailer_revenue) - float(trailer_expenses) - float(trailer_repairs_cost)
         })
     
     # Get blocks by truck and month
@@ -310,17 +386,40 @@ def get_dashboard(truck_id: int = None, db: Session = Depends(get_db)):
         })
     
     return {
+        # Combined totals (for backward compatibility)
         "total_trucks": total_trucks,
         "total_settlements": total_settlements,
         "total_revenue": float(total_revenue),
         "total_expenses": float(total_expenses_sum),
         "net_profit": net_profit,
         "expense_categories": expense_categories,
-        "custom_descriptions": custom_descriptions,  # Descriptions for custom expense categories
+        "custom_descriptions": custom_descriptions,
         "truck_profits": truck_profits,
         "blocks_by_truck_month": blocks_by_truck_month,
         "repairs_by_month": repairs_by_month,
-        "pm_status": pm_status
+        "pm_status": pm_status,
+        # Separated truck data
+        "trucks": {
+            "total_trucks": total_trucks,
+            "total_settlements": truck_settlements_count,
+            "total_revenue": float(truck_revenue),
+            "total_expenses": float(truck_expenses_sum),
+            "net_profit": truck_net_profit,
+            "expense_categories": truck_expense_categories,
+            "custom_descriptions": truck_custom_descriptions,
+            "truck_profits": truck_profits
+        },
+        # Separated trailer data
+        "trailers": {
+            "total_trailers": total_trailers,
+            "total_settlements": trailer_settlements_count,
+            "total_revenue": float(trailer_revenue),
+            "total_expenses": float(trailer_expenses_sum),
+            "net_profit": trailer_net_profit,
+            "expense_categories": trailer_expense_categories,
+            "custom_descriptions": trailer_custom_descriptions,
+            "trailer_profits": trailer_profits
+        }
     }
 
 @router.get("/time-series")

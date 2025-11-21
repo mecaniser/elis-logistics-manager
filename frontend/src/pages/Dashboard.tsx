@@ -57,6 +57,7 @@ export default function Dashboard() {
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('monthly')
   const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(false) // Collapsed by default
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'all' | 'trucks' | 'trailers'>('all') // Filter for graphs and expense details
 
   useEffect(() => {
     loadTrucks()
@@ -66,19 +67,28 @@ export default function Dashboard() {
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
-    if (data?.expense_categories) {
+    let expenseCategories: any = {}
+    if (vehicleTypeFilter === 'trucks' && data?.trucks?.expense_categories) {
+      expenseCategories = data.trucks.expense_categories
+    } else if (vehicleTypeFilter === 'trailers' && data?.trailers?.expense_categories) {
+      expenseCategories = data.trailers.expense_categories
+    } else if (data?.expense_categories) {
+      expenseCategories = data.expense_categories
+    }
+    
+    if (expenseCategories && Object.keys(expenseCategories).length > 0) {
       const categories = [
-        { name: 'Fuel', value: data.expense_categories.fuel },
-        { name: 'Repairs', value: data.expense_categories.repairs },
-        { name: 'Dispatch Fee', value: data.expense_categories.dispatch_fee },
-        { name: 'Insurance', value: data.expense_categories.insurance },
-        { name: 'Safety', value: data.expense_categories.safety },
-        { name: 'Prepass', value: data.expense_categories.prepass },
-        { name: 'IFTA', value: data.expense_categories.ifta },
-        { name: "Driver's Pay", value: data.expense_categories.driver_pay },
-        { name: 'Payroll Fee', value: data.expense_categories.payroll_fee },
-        { name: 'Truck Parking', value: data.expense_categories.truck_parking },
-        { name: 'Custom', value: data.expense_categories.custom || data.expense_categories.other || 0 },
+        { name: 'Fuel', value: expenseCategories.fuel || 0 },
+        { name: 'Repairs', value: expenseCategories.repairs || 0 },
+        { name: 'Dispatch Fee', value: expenseCategories.dispatch_fee || 0 },
+        { name: 'Insurance', value: expenseCategories.insurance || 0 },
+        { name: 'Safety', value: expenseCategories.safety || 0 },
+        { name: 'Prepass', value: expenseCategories.prepass || 0 },
+        { name: 'IFTA', value: expenseCategories.ifta || 0 },
+        { name: "Driver's Pay", value: expenseCategories.driver_pay || 0 },
+        { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0 },
+        { name: 'Truck Parking', value: expenseCategories.truck_parking || 0 },
+        { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0 },
       ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
       
       if (categories.length > 0) {
@@ -89,7 +99,7 @@ export default function Dashboard() {
         setSelectedCategories(initial)
       }
     }
-  }, [data])
+  }, [data, vehicleTypeFilter])
 
   // Initialize selected period to most recent
   useEffect(() => {
@@ -192,19 +202,33 @@ export default function Dashboard() {
     return <div className="text-center py-8 text-red-600">Failed to load dashboard data</div>
   }
 
-  const expenseCategoriesData = data.expense_categories ? [
-    { name: 'Fuel', value: data.expense_categories.fuel, color: '#3b82f6' },
-    { name: 'Repairs', value: data.expense_categories.repairs, color: '#ef4444' },
-    { name: 'Dispatch Fee', value: data.expense_categories.dispatch_fee, color: '#f59e0b' },
-    { name: 'Insurance', value: data.expense_categories.insurance, color: '#f97316' },
-    { name: 'Safety', value: data.expense_categories.safety, color: '#eab308' },
-    { name: 'Prepass', value: data.expense_categories.prepass, color: '#84cc16' },
-    { name: 'IFTA', value: data.expense_categories.ifta, color: '#10b981' },
-    { name: "Driver's Pay", value: data.expense_categories.driver_pay, color: '#8b5cf6' },
-    { name: 'Payroll Fee', value: data.expense_categories.payroll_fee, color: '#ec4899' },
-    { name: 'Truck Parking', value: data.expense_categories.truck_parking, color: '#a855f7' },
-    { name: 'Custom', value: data.expense_categories.custom || data.expense_categories.other || 0, color: '#6b7280' },
-  ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
+  // Get expense categories based on vehicle type filter
+  const getExpenseCategoriesData = () => {
+    let expenseCategories: any = {}
+    if (vehicleTypeFilter === 'trucks' && data?.trucks?.expense_categories) {
+      expenseCategories = data.trucks.expense_categories
+    } else if (vehicleTypeFilter === 'trailers' && data?.trailers?.expense_categories) {
+      expenseCategories = data.trailers.expense_categories
+    } else if (data?.expense_categories) {
+      expenseCategories = data.expense_categories
+    }
+    
+    return expenseCategories && Object.keys(expenseCategories).length > 0 ? [
+      { name: 'Fuel', value: expenseCategories.fuel || 0, color: '#3b82f6' },
+      { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
+      { name: 'Dispatch Fee', value: expenseCategories.dispatch_fee || 0, color: '#f59e0b' },
+      { name: 'Insurance', value: expenseCategories.insurance || 0, color: '#f97316' },
+      { name: 'Safety', value: expenseCategories.safety || 0, color: '#eab308' },
+      { name: 'Prepass', value: expenseCategories.prepass || 0, color: '#84cc16' },
+      { name: 'IFTA', value: expenseCategories.ifta || 0, color: '#10b981' },
+      { name: "Driver's Pay", value: expenseCategories.driver_pay || 0, color: '#8b5cf6' },
+      { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0, color: '#ec4899' },
+      { name: 'Truck Parking', value: expenseCategories.truck_parking || 0, color: '#a855f7' },
+      { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0, color: '#6b7280' },
+    ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
+  }
+  
+  const expenseCategoriesData = getExpenseCategoriesData()
 
   const truckProfitsData = data.truck_profits || []
   const blocksByTruckMonth: BlockByTruckMonth[] = data.blocks_by_truck_month || []
@@ -431,13 +455,35 @@ export default function Dashboard() {
     if (expenseAnalysisView === 'all_time') {
       if (!data) return null
       
-      // Use dashboard data which already has correct totals from all settlements
-      const expenseCategories = data.expense_categories || {}
+      // Get expense categories based on vehicle type filter
+      let expenseCategories: any = {}
+      let grossRevenue = 0
+      let netProfit = 0
+      let truckProfits: any[] = []
+      
+      if (vehicleTypeFilter === 'trucks' && data.trucks) {
+        expenseCategories = data.trucks.expense_categories || {}
+        grossRevenue = data.trucks.total_revenue || 0
+        netProfit = data.trucks.net_profit || 0
+        truckProfits = data.trucks.truck_profits || []
+      } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
+        expenseCategories = data.trailers.expense_categories || {}
+        grossRevenue = data.trailers.total_revenue || 0
+        netProfit = data.trailers.net_profit || 0
+        truckProfits = data.trailers.trailer_profits || []
+      } else {
+        // 'all' - use combined data
+        expenseCategories = data.expense_categories || {}
+        grossRevenue = data.total_revenue || 0
+        netProfit = data.net_profit || 0
+        truckProfits = data.truck_profits || []
+      }
+      
       const aggregated = {
         all_time_key: 'all_time',
         all_time_label: 'All Time',
-        gross_revenue: data.total_revenue || 0,
-        net_profit: data.net_profit || 0,
+        gross_revenue: grossRevenue,
+        net_profit: netProfit,
         driver_pay: expenseCategories.driver_pay || 0,
         payroll_fee: expenseCategories.payroll_fee || 0,
         fuel: expenseCategories.fuel || 0,
@@ -448,8 +494,8 @@ export default function Dashboard() {
         ifta: expenseCategories.ifta || 0,
         truck_parking: expenseCategories.truck_parking || 0,
         custom: expenseCategories.custom || 0,
-        repairs: expenseCategories.repairs || 0, // Include repairs
-        trucks: (Array.isArray(data.truck_profits) ? data.truck_profits : []).map((tp: any) => ({
+        repairs: expenseCategories.repairs || 0,
+        trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp: any) => ({
           truck_id: tp.truck_id,
           truck_name: tp.truck_name
         }))
@@ -621,70 +667,145 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Summary Cards - Always show All Time totals */}
+      {/* Summary Cards - Separated Trucks and Trailers */}
       <div className="mb-4">
         <p className="text-xs text-gray-500 mb-2">📊 Summary (All Time)</p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-4 sm:p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="text-xl sm:text-2xl font-bold text-gray-900">
-                  {data.total_trucks || trucks.length}
+      
+      {/* Trucks Section */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">🚚 Trucks</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {data?.trucks?.total_trucks || 0}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Trucks</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
                 </div>
               </div>
-              <div className="ml-4 sm:ml-5 w-0 flex-1">
-                <p className="text-sm font-medium text-gray-500 truncate">Total Trucks</p>
-                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-green-600">
+                    ${(data?.trucks?.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-red-600">
+                    ${(data?.trucks?.total_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className={`text-xl sm:text-2xl font-bold ${(data?.trucks?.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${(data?.trucks?.net_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-4 sm:p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="text-xl sm:text-2xl font-bold text-green-600">
-                  ${(data.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      {/* Trailers Section */}
+      <div className="mb-6 sm:mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">🚛 Trailers</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {data?.trailers?.total_trailers || 0}
+                  </div>
                 </div>
-              </div>
-              <div className="ml-4 sm:ml-5 w-0 flex-1">
-                <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
-                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Trailers</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-4 sm:p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="text-xl sm:text-2xl font-bold text-red-600">
-                  ${(data.total_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-green-600">
+                    ${(data?.trailers?.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
                 </div>
-              </div>
-              <div className="ml-4 sm:ml-5 w-0 flex-1">
-                <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
-                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-4 sm:p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className={`text-xl sm:text-2xl font-bold ${(data.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${(data.net_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="text-xl sm:text-2xl font-bold text-red-600">
+                    ${(data?.trailers?.total_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
                 </div>
               </div>
-              <div className="ml-4 sm:ml-5 w-0 flex-1">
-                <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
-                <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className={`text-xl sm:text-2xl font-bold ${(data?.trailers?.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${(data?.trailers?.net_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="ml-4 sm:ml-5 w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
+                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
+                </div>
               </div>
             </div>
           </div>
@@ -697,6 +818,42 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
             <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
             <div className="flex flex-wrap gap-3 items-center">
+              {/* Vehicle Type Filter */}
+              <div className="inline-flex rounded-md shadow-sm" role="group">
+                <button
+                  type="button"
+                  onClick={() => setVehicleTypeFilter('all')}
+                  className={`px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
+                    vehicleTypeFilter === 'all'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVehicleTypeFilter('trucks')}
+                  className={`px-3 py-2 text-xs sm:text-sm font-medium border-t border-b ${
+                    vehicleTypeFilter === 'trucks'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  🚚 Trucks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVehicleTypeFilter('trailers')}
+                  className={`px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
+                    vehicleTypeFilter === 'trailers'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  🚛 Trailers
+                </button>
+              </div>
               <div className="inline-flex rounded-md shadow-sm" role="group">
                 <button
                   type="button"
@@ -922,7 +1079,7 @@ export default function Dashboard() {
               {/* Expense Breakdown Chart */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Expenses by Category - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                  Expenses by Category - {vehicleTypeFilter === 'trucks' ? '🚚 Trucks' : vehicleTypeFilter === 'trailers' ? '🚛 Trailers' : 'All Vehicles'} - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
                 </h3>
                 {(() => {
                   // Standard expense categories

@@ -399,14 +399,42 @@ async def upload_settlement_pdf_bulk(
         "results": results
     }
 
+@router.post("", response_model=SettlementResponse)
 @router.post("/", response_model=SettlementResponse)
 def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db)):
     """Manually create a settlement"""
-    db_settlement = Settlement(**settlement.dict())
-    db.add(db_settlement)
-    db.commit()
-    db.refresh(db_settlement)
-    return db_settlement
+    try:
+        # Check if truck exists
+        from app.models.truck import Truck
+        truck = db.query(Truck).filter(Truck.id == settlement.truck_id).first()
+        if not truck:
+            raise HTTPException(status_code=400, detail=f"Truck with ID {settlement.truck_id} not found")
+        
+        # Check for duplicate settlement
+        existing = db.query(Settlement).filter(
+            Settlement.truck_id == settlement.truck_id,
+            Settlement.settlement_date == settlement.settlement_date
+        ).first()
+        
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Settlement for truck ID {settlement.truck_id} on {settlement.settlement_date} already exists"
+            )
+        
+        # Use model_dump() for Pydantic v2
+        settlement_dict = settlement.model_dump()
+        db_settlement = Settlement(**settlement_dict)
+        db.add(db_settlement)
+        db.commit()
+        db.refresh(db_settlement)
+        return db_settlement
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create settlement: {str(e)}")
 
 @router.get("/{settlement_id}", response_model=SettlementResponse)
 def get_settlement(settlement_id: int, db: Session = Depends(get_db)):
@@ -427,7 +455,7 @@ def update_settlement(
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
     
-    # Update settlement fields
+    # Update settlement fields (Pydantic v2 uses model_dump)
     update_data = settlement_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(settlement, field, value)

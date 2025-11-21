@@ -24,6 +24,17 @@ export default function Settlements() {
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
   const [selectedSettlementType, setSelectedSettlementType] = useState<string>('')
+  const [showManualForm, setShowManualForm] = useState(false)
+  const [manualFormData, setManualFormData] = useState<Partial<Settlement>>({
+    truck_id: undefined,
+    settlement_date: new Date().toISOString().split('T')[0],
+    gross_revenue: undefined,
+    expenses: undefined,
+    net_profit: undefined,
+  })
+  const [expensesDescription, setExpensesDescription] = useState<string>('')
+  const [vinLookup, setVinLookup] = useState<string>('')
+  const [creatingManual, setCreatingManual] = useState(false)
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null)
   const [editFormData, setEditFormData] = useState<Partial<Settlement>>({})
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
@@ -529,6 +540,87 @@ export default function Settlements() {
     setToast({ message, type, isVisible: true })
   }
 
+  const handleVinLookup = () => {
+    if (!vinLookup.trim()) return
+    
+    const foundTruck = trucks.find(t => 
+      t.vin && t.vin.toLowerCase() === vinLookup.trim().toLowerCase()
+    )
+    
+    if (foundTruck) {
+      setManualFormData({ ...manualFormData, truck_id: foundTruck.id })
+      showToast(`Found ${foundTruck.vehicle_type === 'truck' ? 'truck' : 'trailer'}: ${foundTruck.name}`, 'success')
+    } else {
+      showToast('No vehicle found with that VIN', 'error')
+    }
+  }
+
+  const handleCreateManual = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!manualFormData.truck_id) {
+      showToast('Please select a truck or trailer', 'error')
+      return
+    }
+    
+    if (!manualFormData.settlement_date) {
+      showToast('Settlement date is required', 'error')
+      return
+    }
+
+    // Calculate net profit if not provided
+    const grossRevenue = manualFormData.gross_revenue || 0
+    const expenses = manualFormData.expenses || 0
+    const netProfit = manualFormData.net_profit !== undefined 
+      ? manualFormData.net_profit 
+      : grossRevenue - expenses
+
+    setCreatingManual(true)
+    try {
+      // Build custom_expense_descriptions if description is provided
+      const customExpenseDescriptions = expensesDescription.trim() 
+        ? { total_expenses: expensesDescription.trim() }
+        : undefined
+
+      const settlementData: Partial<Settlement> = {
+        truck_id: manualFormData.truck_id,
+        settlement_date: manualFormData.settlement_date,
+        gross_revenue: grossRevenue,
+        expenses: expenses,
+        net_profit: netProfit,
+        week_start: manualFormData.week_start,
+        week_end: manualFormData.week_end,
+        miles_driven: manualFormData.miles_driven,
+        blocks_delivered: manualFormData.blocks_delivered,
+        expense_categories: manualFormData.expense_categories,
+        custom_expense_descriptions: customExpenseDescriptions,
+        settlement_type: manualFormData.settlement_type || 'Manual Entry',
+      }
+
+      const response = await settlementsApi.create(settlementData)
+      console.log('Settlement created:', response.data)
+      showToast('Settlement created successfully!', 'success')
+      setShowManualForm(false)
+      setManualFormData({
+        truck_id: undefined,
+        settlement_date: new Date().toISOString().split('T')[0],
+        gross_revenue: undefined,
+        expenses: undefined,
+        net_profit: undefined,
+      })
+      setExpensesDescription('')
+      setVinLookup('')
+      loadSettlements()
+    } catch (err: any) {
+      console.error('Error creating settlement:', err)
+      console.error('Error response:', err.response?.data)
+      console.error('Settlement data sent:', settlementData)
+      showToast(err.response?.data?.detail || err.message || 'Failed to create settlement', 'error')
+    } finally {
+      setCreatingManual(false)
+    }
+  }
+
   // Check if there are any changes compared to original data
   const hasChanges = (): boolean => {
     if (!originalFormData || Object.keys(originalFormData).length === 0) return false
@@ -863,6 +955,26 @@ export default function Settlements() {
               </button>
               <button
                 onClick={() => {
+                  setShowManualForm(!showManualForm)
+                  if (showManualForm) {
+                    // Reset form when closing
+                    setManualFormData({
+                      truck_id: undefined,
+                      settlement_date: new Date().toISOString().split('T')[0],
+                      gross_revenue: undefined,
+                      expenses: undefined,
+                      net_profit: undefined,
+                    })
+                    setExpensesDescription('')
+                    setVinLookup('')
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                {showManualForm ? 'Cancel' : 'Add Manual Settlement'}
+              </button>
+              <button
+                onClick={() => {
                   setShowUploadForm(!showUploadForm)
                   if (showUploadForm) {
                     // Reset form when closing
@@ -941,7 +1053,7 @@ export default function Settlements() {
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Truck (Optional - will auto-detect from license plate if not selected)
+                Truck/Trailer (Optional - will auto-detect from license plate if not selected)
               </label>
               <select
                 value={selectedTruckForUpload || ''}
@@ -952,7 +1064,11 @@ export default function Settlements() {
                 <option value="">Auto-detect from PDF license plate</option>
                 {trucks.map((truck) => (
                   <option key={truck.id} value={truck.id}>
-                    {truck.name} {truck.license_plate ? `(${truck.license_plate})` : ''}
+                    {truck.vehicle_type === 'trailer' ? '🚛 ' : '🚚 '}
+                    {truck.name} 
+                    {truck.license_plate ? ` (${truck.license_plate})` : ''}
+                    {truck.tag_number ? ` [Tag: ${truck.tag_number}]` : ''}
+                    {truck.vin ? ` - VIN: ${truck.vin}` : ''}
                   </option>
                 ))}
               </select>
@@ -1002,6 +1118,227 @@ export default function Settlements() {
         </div>
       )}
 
+      {showManualForm && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">Add Manual Settlement</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Manually create a settlement for trucks or trailers. Useful for tracking revenue from trailers or when PDF parsing fails.
+          </p>
+          <form onSubmit={handleCreateManual} autoComplete="off">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle *</label>
+              <div className="mb-2">
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={vinLookup}
+                    onChange={(e) => setVinLookup(e.target.value)}
+                    placeholder="Enter VIN to lookup vehicle"
+                    maxLength={17}
+                    autoComplete="off"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVinLookup}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                  >
+                    Lookup VIN
+                  </button>
+                </div>
+              </div>
+              <select
+                value={manualFormData.truck_id || ''}
+                onChange={(e) => setManualFormData({ ...manualFormData, truck_id: e.target.value ? Number(e.target.value) : undefined })}
+                required
+                disabled={creatingManual}
+                autoComplete="off"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a truck or trailer...</option>
+                {trucks.map((truck) => (
+                  <option key={truck.id} value={truck.id}>
+                    {truck.vehicle_type === 'trailer' ? '🚛 Trailer' : '🚚 Truck'}: {truck.name}
+                    {truck.license_plate ? ` (${truck.license_plate})` : ''}
+                    {truck.tag_number ? ` [Tag: ${truck.tag_number}]` : ''}
+                    {truck.vin ? ` - VIN: ${truck.vin}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Date *</label>
+                <input
+                  type="date"
+                  value={manualFormData.settlement_date || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, settlement_date: e.target.value })}
+                  required
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Week Start</label>
+                <input
+                  type="date"
+                  value={manualFormData.week_start || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, week_start: e.target.value || undefined })}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Week End</label>
+                <input
+                  type="date"
+                  value={manualFormData.week_end || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, week_end: e.target.value || undefined })}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gross Revenue ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manualFormData.gross_revenue || ''}
+                  onChange={(e) => {
+                    const value = e.target.value ? parseFloat(e.target.value) : undefined
+                    const expenses = manualFormData.expenses || 0
+                    const netProfit = value !== undefined ? (value - expenses) : undefined
+                    setManualFormData({ 
+                      ...manualFormData, 
+                      gross_revenue: value,
+                      net_profit: netProfit
+                    })
+                  }}
+                  placeholder="0.00"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Expenses ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manualFormData.expenses || ''}
+                  onChange={(e) => {
+                    const value = e.target.value ? parseFloat(e.target.value) : undefined
+                    const revenue = manualFormData.gross_revenue || 0
+                    const netProfit = revenue > 0 ? (revenue - (value || 0)) : undefined
+                    setManualFormData({ 
+                      ...manualFormData, 
+                      expenses: value,
+                      net_profit: netProfit
+                    })
+                  }}
+                  placeholder="0.00"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Net Profit ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manualFormData.net_profit || ''}
+                  onChange={(e) => setManualFormData({ 
+                    ...manualFormData, 
+                    net_profit: e.target.value ? parseFloat(e.target.value) : undefined 
+                  })}
+                  placeholder="Auto-calculated"
+                  autoComplete="off"
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expenses Description</label>
+              <textarea
+                value={expensesDescription}
+                onChange={(e) => setExpensesDescription(e.target.value)}
+                placeholder="Describe what these expenses are for (e.g., fuel, repairs, maintenance, etc.)"
+                rows={3}
+                autoComplete="off"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Miles Driven</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={manualFormData.miles_driven || ''}
+                  onChange={(e) => setManualFormData({ 
+                    ...manualFormData, 
+                    miles_driven: e.target.value ? parseFloat(e.target.value) : undefined 
+                  })}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Blocks Delivered</label>
+                <input
+                  type="number"
+                  value={manualFormData.blocks_delivered || ''}
+                  onChange={(e) => setManualFormData({ 
+                    ...manualFormData, 
+                    blocks_delivered: e.target.value ? parseInt(e.target.value) : undefined 
+                  })}
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Type</label>
+              <input
+                type="text"
+                value={manualFormData.settlement_type || 'Manual Entry'}
+                onChange={(e) => setManualFormData({ ...manualFormData, settlement_type: e.target.value || 'Manual Entry' })}
+                autoComplete="off"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={creatingManual}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                {creatingManual ? 'Creating...' : 'Create Settlement'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualForm(false)
+                  setManualFormData({
+                    truck_id: undefined,
+                    settlement_date: new Date().toISOString().split('T')[0],
+                    gross_revenue: undefined,
+                    expenses: undefined,
+                    net_profit: undefined,
+                  })
+                  setExpensesDescription('')
+                  setVinLookup('')
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
@@ -1105,6 +1442,13 @@ export default function Settlements() {
                           <div className="mt-2">
                             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
                               Type: {settlement.settlement_type}
+                            </span>
+                          </div>
+                        )}
+                        {settlement.custom_expense_descriptions?.total_expenses && (
+                          <div className="mt-2">
+                            <span className="text-xs text-gray-600 italic">
+                              Expenses: {settlement.custom_expense_descriptions.total_expenses}
                             </span>
                           </div>
                         )}
@@ -1346,6 +1690,26 @@ export default function Settlements() {
                           }}
                           className="w-full px-2 py-1.5 text-sm border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
                           placeholder="$0.00"
+                        />
+                        <textarea
+                          value={editFormData.custom_expense_descriptions?.total_expenses || ''}
+                          onChange={(e) => {
+                            const description = e.target.value.trim()
+                            const updatedDescriptions = {
+                              ...(editFormData.custom_expense_descriptions || {}),
+                              total_expenses: description || undefined
+                            }
+                            if (!description) {
+                              delete updatedDescriptions.total_expenses
+                            }
+                            setEditFormData({
+                              ...editFormData,
+                              custom_expense_descriptions: Object.keys(updatedDescriptions).length > 0 ? updatedDescriptions : undefined
+                            })
+                          }}
+                          placeholder="Describe expenses (e.g., fuel, repairs, maintenance)"
+                          rows={2}
+                          className="w-full mt-1 px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                       <div>
