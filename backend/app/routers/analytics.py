@@ -117,6 +117,13 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
         settlements_query = settlements_query.filter(Settlement.truck_id == truck_id)
         repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
     
+    if truck_id is None and vehicle_type:
+        vt = vehicle_type.lower()
+        if vt in ["truck", "trailer"]:
+            trucks_query = trucks_query.filter(Truck.vehicle_type == vt)
+            settlements_query = settlements_query.join(Truck, Settlement.truck_id == Truck.id).filter(Truck.vehicle_type == vt)
+            repairs_query = repairs_query.join(Truck, Repair.truck_id == Truck.id).filter(Truck.vehicle_type == vt)
+    
     # Separate trucks and trailers queries
     trucks_only_query = trucks_query.filter(Truck.vehicle_type == 'truck')
     trailers_only_query = trucks_query.filter(Truck.vehicle_type == 'trailer')
@@ -498,6 +505,7 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
 def get_time_series(
     group_by: Optional[str] = "week_start",
     truck_id: Optional[int] = None,
+    vehicle_type: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -506,6 +514,7 @@ def get_time_series(
     Args:
         group_by: How to group weekly data - "week_start" or "settlement_date" (default: "week_start")
         truck_id: Optional truck filter
+        vehicle_type: Optional vehicle type filter ('truck' or 'trailer')
     """
     # Validate group_by parameter
     if group_by not in ["week_start", "settlement_date"]:
@@ -515,6 +524,17 @@ def get_time_series(
     settlements_query = db.query(Settlement)
     if truck_id is not None:
         settlements_query = settlements_query.filter(Settlement.truck_id == truck_id)
+    
+    # Apply vehicle type filter when provided (and no explicit truck_id override)
+    if vehicle_type:
+        vt = vehicle_type.lower()
+        if vt in ["truck", "trailer"]:
+            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt).all()]
+            if vehicle_ids:
+                settlements_query = settlements_query.filter(Settlement.truck_id.in_(vehicle_ids))
+            else:
+                # No vehicles of this type; return empty results
+                settlements_query = settlements_query.filter(False)
     
     settlements = settlements_query.order_by(Settlement.settlement_date).all()
     
@@ -911,4 +931,3 @@ def get_time_series(
         "by_month": by_month,
         "by_year": by_year
     }
-
