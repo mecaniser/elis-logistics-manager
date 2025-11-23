@@ -56,15 +56,26 @@ export default function Dashboard() {
   const [showProfitDetails, setShowProfitDetails] = useState(false)
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
-  const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('monthly')
+  const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
   const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(false) // Collapsed by default
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'all' | 'trucks' | 'trailers'>('all') // Filter for graphs and expense details
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'trucks' | 'trailers'>('trucks') // Filter for graphs and expense details - no 'all' option
 
   useEffect(() => {
     loadTrucks()
     loadDashboard()
+  }, [selectedTruck, groupBy, vehicleTypeFilter])
+
+  useEffect(() => {
+    // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
+    setSelectedExpensePeriod('')
+    // Set default view based on vehicle type: weekly for trucks, monthly for trailers
+    if (vehicleTypeFilter === 'trucks' && expenseAnalysisView === 'monthly') {
+      setExpenseAnalysisView('weekly')
+    } else if (vehicleTypeFilter === 'trailers' && expenseAnalysisView === 'weekly') {
+      setExpenseAnalysisView('monthly')
+    }
     loadTimeSeries()
-  }, [selectedTruck, groupBy])
+  }, [selectedTruck, groupBy, vehicleTypeFilter])
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
@@ -122,9 +133,9 @@ export default function Dashboard() {
         setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
       }
     }
-  }, [timeSeriesData, expenseAnalysisView, selectedExpensePeriod])
+  }, [timeSeriesData, expenseAnalysisView, selectedExpensePeriod, vehicleTypeFilter])
 
-  // Reset selected period when view changes
+  // Reset selected period when view or vehicle type filter changes
   useEffect(() => {
     if (timeSeriesData) {
       // For "All Time", clear the selected period
@@ -143,13 +154,17 @@ export default function Dashboard() {
         const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
         const currentPeriod = periods.find(p => (p as any)[periodKey] === selectedExpensePeriod)
         if (!currentPeriod) {
+          // Period doesn't exist in new data, reset to most recent
           setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
         }
+      } else if (selectedExpensePeriod) {
+        // No periods available, clear selection
+        setSelectedExpensePeriod('')
       }
     }
     // Collapse settlements info when view or period changes
     setSettlementsInfoExpanded(false)
-  }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod])
+  }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod, vehicleTypeFilter])
 
   const loadTrucks = async () => {
     try {
@@ -164,7 +179,8 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     try {
       setLoading(true)
-      const response = await analyticsApi.getDashboard(selectedTruck || undefined)
+      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : 'trailer'
+      const response = await analyticsApi.getDashboard(selectedTruck || undefined, vehicleType)
       setData(response.data)
     } catch (err) {
       console.error('Failed to load dashboard:', err)
@@ -176,7 +192,9 @@ export default function Dashboard() {
   const loadTimeSeries = async () => {
     try {
       setTimeSeriesLoading(true)
-      const response = await analyticsApi.getTimeSeries(groupBy, selectedTruck || undefined)
+      // Map vehicle type filter to backend parameter
+      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
+      const response = await analyticsApi.getTimeSeries(groupBy, selectedTruck || undefined, vehicleType)
       // Ensure response.data has array properties
       const data = response.data || {}
       setTimeSeriesData({
@@ -215,6 +233,15 @@ export default function Dashboard() {
       expenseCategories = data.expense_categories
     }
     
+    // For trailers, only show repairs and custom expenses
+    if (vehicleTypeFilter === 'trailers') {
+      return [
+        { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
+        { name: 'Custom Expenses', value: expenseCategories.custom || expenseCategories.other || 0, color: '#6b7280' },
+      ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
+    }
+    
+    // For trucks, show all categories
     return expenseCategories && Object.keys(expenseCategories).length > 0 ? [
       { name: 'Fuel', value: expenseCategories.fuel || 0, color: '#3b82f6' },
       { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
@@ -456,8 +483,48 @@ export default function Dashboard() {
 
   // Get selected period data
   const getSelectedPeriodData = () => {
-    // For "All Time", use dashboard data directly (includes repairs and all settlements)
+    // For "All Time", aggregate from timeSeriesData to keep it in sync with period views
     if (expenseAnalysisView === 'all_time') {
+      if (timeSeriesData) {
+        const source = Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : []
+        if (source.length > 0) {
+          const sumField = (field: string) => source.reduce((sum, period) => sum + (Number((period as any)[field]) || 0), 0)
+          const trucksSet = new Set<number>()
+          source.forEach((period: any) => {
+            if (Array.isArray(period.trucks)) {
+              period.trucks.forEach((t: any) => {
+                if (t.truck_id !== undefined) trucksSet.add(t.truck_id)
+              })
+            }
+          })
+          
+          const grossRevenue = sumField('gross_revenue')
+          const netProfit = sumField('net_profit')
+          
+          return {
+            all_time_key: 'all_time',
+            all_time_label: 'All Time',
+            gross_revenue: grossRevenue,
+            net_profit: netProfit,
+            total_expenses: grossRevenue - netProfit,
+            driver_pay: sumField('driver_pay'),
+            payroll_fee: sumField('payroll_fee'),
+            fuel: sumField('fuel'),
+            dispatch_fee: sumField('dispatch_fee'),
+            insurance: sumField('insurance'),
+            safety: sumField('safety'),
+            prepass: sumField('prepass'),
+            ifta: sumField('ifta'),
+            loan_interest: sumField('loan_interest'),
+            truck_parking: sumField('truck_parking'),
+            custom: sumField('custom'),
+            repairs: sumField('repairs'),
+            trucks: Array.from(trucksSet).map(truck_id => ({ truck_id, truck_name: `Truck ${truck_id}` }))
+          }
+        }
+      }
+      
+      // Fallback to dashboard data if time series not available
       if (!data) return null
       
       // Get expense categories based on vehicle type filter
@@ -477,11 +544,11 @@ export default function Dashboard() {
         netProfit = data.trailers.net_profit || 0
         truckProfits = data.trailers.trailer_profits || []
       } else {
-        // 'all' - use combined data
-        expenseCategories = data.expense_categories || {}
-        grossRevenue = data.total_revenue || 0
-        netProfit = data.net_profit || 0
-        truckProfits = data.truck_profits || []
+        // Fallback - should not happen since 'all' is removed
+        expenseCategories = {}
+        grossRevenue = 0
+        netProfit = 0
+        truckProfits = []
       }
       
       const aggregated = {
@@ -489,6 +556,16 @@ export default function Dashboard() {
         all_time_label: 'All Time',
         gross_revenue: grossRevenue,
         net_profit: netProfit,
+        total_expenses: (() => {
+          // Use backend's calculated total_expenses if available, otherwise calculate from categories
+          if (vehicleTypeFilter === 'trucks' && data.trucks) {
+            return data.trucks.total_expenses || 0
+          } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
+            return data.trailers.total_expenses || 0
+          } else {
+            return 0
+          }
+        })(),
         driver_pay: expenseCategories.driver_pay || 0,
         payroll_fee: expenseCategories.payroll_fee || 0,
         fuel: expenseCategories.fuel || 0,
@@ -497,7 +574,9 @@ export default function Dashboard() {
         safety: expenseCategories.safety || 0,
         prepass: expenseCategories.prepass || 0,
         ifta: expenseCategories.ifta || 0,
+        loan_interest: expenseCategories.loan_interest || 0,
         truck_parking: expenseCategories.truck_parking || 0,
+        service_on_truck: expenseCategories.service_on_truck || 0,
         custom: expenseCategories.custom || 0,
         repairs: expenseCategories.repairs || 0,
         trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp: any) => ({
@@ -672,174 +751,18 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Summary Cards - Separated Trucks and Trailers */}
-      <div className="mb-4">
-        <p className="text-xs text-gray-500 mb-2">📊 Summary (All Time)</p>
-      </div>
-      
-      {/* Trucks Section */}
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">🚚 Trucks</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-gray-900">
-                    {data?.trucks?.total_trucks || 0}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Trucks</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-green-600">
-                    ${(data?.trucks?.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-red-600">
-                    ${(data?.trucks?.total_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className={`text-xl sm:text-2xl font-bold ${(data?.trucks?.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${(data?.trucks?.net_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Trailers Section */}
-      <div className="mb-6 sm:mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">🚛 Trailers</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-gray-900">
-                    {data?.trailers?.total_trailers || 0}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Trailers</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-green-600">
-                    ${(data?.trailers?.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Revenue</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="text-xl sm:text-2xl font-bold text-red-600">
-                    ${(data?.trailers?.total_expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Total Expenses</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-4 sm:p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className={`text-xl sm:text-2xl font-bold ${(data?.trailers?.net_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${(data?.trailers?.net_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="ml-4 sm:ml-5 w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-500 truncate">Net Profit</p>
-                  <p className="text-xs text-gray-400 mt-0.5">All Time</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Detailed Expense Analysis Section - First Chart */}
       {timeSeriesData && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <div className="flex flex-col mb-6 gap-4">
             <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
-            <div className="flex flex-wrap gap-3 items-center">
-              {/* Vehicle Type Filter */}
-              <div className="inline-flex rounded-md shadow-sm" role="group">
-                <button
-                  type="button"
-                  onClick={() => setVehicleTypeFilter('all')}
-                  className={`px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
-                    vehicleTypeFilter === 'all'
-                      ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  All
-                </button>
+            <div className="flex flex-col md:flex-row gap-3 md:items-center">
+              {/* Vehicle Type Filter - Removed "All" option */}
+              <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
                 <button
                   type="button"
                   onClick={() => setVehicleTypeFilter('trucks')}
-                  className={`px-3 py-2 text-xs sm:text-sm font-medium border-t border-b ${
+                  className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
                     vehicleTypeFilter === 'trucks'
                       ? 'bg-green-600 text-white border-green-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -850,7 +773,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setVehicleTypeFilter('trailers')}
-                  className={`px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
+                  className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
                     vehicleTypeFilter === 'trailers'
                       ? 'bg-green-600 text-white border-green-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -859,22 +782,27 @@ export default function Dashboard() {
                   🚛 Trailers
                 </button>
               </div>
-              <div className="inline-flex rounded-md shadow-sm" role="group">
-                <button
-                  type="button"
-                  onClick={() => setExpenseAnalysisView('weekly')}
-                  className={`px-4 py-2 text-sm font-medium border rounded-l-lg ${
-                    expenseAnalysisView === 'weekly'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Weekly
-                </button>
+              {/* Time Range Filter */}
+              <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
+                {vehicleTypeFilter === 'trucks' && (
+                  <button
+                    type="button"
+                    onClick={() => setExpenseAnalysisView('weekly')}
+                    className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border rounded-l-lg ${
+                      expenseAnalysisView === 'weekly'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Weekly
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('monthly')}
-                  className={`px-4 py-2 text-sm font-medium border-t border-b ${
+                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border ${
+                    vehicleTypeFilter === 'trailers' ? 'rounded-l-lg' : 'border-t border-b'
+                  } ${
                     expenseAnalysisView === 'monthly'
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -885,7 +813,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('yearly')}
-                  className={`px-4 py-2 text-sm font-medium border-t border-b ${
+                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border-t border-b ${
                     expenseAnalysisView === 'yearly'
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -896,7 +824,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('all_time')}
-                  className={`px-4 py-2 text-sm font-medium border rounded-r-lg ${
+                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border rounded-r-lg ${
                     expenseAnalysisView === 'all_time'
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -905,11 +833,12 @@ export default function Dashboard() {
                   All Time
                 </button>
               </div>
+              {/* Period Selector */}
               {expenseAnalysisView !== 'all_time' && (
               <select
                 value={selectedExpensePeriod}
                 onChange={(e) => setSelectedExpensePeriod(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
                 {(expenseAnalysisView === 'weekly' 
                   ? (timeSeriesData?.by_week || []) 
@@ -972,33 +901,94 @@ export default function Dashboard() {
                 <div className="bg-red-50 p-4 rounded-lg">
                   <div className="text-sm font-medium text-gray-600">Total Expenses</div>
                   <div className="text-2xl font-bold text-red-600">
-                    ${(
-                      (selectedPeriodData as any).fuel +
-                      (selectedPeriodData as any).dispatch_fee +
-                      (selectedPeriodData as any).insurance +
-                      (selectedPeriodData as any).safety +
-                      (selectedPeriodData as any).prepass +
-                      (selectedPeriodData as any).ifta +
-                      (selectedPeriodData as any).truck_parking +
-                      (selectedPeriodData as any).custom +
-                      (selectedPeriodData as any).driver_pay +
-                      (selectedPeriodData as any).payroll_fee +
-                      ((selectedPeriodData as any).repairs || 0) // Include repairs (for All Time and Yearly)
-                    ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${(() => {
+                      const pd = selectedPeriodData as any
+                      const revenue = pd.gross_revenue || 0
+                      const profit = pd.net_profit || 0
+                      
+                      // For trailers, calculate as revenue - profit if total_expenses is not available or seems incorrect
+                      if (vehicleTypeFilter === 'trailers') {
+                        // Use backend's calculated total_expenses if available and > 0
+                        if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                          return pd.total_expenses
+                        }
+                        
+                        // Fallback: calculate from revenue - profit
+                        const calculated = revenue - profit
+                        if (calculated > 0) {
+                          return calculated
+                        }
+                        
+                        // Last resort: sum repairs and custom expenses
+                        const sum = (
+                          (Number(pd.custom) || 0) +
+                          (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                        )
+                        return isNaN(sum) ? 0 : sum
+                      }
+                      
+                      // For trucks, use backend's calculated total_expenses if available and > 0
+                      if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                        return pd.total_expenses
+                      }
+                      
+                      // For trucks, sum all categories
+                      const sum = (
+                        (Number(pd.fuel) || 0) +
+                        (Number(pd.dispatch_fee) || 0) +
+                        (Number(pd.insurance) || 0) +
+                        (Number(pd.safety) || 0) +
+                        (Number(pd.prepass) || 0) +
+                        (Number(pd.ifta) || 0) +
+                        (Number(pd.loan_interest) || 0) +
+                        (Number(pd.truck_parking) || 0) +
+                        (Number(pd.custom) || 0) +
+                        (Number(pd.driver_pay) || 0) +
+                        (Number(pd.payroll_fee) || 0) +
+                        // Repairs are only included for yearly/monthly/all_time, not weekly
+                        (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                      )
+                      return isNaN(sum) ? 0 : sum
+                    })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
                   <div className="text-sm font-medium text-gray-600">Net Profit</div>
-                  <div className={`text-2xl font-bold ${selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                  {(() => {
+                    const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                    const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
+                    const settlementNetProfit = netProfitValue + loanInterest
+                    
+                    return (
+                      <div className="mt-1 space-y-2 text-sm text-gray-700">
+                        <div className="flex justify-between">
+                          <span>Settlement net profit</span>
+                          <span className="font-semibold text-gray-900">
+                            ${settlementNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Less: Loan interest</span>
+                          <span className="font-medium text-red-600">
+                            -${loanInterest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-green-200">
+                          <span className="font-semibold text-gray-900">Actual net profit</span>
+                          <span className={`text-2xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                  <div className="text-xs text-gray-500 mt-2">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
               </div>
 
-              {/* Trucks Involved */}
-              {(selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
+              {/* Trucks Involved - Only show for trucks */}
+              {vehicleTypeFilter === 'trucks' && (selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
                 <div className="mb-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">
                     Trucks Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
@@ -1081,27 +1071,28 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Expense Breakdown Chart */}
+              {/* Expense Breakdown Chart - Only show for trucks */}
+              {vehicleTypeFilter === 'trucks' && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Expenses by Category - {vehicleTypeFilter === 'trucks' ? '🚚 Trucks' : vehicleTypeFilter === 'trailers' ? '🚛 Trailers' : 'All Vehicles'} - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                  Expenses by Category - 🚚 Trucks - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
                 </h3>
                 {(() => {
-                  // Standard expense categories
+                  // For trucks, show all categories (trailers are not shown in this view)
                   const standardCategories = [
-                    { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
-                    { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
-                    { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
-                    { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
-                    { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
-                    { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
-                    { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as any).loan_interest || 0 },
-                    { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
-                    { key: 'custom', label: 'Custom', value: (selectedPeriodData as any).custom || 0 },
-                    { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
-                    { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
-                    ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
-                  ]
+                        { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
+                        { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
+                        { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
+                        { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
+                        { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
+                        { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
+                        { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as any).loan_interest || 0 },
+                        { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
+                        { key: 'custom', label: 'Custom', value: (selectedPeriodData as any).custom || 0 },
+                        { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
+                        { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
+                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
+                      ]
                   
                   // Keep "Custom" label simple - descriptions are shown in settlement details, not in chart
                   const updatedStandardCategories = standardCategories
@@ -1249,8 +1240,10 @@ export default function Dashboard() {
                   )
                 })()}
               </div>
+              )}
 
-              {/* Expense Details Table */}
+              {/* Expense Details Table - Only show relevant categories based on vehicle type */}
+              {vehicleTypeFilter === 'trucks' && (
               <div className="mt-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   Expense Details - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
@@ -1284,7 +1277,7 @@ export default function Dashboard() {
                         { key: 'loan_interest', label: 'Loan Interest' },
                         { key: 'truck_parking', label: 'Truck Parking' },
                         { key: 'custom', label: 'Custom' },
-                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
+                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
                       ]
                         .map(({ key, label }) => ({
                           key,
@@ -1344,6 +1337,7 @@ export default function Dashboard() {
                   </table>
                 </div>
               </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
@@ -1353,6 +1347,8 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Expenses by Category Pie Chart - Only show for trucks */}
+      {vehicleTypeFilter === 'trucks' && (
       <div className="grid grid-cols-1 gap-6 mb-6">
         {expenseCategoriesData.length > 0 && (
           <div className="bg-white p-6 rounded-lg shadow">
@@ -1467,8 +1463,10 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      )}
 
-      {repairsByMonth.length > 0 && (() => {
+      {/* Repair Costs by Month - Only show for trucks */}
+      {vehicleTypeFilter === 'trucks' && repairsByMonth.length > 0 && (() => {
         // Group repairs by month
         const repairsByMonthGrouped: { [key: string]: RepairByMonth[] } = {}
         repairsByMonth.forEach((repair: RepairByMonth) => {
@@ -1598,7 +1596,8 @@ export default function Dashboard() {
         )
       })()}
 
-      {blocksChartData.series.length > 0 && (
+      {/* Blocks Delivered by Truck - Only show for trucks */}
+      {vehicleTypeFilter === 'trucks' && blocksChartData && blocksChartData.series && blocksChartData.series.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900">Blocks Delivered by Truck (Monthly)</h2>
@@ -1778,8 +1777,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Net Profit vs Repair Costs Chart - Enhanced */}
-      {truckProfitsData.length > 0 && (
+      {/* Net Profit vs Repair Costs Chart - Enhanced - Only show for trucks */}
+      {vehicleTypeFilter === 'trucks' && truckProfitsData.length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="mb-6 flex justify-between items-start">
             <div>
@@ -2028,8 +2027,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Time-Series Charts Section */}
-      {timeSeriesData && (
+      {/* Time-Series Charts Section - Only show for trucks */}
+      {vehicleTypeFilter === 'trucks' && timeSeriesData && (
         <div className="mt-8">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">Time-Series Analytics</h2>
@@ -2138,8 +2137,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Driver Pay Chart */}
-            {currentData.labels.length > 0 && (
+            {/* Driver Pay Chart - Only show for trucks */}
+            {vehicleTypeFilter === 'trucks' && currentData.labels.length > 0 && (
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">Driver Pay Over Time</h3>
                 {timeSeriesLoading ? (
@@ -2217,7 +2216,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Expenses Chart - Full Width */}
+          {/* Expenses Chart - Full Width - Filter categories based on vehicle type */}
           {currentData.labels.length > 0 && (
             <div className="bg-white p-6 rounded-lg shadow mb-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Expenses Over Time</h3>
@@ -2274,63 +2273,64 @@ export default function Dashboard() {
                       }
                     },
                     series: [
-                      {
-                        name: 'Fuel',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.fuel || [],
-                        itemStyle: { color: '#3b82f6' }
-                      },
-                      {
-                        name: 'Dispatch Fee',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.dispatch_fee || [],
-                        itemStyle: { color: '#f59e0b' }
-                      },
-                      {
-                        name: 'Insurance',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.insurance || [],
-                        itemStyle: { color: '#f97316' }
-                      },
-                      {
-                        name: 'Safety',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.safety || [],
-                        itemStyle: { color: '#eab308' }
-                      },
-                      {
-                        name: 'Prepass',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.prepass || [],
-                        itemStyle: { color: '#84cc16' }
-                      },
-                      {
-                        name: 'IFTA',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.ifta || [],
-                        itemStyle: { color: '#10b981' }
-                      },
-                      {
-                        name: 'Truck Parking',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.truck_parking || [],
-                        itemStyle: { color: '#a855f7' }
-                      },
-                      {
-                        name: 'Custom',
-                        type: 'line',
-                        smooth: true,
-                        data: currentData.expenses?.custom || [],
-                        itemStyle: { color: '#6b7280' }
-                      }
-                    ]
+                          // For trucks, show all categories
+                          {
+                            name: 'Fuel',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.fuel || [],
+                            itemStyle: { color: '#3b82f6' }
+                          },
+                          {
+                            name: 'Dispatch Fee',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.dispatch_fee || [],
+                            itemStyle: { color: '#f59e0b' }
+                          },
+                          {
+                            name: 'Insurance',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.insurance || [],
+                            itemStyle: { color: '#f97316' }
+                          },
+                          {
+                            name: 'Safety',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.safety || [],
+                            itemStyle: { color: '#eab308' }
+                          },
+                          {
+                            name: 'Prepass',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.prepass || [],
+                            itemStyle: { color: '#84cc16' }
+                          },
+                          {
+                            name: 'IFTA',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.ifta || [],
+                            itemStyle: { color: '#10b981' }
+                          },
+                          {
+                            name: 'Truck Parking',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.truck_parking || [],
+                            itemStyle: { color: '#a855f7' }
+                          },
+                          {
+                            name: 'Custom',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.custom || [],
+                            itemStyle: { color: '#6b7280' }
+                          }
+                        ]
                   }}
                   style={{ height: '450px', width: '100%' }}
                   opts={{ renderer: 'svg' }}

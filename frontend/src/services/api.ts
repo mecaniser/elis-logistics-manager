@@ -347,8 +347,10 @@ export interface TimeSeriesData {
 
 // Analytics API
 export const analyticsApi = {
-  getDashboard: (truckId?: number) => {
-    const params = truckId ? { truck_id: truckId } : {}
+  getDashboard: (truckId?: number, vehicleType?: 'truck' | 'trailer') => {
+    const params: Record<string, any> = {}
+    if (truckId) params.truck_id = truckId
+    if (vehicleType) params.vehicle_type = vehicleType
     return api.get<DashboardData>('/analytics/dashboard', { params })
   },
   getTruckProfit: (truckId: number) =>
@@ -360,10 +362,15 @@ export const analyticsApi = {
     }>(`/analytics/truck-profit/${truckId}`),
   getVehicleROI: (vehicleId: number) =>
     api.get<VehicleROI>(`/analytics/vehicle/${vehicleId}/roi`),
-  getTimeSeries: (groupBy?: 'week_start' | 'settlement_date', truckId?: number) => {
+  getTimeSeries: (
+    groupBy?: 'week_start' | 'settlement_date',
+    truckId?: number,
+    vehicleType?: 'truck' | 'trailer'
+  ) => {
     const params: any = {}
     if (groupBy) params.group_by = groupBy
     if (truckId) params.truck_id = truckId
+    if (vehicleType) params.vehicle_type = vehicleType
     return api.get<TimeSeriesData>('/analytics/time-series', { params })
   },
 }
