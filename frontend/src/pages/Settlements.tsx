@@ -958,7 +958,10 @@ export default function Settlements() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlements</h1>
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlements</h1>
+          <span className="text-xl text-gray-500 font-medium">({settlements.length})</span>
+        </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-initial sm:w-64">
             <input
