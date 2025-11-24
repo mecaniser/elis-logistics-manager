@@ -324,54 +324,200 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
             # Already filtered above
             pass
         
-        # Group settlements by month based on week_start if available, otherwise settlement_date
-        # Apply 28th cutoff: if week_start is >= 28th, count in next month
-        # If week_start is in previous month, count in that month (not settlement_date month)
+        # Group settlements by month using individual block delivery dates when available,
+        # otherwise split proportionally based on period dates
         settlements_by_month = {}
-        for settlement in truck_settlements.all():
-            if settlement.blocks_delivered:
-                date_to_use = None
-                
-                if settlement.week_start:
-                    # Use week_start to determine month
-                    # If week_start is >= 28th, move to next month
-                    if settlement.week_start.day >= 28:
-                        if settlement.week_start.month == 12:
-                            date_to_use = settlement.week_start.replace(year=settlement.week_start.year + 1, month=1, day=1)
-                        else:
-                            date_to_use = settlement.week_start.replace(month=settlement.week_start.month + 1, day=1)
-                    else:
-                        # Use week_start's actual month
-                        date_to_use = settlement.week_start
-                elif settlement.settlement_date:
-                    # Fallback to settlement_date if week_start not available
-                    # Apply same 28th cutoff
-                    if settlement.settlement_date.day >= 28:
-                        if settlement.settlement_date.month == 12:
-                            date_to_use = settlement.settlement_date.replace(year=settlement.settlement_date.year + 1, month=1, day=1)
-                        else:
-                            date_to_use = settlement.settlement_date.replace(month=settlement.settlement_date.month + 1, day=1)
-                    else:
-                        date_to_use = settlement.settlement_date
-                
-                if date_to_use:
-                    month_key = date_to_use.strftime("%Y-%m")
-                    month_label = date_to_use.strftime("%b %Y")
+        
+        def assign_blocks_by_delivery_dates(block_ids: list) -> dict:
+            """
+            Assign blocks to months based on individual delivery dates.
+            Returns dict mapping month_key to (blocks_count, block_ids_list, month_label)
+            """
+            result = {}
+            
+            for block_item in block_ids:
+                # Handle both formats: string or object with delivery_date
+                if isinstance(block_item, str):
+                    # Legacy format: just block ID string, skip (no date info)
+                    continue
+                elif isinstance(block_item, dict):
+                    block_id = block_item.get("block_id", "")
+                    delivery_date_str = block_item.get("delivery_date")
                     
+                    if not block_id or not delivery_date_str:
+                        continue
+                    
+                    # Parse delivery date
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%Y-%m-%d").date()
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    month_key = delivery_date.strftime("%Y-%m")
+                    month_label = delivery_date.strftime("%b %Y")
+                    
+                    if month_key not in result:
+                        result[month_key] = {
+                            "blocks": 0,
+                            "block_ids": [],
+                            "month": month_label
+                        }
+                    
+                    result[month_key]["blocks"] += 1
+                    # Preserve the full block object with delivery_date for frontend display
+                    result[month_key]["block_ids"].append({
+                        "block_id": block_id,
+                        "delivery_date": delivery_date_str
+                    })
+            
+            return result
+        
+        def split_blocks_by_calendar_months(period_start: date, period_end: date, 
+                                           blocks_count: int, block_ids: list) -> dict:
+            """
+            Split blocks across calendar months based on period dates.
+            Returns dict mapping month_key to (blocks_count, block_ids_list)
+            """
+            if not period_start or not period_end:
+                return {}
+            
+            result = {}
+            current_date = period_start
+            total_days = (period_end - period_start).days + 1  # Inclusive
+            
+            # Track days and blocks per month
+            month_data = {}
+            
+            while current_date <= period_end:
+                month_key = current_date.strftime("%Y-%m")
+                month_label = current_date.strftime("%b %Y")
+                
+                if month_key not in month_data:
+                    month_data[month_key] = {
+                        "month": month_label,
+                        "month_key": month_key,
+                        "days": 0
+                    }
+                
+                month_data[month_key]["days"] += 1
+                current_date = current_date + timedelta(days=1)
+            
+            # Distribute blocks proportionally
+            total_blocks_assigned = 0
+            total_block_ids_assigned = 0
+            
+            month_keys_sorted = sorted(month_data.keys())
+            for idx, month_key in enumerate(month_keys_sorted):
+                month_info = month_data[month_key]
+                days_in_month = month_info["days"]
+                proportion = days_in_month / total_days
+                
+                # Calculate blocks for this month (round to nearest integer)
+                blocks_for_month = round(blocks_count * proportion)
+                
+                # For the last month, assign remaining blocks to ensure total matches
+                if idx == len(month_keys_sorted) - 1:
+                    blocks_for_month = blocks_count - total_blocks_assigned
+                else:
+                    total_blocks_assigned += blocks_for_month
+                
+                # Distribute block IDs proportionally
+                block_ids_for_month = []
+                if block_ids:
+                    block_ids_count = round(len(block_ids) * proportion)
+                    if idx == len(month_keys_sorted) - 1:
+                        # Last month gets remaining block IDs
+                        block_ids_for_month = block_ids[total_block_ids_assigned:]
+                    else:
+                        block_ids_for_month = block_ids[total_block_ids_assigned:total_block_ids_assigned + block_ids_count]
+                        total_block_ids_assigned += block_ids_count
+                
+                if blocks_for_month > 0:
+                    result[month_key] = {
+                        "blocks": blocks_for_month,
+                        "block_ids": block_ids_for_month,
+                        "month": month_info["month"]
+                    }
+            
+            return result
+        
+        for settlement in truck_settlements.all():
+            if settlement.blocks_delivered and settlement.blocks_delivered > 0:
+                block_ids = settlement.block_ids if settlement.block_ids and isinstance(settlement.block_ids, list) else []
+                
+                # Separate blocks with delivery dates from those without
+                blocks_with_dates = []
+                blocks_without_dates = []
+                
+                for item in block_ids:
+                    if isinstance(item, dict) and item.get("delivery_date"):
+                        blocks_with_dates.append(item)
+                    elif isinstance(item, dict) and "block_id" in item:
+                        # Block object but no delivery_date - extract block_id for fallback
+                        blocks_without_dates.append(item.get("block_id", ""))
+                    elif isinstance(item, str):
+                        # Legacy format - string block ID
+                        blocks_without_dates.append(item)
+                
+                # Start with blocks that have delivery dates
+                month_splits = assign_blocks_by_delivery_dates(blocks_with_dates) if blocks_with_dates else {}
+                
+                # If there are blocks without delivery dates, use proportional splitting for them
+                if blocks_without_dates:
+                    period_start = settlement.week_start  # This is period_start from JSON
+                    period_end = settlement.week_end if settlement.week_end else settlement.settlement_date
+                    
+                    # If we don't have period dates, fall back to settlement_date
+                    if not period_start:
+                        period_start = settlement.settlement_date
+                    if not period_end:
+                        period_end = settlement.settlement_date
+                    
+                    # Calculate how many blocks we've already assigned
+                    blocks_already_assigned = sum(split_data["blocks"] for split_data in month_splits.values())
+                    blocks_needing_assignment = len(blocks_without_dates)
+                    
+                    # Use proportional splitting for blocks without dates
+                    proportional_splits = split_blocks_by_calendar_months(
+                        period_start,
+                        period_end,
+                        blocks_needing_assignment,
+                        blocks_without_dates
+                    )
+                    
+                    # Merge proportional splits into month_splits
+                    for month_key, split_data in proportional_splits.items():
+                        if month_key not in month_splits:
+                            month_splits[month_key] = {
+                                "blocks": 0,
+                                "block_ids": [],
+                                "month": split_data["month"]
+                            }
+                        month_splits[month_key]["blocks"] += split_data["blocks"]
+                        # Add block IDs as strings (no delivery dates available)
+                        month_splits[month_key]["block_ids"].extend([
+                            bid if isinstance(bid, str) else {"block_id": bid, "delivery_date": None}
+                            for bid in split_data["block_ids"]
+                        ])
+                
+                # Add to settlements_by_month
+                for month_key, split_data in month_splits.items():
                     # Filter out future months (beyond current date)
                     current_date = date.today()
-                    month_date = date_to_use.replace(day=1) if date_to_use else None
-                    if month_date and month_date > current_date.replace(day=1):
+                    month_date = date(int(month_key[:4]), int(month_key[5:7]), 1)
+                    if month_date > current_date.replace(day=1):
                         continue  # Skip future months
                     
                     if month_key not in settlements_by_month:
                         settlements_by_month[month_key] = {
-                            "month": month_label,
+                            "month": split_data["month"],
                             "month_key": month_key,
-                            "blocks": 0
+                            "blocks": 0,
+                            "block_ids": []
                         }
                     
-                    settlements_by_month[month_key]["blocks"] += int(settlement.blocks_delivered) if settlement.blocks_delivered else 0
+                    settlements_by_month[month_key]["blocks"] += split_data["blocks"]
+                    settlements_by_month[month_key]["block_ids"].extend(split_data["block_ids"])
         
         # Convert to list and sort by month
         for month_key in sorted(settlements_by_month.keys()):
@@ -380,7 +526,8 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
                 "truck_name": truck.name,
                 "month": settlements_by_month[month_key]["month"],
                 "month_key": settlements_by_month[month_key]["month_key"],
-                "blocks": settlements_by_month[month_key]["blocks"]
+                "blocks": settlements_by_month[month_key]["blocks"],
+                "block_ids": settlements_by_month[month_key]["block_ids"]  # Include all block IDs for this month
             })
     
     # Get individual repairs by month (each repair separate)
