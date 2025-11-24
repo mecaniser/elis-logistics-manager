@@ -588,18 +588,69 @@ def get_settlement(settlement_id: int, db: Session = Depends(get_db)):
     return settlement
 
 @router.put("/{settlement_id}", response_model=SettlementResponse)
-def update_settlement(
+async def update_settlement(
     settlement_id: int,
-    settlement_update: SettlementUpdate,
+    settlement_update: Optional[SettlementUpdate] = None,
+    settlement_update_json: Optional[str] = Form(None),
+    pdf_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Update a settlement"""
+    """
+    Update a settlement with optional PDF file upload.
+    Accepts either JSON body (settlement_update) or Form data with JSON string (settlement_update_json).
+    When uploading a PDF file, use Form data with settlement_update_json.
+    """
     settlement = db.query(Settlement).filter(Settlement.id == settlement_id).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
     
-    # Update settlement fields (Pydantic v2 uses model_dump)
-    update_data = settlement_update.model_dump(exclude_unset=True)
+    # Parse settlement update data
+    update_data = {}
+    if settlement_update_json:
+        # Parse JSON from Form field (used when file is uploaded)
+        try:
+            settlement_data = json.loads(settlement_update_json)
+            settlement_update_obj = SettlementUpdate(**settlement_data)
+            update_data = settlement_update_obj.model_dump(exclude_unset=True)
+        except (json.JSONDecodeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid settlement data: {str(e)}")
+    elif settlement_update:
+        # Use Pydantic model directly (used when no file is uploaded)
+        update_data = settlement_update.model_dump(exclude_unset=True)
+    # If both are None but pdf_file is provided, that's okay - we'll just update the PDF
+    # If all are None, that's also okay - endpoint will just return the settlement unchanged
+    
+    # Handle PDF file upload if provided
+    if pdf_file:
+        # Save uploaded file temporarily
+        timestamp = datetime.now().timestamp()
+        file_path = os.path.join(UPLOAD_DIR, f"{timestamp}_{pdf_file.filename}")
+        with open(file_path, "wb") as buffer:
+            content = await pdf_file.read()
+            buffer.write(content)
+        
+        # Upload PDF to Cloudinary or keep local path
+        pdf_path = None
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as pdf_file_handle:
+                pdf_content = pdf_file_handle.read()
+                pdf_filename = os.path.basename(file_path)
+                
+                # Try Cloudinary upload first
+                cloudinary_pdf_url = upload_pdf(pdf_content, pdf_filename, folder="settlements")
+                
+                if cloudinary_pdf_url:
+                    # Store Cloudinary URL
+                    pdf_path = cloudinary_pdf_url
+                else:
+                    # Fallback to local storage if Cloudinary not configured
+                    pdf_path = file_path
+        
+        # Update pdf_file_path in settlement
+        if pdf_path:
+            update_data["pdf_file_path"] = pdf_path
+    
+    # Update settlement fields
     for field, value in update_data.items():
         setattr(settlement, field, value)
     
