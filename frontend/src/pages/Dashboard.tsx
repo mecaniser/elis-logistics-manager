@@ -4,6 +4,7 @@ import ReactECharts from 'echarts-for-react'
 
 // Type definitions for dashboard data structures
 interface RepairByMonth {
+  repair_id?: number
   truck_id: number
   month_key: string
   month: string
@@ -11,6 +12,7 @@ interface RepairByMonth {
   cost: number
   truck_name?: string
   description?: string
+  repair_date?: string
 }
 
 interface PMStatus {
@@ -898,7 +900,7 @@ export default function Dashboard() {
                     : `All amounts below are totals for this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only, aggregated from all settlements in the selected period.`}
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="text-sm font-medium text-gray-600">Gross Revenue</div>
                   <div className="text-2xl font-bold text-blue-600">
@@ -961,57 +963,171 @@ export default function Dashboard() {
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-gray-600">Net Profit</div>
-                  {(() => {
-                    const netProfitValue = Number(selectedPeriodData.net_profit) || 0
-                    const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
-                    // Repairs are only available for yearly/monthly/all_time views, not weekly
-                    const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time') 
-                      ? (Number((selectedPeriodData as any).repairs) || 0) 
-                      : 0
-                    // Settlement net profit (net_to_owner) = net_profit + loan_interest + repairs
-                    // (because net_profit already has repairs subtracted in yearly/monthly views)
-                    const settlementNetProfit = netProfitValue + loanInterest + repairs
-                    // True net profit: net_profit already has repairs subtracted in yearly/monthly/all_time views
-                    // So trueNetProfit = netProfitValue (repairs already subtracted)
-                    // For weekly view, repairs are 0, so this still works
-                    const trueNetProfit = netProfitValue
+              </div>
+
+              {/* Net Profit Details & Repair Expenses - Only show for trucks in weekly/monthly/yearly view */}
+              {vehicleTypeFilter === 'trucks' && (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') && selectedPeriodData && (() => {
+                const periodKey = expenseAnalysisView === 'weekly' 
+                  ? (selectedPeriodData as any).week_key 
+                  : expenseAnalysisView === 'monthly' 
+                  ? (selectedPeriodData as any).month_key 
+                  : (selectedPeriodData as any).year_key
+                const periodLabel = expenseAnalysisView === 'weekly' 
+                  ? ((selectedPeriodData as any).week_label || 'Selected Week')
+                  : expenseAnalysisView === 'monthly'
+                  ? ((selectedPeriodData as any).month_label || 'Selected Month')
+                  : ((selectedPeriodData as any).year_label || 'Selected Year')
+                const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
+                const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                
+                // Filter repairs for the selected period
+                let repairsForPeriod: RepairByMonth[] = []
+                
+                if (expenseAnalysisView === 'monthly') {
+                  // For monthly view, filter by month_key
+                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => repair.month_key === periodKey)
+                } else if (expenseAnalysisView === 'yearly') {
+                  // For yearly view, filter by year extracted from repair_date
+                  // year_key is in format "YYYY"
+                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => {
+                    if (!repair.repair_date) return false
+                    const repairYear = new Date(repair.repair_date).getFullYear().toString()
+                    return repairYear === periodKey
+                  })
+                } else if (expenseAnalysisView === 'weekly') {
+                  // For weekly view, match repairs to the week by finding repairs whose repair_date
+                  // falls within the week range. week_key is the settlement_date (ISO format),
+                  // which represents the end of the pay period. We'll match repairs that fall
+                  // within 7 days before the settlement_date (the pay period)
+                  const weekSettlementDate = new Date(periodKey)
+                  const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days before settlement
+                  const weekEnd = new Date(weekSettlementDate) // Settlement date is the end of the week
+                  
+                  // Filter repairs that fall within this week range
+                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => {
+                    if (!repair.repair_date) return false
+                    const repairDate = new Date(repair.repair_date)
+                    return repairDate >= weekStart && repairDate <= weekEnd
+                  })
+                }
+                
+                // Calculate repairs total - use sum of filtered repairs for weekly, backend value for monthly/yearly
+                const repairs = expenseAnalysisView === 'weekly' 
+                  ? repairsForPeriod.reduce((sum, repair) => sum + repair.cost, 0)
+                  : Number((selectedPeriodData as any).repairs) || 0
+                
+                return (
+                  <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Net Profit Details - {periodLabel}
+                    </h3>
                     
-                    return (
-                      <div className="mt-1 space-y-2 text-sm text-gray-700">
-                        <div className="flex justify-between">
-                          <span>Settlement net profit</span>
-                          <span className="font-semibold text-gray-900">
-                            ${settlementNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-gray-600">
-                          <span>Less: Loan interest</span>
-                          <span className="font-medium text-red-600">
+                    {/* Net Profit Breakdown */}
+                    <div className="mb-6 space-y-3">
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                        <span className="text-sm font-medium text-gray-700">Settlement Net Profit</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          ${(netProfitValue + loanInterest + repairs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      
+                      {loanInterest > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Less: Loan Interest</span>
+                          <span className="text-sm font-medium text-red-600">
                             -${loanInterest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
-                        {repairs > 0 && (
-                          <div className="flex justify-between text-gray-600">
-                            <span>Less: Truck repairs</span>
-                            <span className="font-medium text-red-600">
-                              -${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex justify-between pt-2 border-t border-green-200">
-                          <span className="font-semibold text-gray-900">True net profit</span>
-                          <span className={`text-2xl font-bold ${trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ${trueNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      )}
+                      
+                      {repairs > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Less: Repair Expenses</span>
+                          <span className="text-sm font-medium text-red-600">
+                            -${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
+                      )}
+                      
+                      <div className="flex justify-between items-center pt-2">
+                        <span className="text-base font-semibold text-gray-900">True Net Profit</span>
+                        <span className={`text-xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
                       </div>
-                    )
-                  })()}
-                  <div className="text-xs text-gray-500 mt-2">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                </div>
-              </div>
+                    </div>
+                    
+                    {/* Repair Expenses Details */}
+                    <div className="mt-6">
+                      <h4 className="text-md font-semibold text-gray-800 mb-3">
+                        Repair Expenses {expenseAnalysisView === 'weekly' ? 'This Week' : expenseAnalysisView === 'monthly' ? 'This Month' : 'This Year'}
+                      </h4>
+                      {repairsForPeriod.length > 0 ? (
+                        <div className="space-y-3">
+                          {repairsForPeriod.map((repair: RepairByMonth) => {
+                            const isPM = repair.category === 'maintenance'
+                            return (
+                              <div 
+                                key={repair.repair_id || `${repair.truck_id}-${repair.cost}-${repair.repair_date}`}
+                                className={`p-4 rounded-lg border ${
+                                  isPM ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                                }`}
+                              >
+                                <div className="flex justify-between items-start">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-sm font-semibold text-gray-900">
+                                        {repair.truck_name || `Truck ${repair.truck_id}`}
+                                      </span>
+                                      {isPM && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                          🔧 Preventive Maintenance
+                                        </span>
+                                      )}
+                                      {repair.category && repair.category !== 'maintenance' && (
+                                        <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize">
+                                          {repair.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-600 mb-1">
+                                      {repair.description || 'No description'}
+                                    </p>
+                                    {repair.repair_date && (
+                                      <p className="text-xs text-gray-500">
+                                        {new Date(repair.repair_date).toLocaleDateString()}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="ml-4 text-right">
+                                    <span className="text-lg font-bold text-red-600">
+                                      ${repair.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                          <div className="mt-4 pt-3 border-t border-gray-300">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
+                              <span className="text-base font-bold text-red-600">
+                                ${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                          <p className="text-sm text-gray-600">
+                            No repair expenses {expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Trucks Involved - Only show for trucks */}
               {vehicleTypeFilter === 'trucks' && (selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
