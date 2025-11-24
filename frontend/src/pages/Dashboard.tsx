@@ -1011,10 +1011,8 @@ export default function Dashboard() {
                   })
                 }
                 
-                // Calculate repairs total - use sum of filtered repairs for weekly, backend value for monthly/yearly
-                const repairs = expenseAnalysisView === 'weekly' 
-                  ? repairsForPeriod.reduce((sum, repair) => sum + repair.cost, 0)
-                  : Number((selectedPeriodData as any).repairs) || 0
+                // Calculate repairs total from filtered repairs to ensure consistency with displayed repairs
+                const repairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
                 
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
