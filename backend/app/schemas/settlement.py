@@ -3,7 +3,7 @@ Settlement schemas
 """
 from pydantic import BaseModel
 from datetime import date, datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from decimal import Decimal
 
 class SettlementBase(BaseModel):
@@ -14,6 +14,7 @@ class SettlementBase(BaseModel):
     week_end: Optional[date] = None
     miles_driven: Optional[Decimal] = None
     blocks_delivered: Optional[int] = None
+    block_ids: Optional[List[str]] = None  # Array of block IDs delivered in this settlement
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
@@ -33,6 +34,7 @@ class SettlementUpdate(BaseModel):
     week_end: Optional[date] = None
     miles_driven: Optional[Decimal] = None
     blocks_delivered: Optional[int] = None
+    block_ids: Optional[List[str]] = None
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None
@@ -40,6 +42,7 @@ class SettlementUpdate(BaseModel):
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None
     settlement_type: Optional[str] = None
+    pdf_file_path: Optional[str] = None
 
 class SettlementResponse(SettlementBase):
     id: int

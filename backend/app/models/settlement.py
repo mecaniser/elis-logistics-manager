@@ -17,6 +17,7 @@ class Settlement(Base):
     week_end = Column(Date)
     miles_driven = Column(Numeric(10, 2))
     blocks_delivered = Column(Integer)
+    block_ids = Column(JSON, nullable=True)  # Array of block IDs delivered in this settlement
     gross_revenue = Column(Numeric(10, 2))
     expenses = Column(Numeric(10, 2))  # Fuel, tolls, etc from Amazon
     expense_categories = Column(JSON)  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
