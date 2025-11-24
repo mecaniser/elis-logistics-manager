@@ -1,0 +1,2033 @@
+[
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2024-12-28-418",
+          "period_start": "2024-12-22",
+          "period_end": "2024-12-28",
+          "source_file": "ELIS LOGISTICS LLC #418 - 12-28-24.pdf"
+        },
+        "blocks_count": 1,
+        "block_ids": [
+          "TFC9-CLT2"
+        ],
+        "statement_totals": {
+          "gross_miles": 795.0,
+          "gross_revenue": 2119.07,
+          "total_driver_pay": 600.0,
+          "fuel": 517.94,
+          "dispatch_fee_total": 211.91,
+          "driver_payroll_fee": 39.0,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
+          "service_on_truck": 0,
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
+          "truck_parking": 0,
+          "decals": null,
+          "deductions": 0.0,
+          "deduction_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
+          "net_to_owner": 295.22
+        },
+        "dispatch_percentage": 10
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-01-04-418",
+          "period_start": "2024-12-29",
+          "period_end": "2025-01-04",
+          "source_file": "ELIS LOGISTICS LLC #418 - 01-04-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "JH33-CLT5",
+          "WW0X-CLT9"
+        ],
+        "statement_totals": {
+          "gross_miles": 1646.0,
+          "gross_revenue": 4472.08,
+          "total_driver_pay": 1200.0,
+          "fuel": 1506.67,
+          "dispatch_fee_total": 447.21,
+          "driver_payroll_fee": 78.00,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 150.0,
+          "decals": 50.0,
+          "deductions": 0.0,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 585.20
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-01-11-418",
+          "period_start": "2025-01-05",
+          "period_end": "2025-01-11",
+          "source_file": "ELIS LOGISTICS LLC #418 - 01-11-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "W1G8-CLT9",
+          "04LS-CLT2"
+        ],
+        "statement_totals": {
+          "gross_miles": 1742.0,
+          "gross_revenue": 3410.85,
+          "total_driver_pay": 1200.0,
+          "fuel": 309.51,
+          "dispatch_fee_total": 341.09,
+          "driver_payroll_fee": 78.00,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 320.83,
+          "deduction_details": [
+            { "description": "Tax form 2290", "amount": 320.83 }
+          ],
+          "net_to_owner": 706.43
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-01-18-418",
+          "period_start": "2025-01-12",
+          "period_end": "2025-01-18",
+          "source_file": "ELIS LOGISTICS LLC #418 - 01-18-25.pdf"
+        },
+        "blocks_count": 1,
+        "block_ids": [
+          "PP8K-CLT3"
+        ],
+        "statement_totals": {
+          "gross_miles": 1034.0,
+          "gross_revenue": 1910.46,
+          "total_driver_pay": 600.0,
+          "fuel": 406.80,
+          "dispatch_fee_total": 191.05,
+          "driver_payroll_fee": 39.0,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 0.0,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 218.61
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-01-25-418",
+          "period_start": "2025-01-19",
+          "period_end": "2025-01-25",
+          "source_file": "ELIS LOGISTICS LLC #418 - 01-25-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "1JTZ-CLT4",
+          "VTWQ-CLT3",
+          "38S5-CLT3"
+        ],
+        "statement_totals": {
+          "gross_miles": 2330.0,
+          "gross_revenue": 4869.11,
+          "total_driver_pay": 1740.0,
+          "fuel": 1707.83,
+          "dispatch_fee_total": 486.91,
+          "driver_payroll_fee": 113.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 366.27
+        },
+        "dispatch_percentage": 10
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-02-01-418",
+          "period_start": "2025-01-26",
+          "period_end": "2025-02-01",
+          "source_file": "ELIS LOGISTICS LLC #418 - 02-01-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "SW69-CLT4",
+          "9WFN-CLT9",
+          "TN12-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 2492.0,
+          "gross_revenue": 4859.72,
+          "total_driver_pay": 1730.0,
+          "fuel": 1218.52,
+          "dispatch_fee_total": 485.97,
+          "driver_payroll_fee": 112.45,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 85.20,
+          "deduction_details": [
+            { "description": "from last week", "amount": 85.20 }
+          ],
+          "net_to_owner": 942.98
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-02-08-418",
+          "period_start": "2025-02-02",
+          "period_end": "2025-02-08",
+          "source_file": "ELIS LOGISTICS LLC #418 - 02-08-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "7JV7-CLT4",
+          "H98L-CLT2"
+        ],
+        "statement_totals": {
+          "gross_miles": 1747.0,
+          "gross_revenue": 3318.33,
+          "total_driver_pay": 1140.0,
+          "fuel": 1159.59,
+          "dispatch_fee_total": 331.83,
+          "driver_payroll_fee": 74.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 150.0,
+          "decals": null,
+          "deductions": 0.0,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 7.81
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-02-15-418",
+          "period_start": "2025-02-09",
+          "period_end": "2025-02-15",
+          "source_file": "ELIS LOGISTICS LLC #418 - 02-15-25.pdf"
+        },
+        "blocks_count": 4,
+        "block_ids": [
+          "ZS50-CLT4",
+          "QF0S-CLT4",
+          "BM0R-CLT9",
+          "5QLF-CLT9"
+        ],
+        "statement_totals": {
+          "gross_miles": 3465.0,
+          "gross_revenue": 6442.76,
+          "total_driver_pay": 2310.0,
+          "fuel": 2201.56,
+          "dispatch_fee_total": 644.28,
+          "driver_payroll_fee": 150.15,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 681.77
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-02-22-418",
+          "period_start": "2025-02-16",
+          "period_end": "2025-02-22",
+          "source_file": "ELIS LOGISTICS LLC #418 - 02-22-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "HZ23-CLT5",
+          "13HK-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 1681.0,
+          "gross_revenue": 3229.53,
+          "total_driver_pay": 1140.0,
+          "fuel": 530.22,
+          "dispatch_fee_total": 322.95,
+          "driver_payroll_fee": 74.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 500.00,
+          "service_on_truck_details": [
+            { "description": "Tag 1926 renewal taxes", "amount": 500.00 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 207.26
+        },
+        "dispatch_percentage": 10
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-03-01-418",
+          "period_start": "2025-02-23",
+          "period_end": "2025-03-01",
+          "source_file": "ELIS LOGISTICS LLC #418 - 03-01-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "RNJD-GSP1",
+          "P20X-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 1706.0,
+          "gross_revenue": 3093.26,
+          "total_driver_pay": 1140.0,
+          "fuel": 1144.55,
+          "dispatch_fee_total": 309.33,
+          "driver_payroll_fee": 74.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": -29.72
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-03-08-418",
+          "period_start": "2025-03-01",
+          "period_end": "2025-03-08",
+          "source_file": "ELIS LOGISTICS LLC #418 - 03-08-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "N0XL-GSP1",
+          "HCQL-CLT4",
+          "7XV8-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 2657.0,
+          "gross_revenue": 4702.35,
+          "total_driver_pay": 1710.0,
+          "fuel": 988.48,
+          "dispatch_fee_total": 470.24,
+          "driver_payroll_fee": 111.15,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 200.0,
+          "service_on_truck_details": [
+            { "description": "Tag 1926 renewal taxes", "amount": 200.0 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 767.49
+        },
+        "dispatch_percentage": 10
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-03-15-418",
+          "period_start": "2025-03-09",
+          "period_end": "2025-03-15",
+          "source_file": "ELIS LOGISTICS LLC #418 - 03-15-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "B0H0-GSP1",
+          "K04W-CLT9",
+          "DBHD-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 2284.0,
+          "gross_revenue": 4560.90,
+          "total_driver_pay": 1670.0,
+          "fuel": 1517.71,
+          "dispatch_fee_total": 273.65,
+          "driver_payroll_fee": 108.55,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 250.0,
+          "service_on_truck_details": [
+            { "description": "Tag 1926 renewal taxes", "amount": 200.00 },
+            { "description": "truck wash", "amount": 50.00 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 285.99
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-03-22-418",
+          "period_start": "2025-03-16",
+          "period_end": "2025-03-22",
+          "source_file": "ELIS LOGISTICS LLC #418 - 03-22-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "3H6V-CLT4",
+          "BMSL-CLT9",
+          "LB8N-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 1957.0,
+          "gross_revenue": 4416.46,
+          "total_driver_pay": 1630.0,
+          "fuel": 1250.61,
+          "dispatch_fee_total": 264.99,
+          "driver_payroll_fee": 105.95,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 500.0,
+          "service_on_truck_details": [
+            { "description": "Tag 1926 renewal taxes", "amount": 500.0 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 209.91
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-03-29-418",
+          "period_start": "2025-03-23",
+          "period_end": "2025-03-29",
+          "source_file": "ELIS LOGISTICS LLC #418 - 03-29-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "V5X5-CLT2",
+          "JQV2-CLT9",
+          "9R4T-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 2338.0,
+          "gross_revenue": 4539.68,
+          "total_driver_pay": 1590.0,
+          "fuel": 1022.95,
+          "dispatch_fee_total": 272.38,
+          "driver_payroll_fee": 103.35,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 150.0,
+          "reimbursement_details": [
+            { "description": "Tow zone fee out of 1500$", "amount": 150.0 }
+          ],
+          "service_on_truck": 526.0,
+          "service_on_truck_details": [
+            { "description": "Tag 1926 renewal taxes", "amount": 526.00 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 720.00
+        },
+        "dispatch_percentage": 6
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-04-05-418",
+          "period_start": "2025-03-30",
+          "period_end": "2025-04-05",
+          "source_file": "ELIS LOGISTICS LLC #418 - 04-05-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "6XBB-CLT4",
+          "C6TN-CLT3"
+        ],
+        "statement_totals": {
+          "gross_miles": 1505.0,
+          "gross_revenue": 3020.82,
+          "total_driver_pay": 1060.0,
+          "fuel": 924.16,
+          "dispatch_fee_total": 181.25,
+          "driver_payroll_fee": 68.90,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 150.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 146.51
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-04-12-418",
+          "period_start": "2025-04-06",
+          "period_end": "2025-04-12",
+          "source_file": "ELIS LOGISTICS LLC #418 - 04-12-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "BHNP-CLT9",
+          "NSLL-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 1695.0,
+          "gross_revenue": 3032.87,
+          "total_driver_pay": 1060.0,
+          "fuel": 891.34,
+          "dispatch_fee_total": 181.97,
+          "driver_payroll_fee": 68.90,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 315.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 375.66
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-04-19-418",
+          "period_start": "2025-04-13",
+          "period_end": "2025-04-19",
+          "source_file": "ELIS LOGISTICS LLC #418 - 04-19-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "QZ2T-GSP1",
+          "ZKJ6-CAE1"
+        ],
+        "statement_totals": {
+          "gross_miles": 1738.0,
+          "gross_revenue": 2776.80,
+          "total_driver_pay": 1100.0,
+          "fuel": 396.78,
+          "dispatch_fee_total": 166.61,
+          "driver_payroll_fee": 71.50,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 551.91
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-04-26-418",
+          "period_start": "2025-04-20",
+          "period_end": "2025-04-26",
+          "source_file": "ELIS LOGISTICS LLC #418 - 04-26-25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "JJL5-GSP1",
+          "5RQ8-GSP1",
+          "CWN2-CLT4"
+        ],
+        "statement_totals": {
+          "gross_miles": 2628.0,
+          "gross_revenue": 3963.40,
+          "total_driver_pay": 1670.0,
+          "fuel": 1428.57,
+          "dispatch_fee_total": 237.80,
+          "driver_payroll_fee": 108.55,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 28.48
+        },
+        "dispatch_percentage": 6
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-05-03-418",
+          "period_start": "2025-04-27",
+          "period_end": "2025-05-03",
+          "source_file": "ELIS LOGISTICS LLC #418 - 05-03-25.pdf"
+        },
+        "blocks_count": 4,
+        "block_ids": [
+          "XFST-CLT2",
+          "4LXK-CLT4",
+          "V5PJ-GSP1",
+          "DWW8-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 3312.0,
+          "gross_revenue": 5258.72,
+          "total_driver_pay": 2280.0,
+          "fuel": 1393.07,
+          "dispatch_fee_total": 315.52,
+          "driver_payroll_fee": 148.20,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 631.93
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-05-10-418",
+          "period_start": "2025-05-04",
+          "period_end": "2025-05-10",
+          "source_file": "ELIS LOGISTICS LLC #418 - 05-10-25.pdf"
+        },
+        "blocks_count": 4,
+        "block_ids": [
+          "5G88-GSP1",
+          "QBG8-GSP1",
+          "R7ZP-CLT5",
+          "QRJ0-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 3256.0,
+          "gross_revenue": 5164.48,
+          "total_driver_pay": 2280.0,
+          "fuel": 1567.31,
+          "dispatch_fee_total": 309.87,
+          "driver_payroll_fee": 148.20,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 350.00,
+          "deduction_details": [
+            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+          ],
+          "net_to_owner": 19.10
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-05-17-418",
+          "period_start": "2025-05-11",
+          "period_end": "2025-05-17",
+          "source_file": "ELIS LOGISTICS LLC #418 - 05-17-25.pdf"
+        },
+        "blocks_count": 4,
+        "block_ids": [
+          "6CCR-CLT9",
+          "5QJG-CLT4",
+          "TH0B-CLT2",
+          "XWG1-GSP1"
+        ],
+        "statement_totals": {
+          "gross_miles": 3517.0,
+          "gross_revenue": 5773.48,
+          "total_driver_pay": 2280.0,
+          "fuel": 1643.09,
+          "dispatch_fee_total": 346.41,
+          "driver_payroll_fee": 148.20,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "service_on_truck": 150.0,
+          "service_on_truck_details": [
+            { "description": "driver for taking a truck to shop V417", "amount": 150.00 }
+          ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 350.00,
+          "deduction_details": [
+            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+          ],
+          "net_to_owner": 365.78
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-05-24-418",
+          "period_start": "2025-05-18",
+          "period_end": "2025-05-24",
+          "source_file": "ELIS LOGISTICS LLC #418 - 05-24-25.pdf"
+        },
+        "blocks_count": 4,
+        "block_ids": [
+          "VBCS-CLT9",
+          "F81Z-CLT5",
+          "74WV-CLT5",
+          "LZ97-CLT9"
+        ],
+        "statement_totals": {
+          "gross_miles": 3692.0,
+          "gross_revenue": 6095.56,
+          "total_driver_pay": 2280.0,
+          "fuel": 1311.06,
+          "dispatch_fee_total": 365.73,
+          "driver_payroll_fee": 148.20,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 350.00,
+          "deduction_details": [
+            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+          ],
+          "net_to_owner": 1150.57
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-05-31-418",
+          "period_start": "2025-05-25",
+          "period_end": "2025-05-31",
+          "source_file": "ELIS LOGISTICS LLC #418 - 05-31-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "JHFR-GSP1",
+          "PQ52-CLT2"
+        ],
+        "statement_totals": {
+          "gross_miles": 1612.0,
+          "gross_revenue": 2986.04,
+          "total_driver_pay": 1140.0,
+          "fuel": 1060.49,
+          "dispatch_fee_total": 179.16,
+          "driver_payroll_fee": 74.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": null,
+          "deduction_details": [
+            { "description": "", "amount": null }
+          ],
+          "net_to_owner": 42.29
+        },
+        "dispatch_percentage": 6
+      }
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statements": [
+      {
+        "statement": {
+          "statement_id": "SETT-2025-06-07-418",
+          "period_start": "2025-06-01",
+          "period_end": "2025-06-07",
+          "source_file": "ELIS LOGISTICS LLC #418 - 06-07-25.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "18BV-GSP1",
+          "VDF2-CLT5"
+        ],
+        "statement_totals": {
+          "gross_miles": 1665.0,
+          "gross_revenue": 2750.57,
+          "total_driver_pay": 1140.0,
+          "fuel": 659.26,
+          "dispatch_fee_total": 165.03,
+          "driver_payroll_fee": 74.10,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [{ "description": "", "amount": null }],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 0.0,
+          "deduction_details": [{ "description": "", "amount": null }],
+          "net_to_owner": 222.18
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-06-14-418",
+          "period_start": "2025-06-08",
+          "period_end": "2025-06-14",
+          "source_file": "ELIS LOGISTICS LLC #418 - 06-20-25.pdf"
+        },
+        "blocks_count": 5,
+        "block_ids": [
+          "B-XQT75FQ56",
+          "B-9FFCSPB1T",
+          "B-6JZG8BXRZ",
+          "B-D1H7B5818",
+          "B-FLMDTGBPH"
+        ],
+        "statement_totals": {
+          "gross_miles": 0.0,
+          "gross_revenue": 8070.73,
+          "total_driver_pay": 2850.0,
+          "fuel": 1783.23,
+          "dispatch_fee_total": 484.24,
+          "driver_payroll_fee": 185.25,
+          "ifta": 100.0,
+          "safety": 40.0,
+          "prepass": 140.0,
+          "insurance": 700.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [{ "description": "", "amount": null }],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "truck_parking": 300.0,
+          "decals": null,
+          "deductions": 0.0,
+          "deduction_details": [{ "description": "", "amount": null }],
+          "net_to_owner": 1788.01
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "statement": {
+          "statement_id": "SETT-2025-06-21-418",
+          "period_start": "2025-06-15",
+          "period_end": "2025-06-21",
+          "source_file": "ELIS LOGISTICS LLC #418 - 06.21.25.pdf"
+        },
+        "blocks_count": 3,
+        "block_ids": [
+          "B-N4SP5V0KS",
+          "B-T464FBCLH",
+          "B-8QKTCM899"
+        ],
+        "statement_totals": {
+          "gross_miles": 0.0,
+          "gross_revenue": 4068.99,
+          "total_driver_pay": 1710.0,
+          "fuel": 1466.09,
+          "dispatch_fee_total": 244.14,
+          "driver_payroll_fee": 111.15,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
+          "reimbursement_details": [{ "description": "", "amount": null }],
+          "service_on_truck": 0.0,
+          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "truck_parking": 0.0,
+          "decals": null,
+          "deductions": 524.15,
+          "deduction_details": [
+            { "description": "#417 charge", "amount": 524.15 }
+          ],
+          "net_to_owner": -476.54
+        },
+        "dispatch_percentage": 6
+      },
+      {
+        "unit_number": "418",
+        "plate_number": "VW1503",
+        "statement": {
+          "statement_id": "SETT-2025-06-28-418",
+          "period_start": "2025-06-22",
+          "period_end": "2025-06-28",
+          "source_file": "ELIS LOGISTICS LLC #418 06.28.2025.pdf"
+        },
+        "blocks_count": 2,
+        "block_ids": [
+          "B-TM154JXN1",
+          "B-HRQ6L6GRV"
+        ],
+        "statement_totals": {
+          "gross_miles": null,
+          "gross_revenue": 2888.75,
+          "total_driver_pay": 1140.00,
+          "fuel": 1066.37,
+          "dispatch_fee_total": 173.33,
+          "driver_payroll_fee": 68.40,
+          "ifta": 50.00,
+          "safety": 20.00,
+          "prepass": 70.00,
+          "insurance": 350.00,
+          "reimbursment": 0.00,
+          "reimbursement_details": [
+            { "description": "", "amount": null }
+          ],
+          "service_on_truck": 0.00,
+          "service_on_truck_details": [
+            { "description": "", "amount": null }
+          ],
+          "truck_parking": 0.00,
+          "decals": null,
+          "deductions": 476.54,
+          "deduction_details": [
+            { "description": "#417 owed charges", "amount": 476.54 }
+          ],
+          "net_to_owner": -49.35
+        },
+        "dispatch_percentage": 6
+      }
+      
+    ]
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-07-05-418",
+      "period_start": "2025-06-29",
+      "period_end": "2025-07-05",
+      "source_file": "ELIS LOGISTICS LLC #418 07.05.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-33JFFNTZ0",
+      "B-LCQ7MFW1K",
+      "B-XT1MPWHW4",
+      "B-R709T062S"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5998.31,
+      "total_driver_pay": 2280.00,
+      "fuel": 1666.54,
+      "dispatch_fee_total": 359.90,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1064.07
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-07-12-418",
+      "period_start": "2025-07-06",
+      "period_end": "2025-07-12",
+      "source_file": "ELIS LOGISTICS LLC #418 07.12.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-FWHK1G1KV",
+      "B-C0DF0PRXR",
+      "B-KNVQ99V7Z",
+      "B-KVQFSQ52B"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6622.59,
+      "total_driver_pay": 2280.00,
+      "fuel": 1912.26,
+      "dispatch_fee_total": 397.36,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1406.17
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-07-19-418",
+      "period_start": "2025-07-13",
+      "period_end": "2025-07-19",
+      "source_file": "ELIS LOGISTICS LLC #418 07.19.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-VP77GQ70H",
+      "B-WL3R6LD05",
+      "B-FGBDWLW2J",
+      "B-C2ZDTKR7C"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6216.98,
+      "total_driver_pay": 2280.00,
+      "fuel": 1686.75,
+      "dispatch_fee_total": 373.02,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1250.41
+    },
+    "dispatch_percentage": 6
+  },{
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-07-26-418",
+      "period_start": "2025-07-20",
+      "period_end": "2025-07-26",
+      "source_file": "ELIS LOGISTICS LLC #418 07.26.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-GXWSLZB76",
+      "B-DSXP27QZ0",
+      "B-N1MQWJ0HN",
+      "B-NSQBR1VSC"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6674.91,
+      "total_driver_pay": 2280.00,
+      "fuel": 1743.34,
+      "dispatch_fee_total": 400.49,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": null,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1344.28
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-08-02-418",
+      "period_start": "2025-07-28",
+      "period_end": "2025-08-02",
+      "source_file": "ELIS LOGISTICS LLC #418 08.02.2025.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-0VLM6GQSJ",
+      "B-H826S58HS",
+      "B-TZDWS43JB"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 4430.01,
+      "total_driver_pay": 1710.00,
+      "fuel": 1362.22,
+      "dispatch_fee_total": 265.80,
+      "driver_payroll_fee": 102.60,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 499.39
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-08-09-418",
+      "period_start": "2025-08-02",
+      "period_end": "2025-08-09",
+      "source_file": "ELIS LOGISTICS LLC #418 08.09.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-BBD37BNF6",
+      "B-6NKZM442W",
+      "B-2P5XQBFPP",
+      "B-S8F84QT81"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6062.30,
+      "total_driver_pay": 2280.00,
+      "fuel": 1623.50,
+      "dispatch_fee_total": 363.74,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1168.26
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-08-16-418",
+      "period_start": "2025-08-10",
+      "period_end": "2025-08-16",
+      "source_file": "ELIS LOGISTICS LLC #418 08.16.2025.pdf"
+    },
+    "blocks_count": 4,
+    "block_ids": [
+      "B-K4KQMRZ9G",
+      "B-8TMWQBN81",
+      "B-WSKVFDZTF",
+      "B-C7KPBTJ8W"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6164.09,
+      "total_driver_pay": 2280.00,
+      "fuel": 1598.20,
+      "dispatch_fee_total": 369.85,
+      "driver_payroll_fee": 136.80,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1289.24
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2025-08-23-418",
+      "period_start": "2025-08-17",
+      "period_end": "2025-08-23",
+      "source_file": "ELIS LOGISTICS LLC #418 08.23.2025.pdf"
+    },
+    "blocks_count": 2,
+    "block_ids": [
+      "B-JXKT7H9NT",
+      "B-PQZB2QDQT"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 3118.67,
+      "total_driver_pay": 1140.00,
+      "fuel": 680.11,
+      "dispatch_fee_total": 187.12,
+      "driver_payroll_fee": 68.40,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 553.04
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-08-30-418",
+      "period_start": "2025-08-24",
+      "period_end": "2025-08-30",
+      "source_file": "ELIS LOGISTICS LLC #418 08.30.2025.pdf"
+    },
+    "blocks_count": 2,
+    "block_ids": [
+      "B-XZRM6FSKN",
+      "B-15F3XXN4P"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 3210.86,
+      "total_driver_pay": 1140.00,
+      "fuel": 841.34,
+      "dispatch_fee_total": 192.65,
+      "driver_payroll_fee": 68.40,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "truck_parking": 150.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 328.47
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-09-06-418",
+      "period_start": "2025-08-31",
+      "period_end": "2025-09-06",
+      "source_file": "ELIS LOGISTICS LLC #418 09.06.2025.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-05XDJ3MJG",
+      "B-K61WH64HS",
+      "B-4KC869JX7"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5247.04,
+      "total_driver_pay": 1710.00,
+      "fuel": 808.50,
+      "dispatch_fee_total": 314.82,
+      "driver_payroll_fee": 102.60,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1821.12
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-09-13-418",
+      "period_start": "2025-09-07",
+      "period_end": "2025-09-13",
+      "source_file": "ELIS LOGISTICS LLC #418 09.13.2025.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-63FGGV8TZ",
+      "B-X616PMQDW",
+      "B-P3W133MMB"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5150.09,
+      "total_driver_pay": 1710.00,
+      "fuel": 1406.83,
+      "dispatch_fee_total": 309.01,
+      "driver_payroll_fee": 102.60,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1131.65
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-09-20-418",
+      "period_start": "2025-09-14",
+      "period_end": "2025-09-20",
+      "source_file": "ELIS LOGISTICS LLC #418 09.20.2025.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-1FJPRZP4C",
+      "B-QX892F47Z",
+      "B-QHQNPJMCX"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 4608.44,
+      "total_driver_pay": 1710.00,
+      "fuel": 758.83,
+      "dispatch_fee_total": 276.51,
+      "driver_payroll_fee": 102.60,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1270.50
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-09-27-418",
+      "period_start": "2025-09-21",
+      "period_end": "2025-09-27",
+      "source_file": "ELIS LOGISTICS LLC #418 09.27.2025.pdf"
+    },
+    "blocks_count": 1,
+    "block_ids": [
+      "B-RZQF09V54"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5122.62,
+      "total_driver_pay": 1170.00,
+      "fuel": 1618.88,
+      "dispatch_fee_total": 307.36,
+      "driver_payroll_fee": 70.20,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 600,
+      "deduction_details": [
+        { "description": "Missed driver payroll payment (-600.00), Already included in the driver's pay above.", "amount": -600 }
+      ],
+      "net_to_owner": 1466.18
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-10-04-418",
+      "period_start": "2025-09-28",
+      "period_end": "2025-10-04",
+      "source_file": "ELIS LOGISTICS LLC #418 10.04.2025.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-J06R3W0DR",
+      "B-8JG4H1BSZ",
+      "B-NZWWZBM65"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5710.33,
+      "total_driver_pay": 1710.00,
+      "fuel": 1408.40,
+      "dispatch_fee_total": 342.62,
+      "driver_payroll_fee": 102.60,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1656.71
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-10-11-418",
+      "period_start": "2025-10-05",
+      "period_end": "2025-10-11",
+      "source_file": "ELIS LOGISTICS LLC #418 10.11.2025.pdf"
+    },
+    "blocks_count": 2,
+    "block_ids": [
+      "B-P616PK4KF",
+      "B-NWJ6Z43KV"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 4302.05,
+      "total_driver_pay": 1140.00,
+      "fuel": 890.74,
+      "dispatch_fee_total": 258.12,
+      "driver_payroll_fee": 68.40,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1454.79
+    },
+    "dispatch_percentage": 6
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-10-18-418",
+      "period_start": "2025-10-12",
+      "period_end": "2025-10-18",
+      "source_file": "ELIS LOGISTICS LLC #418 10.18.2025:VW9328.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-NQK6LVK8K",
+      "B-7VS8LGJPV",
+      "B-X90VX016B"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 5855.33,
+      "total_driver_pay": 1710.00,
+      "fuel": 1101.91,
+      "dispatch_fee_total": 468.43,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1973.84
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-10-25-418",
+      "period_start": "2025-10-19",
+      "period_end": "2025-10-25",
+      "source_file": "ELIS LOGISTICS LLC #418 10.25.2025:VW9328.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-92ZH2QCPK",
+      "B-33TM76ZW4",
+      "B-158Q83ZLR"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6217.79,
+      "total_driver_pay": 1710.00,
+      "fuel": 1650.00,
+      "dispatch_fee_total": 497.42,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1759.22
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-11-01-418",
+      "period_start": "2025-10-26",
+      "period_end": "2025-11-01",
+      "source_file": "ELIS LOGISTICS LLC #418 11.01.2025:VW9328.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-824DX8QR6",
+      "B-P78JVGG83",
+      "B-5KFFGGXQ3"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6201.38,
+      "total_driver_pay": 1740.00,
+      "fuel": 1650.00,
+      "dispatch_fee_total": 496.11,
+      "driver_payroll_fee": 113.10,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 150.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1562.17
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-11-08-418",
+      "period_start": "2025-11-02",
+      "period_end": "2025-11-08",
+      "source_file": "ELIS LOGISTICS LLC #418 11.08.2025:VW9328.pdf"
+    },
+    "blocks_count": 2,
+    "block_ids": [
+      "B-6Q4SCT95J",
+      "B-4M2ZD7FFX"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 4115.57,
+      "total_driver_pay": 1140.00,
+      "fuel": 1100.00,
+      "dispatch_fee_total": 329.25,
+      "driver_payroll_fee": 74.10,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 982.22
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW9328",
+    "statement": {
+      "statement_id": "SETT-2025-11-15-418",
+      "period_start": "2025-11-09",
+      "period_end": "2025-11-15",
+      "source_file": "ELIS LOGISTICS LLC #418 11.15.2025:VW9328.pdf"
+    },
+    "blocks_count": 3,
+    "block_ids": [
+      "B-CXT6SNR2S",
+      "B-X5JD8KDCR",
+      "B-HJRP32P4D"
+    ],
+    "statement_totals": {
+      "gross_miles": null,
+      "gross_revenue": 6049.61,
+      "total_driver_pay": 1740.00,
+      "fuel": 1650.00,
+      "dispatch_fee_total": 483.97,
+      "driver_payroll_fee": 113.10,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 350.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 1572.54
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  }
+]
