@@ -24,11 +24,17 @@ interface PMStatus {
   pm_threshold_months: number
 }
 
+interface BlockWithDate {
+  block_id: string
+  delivery_date?: string
+}
+
 interface BlockByTruckMonth {
   truck_id: number
   month_key: string
   month: string
   blocks: number
+  block_ids?: (string | BlockWithDate)[]  // Array of block IDs (strings) or block objects with delivery dates
   truck_name?: string
 }
 
@@ -59,6 +65,8 @@ export default function Dashboard() {
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
   const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(false) // Collapsed by default
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'trucks' | 'trailers'>('trucks') // Filter for graphs and expense details - no 'all' option
+  const [selectedBlockData, setSelectedBlockData] = useState<BlockByTruckMonth | null>(null) // Track clicked block data
+  const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
 
   useEffect(() => {
     loadTrucks()
@@ -958,7 +966,17 @@ export default function Dashboard() {
                   {(() => {
                     const netProfitValue = Number(selectedPeriodData.net_profit) || 0
                     const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
-                    const settlementNetProfit = netProfitValue + loanInterest
+                    // Repairs are only available for yearly/monthly/all_time views, not weekly
+                    const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time') 
+                      ? (Number((selectedPeriodData as any).repairs) || 0) 
+                      : 0
+                    // Settlement net profit (net_to_owner) = net_profit + loan_interest + repairs
+                    // (because net_profit already has repairs subtracted in yearly/monthly views)
+                    const settlementNetProfit = netProfitValue + loanInterest + repairs
+                    // True net profit: net_profit already has repairs subtracted in yearly/monthly/all_time views
+                    // So trueNetProfit = netProfitValue (repairs already subtracted)
+                    // For weekly view, repairs are 0, so this still works
+                    const trueNetProfit = netProfitValue
                     
                     return (
                       <div className="mt-1 space-y-2 text-sm text-gray-700">
@@ -974,10 +992,18 @@ export default function Dashboard() {
                             -${loanInterest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
+                        {repairs > 0 && (
+                          <div className="flex justify-between text-gray-600">
+                            <span>Less: Truck repairs</span>
+                            <span className="font-medium text-red-600">
+                              -${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex justify-between pt-2 border-t border-green-200">
-                          <span className="font-semibold text-gray-900">Actual net profit</span>
-                          <span className={`text-2xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span className="font-semibold text-gray-900">True net profit</span>
+                          <span className={`text-2xl font-bold ${trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${trueNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>
@@ -1618,7 +1644,8 @@ export default function Dashboard() {
                 formatter: (params: any) => {
                   let result = `${params[0]?.axisValue}<br/>`
                   params.forEach((param: any) => {
-                    result += `${param.seriesName}: ${param.value} blocks<br/>`
+                    const blockCount = param.value || 0
+                    result += `${param.seriesName}: ${blockCount} blocks<br/>`
                   })
                   return result
                 },
@@ -1773,7 +1800,162 @@ export default function Dashboard() {
             }}
             style={{ height: '450px', width: '100%' }}
             opts={{ renderer: 'svg' }}
+            onEvents={{
+              click: (params: any) => {
+                // Handle click on chart bars
+                if (params.seriesType === 'bar' && params.seriesName !== 'Average') {
+                  const monthLabel = params.name
+                  const truckName = params.seriesName
+                  
+                  // Find the block data for this truck and month
+                  const blockData = blocksByTruckMonth.find(
+                    (d: BlockByTruckMonth) => d.month === monthLabel && d.truck_name === truckName
+                  )
+                  
+                  if (blockData) {
+                    setSelectedBlockData(blockData)
+                  }
+                }
+              }
+            }}
           />
+          
+          {/* Clicked Block Details Modal */}
+          {selectedBlockData && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Block Details: {selectedBlockData.truck_name} - {selectedBlockData.month}
+                  </h3>
+                  <div className="text-sm text-gray-700 mb-3">
+                    <span className="font-medium">Total Blocks: {selectedBlockData.blocks}</span>
+                  </div>
+                  {selectedBlockData.block_ids && selectedBlockData.block_ids.length > 0 ? (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Block IDs:</p>
+                      <div className="flex flex-col gap-2">
+                        {selectedBlockData.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
+                          const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
+                          const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
+                          
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                                {blockId}
+                              </span>
+                              {deliveryDate && (
+                                <span className="text-xs text-gray-500">
+                                  {new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No block IDs available</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedBlockData(null)}
+                  className="ml-4 text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Blocks Detail Table - Collapsible */}
+          {blocksByTruckMonth.length > 0 && (
+            <div className="mt-6 border-t pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">All Block Details by Month</h3>
+                <button
+                  onClick={() => setShowBlockDetails(!showBlockDetails)}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors flex items-center gap-2"
+                >
+                  {showBlockDetails ? 'Hide' : 'Show'} Details
+                  <svg 
+                    className={`w-4 h-4 transition-transform ${showBlockDetails ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+              {showBlockDetails && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Truck</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blocks</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block IDs</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {blocksByTruckMonth
+                      .filter((item: BlockByTruckMonth) => !selectedTruck || item.truck_id === selectedTruck)
+                      .sort((a: BlockByTruckMonth, b: BlockByTruckMonth) => {
+                        // Sort by month_key descending, then by truck_name
+                        if (a.month_key !== b.month_key) {
+                          return b.month_key.localeCompare(a.month_key)
+                        }
+                        return (a.truck_name || '').localeCompare(b.truck_name || '')
+                      })
+                      .map((item: BlockByTruckMonth, index: number) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {item.truck_name || `Truck ${item.truck_id}`}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {item.month}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                            {item.blocks}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {item.block_ids && item.block_ids.length > 0 ? (
+                              <div className="flex flex-col gap-1.5">
+                                {item.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
+                                  const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
+                                  const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
+                                  
+                                  return (
+                                    <div key={idx} className="flex items-center gap-2">
+                                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                        {blockId}
+                                      </span>
+                                      {deliveryDate && (
+                                        <span className="text-xs text-gray-500">
+                                          ({new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic">No block IDs available</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

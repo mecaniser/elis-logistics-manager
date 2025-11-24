@@ -53,6 +53,7 @@ export interface Settlement {
   week_end?: string
   miles_driven?: number
   blocks_delivered?: number
+  block_ids?: string[]  // Array of block IDs delivered in this settlement
   gross_revenue?: number
   expenses?: number
   expense_categories?: { [key: string]: number }
@@ -144,6 +145,18 @@ export const settlementsApi = {
     api.post<Settlement>('/settlements', data),
   update: (id: number, data: Partial<Settlement>) =>
     api.put<Settlement>(`/settlements/${id}`, data),
+  updateWithPdf: (id: number, data: Partial<Settlement>, pdfFile?: File) => {
+    const formData = new FormData()
+    formData.append('settlement_update_json', JSON.stringify(data))
+    if (pdfFile) {
+      formData.append('pdf_file', pdfFile)
+    }
+    return api.put<Settlement>(`/settlements/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
   upload: (file: File, truckId?: number, settlementType?: string) => {
     const formData = new FormData()
     formData.append('file', file)
