@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 # Allow running the script directly by adding backend/ to PYTHONPATH
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.database import SessionLocal
+from app.database import SessionLocal, DATABASE_URL
 from app.models import Settlement, Truck
 from app.utils.loan_interest import calculate_weekly_loan_interest
 
@@ -229,43 +230,255 @@ def diff_settlement(existing: Settlement, entry: Dict[str, Any]) -> Dict[str, Tu
     return diffs
 
 
-def upsert_settlements(entries: List[Dict[str, Any]], db: Session, dry_run: bool) -> Dict[str, int]:
-    stats = {"inserted": 0, "updated": 0, "skipped_unresolved_truck": 0}
-    for entry in entries:
-        if not entry.get("truck_id"):
-            stats["skipped_unresolved_truck"] += 1
-            continue
-        existing = find_existing(db, entry)
-        if existing:
-            changes = diff_settlement(existing, entry)
-            if changes and not dry_run:
-                for k, v in entry.items():
-                    setattr(existing, k, v)
-                db.add(existing)
-                stats["updated"] += 1
-        else:
-            if not dry_run:
-                db.add(Settlement(**entry))
-            stats["inserted"] += 1
-    if not dry_run:
-        db.commit()
+def upsert_settlements(entries: List[Dict[str, Any]], db: Session, dry_run: bool, verbose: bool = False) -> Dict[str, Any]:
+    stats = {
+        "inserted": 0,
+        "updated": 0,
+        "skipped_unresolved_truck": 0,
+        "skipped_no_changes": 0,
+        "errors": 0,
+        "error_details": []
+    }
+    
+    unresolved_trucks = set()
+    
+    for idx, entry in enumerate(entries, 1):
+        try:
+            if not entry.get("truck_id"):
+                unit = entry.get("unit_number") or "unknown"
+                plate = entry.get("plate_number") or "unknown"
+                unresolved_trucks.add(f"{unit} ({plate})")
+                stats["skipped_unresolved_truck"] += 1
+                if verbose:
+                    print(f"  [{idx}/{len(entries)}] ⚠️  Skipped: No truck found for unit {unit}, plate {plate}")
+                continue
+            
+            # Use a fresh session/transaction for each entry to avoid transaction abort issues
+            try:
+                existing = find_existing(db, entry)
+            except Exception as e:
+                # Rollback and retry
+                db.rollback()
+                try:
+                    existing = find_existing(db, entry)
+                except Exception as retry_e:
+                    raise Exception(f"Failed to query existing settlement: {str(retry_e)}")
+            
+            if existing:
+                changes = diff_settlement(existing, entry)
+                if changes:
+                    if not dry_run:
+                        for k, v in entry.items():
+                            setattr(existing, k, v)
+                        db.add(existing)
+                    stats["updated"] += 1
+                    if verbose:
+                        try:
+                            truck_name = db.query(Truck).filter(Truck.id == entry["truck_id"]).first().name
+                        except Exception:
+                            truck_name = f"Truck ID {entry['truck_id']}"
+                        print(f"  [{idx}/{len(entries)}] ✏️  Update: Truck {truck_name}, Date {entry['settlement_date']}")
+                        if verbose and len(changes) <= 5:
+                            for field, (old_val, new_val) in changes.items():
+                                print(f"      {field}: {old_val} → {new_val}")
+                else:
+                    stats["skipped_no_changes"] += 1
+                    if verbose:
+                        try:
+                            truck_name = db.query(Truck).filter(Truck.id == entry["truck_id"]).first().name
+                        except Exception:
+                            truck_name = f"Truck ID {entry['truck_id']}"
+                        print(f"  [{idx}/{len(entries)}] ✓ No changes: Truck {truck_name}, Date {entry['settlement_date']}")
+            else:
+                if not dry_run:
+                    db.add(Settlement(**entry))
+                stats["inserted"] += 1
+                if verbose:
+                    try:
+                        truck_name = db.query(Truck).filter(Truck.id == entry["truck_id"]).first().name
+                    except Exception:
+                        truck_name = f"Truck ID {entry['truck_id']}"
+                    print(f"  [{idx}/{len(entries)}] ➕ Insert: Truck {truck_name}, Date {entry['settlement_date']}")
+            
+            # Commit in batches to avoid transaction issues (every 50 entries or at the end)
+            if not dry_run and (idx % 50 == 0 or idx == len(entries)):
+                try:
+                    db.commit()
+                except SQLAlchemyError as e:
+                    db.rollback()
+                    stats["errors"] += 1
+                    error_msg = f"Database commit error at entry {idx}: {str(e)}"
+                    stats["error_details"].append(error_msg)
+                    if verbose:
+                        print(f"  [{idx}/{len(entries)}] ❌ Commit error: {error_msg}")
+                    
+        except Exception as e:
+            # Rollback on any error and continue
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            
+            stats["errors"] += 1
+            error_msg = f"Error processing entry {idx}: {str(e)}"
+            stats["error_details"].append(error_msg)
+            if verbose:
+                print(f"  [{idx}/{len(entries)}] ❌ Error: {error_msg}")
+    
+    # Final commit if there are remaining changes
+    if not dry_run and (stats["inserted"] > 0 or stats["updated"] > 0):
+        try:
+            db.commit()
+        except SQLAlchemyError as e:
+            db.rollback()
+            stats["errors"] += 1
+            stats["error_details"].append(f"Final database commit error: {str(e)}")
+    
+    if unresolved_trucks:
+        stats["unresolved_trucks"] = sorted(list(unresolved_trucks))
+    
     return stats
 
 
+def verify_trucks_exist(db: Session, entries: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
+    """Verify all trucks referenced in entries exist in database."""
+    truck_ids = {e.get("truck_id") for e in entries if e.get("truck_id")}
+    missing_trucks = []
+    
+    for truck_id in truck_ids:
+        truck = db.query(Truck).filter(Truck.id == truck_id).first()
+        if not truck:
+            missing_trucks.append(f"Truck ID {truck_id}")
+    
+    return len(missing_trucks) == 0, missing_trucks
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest consolidated settlement JSON files into the DB.")
+    parser = argparse.ArgumentParser(
+        description="Ingest consolidated settlement JSON files into the DB.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Dry run (test without writing)
+  python ingest_consolidated_settlements.py --dry-run backend/417_consolidated_settlement.json
+  
+  # Import files
+  python ingest_consolidated_settlements.py backend/417_consolidated_settlement.json backend/418_consolidated_settlement.json
+  
+  # Verbose output
+  python ingest_consolidated_settlements.py --verbose backend/417_consolidated_settlement.json
+        """
+    )
     parser.add_argument("files", nargs="+", help="Paths to consolidated settlement JSON files.")
-    parser.add_argument("--dry-run", action="store_true", help="Do not write to DB; just report.")
+    parser.add_argument("--dry-run", action="store_true", help="Do not write to DB; just report what would be done.")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed progress.")
+    parser.add_argument("--skip-truck-check", action="store_true", help="Skip verification that trucks exist.")
     args = parser.parse_args()
 
+    # Show database connection info
+    db_type = "PostgreSQL (Production)" if "postgresql" in DATABASE_URL.lower() else "SQLite (Local)"
+    print(f"📊 Database: {db_type}")
+    if args.dry_run:
+        print("🔍 DRY RUN MODE - No changes will be written to database\n")
+    
     db = SessionLocal()
     try:
+        # Verify database connection
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        
         all_entries: List[Dict[str, Any]] = []
+        file_stats = {}
+        
+        # Load entries from all files
         for file_path in args.files:
-            entries = load_entries(Path(file_path), db)
-            all_entries.extend(entries)
-        stats = upsert_settlements(all_entries, db, dry_run=args.dry_run)
-        print(json.dumps({"files": args.files, "counts": stats, "total_entries": len(all_entries)}, indent=2))
+            path = Path(file_path)
+            if not path.exists():
+                print(f"❌ Error: File not found: {file_path}")
+                sys.exit(1)
+            
+            if args.verbose:
+                print(f"📄 Loading: {file_path}")
+            
+            try:
+                entries = load_entries(path, db)
+                all_entries.extend(entries)
+                file_stats[str(path)] = len(entries)
+                if args.verbose:
+                    print(f"   Found {len(entries)} settlement entries\n")
+            except Exception as e:
+                print(f"❌ Error loading {file_path}: {e}")
+                sys.exit(1)
+        
+        if not all_entries:
+            print("⚠️  No settlement entries found in any file.")
+            sys.exit(0)
+        
+        print(f"📦 Total entries to process: {len(all_entries)}\n")
+        
+        # Verify trucks exist
+        if not args.skip_truck_check:
+            all_exist, missing = verify_trucks_exist(db, all_entries)
+            if not all_exist:
+                print("❌ Error: Some trucks referenced in settlements do not exist in database:")
+                for truck in missing:
+                    print(f"   - {truck}")
+                print("\n💡 Tip: Create trucks first or use --skip-truck-check to proceed anyway")
+                sys.exit(1)
+            if args.verbose:
+                print("✓ All trucks verified\n")
+        
+        # Process settlements
+        if args.verbose:
+            print("🔄 Processing settlements...\n")
+        
+        stats = upsert_settlements(all_entries, db, dry_run=args.dry_run, verbose=args.verbose)
+        
+        # Print summary
+        print("\n" + "="*60)
+        print("📊 IMPORT SUMMARY")
+        print("="*60)
+        print(f"Files processed: {len(args.files)}")
+        for file_path, count in file_stats.items():
+            print(f"  - {file_path}: {count} entries")
+        print(f"\nTotal entries: {len(all_entries)}")
+        print(f"✅ Inserted: {stats['inserted']}")
+        print(f"✏️  Updated: {stats['updated']}")
+        print(f"⏭️  Skipped (no changes): {stats.get('skipped_no_changes', 0)}")
+        print(f"⚠️  Skipped (unresolved truck): {stats['skipped_unresolved_truck']}")
+        if stats.get('errors', 0) > 0:
+            print(f"❌ Errors: {stats['errors']}")
+            for error in stats.get('error_details', []):
+                print(f"   - {error}")
+        
+        if stats.get('unresolved_trucks'):
+            print(f"\n⚠️  Unresolved trucks (need to be created in database):")
+            for truck in stats['unresolved_trucks']:
+                print(f"   - {truck}")
+        
+        print("="*60)
+        
+        # Return JSON output for scripting
+        if not args.verbose:
+            print(json.dumps({
+                "files": args.files,
+                "file_stats": file_stats,
+                "counts": stats,
+                "total_entries": len(all_entries)
+            }, indent=2))
+        
+        # Exit with error code if there were issues
+        if stats.get('errors', 0) > 0:
+            sys.exit(1)
+            
+    except SQLAlchemyError as e:
+        print(f"❌ Database error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     finally:
         db.close()
 

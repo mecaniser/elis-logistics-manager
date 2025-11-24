@@ -1,10 +1,15 @@
 """
 Settlement schemas
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import date, datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union, Any
 from decimal import Decimal
+import json
+
+class BlockIdItem(BaseModel):
+    block_id: str
+    delivery_date: Optional[str] = None
 
 class SettlementBase(BaseModel):
     truck_id: int
@@ -14,7 +19,20 @@ class SettlementBase(BaseModel):
     week_end: Optional[date] = None
     miles_driven: Optional[Decimal] = None
     blocks_delivered: Optional[int] = None
-    block_ids: Optional[List[str]] = None  # Array of block IDs delivered in this settlement
+    block_ids: Optional[List[Union[str, Dict[str, Any]]]] = None  # Array of block IDs (strings) or objects with block_id and delivery_date
+    
+    @field_validator('block_ids', mode='before')
+    @classmethod
+    def parse_block_ids(cls, v):
+        """Parse block_ids from JSONB/JSON string if needed"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return v
+        return v
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
@@ -34,7 +52,7 @@ class SettlementUpdate(BaseModel):
     week_end: Optional[date] = None
     miles_driven: Optional[Decimal] = None
     blocks_delivered: Optional[int] = None
-    block_ids: Optional[List[str]] = None
+    block_ids: Optional[List[Union[str, Dict[str, Any]]]] = None
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None

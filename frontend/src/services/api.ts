@@ -53,7 +53,7 @@ export interface Settlement {
   week_end?: string
   miles_driven?: number
   blocks_delivered?: number
-  block_ids?: string[]  // Array of block IDs delivered in this settlement
+  block_ids?: (string | { block_id: string; delivery_date?: string })[]  // Array of block IDs (strings) or objects with block_id and delivery_date
   gross_revenue?: number
   expenses?: number
   expense_categories?: { [key: string]: number }

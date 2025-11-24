@@ -71,10 +71,16 @@ def get_settlements(
     db: Session = Depends(get_db)
 ):
     """Get all settlements, optionally filtered by truck"""
-    query = db.query(Settlement)
-    if truck_id:
-        query = query.filter(Settlement.truck_id == truck_id)
-    return query.order_by(Settlement.settlement_date.desc()).all()
+    try:
+        query = db.query(Settlement)
+        if truck_id:
+            query = query.filter(Settlement.truck_id == truck_id)
+        settlements = query.order_by(Settlement.settlement_date.desc()).all()
+        return settlements
+    except Exception as e:
+        import traceback
+        error_detail = f"Error fetching settlements: {str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @router.post("/upload", response_model=SettlementResponse)
 async def upload_settlement_pdf(
