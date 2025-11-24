@@ -10,32 +10,44 @@
     },
     "blocks_count": 1,
     "block_ids": [
-      "ZK6S-CLT9"
+      {
+        "block_id": "ZK6S-CLT9",
+        "delivery_date": "2024-12-08"
+      }
     ],
     "statement_totals": {
       "gross_miles": 779.0,
-      "gross_revenue": 2110.90,
-      "total_driver_pay": 600.00,
-      "fuel": 0.00,
+      "gross_revenue": 2110.9,
+      "total_driver_pay": 600.0,
+      "fuel": 0.0,
       "dispatch_fee_total": 168.87,
-      "driver_payroll_fee": 39.00,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 315.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 39.0,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 315.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 347.15,
       "service_on_truck_details": [
-        { "description": "Service on the truck deduction", "amount": 347.15 }
+        {
+          "description": "Service on the truck deduction",
+          "amount": 347.15
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 500.88
     },
@@ -53,38 +65,50 @@
     },
     "blocks_count": 1,
     "block_ids": [
-      "VSQP-CLT2"
+      {
+        "block_id": "VSQP-CLT2",
+        "delivery_date": "2024-12-20"
+      }
     ],
     "statement_totals": {
       "gross_miles": 987.0,
       "gross_revenue": 2409.36,
-      "total_driver_pay": 530.00,
+      "total_driver_pay": 530.0,
       "fuel": 597.56,
       "dispatch_fee_total": 192.75,
       "driver_payroll_fee": 34.45,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 315.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 315.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "net_to_owner": 599.60
+      "net_to_owner": 599.6
     },
     "dispatch_percentage": 8,
     "payroll_percentage": 6.5
-  },  
+  },
   {
     "unit_number": "417",
     "plate_number": "VV9952",
@@ -95,7 +119,12 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 12-28-24.pdf"
     },
     "blocks_count": 1,
-    "block_ids": ["FTKM-CLT9"],
+    "block_ids": [
+      {
+        "block_id": "FTKM-CLT9",
+        "delivery_date": "2024-12-29"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 2133.3,
       "total_driver_pay": 530.0,
@@ -127,7 +156,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 01-04-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["CZ1H-CLT4", "3PV7-CLT4"],
+    "block_ids": [
+      {
+        "block_id": "CZ1H-CLT4",
+        "delivery_date": "2025-01-02"
+      },
+      {
+        "block_id": "3PV7-CLT4",
+        "delivery_date": "2025-01-04"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 4449.38,
       "total_driver_pay": 1170.0,
@@ -161,7 +199,20 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 01-11-25.pdf"
     },
     "blocks_count": 3,
-    "block_ids": ["HKXR-CLT9", "DG0R-CLT4", "6L10-CLT4"],
+    "block_ids": [
+      {
+        "block_id": "HKXR-CLT9",
+        "delivery_date": "2025-01-06"
+      },
+      {
+        "block_id": "DG0R-CLT4",
+        "delivery_date": "2025-01-07"
+      },
+      {
+        "block_id": "6L10-CLT4",
+        "delivery_date": "2025-01-09"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 5745.89,
       "total_driver_pay": 1800.0,
@@ -200,7 +251,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 01-18-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["F84C-CLT2", "RTFP-CLT9"],
+    "block_ids": [
+      {
+        "block_id": "F84C-CLT2",
+        "delivery_date": "2025-01-16"
+      },
+      {
+        "block_id": "RTFP-CLT9",
+        "delivery_date": "2025-01-18"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 3408.78,
       "total_driver_pay": 1200.0,
@@ -232,7 +292,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 01-25-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["BHS6-CLT9", "JK1B-CLT5"],
+    "block_ids": [
+      {
+        "block_id": "BHS6-CLT9",
+        "delivery_date": "2025-01-20"
+      },
+      {
+        "block_id": "JK1B-CLT5",
+        "delivery_date": "2025-01-22"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 3737.72,
       "total_driver_pay": 1060.0,
@@ -264,7 +333,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 02-01-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["604D-CLT5", "KF0V-CLT9"],
+    "block_ids": [
+      {
+        "block_id": "604D-CLT5",
+        "delivery_date": "2025-01-30"
+      },
+      {
+        "block_id": "KF0V-CLT9",
+        "delivery_date": "2025-02-01"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 3397.08,
       "total_driver_pay": 1060.0,
@@ -297,7 +375,20 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 02-08-25.pdf"
     },
     "blocks_count": 3,
-    "block_ids": ["DQRB-CLT5", "J3J1-CLT4", "KZZ5-CLT4"],
+    "block_ids": [
+      {
+        "block_id": "DQRB-CLT5",
+        "delivery_date": "2025-02-03"
+      },
+      {
+        "block_id": "J3J1-CLT4",
+        "delivery_date": "2025-02-06"
+      },
+      {
+        "block_id": "KZZ5-CLT4",
+        "delivery_date": "2025-02-08"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 4884.55,
       "total_driver_pay": 1590.0,
@@ -329,7 +420,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 02-15-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["7PMX-GSP1", "S1Z7-GSP1"],
+    "block_ids": [
+      {
+        "block_id": "7PMX-GSP1",
+        "delivery_date": "2025-02-11"
+      },
+      {
+        "block_id": "S1Z7-GSP1",
+        "delivery_date": "2025-02-12"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 2834.53,
       "total_driver_pay": 1060.0,
@@ -361,7 +461,24 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 02-22-25.pdf"
     },
     "blocks_count": 4,
-    "block_ids": ["HVGT-GSP1", "CR0P-GSP1", "1RQV-CLT9", "VZX1-CLT2"],
+    "block_ids": [
+      {
+        "block_id": "HVGT-GSP1",
+        "delivery_date": "2025-02-16"
+      },
+      {
+        "block_id": "CR0P-GSP1",
+        "delivery_date": "2025-02-18"
+      },
+      {
+        "block_id": "1RQV-CLT9",
+        "delivery_date": "2025-02-20"
+      },
+      {
+        "block_id": "VZX1-CLT2",
+        "delivery_date": "2025-02-21"
+      }
+    ],
     "statement_totals": {
       "gross_revenue": 6446.45,
       "total_driver_pay": 2120.0,
@@ -394,8 +511,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "P5S1-GSP1",
-      "2FDL-GSP1"
+      {
+        "block_id": "P5S1-GSP1",
+        "delivery_date": "2025-02-24"
+      },
+      {
+        "block_id": "2FDL-GSP1",
+        "delivery_date": "2025-02-27"
+      }
     ],
     "statement_totals": {
       "gross_miles": 1691,
@@ -430,9 +553,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "3WWN-GSP1",
-      "649H-CLT9",
-      "ZB8T-GSP1"
+      {
+        "block_id": "3WWN-GSP1",
+        "delivery_date": "2025-03-03"
+      },
+      {
+        "block_id": "649H-CLT9",
+        "delivery_date": "2025-03-06"
+      },
+      {
+        "block_id": "ZB8T-GSP1",
+        "delivery_date": "2025-03-08"
+      }
     ],
     "statement_totals": {
       "gross_miles": 2703,
@@ -467,9 +599,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "863C-CLT4",
-      "BNXF-CLT2",
-      "LH04-CLT4"
+      {
+        "block_id": "863C-CLT4",
+        "delivery_date": "2025-03-10"
+      },
+      {
+        "block_id": "BNXF-CLT2",
+        "delivery_date": "2025-03-12"
+      },
+      {
+        "block_id": "LH04-CLT4",
+        "delivery_date": "2025-03-14"
+      }
     ],
     "statement_totals": {
       "gross_miles": 2535,
@@ -509,9 +650,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "2ZXG-CLT4",
-      "J736-CLT3",
-      "5FXG-CLT5"
+      {
+        "block_id": "2ZXG-CLT4",
+        "delivery_date": "2025-03-16"
+      },
+      {
+        "block_id": "J736-CLT3",
+        "delivery_date": "2025-03-19"
+      },
+      {
+        "block_id": "5FXG-CLT5",
+        "delivery_date": "2025-03-21"
+      }
     ],
     "statement_totals": {
       "gross_miles": 2545,
@@ -546,10 +696,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "WRXC-CLT5",
-      "61JM-CLT9",
-      "V15D-CLT4",
-      "KBC9-CLT4"
+      {
+        "block_id": "WRXC-CLT5",
+        "delivery_date": "2025-03-23"
+      },
+      {
+        "block_id": "61JM-CLT9",
+        "delivery_date": "2025-03-25"
+      },
+      {
+        "block_id": "V15D-CLT4",
+        "delivery_date": "2025-03-27"
+      },
+      {
+        "block_id": "KBC9-CLT4",
+        "delivery_date": "2025-03-29"
+      }
     ],
     "statement_totals": {
       "gross_miles": 3495,
@@ -583,25 +745,37 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 04-05-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["Q3J6-CLT9", "1CF8-GSP1"],
+    "block_ids": [
+      {
+        "block_id": "Q3J6-CLT9",
+        "delivery_date": "2025-03-31"
+      },
+      {
+        "block_id": "1CF8-GSP1",
+        "delivery_date": "2025-04-04"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 1764.0,
       "gross_revenue": 3080.02,
-      "total_driver_pay": 1140.00,
+      "total_driver_pay": 1140.0,
       "fuel": 973.42,
-      "dispatch_fee_total": 184.80,
-      "driver_payroll_fee": 74.10,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "service_on_truck": 0.00,
+      "dispatch_fee_total": 184.8,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 150.00,
+      "truck_parking": 150.0,
       "decals": null,
-      "net_to_owner": 67.70
+      "net_to_owner": 67.7
     },
     "dispatch_percentage": 6
   },
@@ -615,21 +789,29 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 04-12-25.pdf"
     },
     "blocks_count": 1,
-    "block_ids": ["1MPH-CLT9"],
+    "block_ids": [
+      {
+        "block_id": "1MPH-CLT9",
+        "delivery_date": "2025-04-06"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 872.0,
       "gross_revenue": 1546.23,
-      "total_driver_pay": 570.00,
+      "total_driver_pay": 570.0,
       "fuel": 540.19,
       "dispatch_fee_total": 92.77,
       "driver_payroll_fee": 37.05,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "service_on_truck": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -647,25 +829,41 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 04-19-25.pdf"
     },
     "blocks_count": 3,
-    "block_ids": ["8Q2N-GSP1", "L0C7-CLT4", "TXTZ-CLT3"],
+    "block_ids": [
+      {
+        "block_id": "8Q2N-GSP1",
+        "delivery_date": "2025-04-15"
+      },
+      {
+        "block_id": "L0C7-CLT4",
+        "delivery_date": "2025-04-17"
+      },
+      {
+        "block_id": "TXTZ-CLT3",
+        "delivery_date": "2025-04-19"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 2404.0,
       "gross_revenue": 3949.31,
-      "total_driver_pay": 1710.00,
-      "fuel": 915.20,
+      "total_driver_pay": 1710.0,
+      "fuel": 915.2,
       "dispatch_fee_total": 236.96,
       "driver_payroll_fee": 111.15,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "service_on_truck": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
-      "net_to_owner": 486.00
+      "net_to_owner": 486.0
     },
     "dispatch_percentage": 6
   },
@@ -679,25 +877,41 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 04-26-25.pdf"
     },
     "blocks_count": 3,
-    "block_ids": ["5K0K-CLT9", "MZZS-CLT2", "5GD4-CLT4"],
+    "block_ids": [
+      {
+        "block_id": "5K0K-CLT9",
+        "delivery_date": "2025-04-21"
+      },
+      {
+        "block_id": "MZZS-CLT2",
+        "delivery_date": "2025-04-23"
+      },
+      {
+        "block_id": "5GD4-CLT4",
+        "delivery_date": "2025-04-25"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 2980.0,
       "gross_revenue": 4213.66,
-      "total_driver_pay": 1710.00,
+      "total_driver_pay": 1710.0,
       "fuel": 1468.89,
       "dispatch_fee_total": 252.82,
       "driver_payroll_fee": 111.15,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "service_on_truck": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
-      "net_to_owner": 180.80
+      "net_to_owner": 180.8
     },
     "dispatch_percentage": 6
   },
@@ -711,21 +925,33 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 05-03-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["G9BP-CLT2", "LZM5-CLT4"],
+    "block_ids": [
+      {
+        "block_id": "G9BP-CLT2",
+        "delivery_date": "2025-04-27"
+      },
+      {
+        "block_id": "LZM5-CLT4",
+        "delivery_date": "2025-05-01"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 1630.0,
       "gross_revenue": 2554.15,
       "total_driver_pay": 1140.0,
       "fuel": 1264.79,
       "dispatch_fee_total": 153.25,
-      "driver_payroll_fee": 74.10,
+      "driver_payroll_fee": 74.1,
       "ifta": 50.0,
       "safety": 20.0,
       "prepass": 70.0,
       "insurance": 350.0,
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -743,7 +969,12 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 05-31-25.pdf"
     },
     "blocks_count": 1,
-    "block_ids": ["Q38T-GSP1"],
+    "block_ids": [
+      {
+        "block_id": "Q38T-GSP1",
+        "delivery_date": "2025-05-31"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 629.0,
       "gross_revenue": 1569.78,
@@ -757,7 +988,10 @@
       "insurance": 350.0,
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -775,7 +1009,12 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 06-07-25.pdf"
     },
     "blocks_count": 1,
-    "block_ids": ["SW9H-GSP1"],
+    "block_ids": [
+      {
+        "block_id": "SW9H-GSP1",
+        "delivery_date": "2025-06-02"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 783.0,
       "gross_revenue": 1712.89,
@@ -789,7 +1028,10 @@
       "insurance": 350.0,
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 271.73
     },
@@ -805,12 +1047,21 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 06-21-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["B-24XZ1NWSB", "B-5H1ZFSWGV"],
+    "block_ids": [
+      {
+        "block_id": "B-24XZ1NWSB",
+        "delivery_date": "2025-06-19"
+      },
+      {
+        "block_id": "B-5H1ZFSWGV",
+        "delivery_date": "2025-06-21"
+      }
+    ],
     "statement_totals": {
       "gross_miles": 0.0,
-      "gross_revenue": 2630.90,
+      "gross_revenue": 2630.9,
       "total_driver_pay": 1200.0,
-      "fuel": 1229.20,
+      "fuel": 1229.2,
       "dispatch_fee_total": 157.85,
       "driver_payroll_fee": 78.0,
       "ifta": 50.0,
@@ -819,7 +1070,10 @@
       "insurance": 350.0,
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": -524.15
     },
@@ -835,7 +1089,16 @@
       "source_file": "ELIS LOGISTICS LLC #417 - 06-28-25.pdf"
     },
     "blocks_count": 2,
-    "block_ids": ["B-21JN8ZJSV", "B-9H3KQWH9G"],
+    "block_ids": [
+      {
+        "block_id": "B-21JN8ZJSV",
+        "delivery_date": "2025-06-30"
+      },
+      {
+        "block_id": "B-9H3KQWH9G",
+        "delivery_date": "2025-07-03"
+      }
+    ],
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 2739.88,
@@ -849,7 +1112,10 @@
       "insurance": 350.0,
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": -139.29
     },
@@ -866,8 +1132,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-21JN8ZJSV",
-      "B-9H3KQWH9G"
+      {
+        "block_id": "B-21JN8ZJSV",
+        "delivery_date": "2025-06-30"
+      },
+      {
+        "block_id": "B-9H3KQWH9G",
+        "delivery_date": "2025-07-03"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -906,9 +1178,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-591PW9VCM",
-      "B-5FPDCSJW9",
-      "B-3X8JXZC46"
+      {
+        "block_id": "B-591PW9VCM",
+        "delivery_date": "2025-07-07"
+      },
+      {
+        "block_id": "B-5FPDCSJW9",
+        "delivery_date": "2025-07-09"
+      },
+      {
+        "block_id": "B-3X8JXZC46",
+        "delivery_date": "2025-07-11"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -931,7 +1212,10 @@
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -950,10 +1234,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-KC6NCX2VK",
-      "B-SBC3TC1VT",
-      "B-8X0N0LXT1",
-      "B-8Q2D2GRG2"
+      {
+        "block_id": "B-KC6NCX2VK",
+        "delivery_date": "2025-07-13"
+      },
+      {
+        "block_id": "B-SBC3TC1VT",
+        "delivery_date": "2025-07-13"
+      },
+      {
+        "block_id": "B-8X0N0LXT1",
+        "delivery_date": "2025-07-15"
+      },
+      {
+        "block_id": "B-8Q2D2GRG2",
+        "delivery_date": "2025-07-17"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -992,8 +1288,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-5D7T57VNL",
-      "B-5JJF141S8"
+      {
+        "block_id": "B-5D7T57VNL",
+        "delivery_date": "2025-07-24"
+      },
+      {
+        "block_id": "B-5JJF141S8",
+        "delivery_date": "2025-07-26"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1038,8 +1340,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-6HBFBSMSK",
-      "B-0WW77SNMR"
+      {
+        "block_id": "B-6HBFBSMSK",
+        "delivery_date": "2025-07-30"
+      },
+      {
+        "block_id": "B-0WW77SNMR",
+        "delivery_date": "2025-08-01"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1054,11 +1362,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1078,9 +1392,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-ZJK7KP4V2",
-      "B-SLG3791ZB",
-      "B-Z8JX6J8VD"
+      {
+        "block_id": "B-ZJK7KP4V2",
+        "delivery_date": "2025-08-03"
+      },
+      {
+        "block_id": "B-SLG3791ZB",
+        "delivery_date": "2025-08-06"
+      },
+      {
+        "block_id": "B-Z8JX6J8VD",
+        "delivery_date": "2025-08-08"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1095,11 +1418,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 100.0,
       "service_on_truck_details": [
-        { "description": "Truck wash service", "amount": 100.0 }
+        {
+          "description": "Truck wash service",
+          "amount": 100.0
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1119,8 +1448,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-LBH2422S3",
-      "B-TT9VXW4ZR"
+      {
+        "block_id": "B-LBH2422S3",
+        "delivery_date": "2025-08-13"
+      },
+      {
+        "block_id": "B-TT9VXW4ZR",
+        "delivery_date": "2025-08-15"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1135,11 +1470,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1159,7 +1500,10 @@
     },
     "blocks_count": 1,
     "block_ids": [
-      "B-JZR86BPZT"
+      {
+        "block_id": "B-JZR86BPZT",
+        "delivery_date": "2025-08-20"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1174,11 +1518,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1198,8 +1548,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-XDMSVWV93",
-      "B-D56XB0GD0"
+      {
+        "block_id": "B-XDMSVWV93",
+        "delivery_date": "2025-08-26"
+      },
+      {
+        "block_id": "B-D56XB0GD0",
+        "delivery_date": "2025-08-28"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1214,11 +1570,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 150.0,
       "service_on_truck_details": [
-        { "description": "Truck parking", "amount": 150.0 }
+        {
+          "description": "Truck parking",
+          "amount": 150.0
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1238,9 +1600,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-F7X8VWBNJ",
-      "B-JXW4NGZ9L",
-      "B-0TN2VV3ZP"
+      {
+        "block_id": "B-F7X8VWBNJ",
+        "delivery_date": "2025-09-01"
+      },
+      {
+        "block_id": "B-JXW4NGZ9L",
+        "delivery_date": "2025-09-03"
+      },
+      {
+        "block_id": "B-0TN2VV3ZP",
+        "delivery_date": "2025-09-05"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1255,16 +1626,22 @@
       "insurance": 350.0,
       "reimbursment": 1021.85,
       "reimbursement_details": [
-        { "description": "previous week's settlement reimbursement", "amount": 1021.85 }
+        {
+          "description": "previous week's settlement reimbursement",
+          "amount": 1021.85
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
       "deductions": 0.0,
-      "net_to_owner": 969.70
+      "net_to_owner": 969.7
     },
     "dispatch_percentage": 8
   },
@@ -1279,9 +1656,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-94MZJGR79",
-      "B-JN5JQQCS4",
-      "B-R0LVC128S"
+      {
+        "block_id": "B-94MZJGR79",
+        "delivery_date": "2025-09-07"
+      },
+      {
+        "block_id": "B-JN5JQQCS4",
+        "delivery_date": "2025-09-10"
+      },
+      {
+        "block_id": "B-R0LVC128S",
+        "delivery_date": "2025-09-12"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1296,17 +1682,26 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
       "deductions": null,
       "deductions_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 751.69
     },
@@ -1323,8 +1718,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-1MKT47WQW",
-      "B-4D3FZF5LJ"
+      {
+        "block_id": "B-1MKT47WQW",
+        "delivery_date": "2025-09-17"
+      },
+      {
+        "block_id": "B-4D3FZF5LJ",
+        "delivery_date": "2025-09-20"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1339,11 +1740,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1363,7 +1770,10 @@
     },
     "blocks_count": 1,
     "block_ids": [
-      "B-TRB4QCDJD"
+      {
+        "block_id": "B-TRB4QCDJD",
+        "delivery_date": "2025-09-25"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1378,11 +1788,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1402,9 +1818,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-STHJ10531",
-      "B-JF1P442SR",
-      "B-55CHXP94D"
+      {
+        "block_id": "B-STHJ10531",
+        "delivery_date": "2025-09-28"
+      },
+      {
+        "block_id": "B-JF1P442SR",
+        "delivery_date": "2025-09-30"
+      },
+      {
+        "block_id": "B-55CHXP94D",
+        "delivery_date": "2025-10-02"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1419,11 +1844,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1443,9 +1874,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-NQG2ZBGQN",
-      "B-HFQXN1MSR",
-      "B-0G0M94H1M"
+      {
+        "block_id": "B-NQG2ZBGQN",
+        "delivery_date": "2025-10-05"
+      },
+      {
+        "block_id": "B-HFQXN1MSR",
+        "delivery_date": "2025-10-07"
+      },
+      {
+        "block_id": "B-0G0M94H1M",
+        "delivery_date": "2025-10-10"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1460,11 +1900,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1484,8 +1930,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-9FV886J0T",
-      "B-ML0LN9H9H"
+      {
+        "block_id": "B-9FV886J0T",
+        "delivery_date": "2025-10-16"
+      },
+      {
+        "block_id": "B-ML0LN9H9H",
+        "delivery_date": "2025-10-18"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1500,11 +1952,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1524,9 +1982,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-WVNX2XWTZ",
-      "B-KP8BG7QQQ",
-      "B-VFQ33B2ZH"
+      {
+        "block_id": "B-WVNX2XWTZ",
+        "delivery_date": "2025-10-20"
+      },
+      {
+        "block_id": "B-KP8BG7QQQ",
+        "delivery_date": "2025-10-25"
+      },
+      {
+        "block_id": "B-VFQ33B2ZH",
+        "delivery_date": "2025-10-23"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1541,11 +2008,17 @@
       "insurance": 350.0,
       "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "service_on_truck": 70.0,
       "service_on_truck_details": [
-        { "description": "Truck tire patching", "amount": 70.0 }
+        {
+          "description": "Truck tire patching",
+          "amount": 70.0
+        }
       ],
       "truck_parking": null,
       "decals": null,
@@ -1567,9 +2040,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "B-7023P8FWX",
-          "B-XBB1HK5HZ",
-          "B-8XDKH8KMR"
+          {
+            "block_id": "B-7023P8FWX",
+            "delivery_date": "2025-10-28"
+          },
+          {
+            "block_id": "B-XBB1HK5HZ",
+            "delivery_date": "2025-10-30"
+          },
+          {
+            "block_id": "B-8XDKH8KMR",
+            "delivery_date": "2025-11-01"
+          }
         ],
         "statement_totals": {
           "gross_miles": null,
@@ -1589,11 +2071,11 @@
               "amount": null
             }
           ],
-          "service_on_truck": 51.00,
+          "service_on_truck": 51.0,
           "service_on_truck_details": [
             {
               "description": "Glad hand service",
-              "amount": 51.00
+              "amount": 51.0
             }
           ],
           "truck_parking": 150.0,
@@ -1612,9 +2094,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "B-84TVZ01GZ",
-          "B-92VQL5T9J",
-          "B-VLDRHN5WZ"
+          {
+            "block_id": "B-84TVZ01GZ",
+            "delivery_date": "2025-11-04"
+          },
+          {
+            "block_id": "B-92VQL5T9J",
+            "delivery_date": "2025-11-06"
+          },
+          {
+            "block_id": "B-VLDRHN5WZ",
+            "delivery_date": "2025-11-08"
+          }
         ],
         "statement_totals": {
           "gross_miles": null,
@@ -1657,9 +2148,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "B-LB65TGTL0",
-          "B-NJB8B76TB",
-          "B-PTD39T5JG"
+          {
+            "block_id": "B-LB65TGTL0",
+            "delivery_date": "2025-11-11"
+          },
+          {
+            "block_id": "B-NJB8B76TB",
+            "delivery_date": "2025-11-13"
+          },
+          {
+            "block_id": "B-PTD39T5JG",
+            "delivery_date": "2025-11-15"
+          }
         ],
         "statement_totals": {
           "gross_miles": null,
@@ -1694,5 +2194,5 @@
         "dispatch_percentage": 8
       }
     ]
-  }    
+  }
 ]

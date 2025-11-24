@@ -10,8 +10,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "Q3WF-CLT4",
-      "1DK6-CLT4"
+      {
+        "block_id": "Q3WF-CLT4",
+        "delivery_date": "2024-12-17"
+      },
+      {
+        "block_id": "1DK6-CLT4",
+        "delivery_date": "2024-12-17"
+      }
     ],
     "statement_totals": {
       "gross_miles": 1668.0,
@@ -65,7 +71,10 @@
         },
         "blocks_count": 1,
         "block_ids": [
-          "TFC9-CLT2"
+          {
+            "block_id": "TFC9-CLT2",
+            "delivery_date": "2024-12-27"
+          }
         ],
         "statement_totals": {
           "gross_miles": 795.0,
@@ -120,8 +129,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "JH33-CLT5",
-          "WW0X-CLT9"
+          {
+            "block_id": "JH33-CLT5",
+            "delivery_date": "2024-12-31"
+          },
+          {
+            "block_id": "WW0X-CLT9",
+            "delivery_date": "2025-01-04"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1646.0,
@@ -170,8 +185,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "W1G8-CLT9",
-          "04LS-CLT2"
+          {
+            "block_id": "W1G8-CLT9",
+            "delivery_date": "2025-01-06"
+          },
+          {
+            "block_id": "04LS-CLT2",
+            "delivery_date": "2025-01-08"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1742.0,
@@ -220,7 +241,10 @@
         },
         "blocks_count": 1,
         "block_ids": [
-          "PP8K-CLT3"
+          {
+            "block_id": "PP8K-CLT3",
+            "delivery_date": "2025-01-16"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1034.0,
@@ -269,9 +293,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "1JTZ-CLT4",
-          "VTWQ-CLT3",
-          "38S5-CLT3"
+          {
+            "block_id": "1JTZ-CLT4",
+            "delivery_date": "2025-01-17"
+          },
+          {
+            "block_id": "VTWQ-CLT3",
+            "delivery_date": "2025-01-20"
+          },
+          {
+            "block_id": "38S5-CLT3",
+            "delivery_date": "2025-01-22"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2330.0,
@@ -326,9 +359,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "SW69-CLT4",
-          "9WFN-CLT9",
-          "TN12-CLT4"
+          {
+            "block_id": "SW69-CLT4",
+            "delivery_date": "2025-01-25"
+          },
+          {
+            "block_id": "9WFN-CLT9",
+            "delivery_date": "2025-01-25"
+          },
+          {
+            "block_id": "TN12-CLT4",
+            "delivery_date": "2025-01-31"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2492.0,
@@ -377,8 +419,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "7JV7-CLT4",
-          "H98L-CLT2"
+          {
+            "block_id": "7JV7-CLT4",
+            "delivery_date": "2025-02-05"
+          },
+          {
+            "block_id": "H98L-CLT2",
+            "delivery_date": "2025-02-05"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1747.0,
@@ -427,10 +475,22 @@
         },
         "blocks_count": 4,
         "block_ids": [
-          "ZS50-CLT4",
-          "QF0S-CLT4",
-          "BM0R-CLT9",
-          "5QLF-CLT9"
+          {
+            "block_id": "ZS50-CLT4",
+            "delivery_date": "2025-02-09"
+          },
+          {
+            "block_id": "QF0S-CLT4",
+            "delivery_date": "2025-02-10"
+          },
+          {
+            "block_id": "BM0R-CLT9",
+            "delivery_date": "2025-02-10"
+          },
+          {
+            "block_id": "5QLF-CLT9",
+            "delivery_date": "2025-02-13"
+          }
         ],
         "statement_totals": {
           "gross_miles": 3465.0,
@@ -479,8 +539,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "HZ23-CLT5",
-          "13HK-CLT4"
+          {
+            "block_id": "HZ23-CLT5",
+            "delivery_date": "2025-02-19"
+          },
+          {
+            "block_id": "13HK-CLT4",
+            "delivery_date": "2025-02-19"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1681.0,
@@ -535,8 +601,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "RNJD-GSP1",
-          "P20X-GSP1"
+          {
+            "block_id": "RNJD-GSP1",
+            "delivery_date": "2025-02-23"
+          },
+          {
+            "block_id": "P20X-GSP1",
+            "delivery_date": "2025-02-23"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1706.0,
@@ -585,9 +657,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "N0XL-GSP1",
-          "HCQL-CLT4",
-          "7XV8-GSP1"
+          {
+            "block_id": "N0XL-GSP1",
+            "delivery_date": "2025-03-02"
+          },
+          {
+            "block_id": "HCQL-CLT4",
+            "delivery_date": "2025-03-02"
+          },
+          {
+            "block_id": "7XV8-GSP1",
+            "delivery_date": "2025-03-05"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2657.0,
@@ -636,9 +717,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "B0H0-GSP1",
-          "K04W-CLT9",
-          "DBHD-CLT4"
+          {
+            "block_id": "B0H0-GSP1",
+            "delivery_date": "2025-03-08"
+          },
+          {
+            "block_id": "K04W-CLT9",
+            "delivery_date": "2025-03-08"
+          },
+          {
+            "block_id": "DBHD-CLT4",
+            "delivery_date": "2025-03-11"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2284.0,
@@ -691,9 +781,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "3H6V-CLT4",
-          "BMSL-CLT9",
-          "LB8N-GSP1"
+          {
+            "block_id": "3H6V-CLT4",
+            "delivery_date": "2025-03-16"
+          },
+          {
+            "block_id": "BMSL-CLT9",
+            "delivery_date": "2025-03-20"
+          },
+          {
+            "block_id": "LB8N-GSP1",
+            "delivery_date": "2025-03-20"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1957.0,
@@ -742,9 +841,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "V5X5-CLT2",
-          "JQV2-CLT9",
-          "9R4T-CLT4"
+          {
+            "block_id": "V5X5-CLT2",
+            "delivery_date": "2025-03-26"
+          },
+          {
+            "block_id": "JQV2-CLT9",
+            "delivery_date": "2025-03-26"
+          },
+          {
+            "block_id": "9R4T-CLT4",
+            "delivery_date": "2025-03-28"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2338.0,
@@ -799,8 +907,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "6XBB-CLT4",
-          "C6TN-CLT3"
+          {
+            "block_id": "6XBB-CLT4",
+            "delivery_date": "2025-04-03"
+          },
+          {
+            "block_id": "C6TN-CLT3",
+            "delivery_date": "2025-04-03"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1505.0,
@@ -849,8 +963,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "BHNP-CLT9",
-          "NSLL-CLT4"
+          {
+            "block_id": "BHNP-CLT9",
+            "delivery_date": "2025-04-10"
+          },
+          {
+            "block_id": "NSLL-CLT4",
+            "delivery_date": "2025-04-10"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1695.0,
@@ -899,8 +1019,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "QZ2T-GSP1",
-          "ZKJ6-CAE1"
+          {
+            "block_id": "QZ2T-GSP1",
+            "delivery_date": "2025-04-16"
+          },
+          {
+            "block_id": "ZKJ6-CAE1",
+            "delivery_date": "2025-04-16"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1738.0,
@@ -949,9 +1075,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "JJL5-GSP1",
-          "5RQ8-GSP1",
-          "CWN2-CLT4"
+          {
+            "block_id": "JJL5-GSP1",
+            "delivery_date": "2025-04-18"
+          },
+          {
+            "block_id": "5RQ8-GSP1",
+            "delivery_date": "2025-04-18"
+          },
+          {
+            "block_id": "CWN2-CLT4",
+            "delivery_date": "2025-04-19"
+          }
         ],
         "statement_totals": {
           "gross_miles": 2628.0,
@@ -1006,10 +1141,22 @@
         },
         "blocks_count": 4,
         "block_ids": [
-          "XFST-CLT2",
-          "4LXK-CLT4",
-          "V5PJ-GSP1",
-          "DWW8-GSP1"
+          {
+            "block_id": "XFST-CLT2",
+            "delivery_date": "2025-04-27"
+          },
+          {
+            "block_id": "4LXK-CLT4",
+            "delivery_date": "2025-04-29"
+          },
+          {
+            "block_id": "V5PJ-GSP1",
+            "delivery_date": "2025-04-29"
+          },
+          {
+            "block_id": "DWW8-GSP1",
+            "delivery_date": "2025-05-01"
+          }
         ],
         "statement_totals": {
           "gross_miles": 3312.0,
@@ -1058,10 +1205,22 @@
         },
         "blocks_count": 4,
         "block_ids": [
-          "5G88-GSP1",
-          "QBG8-GSP1",
-          "R7ZP-CLT5",
-          "QRJ0-GSP1"
+          {
+            "block_id": "5G88-GSP1",
+            "delivery_date": "2025-05-04"
+          },
+          {
+            "block_id": "QBG8-GSP1",
+            "delivery_date": "2025-05-06"
+          },
+          {
+            "block_id": "R7ZP-CLT5",
+            "delivery_date": "2025-05-06"
+          },
+          {
+            "block_id": "QRJ0-GSP1",
+            "delivery_date": "2025-05-07"
+          }
         ],
         "statement_totals": {
           "gross_miles": 3256.0,
@@ -1110,10 +1269,22 @@
         },
         "blocks_count": 4,
         "block_ids": [
-          "6CCR-CLT9",
-          "5QJG-CLT4",
-          "TH0B-CLT2",
-          "XWG1-GSP1"
+          {
+            "block_id": "6CCR-CLT9",
+            "delivery_date": "2025-05-11"
+          },
+          {
+            "block_id": "5QJG-CLT4",
+            "delivery_date": "2025-05-13"
+          },
+          {
+            "block_id": "TH0B-CLT2",
+            "delivery_date": "2025-05-13"
+          },
+          {
+            "block_id": "XWG1-GSP1",
+            "delivery_date": "2025-05-14"
+          }
         ],
         "statement_totals": {
           "gross_miles": 3517.0,
@@ -1162,10 +1333,22 @@
         },
         "blocks_count": 4,
         "block_ids": [
-          "VBCS-CLT9",
-          "F81Z-CLT5",
-          "74WV-CLT5",
-          "LZ97-CLT9"
+          {
+            "block_id": "VBCS-CLT9",
+            "delivery_date": "2025-05-18"
+          },
+          {
+            "block_id": "F81Z-CLT5",
+            "delivery_date": "2025-05-18"
+          },
+          {
+            "block_id": "74WV-CLT5",
+            "delivery_date": "2025-05-20"
+          },
+          {
+            "block_id": "LZ97-CLT9",
+            "delivery_date": "2025-05-20"
+          }
         ],
         "statement_totals": {
           "gross_miles": 3692.0,
@@ -1214,8 +1397,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "JHFR-GSP1",
-          "PQ52-CLT2"
+          {
+            "block_id": "JHFR-GSP1",
+            "delivery_date": "2025-05-27"
+          },
+          {
+            "block_id": "PQ52-CLT2",
+            "delivery_date": "2025-05-28"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1612.0,
@@ -1270,8 +1459,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "18BV-GSP1",
-          "VDF2-CLT5"
+          {
+            "block_id": "18BV-GSP1",
+            "delivery_date": "2025-06-05"
+          },
+          {
+            "block_id": "VDF2-CLT5",
+            "delivery_date": "2025-06-03"
+          }
         ],
         "statement_totals": {
           "gross_miles": 1665.0,
@@ -1320,11 +1515,26 @@
         },
         "blocks_count": 5,
         "block_ids": [
-          "B-XQT75FQ56",
-          "B-9FFCSPB1T",
-          "B-6JZG8BXRZ",
-          "B-D1H7B5818",
-          "B-FLMDTGBPH"
+          {
+            "block_id": "B-XQT75FQ56",
+            "delivery_date": "2025-06-08"
+          },
+          {
+            "block_id": "B-9FFCSPB1T",
+            "delivery_date": "2025-06-09"
+          },
+          {
+            "block_id": "B-6JZG8BXRZ",
+            "delivery_date": "2025-06-11"
+          },
+          {
+            "block_id": "B-D1H7B5818",
+            "delivery_date": "2025-06-12"
+          },
+          {
+            "block_id": "B-FLMDTGBPH",
+            "delivery_date": "2025-06-14"
+          }
         ],
         "statement_totals": {
           "gross_miles": 0.0,
@@ -1373,9 +1583,18 @@
         },
         "blocks_count": 3,
         "block_ids": [
-          "B-N4SP5V0KS",
-          "B-T464FBCLH",
-          "B-8QKTCM899"
+          {
+            "block_id": "B-N4SP5V0KS",
+            "delivery_date": "2025-06-16"
+          },
+          {
+            "block_id": "B-T464FBCLH",
+            "delivery_date": "2025-06-18"
+          },
+          {
+            "block_id": "B-8QKTCM899",
+            "delivery_date": "2025-06-20"
+          }
         ],
         "statement_totals": {
           "gross_miles": 0.0,
@@ -1426,8 +1645,14 @@
         },
         "blocks_count": 2,
         "block_ids": [
-          "B-TM154JXN1",
-          "B-HRQ6L6GRV"
+          {
+            "block_id": "B-TM154JXN1",
+            "delivery_date": "2025-06-25"
+          },
+          {
+            "block_id": "B-HRQ6L6GRV",
+            "delivery_date": "2025-06-27"
+          }
         ],
         "statement_totals": {
           "gross_miles": null,
@@ -1480,10 +1705,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-33JFFNTZ0",
-      "B-LCQ7MFW1K",
-      "B-XT1MPWHW4",
-      "B-R709T062S"
+      {
+        "block_id": "B-33JFFNTZ0",
+        "delivery_date": "2025-06-29"
+      },
+      {
+        "block_id": "B-LCQ7MFW1K",
+        "delivery_date": "2025-07-01"
+      },
+      {
+        "block_id": "B-XT1MPWHW4",
+        "delivery_date": "2025-07-02"
+      },
+      {
+        "block_id": "B-R709T062S",
+        "delivery_date": "2025-07-04"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1534,10 +1771,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-FWHK1G1KV",
-      "B-C0DF0PRXR",
-      "B-KNVQ99V7Z",
-      "B-KVQFSQ52B"
+      {
+        "block_id": "B-FWHK1G1KV",
+        "delivery_date": "2025-07-06"
+      },
+      {
+        "block_id": "B-C0DF0PRXR",
+        "delivery_date": "2025-07-09"
+      },
+      {
+        "block_id": "B-KNVQ99V7Z",
+        "delivery_date": "2025-07-11"
+      },
+      {
+        "block_id": "B-KVQFSQ52B",
+        "delivery_date": "2025-07-12"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1588,10 +1837,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-VP77GQ70H",
-      "B-WL3R6LD05",
-      "B-FGBDWLW2J",
-      "B-C2ZDTKR7C"
+      {
+        "block_id": "B-VP77GQ70H",
+        "delivery_date": "2025-07-14"
+      },
+      {
+        "block_id": "B-WL3R6LD05",
+        "delivery_date": "2025-07-16"
+      },
+      {
+        "block_id": "B-FGBDWLW2J",
+        "delivery_date": "2025-07-17"
+      },
+      {
+        "block_id": "B-C2ZDTKR7C",
+        "delivery_date": "2025-07-19"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1642,10 +1903,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-GXWSLZB76",
-      "B-DSXP27QZ0",
-      "B-N1MQWJ0HN",
-      "B-NSQBR1VSC"
+      {
+        "block_id": "B-GXWSLZB76",
+        "delivery_date": "2025-07-20"
+      },
+      {
+        "block_id": "B-DSXP27QZ0",
+        "delivery_date": "2025-07-22"
+      },
+      {
+        "block_id": "B-N1MQWJ0HN",
+        "delivery_date": "2025-07-23"
+      },
+      {
+        "block_id": "B-NSQBR1VSC",
+        "delivery_date": "2025-07-25"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1696,9 +1969,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-0VLM6GQSJ",
-      "B-H826S58HS",
-      "B-TZDWS43JB"
+      {
+        "block_id": "B-0VLM6GQSJ",
+        "delivery_date": "2025-07-30"
+      },
+      {
+        "block_id": "B-H826S58HS",
+        "delivery_date": "2025-08-01"
+      },
+      {
+        "block_id": "B-TZDWS43JB",
+        "delivery_date": "2025-08-02"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1749,10 +2031,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-BBD37BNF6",
-      "B-6NKZM442W",
-      "B-2P5XQBFPP",
-      "B-S8F84QT81"
+      {
+        "block_id": "B-BBD37BNF6",
+        "delivery_date": "2025-08-04"
+      },
+      {
+        "block_id": "B-6NKZM442W",
+        "delivery_date": "2025-08-06"
+      },
+      {
+        "block_id": "B-2P5XQBFPP",
+        "delivery_date": "2025-08-07"
+      },
+      {
+        "block_id": "B-S8F84QT81",
+        "delivery_date": "2025-08-09"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1803,10 +2097,22 @@
     },
     "blocks_count": 4,
     "block_ids": [
-      "B-K4KQMRZ9G",
-      "B-8TMWQBN81",
-      "B-WSKVFDZTF",
-      "B-C7KPBTJ8W"
+      {
+        "block_id": "B-K4KQMRZ9G",
+        "delivery_date": "2025-08-10"
+      },
+      {
+        "block_id": "B-8TMWQBN81",
+        "delivery_date": "2025-08-12"
+      },
+      {
+        "block_id": "B-WSKVFDZTF",
+        "delivery_date": "2025-08-14"
+      },
+      {
+        "block_id": "B-C7KPBTJ8W",
+        "delivery_date": "2025-08-15"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1857,8 +2163,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-JXKT7H9NT",
-      "B-PQZB2QDQT"
+      {
+        "block_id": "B-JXKT7H9NT",
+        "delivery_date": "2025-08-17"
+      },
+      {
+        "block_id": "B-PQZB2QDQT",
+        "delivery_date": "2025-08-20"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1909,8 +2221,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-XZRM6FSKN",
-      "B-15F3XXN4P"
+      {
+        "block_id": "B-XZRM6FSKN",
+        "delivery_date": "2025-08-26"
+      },
+      {
+        "block_id": "B-15F3XXN4P",
+        "delivery_date": "2025-08-27"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -1961,9 +2279,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-05XDJ3MJG",
-      "B-K61WH64HS",
-      "B-4KC869JX7"
+      {
+        "block_id": "B-05XDJ3MJG",
+        "delivery_date": "2025-08-31"
+      },
+      {
+        "block_id": "B-K61WH64HS",
+        "delivery_date": "2025-09-02"
+      },
+      {
+        "block_id": "B-4KC869JX7",
+        "delivery_date": "2025-09-06"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2014,9 +2341,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-63FGGV8TZ",
-      "B-X616PMQDW",
-      "B-P3W133MMB"
+      {
+        "block_id": "B-63FGGV8TZ",
+        "delivery_date": "2025-09-08"
+      },
+      {
+        "block_id": "B-X616PMQDW",
+        "delivery_date": "2025-09-10"
+      },
+      {
+        "block_id": "B-P3W133MMB",
+        "delivery_date": "2025-09-13"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2067,9 +2403,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-1FJPRZP4C",
-      "B-QX892F47Z",
-      "B-QHQNPJMCX"
+      {
+        "block_id": "B-1FJPRZP4C",
+        "delivery_date": "2025-09-15"
+      },
+      {
+        "block_id": "B-QX892F47Z",
+        "delivery_date": "2025-09-18"
+      },
+      {
+        "block_id": "B-QHQNPJMCX",
+        "delivery_date": "2025-09-20"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2120,7 +2465,10 @@
     },
     "blocks_count": 1,
     "block_ids": [
-      "B-RZQF09V54"
+      {
+        "block_id": "B-RZQF09V54",
+        "delivery_date": "2025-09-27"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2171,9 +2519,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-J06R3W0DR",
-      "B-8JG4H1BSZ",
-      "B-NZWWZBM65"
+      {
+        "block_id": "B-J06R3W0DR",
+        "delivery_date": "2025-09-29"
+      },
+      {
+        "block_id": "B-8JG4H1BSZ",
+        "delivery_date": "2025-10-01"
+      },
+      {
+        "block_id": "B-NZWWZBM65",
+        "delivery_date": "2025-10-04"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2224,8 +2581,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-P616PK4KF",
-      "B-NWJ6Z43KV"
+      {
+        "block_id": "B-P616PK4KF",
+        "delivery_date": "2025-10-07"
+      },
+      {
+        "block_id": "B-NWJ6Z43KV",
+        "delivery_date": "2025-10-10"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2276,9 +2639,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-NQK6LVK8K",
-      "B-7VS8LGJPV",
-      "B-X90VX016B"
+      {
+        "block_id": "B-NQK6LVK8K",
+        "delivery_date": "2025-10-12"
+      },
+      {
+        "block_id": "B-7VS8LGJPV",
+        "delivery_date": "2025-10-14"
+      },
+      {
+        "block_id": "B-X90VX016B",
+        "delivery_date": "2025-10-16"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2330,9 +2702,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-92ZH2QCPK",
-      "B-33TM76ZW4",
-      "B-158Q83ZLR"
+      {
+        "block_id": "B-92ZH2QCPK",
+        "delivery_date": "2025-10-19"
+      },
+      {
+        "block_id": "B-33TM76ZW4",
+        "delivery_date": "2025-10-24"
+      },
+      {
+        "block_id": "B-158Q83ZLR",
+        "delivery_date": "2025-10-22"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2384,9 +2765,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-824DX8QR6",
-      "B-P78JVGG83",
-      "B-5KFFGGXQ3"
+      {
+        "block_id": "B-824DX8QR6",
+        "delivery_date": "2025-10-26"
+      },
+      {
+        "block_id": "B-P78JVGG83",
+        "delivery_date": "2025-10-29"
+      },
+      {
+        "block_id": "B-5KFFGGXQ3",
+        "delivery_date": "2025-10-31"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2438,8 +2828,14 @@
     },
     "blocks_count": 2,
     "block_ids": [
-      "B-6Q4SCT95J",
-      "B-4M2ZD7FFX"
+      {
+        "block_id": "B-6Q4SCT95J",
+        "delivery_date": "2025-11-04"
+      },
+      {
+        "block_id": "B-4M2ZD7FFX",
+        "delivery_date": "2025-11-06"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
@@ -2491,9 +2887,18 @@
     },
     "blocks_count": 3,
     "block_ids": [
-      "B-CXT6SNR2S",
-      "B-X5JD8KDCR",
-      "B-HJRP32P4D"
+      {
+        "block_id": "B-CXT6SNR2S",
+        "delivery_date": "2025-11-12"
+      },
+      {
+        "block_id": "B-X5JD8KDCR",
+        "delivery_date": "2025-11-14"
+      },
+      {
+        "block_id": "B-HJRP32P4D",
+        "delivery_date": "2025-11-15"
+      }
     ],
     "statement_totals": {
       "gross_miles": null,
