@@ -3,6 +3,92 @@
     "unit_number": "417",
     "plate_number": "VV9952",
     "statement": {
+      "statement_id": "SETT-2024-12-14-417",
+      "period_start": "2024-12-08",
+      "period_end": "2024-12-14",
+      "source_file": "ELIS LOGISTICS LLC #417 - 12-14-24.pdf"
+    },
+    "blocks_count": 1,
+    "block_ids": [
+      "ZK6S-CLT9"
+    ],
+    "statement_totals": {
+      "gross_miles": 779.0,
+      "gross_revenue": 2110.90,
+      "total_driver_pay": 600.00,
+      "fuel": 0.00,
+      "dispatch_fee_total": 168.87,
+      "driver_payroll_fee": 39.00,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 315.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 347.15,
+      "service_on_truck_details": [
+        { "description": "Service on the truck deduction", "amount": 347.15 }
+      ],
+      "truck_parking": 0.00,
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 500.88
+    },
+    "dispatch_percentage": 8.0,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "417",
+    "plate_number": "VV9952",
+    "statement": {
+      "statement_id": "SETT-2024-12-21-417",
+      "period_start": "2024-12-15",
+      "period_end": "2024-12-21",
+      "source_file": "ELIS LOGISTICS LLC #417 - 12-21-24.pdf"
+    },
+    "blocks_count": 1,
+    "block_ids": [
+      "VSQP-CLT2"
+    ],
+    "statement_totals": {
+      "gross_miles": 987.0,
+      "gross_revenue": 2409.36,
+      "total_driver_pay": 530.00,
+      "fuel": 597.56,
+      "dispatch_fee_total": 192.75,
+      "driver_payroll_fee": 34.45,
+      "ifta": 50.00,
+      "safety": 20.00,
+      "prepass": 70.00,
+      "insurance": 315.00,
+      "truck_parking": 0.00,
+      "reimbursment": 0.00,
+      "reimbursement_details": [
+        { "description": "", "amount": null }
+      ],
+      "service_on_truck": 0.00,
+      "service_on_truck_details": [
+        { "description": "", "amount": null }
+      ],
+      "decals": null,
+      "deductions": 0.00,
+      "deduction_details": [
+        { "description": "", "amount": null }
+      ],
+      "net_to_owner": 599.60
+    },
+    "dispatch_percentage": 8,
+    "payroll_percentage": 6.5
+  },  
+  {
+    "unit_number": "417",
+    "plate_number": "VV9952",
+    "statement": {
       "statement_id": "SETT-2024-12-28-417",
       "period_start": "2024-12-22",
       "period_end": "2024-12-28",

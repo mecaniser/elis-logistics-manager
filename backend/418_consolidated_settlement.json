@@ -2,6 +2,59 @@
   {
     "unit_number": "418",
     "plate_number": "VW1503",
+    "statement": {
+      "statement_id": "SETT-2024-12-21-418",
+      "period_start": "2024-12-15",
+      "period_end": "2024-12-21",
+      "source_file": "ELIS LOGISTICS LLC #418 - 12-21-24.pdf"
+    },
+    "blocks_count": 2,
+    "block_ids": [
+      "Q3WF-CLT4",
+      "1DK6-CLT4"
+    ],
+    "statement_totals": {
+      "gross_miles": 1668.0,
+      "gross_revenue": 4035.2,
+      "total_driver_pay": 1140.0,
+      "fuel": 868.13,
+      "dispatch_fee_total": 403.52,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 315.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
+      "reimbursement_details": [
+        {
+          "description": "",
+          "amount": null
+        }
+      ],
+      "service_on_truck": 0.0,
+      "service_on_truck_details": [
+        {
+          "description": "",
+          "amount": null
+        }
+      ],
+      "decals": null,
+      "deductions": 0.0,
+      "deduction_details": [
+        {
+          "description": "",
+          "amount": null
+        }
+      ],
+      "net_to_owner": 1094.45
+    },
+    "dispatch_percentage": 10,
+    "payroll_percentage": 6.5
+  },
+  {
+    "unit_number": "418",
+    "plate_number": "VW1503",
     "statements": [
       {
         "statement": {
@@ -76,26 +129,35 @@
           "total_driver_pay": 1200.0,
           "fuel": 1506.67,
           "dispatch_fee_total": 447.21,
-          "driver_payroll_fee": 78.00,
+          "driver_payroll_fee": 78.0,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 150.0,
           "decals": 50.0,
           "deductions": 0.0,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
-          "net_to_owner": 585.20
+          "net_to_owner": 585.2
         },
         "dispatch_percentage": 10
       },
@@ -117,24 +179,33 @@
           "total_driver_pay": 1200.0,
           "fuel": 309.51,
           "dispatch_fee_total": 341.09,
-          "driver_payroll_fee": 78.00,
+          "driver_payroll_fee": 78.0,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": 320.83,
           "deduction_details": [
-            { "description": "Tax form 2290", "amount": 320.83 }
+            {
+              "description": "Tax form 2290",
+              "amount": 320.83
+            }
           ],
           "net_to_owner": 706.43
         },
@@ -155,7 +226,7 @@
           "gross_miles": 1034.0,
           "gross_revenue": 1910.46,
           "total_driver_pay": 600.0,
-          "fuel": 406.80,
+          "fuel": 406.8,
           "dispatch_fee_total": 191.05,
           "driver_payroll_fee": 39.0,
           "ifta": 50.0,
@@ -164,17 +235,26 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": 0.0,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 218.61
         },
@@ -199,24 +279,33 @@
           "total_driver_pay": 1740.0,
           "fuel": 1707.83,
           "dispatch_fee_total": 486.91,
-          "driver_payroll_fee": 113.10,
+          "driver_payroll_fee": 113.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 366.27
         },
@@ -254,17 +343,26 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
-          "deductions": 85.20,
+          "deductions": 85.2,
           "deduction_details": [
-            { "description": "from last week", "amount": 85.20 }
+            {
+              "description": "from last week",
+              "amount": 85.2
+            }
           ],
           "net_to_owner": 942.98
         },
@@ -288,24 +386,33 @@
           "total_driver_pay": 1140.0,
           "fuel": 1159.59,
           "dispatch_fee_total": 331.83,
-          "driver_payroll_fee": 74.10,
+          "driver_payroll_fee": 74.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 150.0,
           "decals": null,
           "deductions": 0.0,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 7.81
         },
@@ -338,17 +445,26 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 681.77
         },
@@ -372,24 +488,33 @@
           "total_driver_pay": 1140.0,
           "fuel": 530.22,
           "dispatch_fee_total": 322.95,
-          "driver_payroll_fee": 74.10,
+          "driver_payroll_fee": 74.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
-          "service_on_truck": 500.00,
+          "service_on_truck": 500.0,
           "service_on_truck_details": [
-            { "description": "Tag 1926 renewal taxes", "amount": 500.00 }
+            {
+              "description": "Tag 1926 renewal taxes",
+              "amount": 500.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 207.26
         },
@@ -419,24 +544,33 @@
           "total_driver_pay": 1140.0,
           "fuel": 1144.55,
           "dispatch_fee_total": 309.33,
-          "driver_payroll_fee": 74.10,
+          "driver_payroll_fee": 74.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": -29.72
         },
@@ -468,17 +602,26 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 200.0,
           "service_on_truck_details": [
-            { "description": "Tag 1926 renewal taxes", "amount": 200.0 }
+            {
+              "description": "Tag 1926 renewal taxes",
+              "amount": 200.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 767.49
         },
@@ -499,7 +642,7 @@
         ],
         "statement_totals": {
           "gross_miles": 2284.0,
-          "gross_revenue": 4560.90,
+          "gross_revenue": 4560.9,
           "total_driver_pay": 1670.0,
           "fuel": 1517.71,
           "dispatch_fee_total": 273.65,
@@ -510,18 +653,30 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 250.0,
           "service_on_truck_details": [
-            { "description": "Tag 1926 renewal taxes", "amount": 200.00 },
-            { "description": "truck wash", "amount": 50.00 }
+            {
+              "description": "Tag 1926 renewal taxes",
+              "amount": 200.0
+            },
+            {
+              "description": "truck wash",
+              "amount": 50.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 285.99
         },
@@ -553,17 +708,26 @@
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 500.0,
           "service_on_truck_details": [
-            { "description": "Tag 1926 renewal taxes", "amount": 500.0 }
+            {
+              "description": "Tag 1926 renewal taxes",
+              "amount": 500.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 209.91
         },
@@ -595,19 +759,28 @@
           "insurance": 315.0,
           "reimbursment": 150.0,
           "reimbursement_details": [
-            { "description": "Tow zone fee out of 1500$", "amount": 150.0 }
+            {
+              "description": "Tow zone fee out of 1500$",
+              "amount": 150.0
+            }
           ],
           "service_on_truck": 526.0,
           "service_on_truck_details": [
-            { "description": "Tag 1926 renewal taxes", "amount": 526.00 }
+            {
+              "description": "Tag 1926 renewal taxes",
+              "amount": 526.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
-          "net_to_owner": 720.00
+          "net_to_owner": 720.0
         },
         "dispatch_percentage": 6
       }
@@ -635,24 +808,33 @@
           "total_driver_pay": 1060.0,
           "fuel": 924.16,
           "dispatch_fee_total": 181.25,
-          "driver_payroll_fee": 68.90,
+          "driver_payroll_fee": 68.9,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 150.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 146.51
         },
@@ -676,24 +858,33 @@
           "total_driver_pay": 1060.0,
           "fuel": 891.34,
           "dispatch_fee_total": 181.97,
-          "driver_payroll_fee": 68.90,
+          "driver_payroll_fee": 68.9,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 315.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 375.66
         },
@@ -713,28 +904,37 @@
         ],
         "statement_totals": {
           "gross_miles": 1738.0,
-          "gross_revenue": 2776.80,
+          "gross_revenue": 2776.8,
           "total_driver_pay": 1100.0,
           "fuel": 396.78,
           "dispatch_fee_total": 166.61,
-          "driver_payroll_fee": 71.50,
+          "driver_payroll_fee": 71.5,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 551.91
         },
@@ -755,10 +955,10 @@
         ],
         "statement_totals": {
           "gross_miles": 2628.0,
-          "gross_revenue": 3963.40,
+          "gross_revenue": 3963.4,
           "total_driver_pay": 1670.0,
           "fuel": 1428.57,
-          "dispatch_fee_total": 237.80,
+          "dispatch_fee_total": 237.8,
           "driver_payroll_fee": 108.55,
           "ifta": 50.0,
           "safety": 20.0,
@@ -766,17 +966,26 @@
           "insurance": 350.0,
           "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 28.48
         },
@@ -808,20 +1017,33 @@
           "total_driver_pay": 2280.0,
           "fuel": 1393.07,
           "dispatch_fee_total": 315.52,
-          "driver_payroll_fee": 148.20,
+          "driver_payroll_fee": 148.2,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 631.93
         },
@@ -847,22 +1069,35 @@
           "total_driver_pay": 2280.0,
           "fuel": 1567.31,
           "dispatch_fee_total": 309.87,
-          "driver_payroll_fee": 148.20,
+          "driver_payroll_fee": 148.2,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
-          "deductions": 350.00,
+          "deductions": 350.0,
           "deduction_details": [
-            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+            {
+              "description": "insurance #417 (-350.00)",
+              "amount": -350.0
+            }
           ],
-          "net_to_owner": 19.10
+          "net_to_owner": 19.1
         },
         "dispatch_percentage": 6
       },
@@ -886,22 +1121,33 @@
           "total_driver_pay": 2280.0,
           "fuel": 1643.09,
           "dispatch_fee_total": 346.41,
-          "driver_payroll_fee": 148.20,
+          "driver_payroll_fee": 148.2,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 150.0,
           "service_on_truck_details": [
-            { "description": "driver for taking a truck to shop V417", "amount": 150.00 }
+            {
+              "description": "driver for taking a truck to shop V417",
+              "amount": 150.0
+            }
           ],
           "truck_parking": 0.0,
           "decals": null,
-          "deductions": 350.00,
+          "deductions": 350.0,
           "deduction_details": [
-            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+            {
+              "description": "insurance #417 (-350.00)",
+              "amount": -350.0
+            }
           ],
           "net_to_owner": 365.78
         },
@@ -927,20 +1173,33 @@
           "total_driver_pay": 2280.0,
           "fuel": 1311.06,
           "dispatch_fee_total": 365.73,
-          "driver_payroll_fee": 148.20,
+          "driver_payroll_fee": 148.2,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
-          "deductions": 350.00,
+          "deductions": 350.0,
           "deduction_details": [
-            { "description": "insurance #417 (-350.00)", "amount": -350.00 }
+            {
+              "description": "insurance #417 (-350.00)",
+              "amount": -350.0
+            }
           ],
           "net_to_owner": 1150.57
         },
@@ -964,20 +1223,33 @@
           "total_driver_pay": 1140.0,
           "fuel": 1060.49,
           "dispatch_fee_total": 179.16,
-          "driver_payroll_fee": 74.10,
+          "driver_payroll_fee": 74.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [ { "description": "", "amount": null } ],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [ { "description": "", "amount": null } ],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": null,
           "deduction_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
           "net_to_owner": 42.29
         },
@@ -1007,19 +1279,34 @@
           "total_driver_pay": 1140.0,
           "fuel": 659.26,
           "dispatch_fee_total": 165.03,
-          "driver_payroll_fee": 74.10,
+          "driver_payroll_fee": 74.1,
           "ifta": 50.0,
           "safety": 20.0,
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [{ "description": "", "amount": null }],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": 0.0,
-          "deduction_details": [{ "description": "", "amount": null }],
+          "deduction_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "net_to_owner": 222.18
         },
         "dispatch_percentage": 6
@@ -1051,13 +1338,28 @@
           "prepass": 140.0,
           "insurance": 700.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [{ "description": "", "amount": null }],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 300.0,
           "decals": null,
           "deductions": 0.0,
-          "deduction_details": [{ "description": "", "amount": null }],
+          "deduction_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "net_to_owner": 1788.01
         },
         "dispatch_percentage": 6
@@ -1087,14 +1389,27 @@
           "prepass": 70.0,
           "insurance": 350.0,
           "reimbursment": 0.0,
-          "reimbursement_details": [{ "description": "", "amount": null }],
+          "reimbursement_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "service_on_truck": 0.0,
-          "service_on_truck_details": [{ "description": "", "amount": null }],
+          "service_on_truck_details": [
+            {
+              "description": "",
+              "amount": null
+            }
+          ],
           "truck_parking": 0.0,
           "decals": null,
           "deductions": 524.15,
           "deduction_details": [
-            { "description": "#417 charge", "amount": 524.15 }
+            {
+              "description": "#417 charge",
+              "amount": 524.15
+            }
           ],
           "net_to_owner": -476.54
         },
@@ -1117,33 +1432,41 @@
         "statement_totals": {
           "gross_miles": null,
           "gross_revenue": 2888.75,
-          "total_driver_pay": 1140.00,
+          "total_driver_pay": 1140.0,
           "fuel": 1066.37,
           "dispatch_fee_total": 173.33,
-          "driver_payroll_fee": 68.40,
-          "ifta": 50.00,
-          "safety": 20.00,
-          "prepass": 70.00,
-          "insurance": 350.00,
-          "reimbursment": 0.00,
+          "driver_payroll_fee": 74.1,
+          "ifta": 50.0,
+          "safety": 20.0,
+          "prepass": 70.0,
+          "insurance": 350.0,
+          "reimbursment": 0.0,
           "reimbursement_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
-          "service_on_truck": 0.00,
+          "service_on_truck": 0.0,
           "service_on_truck_details": [
-            { "description": "", "amount": null }
+            {
+              "description": "",
+              "amount": null
+            }
           ],
-          "truck_parking": 0.00,
+          "truck_parking": 0.0,
           "decals": null,
           "deductions": 476.54,
           "deduction_details": [
-            { "description": "#417 owed charges", "amount": 476.54 }
+            {
+              "description": "#417 owed charges",
+              "amount": 476.54
+            }
           ],
           "net_to_owner": -49.35
         },
         "dispatch_percentage": 6
       }
-      
     ]
   },
   {
@@ -1165,27 +1488,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5998.31,
-      "total_driver_pay": 2280.00,
+      "total_driver_pay": 2280.0,
       "fuel": 1666.54,
-      "dispatch_fee_total": 359.90,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "dispatch_fee_total": 359.9,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1064.07
     },
@@ -1210,27 +1542,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6622.59,
-      "total_driver_pay": 2280.00,
+      "total_driver_pay": 2280.0,
       "fuel": 1912.26,
       "dispatch_fee_total": 397.36,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1406.17
     },
@@ -1255,32 +1596,42 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6216.98,
-      "total_driver_pay": 2280.00,
+      "total_driver_pay": 2280.0,
       "fuel": 1686.75,
       "dispatch_fee_total": 373.02,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1250.41
     },
     "dispatch_percentage": 6
-  },{
+  },
+  {
     "unit_number": "418",
     "plate_number": "VW1503",
     "statement": {
@@ -1299,27 +1650,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6674.91,
-      "total_driver_pay": 2280.00,
+      "total_driver_pay": 2280.0,
       "fuel": 1743.34,
       "dispatch_fee_total": 400.49,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
       "reimbursment": null,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1344.28
     },
@@ -1343,27 +1703,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 4430.01,
-      "total_driver_pay": 1710.00,
+      "total_driver_pay": 1710.0,
       "fuel": 1362.22,
-      "dispatch_fee_total": 265.80,
-      "driver_payroll_fee": 102.60,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "dispatch_fee_total": 265.8,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 499.39
     },
@@ -1387,28 +1756,37 @@
     ],
     "statement_totals": {
       "gross_miles": null,
-      "gross_revenue": 6062.30,
-      "total_driver_pay": 2280.00,
-      "fuel": 1623.50,
+      "gross_revenue": 6062.3,
+      "total_driver_pay": 2280.0,
+      "fuel": 1623.5,
       "dispatch_fee_total": 363.74,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1168.26
     },
@@ -1433,27 +1811,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6164.09,
-      "total_driver_pay": 2280.00,
-      "fuel": 1598.20,
+      "total_driver_pay": 2280.0,
+      "fuel": 1598.2,
       "dispatch_fee_total": 369.85,
-      "driver_payroll_fee": 136.80,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 148.2,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1289.24
     },
@@ -1476,27 +1863,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 3118.67,
-      "total_driver_pay": 1140.00,
+      "total_driver_pay": 1140.0,
       "fuel": 680.11,
       "dispatch_fee_total": 187.12,
-      "driver_payroll_fee": 68.40,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 0.00,
+      "truck_parking": 0.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 553.04
     },
@@ -1519,27 +1915,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 3210.86,
-      "total_driver_pay": 1140.00,
+      "total_driver_pay": 1140.0,
       "fuel": 841.34,
       "dispatch_fee_total": 192.65,
-      "driver_payroll_fee": 68.40,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "truck_parking": 150.00,
+      "truck_parking": 150.0,
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 328.47
     },
@@ -1563,27 +1968,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5247.04,
-      "total_driver_pay": 1710.00,
-      "fuel": 808.50,
+      "total_driver_pay": 1710.0,
+      "fuel": 808.5,
       "dispatch_fee_total": 314.82,
-      "driver_payroll_fee": 102.60,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1821.12
     },
@@ -1607,27 +2021,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5150.09,
-      "total_driver_pay": 1710.00,
+      "total_driver_pay": 1710.0,
       "fuel": 1406.83,
       "dispatch_fee_total": 309.01,
-      "driver_payroll_fee": 102.60,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1131.65
     },
@@ -1651,29 +2074,38 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 4608.44,
-      "total_driver_pay": 1710.00,
+      "total_driver_pay": 1710.0,
       "fuel": 758.83,
       "dispatch_fee_total": 276.51,
-      "driver_payroll_fee": 102.60,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "net_to_owner": 1270.50
+      "net_to_owner": 1270.5
     },
     "dispatch_percentage": 6
   },
@@ -1693,27 +2125,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5122.62,
-      "total_driver_pay": 1170.00,
+      "total_driver_pay": 1170.0,
       "fuel": 1618.88,
       "dispatch_fee_total": 307.36,
-      "driver_payroll_fee": 70.20,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 76.05,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
       "deductions": 600,
       "deduction_details": [
-        { "description": "Missed driver payroll payment (-600.00), Already included in the driver's pay above.", "amount": -600 }
+        {
+          "description": "Missed driver payroll payment (-600.00), Already included in the driver's pay above.",
+          "amount": -600
+        }
       ],
       "net_to_owner": 1466.18
     },
@@ -1737,27 +2178,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5710.33,
-      "total_driver_pay": 1710.00,
-      "fuel": 1408.40,
+      "total_driver_pay": 1710.0,
+      "fuel": 1408.4,
       "dispatch_fee_total": 342.62,
-      "driver_payroll_fee": 102.60,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 111.15,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1656.71
     },
@@ -1780,27 +2230,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 4302.05,
-      "total_driver_pay": 1140.00,
+      "total_driver_pay": 1140.0,
       "fuel": 890.74,
       "dispatch_fee_total": 258.12,
-      "driver_payroll_fee": 68.40,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1454.79
     },
@@ -1824,27 +2283,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 5855.33,
-      "total_driver_pay": 1710.00,
+      "total_driver_pay": 1710.0,
       "fuel": 1101.91,
       "dispatch_fee_total": 468.43,
       "driver_payroll_fee": 111.15,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1973.84
     },
@@ -1869,27 +2337,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6217.79,
-      "total_driver_pay": 1710.00,
-      "fuel": 1650.00,
+      "total_driver_pay": 1710.0,
+      "fuel": 1650.0,
       "dispatch_fee_total": 497.42,
       "driver_payroll_fee": 111.15,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1759.22
     },
@@ -1914,27 +2391,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6201.38,
-      "total_driver_pay": 1740.00,
-      "fuel": 1650.00,
+      "total_driver_pay": 1740.0,
+      "fuel": 1650.0,
       "dispatch_fee_total": 496.11,
-      "driver_payroll_fee": 113.10,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 150.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 113.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 150.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1562.17
     },
@@ -1958,27 +2444,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 4115.57,
-      "total_driver_pay": 1140.00,
-      "fuel": 1100.00,
+      "total_driver_pay": 1140.0,
+      "fuel": 1100.0,
       "dispatch_fee_total": 329.25,
-      "driver_payroll_fee": 74.10,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 74.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 982.22
     },
@@ -2003,27 +2498,36 @@
     "statement_totals": {
       "gross_miles": null,
       "gross_revenue": 6049.61,
-      "total_driver_pay": 1740.00,
-      "fuel": 1650.00,
+      "total_driver_pay": 1740.0,
+      "fuel": 1650.0,
       "dispatch_fee_total": 483.97,
-      "driver_payroll_fee": 113.10,
-      "ifta": 50.00,
-      "safety": 20.00,
-      "prepass": 70.00,
-      "insurance": 350.00,
-      "truck_parking": 0.00,
-      "reimbursment": 0.00,
+      "driver_payroll_fee": 113.1,
+      "ifta": 50.0,
+      "safety": 20.0,
+      "prepass": 70.0,
+      "insurance": 350.0,
+      "truck_parking": 0.0,
+      "reimbursment": 0.0,
       "reimbursement_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
-      "service_on_truck": 0.00,
+      "service_on_truck": 0.0,
       "service_on_truck_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "decals": null,
-      "deductions": 0.00,
+      "deductions": 0.0,
       "deduction_details": [
-        { "description": "", "amount": null }
+        {
+          "description": "",
+          "amount": null
+        }
       ],
       "net_to_owner": 1572.54
     },
