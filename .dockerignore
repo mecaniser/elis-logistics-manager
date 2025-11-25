@@ -4,83 +4,52 @@
 
 # Documentation
 *.md
-!README.md
+README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
 
 # Python
 __pycache__
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 venv/
 env/
 ENV/
-.venv
 *.egg-info/
 dist/
 build/
 
-# Node
-node_modules/
-npm-debug.log
-yarn-error.log
+# Frontend (don't copy node_modules, it will be installed)
+frontend/node_modules
+frontend/dist
 
-# Database
+# Database files (local dev)
 *.db
 *.sqlite
 *.sqlite3
 
-# Environment
-.env
-.env.local
-.env.production
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
 # Logs
 *.log
-logs/
+backend_server.log
 
-# Uploads
-uploads/*
-!uploads/.gitkeep
+# Environment files (Railway will provide these)
+.env
+.env.local
 
-# Frontend build (will be created in Docker)
-frontend/dist/
-frontend/build/
+# Test files
+tests/
+*.test.py
 
-# Railway
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Railway specific
 .railway/
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-
-# PDF files
-*.pdf
-
-# Image files
-*.jpg
-*.jpeg
-*.png
-*.gif
-*.bmp
-*.svg
-*.webp
-*.ico
-
-# Data files
-backend/settlements_extracted/
-*.json
-!package.json
-!package-lock.json
-
-# OS
-.DS_Store
-Thumbs.db
-

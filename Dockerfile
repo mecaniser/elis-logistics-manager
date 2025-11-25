@@ -4,7 +4,8 @@ FROM node:18-alpine AS frontend-builder
 # Build frontend
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci
+# Use npm ci with --prefer-offline and --no-audit for faster builds
+RUN npm ci --prefer-offline --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
