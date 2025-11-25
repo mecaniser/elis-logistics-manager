@@ -670,21 +670,25 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* PM Status Alert - Minimized */}
-      {trucksDueForPM.length > 0 && (
-        <div className="bg-red-50 border-l-2 border-red-500 px-3 py-2 mb-4 rounded-r text-sm">
-          <span className="text-red-800 font-medium">
-            ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} due for PM: {trucksDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (${pm.vin})` : ''}`).join(', ')}
-          </span>
-        </div>
-      )}
-
-      {/* PM Status Summary - Minimized */}
-      {trucksDueForPM.length === 0 && trucksNotDueForPM.length > 0 && (
-        <div className="bg-green-50 border-l-2 border-green-500 px-3 py-2 mb-4 rounded-r text-sm">
-          <span className="text-gray-700">
-            ✓ PM Status: <span className="text-green-700 font-medium">{trucksNotDueForPM.length} truck{trucksNotDueForPM.length !== 1 ? 's' : ''} up to date</span>
-          </span>
+      {/* PM Status Alert - All Trucks */}
+      {pmStatus.length > 0 && (
+        <div className={`border-l-2 px-3 py-2 mb-4 rounded-r text-sm ${trucksDueForPM.length > 0 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
+          {trucksDueForPM.length > 0 ? (
+            <div>
+              <span className="text-red-800 font-medium">
+                ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} due for PM: {trucksDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}
+              </span>
+              {trucksNotDueForPM.length > 0 && (
+                <div className="mt-1 text-green-700 text-xs">
+                  ✓ {trucksNotDueForPM.length} up to date: {trucksNotDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="text-gray-700">
+              ✓ PM Status: <span className="text-green-700 font-medium">{trucksNotDueForPM.length} truck{trucksNotDueForPM.length !== 1 ? 's' : ''} up to date: {trucksNotDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}</span>
+            </span>
+          )}
         </div>
       )}
 

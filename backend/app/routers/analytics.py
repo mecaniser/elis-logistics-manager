@@ -627,6 +627,7 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
         pm_status.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
+            "vin": truck.vin,
             "last_pm_date": last_pm_date.isoformat() if last_pm_date else None,
             "last_pm_repair_id": last_pm_repair_id,
             "is_due": is_due,
