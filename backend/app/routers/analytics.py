@@ -227,7 +227,7 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
                                         # Store description with category key for reference
                                         custom_descs[category] = description
                                     else:
-                                    custom_descs[category] = extract_custom_description(category)
+                                        custom_descs[category] = extract_custom_description(category)
                                 elif description and not custom_descs[category].endswith(description):
                                     # Append description if not already included
                                     existing = custom_descs[category]
