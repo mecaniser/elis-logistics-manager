@@ -664,6 +664,320 @@ async def update_settlement(
     db.refresh(settlement)
     return settlement
 
+@router.post("/upload-consolidated")
+def upload_consolidated_settlements(
+    json_data: str = Form(...),
+    dry_run: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload consolidated settlement JSON files (format used by ingest_consolidated_settlements.py).
+    
+    This endpoint accepts the consolidated JSON format where each entry can have:
+    - A single "statement" object, OR
+    - A "statements" array
+    
+    Each statement includes block_ids with delivery_date information.
+    
+    Format example:
+    [
+      {
+        "unit_number": "418",
+        "plate_number": "VW1503",
+        "statement": { ... },
+        "block_ids": [{"block_id": "ABC-123", "delivery_date": "2024-12-27"}],
+        "statement_totals": { ... }
+      },
+      {
+        "unit_number": "418",
+        "plate_number": "VW1503",
+        "statements": [
+          {
+            "statement": { ... },
+            "block_ids": [{"block_id": "XYZ-456", "delivery_date": "2024-12-28"}],
+            "statement_totals": { ... }
+          }
+        ]
+      }
+    ]
+    """
+    try:
+        from app.utils.loan_interest import calculate_weekly_loan_interest
+        from datetime import date
+        
+        # Parse JSON
+        data = json.loads(json_data)
+        
+        if not isinstance(data, list):
+            raise HTTPException(status_code=400, detail="JSON must be an array of settlement entries")
+        
+        created_settlements = []
+        updated_settlements = []
+        would_create_count = 0
+        would_update_count = 0
+        skipped_count = 0
+        error_count = 0
+        errors = []
+        
+        def parse_date(value):
+            """Parse date string to date object"""
+            if not value:
+                return None
+            try:
+                parts = [int(p) for p in value.split("-")]
+                if len(parts) == 3:
+                    return date(parts[0], parts[1], parts[2])
+            except Exception:
+                return None
+            return None
+        
+        def map_truck(unit_number, plate_number):
+            """Resolve truck_id using plate or unit number"""
+            if plate_number:
+                truck = db.query(Truck).filter(Truck.license_plate == plate_number).first()
+                if truck:
+                    return truck.id
+                
+                # Check license plate history
+                trucks = db.query(Truck).filter(Truck.license_plate_history.isnot(None)).all()
+                for truck in trucks:
+                    history = truck.license_plate_history or []
+                    if plate_number in history:
+                        return truck.id
+            
+            if unit_number:
+                truck = db.query(Truck).filter(Truck.name == unit_number).first()
+                if truck:
+                    return truck.id
+                
+                truck = db.query(Truck).filter(Truck.name == f"Volvo {unit_number}").first()
+                if truck:
+                    return truck.id
+            
+            return None
+        
+        def normalize_expense_categories(totals):
+            """Build expense_categories from statement_totals"""
+            cat_map = {
+                "driver_pay": totals.get("total_driver_pay", 0) or 0,
+                "fuel": totals.get("fuel", totals.get("total_fuel", 0)) or 0,
+                "dispatch_fee": totals.get("dispatch_fee_total", 0) or 0,
+                "payroll_fee": totals.get("driver_payroll_fee", 0) or 0,
+                "ifta": totals.get("ifta", 0) or 0,
+                "safety": totals.get("safety", 0) or 0,
+                "prepass": totals.get("prepass", 0) or 0,
+                "insurance": totals.get("insurance", 0) or 0,
+                "service_on_truck": totals.get("service_on_truck", 0) or 0,
+                "truck_parking": totals.get("truck_parking", 0) or 0,
+                "decals": totals.get("decals", 0) or 0,
+                "deduct": totals.get("deductions", 0) or 0,
+            }
+            reimbursement = totals.get("reimbursment", 0) or totals.get("reimbursement", 0) or 0
+            
+            expense_categories = {k: float(v) for k, v in cat_map.items() if v}
+            if reimbursement:
+                expense_categories["reimbursement"] = float(reimbursement)
+            
+            total_expenses = sum(v for k, v in expense_categories.items() if k != "reimbursement") - float(reimbursement)
+            return expense_categories, total_expenses
+        
+        def process_entry(entry):
+            """Process a single settlement entry"""
+            totals = entry.get("statement_totals") or {}
+            statement = entry.get("statement") or {}
+            
+            gross_revenue = totals.get("gross_revenue")
+            net_profit = totals.get("net_to_owner")
+            if gross_revenue is None and net_profit is None:
+                return None
+            
+            truck_id = map_truck(entry.get("unit_number"), entry.get("plate_number"))
+            if not truck_id:
+                return {"error": f"Could not find truck for unit {entry.get('unit_number')}, plate {entry.get('plate_number')}"}
+            
+            settlement_date = parse_date(statement.get("period_end"))
+            week_start = parse_date(statement.get("period_start"))
+            week_end = parse_date(statement.get("period_end"))
+            
+            expense_categories, calculated_expenses = normalize_expense_categories(totals)
+            
+            # Calculate loan interest
+            weekly_interest = 0.0
+            truck = db.query(Truck).filter(Truck.id == truck_id).first()
+            if truck and truck.vehicle_type == 'truck':
+                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
+                
+                if current_balance and current_balance > 0:
+                    weekly_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+                    expense_categories["loan_interest"] = weekly_interest
+            
+            # Extract block_ids (already in correct format with delivery_date)
+            block_ids = entry.get("block_ids")
+            blocks_delivered = entry.get("blocks_count")
+            miles_driven = totals.get("gross_miles")
+            license_plate = entry.get("plate_number")
+            pdf_file_path = statement.get("source_file")
+            
+            # Calculate expenses and net profit
+            if net_profit is not None:
+                base_expenses = float(gross_revenue or 0) - float(net_profit)
+                final_expenses = base_expenses + weekly_interest
+                final_net_profit = float(net_profit) - weekly_interest
+            else:
+                final_expenses = calculated_expenses + weekly_interest
+                final_net_profit = float(gross_revenue or 0) - final_expenses
+            
+            return {
+                "truck_id": truck_id,
+                "settlement_date": settlement_date,
+                "week_start": week_start,
+                "week_end": week_end,
+                "miles_driven": float(miles_driven) if miles_driven is not None else None,
+                "blocks_delivered": int(blocks_delivered) if blocks_delivered is not None else None,
+                "block_ids": block_ids if block_ids else None,
+                "gross_revenue": float(gross_revenue or 0),
+                "expenses": float(final_expenses),
+                "expense_categories": expense_categories,
+                "net_profit": final_net_profit,
+                "pdf_file_path": pdf_file_path,
+                "license_plate": license_plate,
+            }
+        
+        # Process all entries
+        for idx, item in enumerate(data, 1):
+            try:
+                # Handle flat structure (single statement)
+                if "statement_totals" in item:
+                    entry_data = process_entry(item)
+                    if entry_data and "error" in entry_data:
+                        error_count += 1
+                        errors.append(f"Entry {idx}: {entry_data['error']}")
+                        continue
+                    if not entry_data:
+                        skipped_count += 1
+                        continue
+                    
+                    # Check for duplicates
+                    existing = db.query(Settlement).filter(
+                        Settlement.truck_id == entry_data["truck_id"],
+                        Settlement.settlement_date == entry_data["settlement_date"]
+                    ).first()
+                    
+                    if existing:
+                        if not dry_run:
+                            # Update existing
+                            for k, v in entry_data.items():
+                                setattr(existing, k, v)
+                            db.add(existing)
+                            updated_settlements.append(existing)
+                        else:
+                            would_update_count += 1
+                    else:
+                        if not dry_run:
+                            db_settlement = Settlement(**entry_data)
+                            db.add(db_settlement)
+                            created_settlements.append(db_settlement)
+                        else:
+                            would_create_count += 1
+                
+                # Handle nested structure (statements array)
+                elif "statements" in item:
+                    for st in item.get("statements", []):
+                        merged = {
+                            "unit_number": item.get("unit_number"),
+                            "plate_number": item.get("plate_number"),
+                            "statement": st.get("statement"),
+                            "statement_totals": st.get("statement_totals"),
+                            "blocks_count": st.get("blocks_count"),
+                            "block_ids": st.get("block_ids"),
+                        }
+                        entry_data = process_entry(merged)
+                        if entry_data and "error" in entry_data:
+                            error_count += 1
+                            errors.append(f"Entry {idx}: {entry_data['error']}")
+                            continue
+                        if not entry_data:
+                            skipped_count += 1
+                            continue
+                        
+                        # Check for duplicates
+                        existing = db.query(Settlement).filter(
+                            Settlement.truck_id == entry_data["truck_id"],
+                            Settlement.settlement_date == entry_data["settlement_date"]
+                        ).first()
+                        
+                        if existing:
+                            if not dry_run:
+                                for k, v in entry_data.items():
+                                    setattr(existing, k, v)
+                                db.add(existing)
+                                updated_settlements.append(existing)
+                            else:
+                                would_update_count += 1
+                        else:
+                            if not dry_run:
+                                db_settlement = Settlement(**entry_data)
+                                db.add(db_settlement)
+                                created_settlements.append(db_settlement)
+                            else:
+                                would_create_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                errors.append(f"Entry {idx}: {str(e)}")
+                continue
+        
+        if not dry_run and (created_settlements or updated_settlements):
+            db.commit()
+            
+            # Update loan balances
+            truck_ids_updated = set()
+            all_settlements = created_settlements + updated_settlements
+            for settlement in all_settlements:
+                if settlement.truck_id not in truck_ids_updated:
+                    update_loan_balance_after_settlement(settlement.truck_id, db)
+                    truck_ids_updated.add(settlement.truck_id)
+            
+            # Refresh all settlements
+            for settlement in all_settlements:
+                db.refresh(settlement)
+        
+        # Return settlements list if not dry run, otherwise return summary only
+        if not dry_run:
+            all_settlements = created_settlements + updated_settlements
+            return {
+                "settlements": all_settlements,
+                "summary": {
+                    "total_entries": len(data),
+                    "created": len(created_settlements),
+                    "updated": len(updated_settlements),
+                    "skipped": skipped_count,
+                    "errors": error_count,
+                    "error_details": errors if errors else None
+                }
+            }
+        else:
+            return {
+                "summary": {
+                    "total_entries": len(data),
+                    "would_create": would_create_count,
+                    "would_update": would_update_count,
+                    "would_skip": skipped_count,
+                    "errors": error_count,
+                    "error_details": errors if errors else None,
+                    "dry_run": True
+                }
+            }
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        raise HTTPException(status_code=400, detail=f"Failed to process consolidated JSON: {str(e)}\n{traceback.format_exc()}")
+
 @router.post("/upload-json", response_model=List[SettlementResponse])
 def upload_settlement_json(
     json_data: str = Form(...),

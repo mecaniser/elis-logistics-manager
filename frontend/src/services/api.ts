@@ -208,6 +208,30 @@ export const settlementsApi = {
     )
   },
   delete: (id: number) => api.delete(`/settlements/${id}`),
+  uploadConsolidated: (jsonData: string, dryRun: boolean = false) => {
+    const formData = new FormData()
+    formData.append('json_data', jsonData)
+    formData.append('dry_run', dryRun.toString())
+    return api.post<{
+      settlements?: Settlement[]
+      summary: {
+        total_entries: number
+        created?: number
+        updated?: number
+        would_create?: number
+        would_update?: number
+        skipped?: number
+        would_skip?: number
+        errors: number
+        error_details?: string[]
+        dry_run?: boolean
+      }
+    }>('/settlements/upload-consolidated', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }
 
 // Repair API

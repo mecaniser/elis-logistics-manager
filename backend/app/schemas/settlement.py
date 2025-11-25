@@ -24,14 +24,35 @@ class SettlementBase(BaseModel):
     @field_validator('block_ids', mode='before')
     @classmethod
     def parse_block_ids(cls, v):
-        """Parse block_ids from JSONB/JSON string if needed"""
+        """Parse block_ids from JSONB/JSON string if needed and validate structure"""
         if v is None:
             return None
         if isinstance(v, str):
             try:
-                return json.loads(v)
+                v = json.loads(v)
             except (json.JSONDecodeError, TypeError):
                 return v
+        
+        # Validate structure if it's a list
+        if isinstance(v, list):
+            validated = []
+            for item in v:
+                if isinstance(item, str):
+                    validated.append(item)
+                elif isinstance(item, dict):
+                    # Ensure dict has block_id (required) and optionally delivery_date
+                    if 'block_id' in item:
+                        validated.append({
+                            'block_id': str(item['block_id']),
+                            'delivery_date': item.get('delivery_date')  # Optional, keep as-is
+                        })
+                    else:
+                        # If no block_id key, treat as invalid and skip or use the dict as-is
+                        validated.append(item)
+                else:
+                    validated.append(item)
+            return validated
+        
         return v
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None

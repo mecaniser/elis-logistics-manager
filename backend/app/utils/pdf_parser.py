@@ -40,6 +40,7 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
         "week_end": None,
         "miles_driven": None,
         "blocks_delivered": None,
+        "block_ids": None,  # Array of objects with block_id and delivery_date
         "gross_revenue": None,
         "expenses": None,
         "net_profit": None,
@@ -481,84 +482,210 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
                     expense_categories["custom"] = calculated_expenses
                     settlement_data["expense_categories"] = expense_categories
             
-            # Count blocks delivered
+            # Extract block IDs with delivery dates
+            block_ids_list = []
+            
             if is_income_sheet_format:
-                # Format 2: Count unique P/L column values (route codes or date ranges)
+                # Format 2: Extract P/L column values (route codes) with delivery dates
                 # P/L column contains values like "VDF2-CLT5", "18BV-GSP1", or "06/04-06/06/2025"
-                # Each unique P/L value = 1 block/delivery
+                # Delivery dates are typically in the same row or can be extracted from date ranges
                 blocks_found = False
-                pl_values = set()
                 
                 try:
-                    # Try to find tables in the PDF
+                    # Try to find tables in the PDF to extract block IDs with dates
                     for page in pdf.pages:
                         tables = page.extract_tables()
                         for table in tables:
-                            # Look for P/L column header
+                            # Look for P/L column header and date column
+                            pl_col_idx = None
+                            date_col_idx = None
+                            header_row_idx = None
+                            
                             for row_idx, row in enumerate(table):
                                 if row and any(cell and 'P/L' in str(cell).upper() for cell in row):
-                                    # Found P/L header, get the column index
                                     header_row = row
-                                    pl_col_idx = None
-                                    for col_idx, cell in enumerate(header_row):
-                                        if cell and 'P/L' in str(cell).upper():
-                                            pl_col_idx = col_idx
-                                            break
+                                    header_row_idx = row_idx
                                     
-                                    if pl_col_idx is not None:
-                                        # Collect all P/L values from data rows
-                                        for data_row in table[row_idx + 1:]:
-                                            if data_row and len(data_row) > pl_col_idx:
-                                                pl_value = data_row[pl_col_idx]
-                                                if pl_value:
-                                                    pl_str = str(pl_value).strip()
-                                                    # Check if it's a route code (e.g., "VDF2-CLT5") or date range (e.g., "06/04-06/06/2025")
-                                                    if pl_str and (re.match(r'[A-Z0-9]+-[A-Z0-9]+', pl_str) or re.match(r'\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4}', pl_str)):
-                                                        pl_values.add(pl_str)
-                                        
-                                        if pl_values:
-                                            settlement_data["blocks_delivered"] = len(pl_values)
-                                            blocks_found = True
-                                            break
-                                    if blocks_found:
-                                        break
-                                if blocks_found:
+                                    # Find P/L column index
+                                    for col_idx, cell in enumerate(header_row):
+                                        cell_str = str(cell).upper() if cell else ""
+                                        if 'P/L' in cell_str:
+                                            pl_col_idx = col_idx
+                                        # Look for date-related column headers
+                                        if cell and any(keyword in cell_str for keyword in ['DATE', 'DELIVERY', 'LOAD']):
+                                            date_col_idx = col_idx
                                     break
+                            
+                            if pl_col_idx is not None and header_row_idx is not None:
+                                # Extract block IDs and dates from data rows
+                                for data_row in table[header_row_idx + 1:]:
+                                    if data_row and len(data_row) > pl_col_idx:
+                                        pl_value = data_row[pl_col_idx]
+                                        if pl_value:
+                                            pl_str = str(pl_value).strip()
+                                            
+                                            # Check if it's a route code (e.g., "VDF2-CLT5") or date range
+                                            is_route_code = re.match(r'[A-Z0-9]{2,4}-[A-Z0-9]{2,4}', pl_str) and re.search(r'[A-Z]', pl_str)
+                                            is_date_range = re.match(r'\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4}', pl_str)
+                                            
+                                            if is_route_code or is_date_range:
+                                                block_id = pl_str
+                                                delivery_date = None
+                                                
+                                                # Try to extract delivery date from date column
+                                                if date_col_idx is not None and len(data_row) > date_col_idx:
+                                                    date_value = data_row[date_col_idx]
+                                                    if date_value:
+                                                        date_str = str(date_value).strip()
+                                                        # Try to parse date in various formats
+                                                        date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', date_str)
+                                                        if date_match:
+                                                            try:
+                                                                parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                                                delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                                            except ValueError:
+                                                                pass
+                                                
+                                                # If date range format, extract end date as delivery date
+                                                if not delivery_date and is_date_range:
+                                                    date_range_match = re.match(r'(\d{1,2})/(\d{1,2})-(\d{1,2})/(\d{1,2})/(\d{4})', pl_str)
+                                                    if date_range_match:
+                                                        try:
+                                                            end_date_str = f"{date_range_match.group(3)}/{date_range_match.group(4)}/{date_range_match.group(5)}"
+                                                            parsed_date = datetime.strptime(end_date_str, "%m/%d/%Y").date()
+                                                            delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                                            # Use date range as block_id
+                                                            block_id = pl_str
+                                                        except ValueError:
+                                                            pass
+                                                
+                                                # If route code, try to find delivery date from surrounding text
+                                                if not delivery_date and is_route_code:
+                                                    # Look for dates near this route code in the row
+                                                    for cell in data_row:
+                                                        if cell:
+                                                            cell_str = str(cell).strip()
+                                                            date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', cell_str)
+                                                            if date_match:
+                                                                try:
+                                                                    parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                                                    delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                                                    break
+                                                                except ValueError:
+                                                                    pass
+                                                
+                                                # Add to block_ids list
+                                                block_entry = {"block_id": block_id}
+                                                if delivery_date:
+                                                    block_entry["delivery_date"] = delivery_date
+                                                block_ids_list.append(block_entry)
+                                
+                                if block_ids_list:
+                                    blocks_found = True
+                                    break
+                            
                             if blocks_found:
                                 break
-                except Exception:
+                        if blocks_found:
+                            break
+                except Exception as e:
+                    # Fallback to text-based extraction
                     pass
                 
-                # Fallback: Count unique P/L values from text using regex (more strict)
+                # Fallback: Extract from text using regex
                 if not blocks_found:
-                    # Find route codes (e.g., "VDF2-CLT5", "18BV-GSP1") - must have letters and numbers
-                    # Pattern: 2-4 uppercase letters/numbers, dash, 2-4 uppercase letters/numbers
+                    # Find route codes (e.g., "VDF2-CLT5", "18BV-GSP1")
                     route_codes = re.findall(r'\b([A-Z0-9]{2,4}-[A-Z0-9]{2,4})\b', text)
-                    # Filter out false positives (like "23-02" which are just numbers)
-                    # Route codes should have at least one letter
                     route_codes = [rc for rc in route_codes if re.search(r'[A-Z]', rc)]
                     
-                    # Find date ranges (e.g., "06/04-06/06/2025") - must be full date format
+                    # Find date ranges (e.g., "06/04-06/06/2025")
                     date_ranges = re.findall(r'\b(\d{1,2}/\d{1,2}-\d{1,2}/\d{1,2}/\d{4})\b', text)
                     
-                    # Combine and count unique values
-                    pl_values = set(route_codes + date_ranges)
+                    # Extract delivery dates from date ranges
+                    for date_range in date_ranges:
+                        date_range_match = re.match(r'(\d{1,2})/(\d{1,2})-(\d{1,2})/(\d{1,2})/(\d{4})', date_range)
+                        if date_range_match:
+                            try:
+                                end_date_str = f"{date_range_match.group(3)}/{date_range_match.group(4)}/{date_range_match.group(5)}"
+                                parsed_date = datetime.strptime(end_date_str, "%m/%d/%Y").date()
+                                delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                block_ids_list.append({
+                                    "block_id": date_range,
+                                    "delivery_date": delivery_date
+                                })
+                            except ValueError:
+                                block_ids_list.append({"block_id": date_range})
                     
-                    if pl_values:
-                        settlement_data["blocks_delivered"] = len(pl_values)
-                    else:
-                        # Alternative: Count number of driver pay entries (each driver pay = 1 block)
-                        # Look for multiple "DRIVER'S PAY" entries or individual pay amounts
-                        drivers_pay_pattern = r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)"
-                        drivers_pay_matches = re.findall(drivers_pay_pattern, text, re.IGNORECASE)
-                        if drivers_pay_matches:
-                            settlement_data["blocks_delivered"] = len(drivers_pay_matches)
-                        # If still not found, leave as None so user can enter manually
+                    # Add route codes (without dates if not found)
+                    for route_code in route_codes:
+                        # Try to find a date near this route code in the text
+                        delivery_date = None
+                        # Look for dates in the same line or nearby lines
+                        lines = text.split('\n')
+                        for i, line in enumerate(lines):
+                            if route_code in line:
+                                # Look for dates in this line or nearby lines
+                                for check_line in lines[max(0, i-1):min(len(lines), i+2)]:
+                                    date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', check_line)
+                                    if date_match:
+                                        try:
+                                            parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                            delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                            break
+                                        except ValueError:
+                                            pass
+                                if delivery_date:
+                                    break
+                        
+                        block_entry = {"block_id": route_code}
+                        if delivery_date:
+                            block_entry["delivery_date"] = delivery_date
+                        block_ids_list.append(block_entry)
+                
+                # Set blocks_delivered count
+                if block_ids_list:
+                    settlement_data["blocks_delivered"] = len(block_ids_list)
+                    settlement_data["block_ids"] = block_ids_list
+                else:
+                    # Fallback: Count driver pay entries
+                    drivers_pay_pattern = r"DRIVER'S PAY[^\n]*\(\$\s*([\d,]+\.?\d*)\)"
+                    drivers_pay_matches = re.findall(drivers_pay_pattern, text, re.IGNORECASE)
+                    if drivers_pay_matches:
+                        settlement_data["blocks_delivered"] = len(drivers_pay_matches)
             else:
-                # Format 1: Count Block IDs (B-XXXXX)
-                block_ids = re.findall(r'B-[A-Z0-9]+', text)
-                if block_ids:
-                    settlement_data["blocks_delivered"] = len(block_ids)
+                # Format 1: Extract Block IDs (B-XXXXX) with delivery dates
+                block_id_pattern = r'B-[A-Z0-9]+'
+                block_ids_found = re.findall(block_id_pattern, text)
+                
+                if block_ids_found:
+                    # Try to find delivery dates for each block ID
+                    lines = text.split('\n')
+                    for block_id in block_ids_found:
+                        delivery_date = None
+                        
+                        # Look for dates near this block ID
+                        for i, line in enumerate(lines):
+                            if block_id in line:
+                                # Look for dates in this line or nearby lines
+                                for check_line in lines[max(0, i-1):min(len(lines), i+2)]:
+                                    date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', check_line)
+                                    if date_match:
+                                        try:
+                                            parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                            delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                            break
+                                        except ValueError:
+                                            pass
+                                if delivery_date:
+                                    break
+                        
+                        block_entry = {"block_id": block_id}
+                        if delivery_date:
+                            block_entry["delivery_date"] = delivery_date
+                        block_ids_list.append(block_entry)
+                    
+                    settlement_data["blocks_delivered"] = len(block_ids_list)
+                    settlement_data["block_ids"] = block_ids_list
             
             # Extract week_start from "Start of Load" dates in the table (Format 1 only)
             # For Format 2, week_start is already extracted from Date Period above
@@ -835,6 +962,7 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                     "fuel": 0.0,
                     "reimbursement": 0.0,  # Track reimbursements per plate
                     "blocks": 0,
+                    "block_ids": [],  # Array of block IDs with delivery dates
                     "driver_name": None  # Extract driver name per plate
                 }
             
@@ -1083,6 +1211,32 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                                 if not plate_data[plate]["driver_name"]:
                                     plate_data[plate]["driver_name"] = driver_name
                             
+                            # Extract block ID (B-XXXXX pattern)
+                            block_id_match = re.search(r'(B-[A-Z0-9]+)', line)
+                            block_id = None
+                            delivery_date = None
+                            
+                            if block_id_match:
+                                block_id = block_id_match.group(1)
+                                
+                                # Try to find delivery date near this block ID
+                                # Look for dates in this line or nearby lines
+                                for check_line in lines[max(0, i-1):min(len(lines), i+2)]:
+                                    date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', check_line)
+                                    if date_match:
+                                        try:
+                                            parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                            delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                            break
+                                        except ValueError:
+                                            pass
+                                
+                                # Add block ID to list
+                                block_entry = {"block_id": block_id}
+                                if delivery_date:
+                                    block_entry["delivery_date"] = delivery_date
+                                plate_data[plate]["block_ids"].append(block_entry)
+                            
                             # Extract all dollar amounts from this line
                             dollar_amounts = re.findall(r'\$([\d,]+\.?\d*)', line)
                             
@@ -1171,6 +1325,28 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                                 assigned_plate = list(license_plates)[0]
                             
                             if assigned_plate in plate_data:
+                                # Extract block ID if present
+                                block_id_match = re.search(r'(B-[A-Z0-9]+)', line)
+                                if block_id_match:
+                                    block_id = block_id_match.group(1)
+                                    delivery_date = None
+                                    
+                                    # Try to find delivery date
+                                    for check_line in lines[max(0, i-1):min(len(lines), i+2)]:
+                                        date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', check_line)
+                                        if date_match:
+                                            try:
+                                                parsed_date = datetime.strptime(date_match.group(1), "%m/%d/%Y").date()
+                                                delivery_date = parsed_date.strftime("%Y-%m-%d")
+                                                break
+                                            except ValueError:
+                                                pass
+                                    
+                                    block_entry = {"block_id": block_id}
+                                    if delivery_date:
+                                        block_entry["delivery_date"] = delivery_date
+                                    plate_data[assigned_plate]["block_ids"].append(block_entry)
+                                
                                 pay_amount = float(dollar_amounts[0].replace(",", ""))
                                 plate_data[assigned_plate]["gross_revenue"] += pay_amount
                                 plate_data[assigned_plate]["blocks"] += 1
@@ -1259,6 +1435,7 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                     "week_end": week_end,
                     "miles_driven": None,
                     "blocks_delivered": data["blocks"],
+                    "block_ids": data.get("block_ids") if data.get("block_ids") else None,
                     "gross_revenue": data["gross_revenue"],
                     "expenses": None,
                     "net_profit": None,
