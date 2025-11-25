@@ -71,6 +71,7 @@ export default function Dashboard() {
   const [selectedBlockData, setSelectedBlockData] = useState<BlockByTruckMonth | null>(null) // Track clicked block data
   const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
   const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(false) // Collapsed by default
+  const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(false) // Collapsed by default
 
   useEffect(() => {
     loadTrucks()
@@ -174,8 +175,9 @@ export default function Dashboard() {
         setSelectedExpensePeriod('')
       }
     }
-    // Collapse settlements info when view or period changes
+    // Collapse settlements info and repair expenses when view or period changes
     setSettlementsInfoExpanded(false)
+    setRepairExpensesExpanded(false)
   }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod, vehicleTypeFilter])
 
   const loadTrucks = async () => {
@@ -986,72 +988,90 @@ export default function Dashboard() {
                       </div>
                     </div>
                     
-                    {/* Repair Expenses Details */}
+                    {/* Repair Expenses Details - Collapsible */}
                     <div className="mt-6">
-                      <h4 className="text-md font-semibold text-gray-800 mb-3">
-                        Repair Expenses {expenseAnalysisView === 'weekly' ? 'This Week' : expenseAnalysisView === 'monthly' ? 'This Month' : 'This Year'}
-                      </h4>
-                      {repairsForPeriod.length > 0 ? (
-                        <div className="space-y-3">
-                          {repairsForPeriod.map((repair: RepairByMonth) => {
-                            const isPM = repair.category === 'maintenance'
-                            return (
-                              <div 
-                                key={repair.repair_id || `${repair.truck_id}-${repair.cost}-${repair.repair_date}`}
-                                className={`p-4 rounded-lg border ${
-                                  isPM ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
-                                }`}
-                              >
-                                <div className="flex justify-between items-start">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-sm font-semibold text-gray-900">
-                                        {repair.truck_name || `Truck ${repair.truck_id}`}
-                                      </span>
-                                      {isPM && (
-                                        <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                                          🔧 Preventive Maintenance
+                      <button
+                        onClick={() => setRepairExpensesExpanded(!repairExpensesExpanded)}
+                        className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded mb-3"
+                      >
+                        <h4 className="text-md font-semibold text-gray-800">
+                          Repair Expenses {expenseAnalysisView === 'weekly' ? 'This Week' : expenseAnalysisView === 'monthly' ? 'This Month' : 'This Year'}
+                        </h4>
+                        <svg
+                          className={`w-5 h-5 text-gray-600 transition-transform ${repairExpensesExpanded ? 'transform rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      
+                      {repairExpensesExpanded && (
+                        <>
+                          {repairsForPeriod.length > 0 ? (
+                            <div className="space-y-3">
+                              {repairsForPeriod.map((repair: RepairByMonth) => {
+                                const isPM = repair.category === 'maintenance'
+                                return (
+                                  <div 
+                                    key={repair.repair_id || `${repair.truck_id}-${repair.cost}-${repair.repair_date}`}
+                                    className={`p-4 rounded-lg border ${
+                                      isPM ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="text-sm font-semibold text-gray-900">
+                                            {repair.truck_name || `Truck ${repair.truck_id}`}
+                                          </span>
+                                          {isPM && (
+                                            <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                              🔧 Preventive Maintenance
+                                            </span>
+                                          )}
+                                          {repair.category && repair.category !== 'maintenance' && (
+                                            <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize">
+                                              {repair.category}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-gray-600 mb-1">
+                                          {repair.description || 'No description'}
+                                        </p>
+                                        {repair.repair_date && (
+                                          <p className="text-xs text-gray-500">
+                                            {new Date(repair.repair_date).toLocaleDateString()}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="ml-4 text-right">
+                                        <span className="text-lg font-bold text-red-600">
+                                          ${repair.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
-                                      )}
-                                      {repair.category && repair.category !== 'maintenance' && (
-                                        <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded capitalize">
-                                          {repair.category}
-                                        </span>
-                                      )}
+                                      </div>
                                     </div>
-                                    <p className="text-sm text-gray-600 mb-1">
-                                      {repair.description || 'No description'}
-                                    </p>
-                                    {repair.repair_date && (
-                                      <p className="text-xs text-gray-500">
-                                        {new Date(repair.repair_date).toLocaleDateString()}
-                                      </p>
-                                    )}
                                   </div>
-                                  <div className="ml-4 text-right">
-                                    <span className="text-lg font-bold text-red-600">
-                                      ${repair.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
+                                )
+                              })}
+                              <div className="mt-4 pt-3 border-t border-gray-300">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
+                                  <span className="text-base font-bold text-red-600">
+                                    ${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
                                 </div>
                               </div>
-                            )
-                          })}
-                          <div className="mt-4 pt-3 border-t border-gray-300">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
-                              <span className="text-base font-bold text-red-600">
-                                ${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
                             </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
-                          <p className="text-sm text-gray-600">
-                            No repair expenses {expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}
-                          </p>
-                        </div>
+                          ) : (
+                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                              <p className="text-sm text-gray-600">
+                                No repair expenses {expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
