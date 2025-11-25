@@ -22,6 +22,9 @@ class Settlement(Base):
     expenses = Column(Numeric(10, 2))  # Fuel, tolls, etc from Amazon
     expense_categories = Column(JSON)  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
     custom_expense_descriptions = Column(JSON, nullable=True)  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
+    custom_expense_validation = Column(JSON, nullable=True)  # Validation status for custom expenses: {deduct: true, decals: false, custom: true}
+    reimbursement_details = Column(JSON, nullable=True)  # Reimbursement details: [{"description": "...", "amount": 100.00}]
+    deduction_details = Column(JSON, nullable=True)  # Deduction details: [{"description": "...", "amount": 50.00}]
     net_profit = Column(Numeric(10, 2))
     pdf_file_path = Column(String(255))
     license_plate = Column(String(20), nullable=True)  # License plate from this settlement

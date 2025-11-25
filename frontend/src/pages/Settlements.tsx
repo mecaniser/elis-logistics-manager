@@ -413,6 +413,9 @@ export default function Settlements() {
       expenses: settlement.expenses || undefined,
       expense_categories: categories,
       custom_expense_descriptions: settlement.custom_expense_descriptions || {},
+      custom_expense_validation: settlement.custom_expense_validation || {},
+      reimbursement_details: settlement.reimbursement_details || undefined,
+      deduction_details: settlement.deduction_details || undefined,
       net_profit: settlement.net_profit || undefined,
       license_plate: settlement.license_plate || undefined,
       settlement_type: settlement.settlement_type || undefined,
@@ -2154,6 +2157,117 @@ export default function Settlements() {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Custom Expenses Table Section */}
+                    {(() => {
+                      // Get all custom expense categories (non-standard)
+                      // Exclude reimbursements - they're credits, not expenses
+                      const customExpenses = editFormData.expense_categories 
+                        ? Object.entries(editFormData.expense_categories)
+                            .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key) && key !== 'reimbursement')
+                            .filter(([_, value]) => value !== 0 && value !== null && value !== undefined)
+                        : []
+                      
+                      if (customExpenses.length === 0) return null
+                      
+                      // Helper function to get description for custom expense category
+                      const getCustomExpenseDescription = (key: string): string => {
+                        // For deduct category, check deduction_details
+                        if (key === 'deduct' && editingSettlement?.deduction_details && editingSettlement.deduction_details.length > 0) {
+                          const details = editingSettlement.deduction_details
+                            .filter((d: any) => d.description && d.description.trim())
+                            .map((d: any) => d.description.trim())
+                          if (details.length > 0) {
+                            return details.join('; ')
+                          }
+                        }
+                        
+                        // For custom categories, check custom_expense_descriptions
+                        const isCustomCategory = key === 'custom' || key.startsWith('custom_')
+                        if (isCustomCategory) {
+                          return editFormData.custom_expense_descriptions?.[key] || getCustomDescription(key)
+                        }
+                        
+                        // Default: format the key name
+                        return key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+                      }
+                      
+                      return (
+                        <div className="border-t pt-4 mt-4">
+                          <h5 className="text-sm sm:text-md font-medium text-gray-900 mb-3">Custom Expenses</h5>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200 border border-gray-300 rounded-md">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                                    Category
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                                    Description
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                                    Amount
+                                  </th>
+                                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">
+                                    Valid
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {customExpenses.map(([key, value]) => {
+                                  const description = getCustomExpenseDescription(key)
+                                  const isValid = editFormData.custom_expense_validation?.[key] !== false // Default to true if not set
+                                  
+                                  return (
+                                    <tr key={key} className={!isValid ? 'bg-red-50' : ''}>
+                                      <td className="px-3 py-2 text-sm text-gray-900 border-r border-gray-300">
+                                        <span className="font-medium">{key}</span>
+                                      </td>
+                                      <td className="px-3 py-2 text-sm text-gray-600 border-r border-gray-300">
+                                        <span className={description ? '' : 'italic text-gray-400'}>
+                                          {description || '(no description)'}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-sm font-medium border-r border-gray-300">
+                                        <span className={value < 0 ? 'text-red-600' : 'text-green-600'}>
+                                          {formatCurrency(value)}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <label className="flex items-center justify-center cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={isValid}
+                                            onChange={(e) => {
+                                              const updatedValidation = {
+                                                ...(editFormData.custom_expense_validation || {}),
+                                                [key]: e.target.checked
+                                              }
+                                              setEditFormData({
+                                                ...editFormData,
+                                                custom_expense_validation: updatedValidation
+                                              })
+                                            }}
+                                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                          />
+                                          <span className={`ml-2 text-xs ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+                                            {isValid ? '✓' : '✗'}
+                                          </span>
+                                        </label>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                            <p className="mt-2 text-xs text-gray-500 italic">
+                              Uncheck "Valid" to mark an expense as invalid. Invalid expenses are highlighted in red.
+                              Descriptions are pulled from deduction_details and reimbursement_details when available.
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                   
                   {/* PDF File Upload Section */}

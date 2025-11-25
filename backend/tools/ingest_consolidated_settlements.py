@@ -155,6 +155,27 @@ def normalize_entry(entry: Dict[str, Any], db: Session) -> Optional[Dict[str, An
         final_expenses = calculated_expenses + weekly_interest
         final_net_profit = float(gross_revenue or 0) - final_expenses
 
+    # Extract reimbursement and deduction details
+    reimbursement_details = totals.get("reimbursement_details") or totals.get("reimbursment_details")
+    deduction_details = totals.get("deduction_details") or totals.get("deductions_details")
+    
+    # Filter out empty details (where description is empty or amount is null/0)
+    if reimbursement_details:
+        reimbursement_details = [
+            detail for detail in reimbursement_details
+            if detail.get("description") and detail.get("description").strip() and detail.get("amount")
+        ]
+        if not reimbursement_details:
+            reimbursement_details = None
+    
+    if deduction_details:
+        deduction_details = [
+            detail for detail in deduction_details
+            if detail.get("description") and detail.get("description").strip() and detail.get("amount")
+        ]
+        if not deduction_details:
+            deduction_details = None
+
     return {
         "truck_id": truck_id,
         "settlement_date": settlement_date,
@@ -166,6 +187,8 @@ def normalize_entry(entry: Dict[str, Any], db: Session) -> Optional[Dict[str, An
         "gross_revenue": float(gross_revenue or 0),
         "expenses": float(final_expenses),
         "expense_categories": expense_categories,
+        "reimbursement_details": reimbursement_details,
+        "deduction_details": deduction_details,
         "net_profit": final_net_profit,
         "pdf_file_path": pdf_file_path,
         "license_plate": license_plate,
@@ -216,7 +239,8 @@ def diff_settlement(existing: Settlement, entry: Dict[str, Any]) -> Dict[str, Tu
     fields = [
         "gross_revenue", "expenses", "net_profit", "expense_categories",
         "miles_driven", "blocks_delivered", "block_ids", "week_start", "week_end",
-        "pdf_file_path", "license_plate"
+        "pdf_file_path", "license_plate", "reimbursement_details", "deduction_details",
+        "custom_expense_descriptions", "custom_expense_validation"
     ]
     for f in fields:
         new_val = entry.get(f)

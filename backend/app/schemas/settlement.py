@@ -58,6 +58,9 @@ class SettlementBase(BaseModel):
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
     custom_expense_descriptions: Optional[Dict[str, str]] = None  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
+    custom_expense_validation: Optional[Dict[str, bool]] = None  # Validation status for custom expenses: {deduct: true, decals: false, custom: true}
+    reimbursement_details: Optional[List[Dict[str, Any]]] = None  # Reimbursement details: [{"description": "...", "amount": 100.00}]
+    deduction_details: Optional[List[Dict[str, Any]]] = None  # Deduction details: [{"description": "...", "amount": 50.00}]
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None  # License plate from this settlement
     settlement_type: Optional[str] = None  # Type of settlement PDF
@@ -78,6 +81,9 @@ class SettlementUpdate(BaseModel):
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None
     custom_expense_descriptions: Optional[Dict[str, str]] = None
+    custom_expense_validation: Optional[Dict[str, bool]] = None
+    reimbursement_details: Optional[List[Dict[str, Any]]] = None
+    deduction_details: Optional[List[Dict[str, Any]]] = None
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None
     settlement_type: Optional[str] = None

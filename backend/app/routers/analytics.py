@@ -195,6 +195,10 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
             if settlement.expense_categories and isinstance(settlement.expense_categories, dict) and len(settlement.expense_categories) > 0:
                 for category, amount in settlement.expense_categories.items():
                     try:
+                        # Skip reimbursements - they're credits, not expenses
+                        if category == "reimbursement":
+                            continue
+                            
                         amount_float = float(amount) if amount is not None else 0.0
                         if amount_float > 0:
                             if category == "fees" or category == "other":
@@ -207,8 +211,28 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
                                     custom_descs[category] = extract_custom_description(category)
                             else:
                                 expense_cats["custom"] += amount_float
+                                # Extract description from deduction_details or reimbursement_details if available
+                                description = None
+                                if category == "deduct" and settlement.deduction_details:
+                                    descriptions = [
+                                        d.get("description", "").strip() 
+                                        for d in settlement.deduction_details 
+                                        if d.get("description") and d.get("description").strip()
+                                    ]
+                                    if descriptions:
+                                        description = "; ".join(descriptions)
+                                
                                 if category not in custom_descs:
+                                    if description:
+                                        # Store description with category key for reference
+                                        custom_descs[category] = description
+                                    else:
                                     custom_descs[category] = extract_custom_description(category)
+                                elif description and not custom_descs[category].endswith(description):
+                                    # Append description if not already included
+                                    existing = custom_descs[category]
+                                    if description not in existing:
+                                        custom_descs[category] = f"{existing}; {description}"
                     except (ValueError, TypeError):
                         continue
             elif settlement.expenses and float(settlement.expenses) > 0:
@@ -834,6 +858,10 @@ def get_time_series(
         if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
             for category, amount in settlement.expense_categories.items():
                 try:
+                    # Skip reimbursements - they're credits, not expenses
+                    if category == "reimbursement":
+                        continue
+                    
                     amount_float = float(amount) if amount is not None else 0.0
                     if amount_float > 0:
                         # Map category names
@@ -843,13 +871,42 @@ def get_time_series(
                         elif category.startswith("custom_") or (category not in STANDARD_CATEGORIES and category != "custom"):
                             # Custom category - aggregate into "custom" and track description
                             mapped_category = "custom"
+                            
+                            # Extract description from deduction_details if available
+                            description = None
+                            if category == "deduct" and settlement.deduction_details:
+                                descriptions = [
+                                    d.get("description", "").strip() 
+                                    for d in settlement.deduction_details 
+                                    if d.get("description") and d.get("description").strip()
+                                ]
+                                if descriptions:
+                                    description = "; ".join(descriptions)
+                            
                             # Track custom description for this period
                             if category not in weekly_data[week_key]["custom_descriptions"]:
-                                weekly_data[week_key]["custom_descriptions"][category] = extract_custom_description(category)
-                            if month_key and category not in monthly_data[month_key]["custom_descriptions"]:
-                                monthly_data[month_key]["custom_descriptions"][category] = extract_custom_description(category)
-                            if year_key and category not in yearly_data[year_key]["custom_descriptions"]:
-                                yearly_data[year_key]["custom_descriptions"][category] = extract_custom_description(category)
+                                weekly_data[week_key]["custom_descriptions"][category] = description or extract_custom_description(category)
+                            elif description and category in weekly_data[week_key]["custom_descriptions"]:
+                                # Append description if not already included
+                                existing = weekly_data[week_key]["custom_descriptions"][category]
+                                if description and description not in existing:
+                                    weekly_data[week_key]["custom_descriptions"][category] = f"{existing}; {description}"
+                            
+                            if month_key:
+                                if category not in monthly_data[month_key]["custom_descriptions"]:
+                                    monthly_data[month_key]["custom_descriptions"][category] = description or extract_custom_description(category)
+                                elif description and category in monthly_data[month_key]["custom_descriptions"]:
+                                    existing = monthly_data[month_key]["custom_descriptions"][category]
+                                    if description and description not in existing:
+                                        monthly_data[month_key]["custom_descriptions"][category] = f"{existing}; {description}"
+                            
+                            if year_key:
+                                if category not in yearly_data[year_key]["custom_descriptions"]:
+                                    yearly_data[year_key]["custom_descriptions"][category] = description or extract_custom_description(category)
+                                elif description and category in yearly_data[year_key]["custom_descriptions"]:
+                                    existing = yearly_data[year_key]["custom_descriptions"][category]
+                                    if description and description not in existing:
+                                        yearly_data[year_key]["custom_descriptions"][category] = f"{existing}; {description}"
                         
                         if mapped_category in weekly_data[week_key]:
                             weekly_data[week_key][mapped_category] += amount_float

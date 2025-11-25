@@ -18,6 +18,7 @@ interface RepairByMonth {
 interface PMStatus {
   truck_id: number
   truck_name: string
+  vin?: string | null
   last_pm_date: string | null
   last_pm_repair_id: number | null
   is_due: boolean
@@ -669,96 +670,21 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* PM Status Alert */}
+      {/* PM Status Alert - Minimized */}
       {trucksDueForPM.length > 0 && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-r-lg">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3 flex-1">
-              <h3 className="text-sm font-medium text-red-800 mb-2">
-                ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} Due for D13 Full PM
-              </h3>
-              <div className="mt-2 space-y-1">
-                {trucksDueForPM.map((pm: PMStatus) => (
-                  <div key={pm.truck_id} className="text-sm text-red-700">
-                    <span className="font-semibold">{pm.truck_name}</span>
-                    {pm.last_pm_date ? (
-                      <>
-                        {' - Last PM: '}
-                        <span className="font-medium">
-                          {new Date(pm.last_pm_date).toLocaleDateString()}
-                        </span>
-                        {pm.days_overdue !== null && (
-                          <>
-                            {' ('}
-                            <span className="font-bold">{pm.days_overdue}</span>
-                            {' days overdue)'}
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <span className="font-medium"> - No PM record found</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        <div className="bg-red-50 border-l-2 border-red-500 px-3 py-2 mb-4 rounded-r text-sm">
+          <span className="text-red-800 font-medium">
+            ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} due for PM: {trucksDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (${pm.vin})` : ''}`).join(', ')}
+          </span>
         </div>
       )}
 
-      {/* PM Status Summary Card */}
-      {pmStatus.length > 0 && (
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">D13 Full PM Status</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Trucks Due */}
-            <div className="border-l-4 border-red-500 pl-4">
-              <div className="text-sm font-medium text-gray-500 mb-1">Due for PM</div>
-              <div className="text-2xl font-bold text-red-600">{trucksDueForPM.length}</div>
-              {trucksDueForPM.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {trucksDueForPM.map((pm: PMStatus) => (
-                    <div key={pm.truck_id} className="text-sm text-gray-700">
-                      {pm.truck_name}
-                      {pm.days_overdue !== null && (
-                        <span className="text-red-600 font-medium ml-2">
-                          ({pm.days_overdue} days overdue)
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Trucks Not Due */}
-            <div className="border-l-4 border-green-500 pl-4">
-              <div className="text-sm font-medium text-gray-500 mb-1">Up to Date</div>
-              <div className="text-2xl font-bold text-green-600">{trucksNotDueForPM.length}</div>
-              {trucksNotDueForPM.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {trucksNotDueForPM.map((pm: PMStatus) => (
-                    <div key={pm.truck_id} className="text-sm text-gray-700">
-                      {pm.truck_name}
-                      {pm.last_pm_date && pm.days_since_pm !== null && (
-                        <span className="text-gray-500 ml-2">
-                          ({pm.days_since_pm} days ago)
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="mt-4 text-xs text-gray-500">
-            PM threshold: Every {pmStatus[0]?.pm_threshold_months || 3} months
-          </div>
+      {/* PM Status Summary - Minimized */}
+      {trucksDueForPM.length === 0 && trucksNotDueForPM.length > 0 && (
+        <div className="bg-green-50 border-l-2 border-green-500 px-3 py-2 mb-4 rounded-r text-sm">
+          <span className="text-gray-700">
+            ✓ PM Status: <span className="text-green-700 font-medium">{trucksNotDueForPM.length} truck{trucksNotDueForPM.length !== 1 ? 's' : ''} up to date</span>
+          </span>
         </div>
       )}
 
@@ -1470,9 +1396,23 @@ export default function Dashboard() {
                           }
                         }
                         
+                        // Get custom expense descriptions for the "custom" category
+                        const customDescriptions = key === 'custom' && (selectedPeriodData as any).custom_descriptions 
+                          ? Object.values((selectedPeriodData as any).custom_descriptions).filter((d: any) => d && d.trim()).join('; ')
+                          : null
+                        
                         return (
                           <tr key={key} className={amount > 0 ? '' : 'opacity-50'}>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{label}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              <div>
+                                <div>{label}</div>
+                                {customDescriptions && (
+                                  <div className="text-xs text-gray-500 font-normal mt-1 italic">
+                                    {customDescriptions}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                               ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
@@ -2063,18 +2003,18 @@ export default function Dashboard() {
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             {item.block_ids && item.block_ids.length > 0 ? (
-                              <div className="flex flex-col gap-1.5">
+                              <div className="flex flex-row flex-wrap gap-2 items-center">
                                 {item.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
                                   const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
                                   const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
                                   
                                   return (
-                                    <div key={idx} className="flex items-center gap-2">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                    <div key={idx} className="flex items-center gap-1">
+                                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap">
                                         {blockId}
                                       </span>
                                       {deliveryDate && (
-                                        <span className="text-xs text-gray-500">
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">
                                           ({new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
                                         </span>
                                       )}

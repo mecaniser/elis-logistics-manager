@@ -22,6 +22,10 @@ export interface Truck {
   interest_rate?: number  // Annual interest rate (default 0.07 = 7%)
   total_cost?: number  // Total purchase cost (cash + loan for trucks, cash only for trailers)
   registration_fee?: number  // Registration fee for vehicle
+  // PM (Preventive Maintenance) Schedule fields (trucks only)
+  last_pm_date?: string  // Date of last D13 full PM (ISO date string)
+  last_pm_repair_id?: number  // Reference to the repair record
+  pm_threshold_months?: number  // PM due every N months (default 3)
 }
 
 export interface VehicleROI {
@@ -58,6 +62,9 @@ export interface Settlement {
   expenses?: number
   expense_categories?: { [key: string]: number }
   custom_expense_descriptions?: { [key: string]: string }  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
+  custom_expense_validation?: { [key: string]: boolean }  // Validation status for custom expenses: {deduct: true, decals: false}
+  reimbursement_details?: Array<{ description: string; amount: number | null }>  // Reimbursement details from PDF
+  deduction_details?: Array<{ description: string; amount: number | null }>  // Deduction details from PDF
   net_profit?: number
   pdf_file_path?: string
   settlement_type?: string
@@ -314,6 +321,31 @@ export const repairsApi = {
     api.delete(`/repairs/${repairId}/images/${imageIndex}`),
 }
 
+export interface TimeSeriesPeriod {
+  week_key?: string
+  week_label?: string
+  month_key?: string
+  month_label?: string
+  year_key?: string
+  year_label?: string
+  gross_revenue: number
+  net_profit: number
+  driver_pay: number
+  payroll_fee: number
+  fuel: number
+  dispatch_fee: number
+  insurance: number
+  safety: number
+  prepass: number
+  ifta: number
+  loan_interest: number
+  truck_parking: number
+  custom: number
+  repairs?: number
+  custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
+  trucks?: number[]
+}
+
 export interface TimeSeriesData {
   by_week: Array<{
     week_key: string
@@ -331,6 +363,7 @@ export interface TimeSeriesData {
     loan_interest: number
     truck_parking: number
     custom: number
+    custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
   }>
   by_month: Array<{
@@ -349,6 +382,7 @@ export interface TimeSeriesData {
     loan_interest: number
     truck_parking: number
     custom: number
+    custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
     settlement_count?: number
     settlements?: Array<{
@@ -378,6 +412,7 @@ export interface TimeSeriesData {
     truck_parking: number
     custom: number
     repairs?: number
+    custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
   }>
 }
