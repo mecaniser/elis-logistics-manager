@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
