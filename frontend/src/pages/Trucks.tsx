@@ -29,6 +29,7 @@ export default function Trucks() {
   })
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
+  const [expandedPMStatus, setExpandedPMStatus] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
     message: '',
     type: 'info',
@@ -473,15 +474,86 @@ export default function Trucks() {
                           )}
                         </div>
                       )}
-                      {/* PM Status - Simplified on mobile */}
+                      {/* PM Status - Expandable on mobile */}
                       {(() => {
                         const truckPM = pmStatus.find(pm => pm.truck_id === truck.id)
                         if (!truckPM) return null
+                        const isExpanded = expandedPMStatus.has(truck.id)
                         return (
                           <div className={`mt-2 text-xs ${truckPM.is_due ? 'text-red-700' : 'text-green-700'}`}>
                             {isMobile ? (
-                              // Mobile: Simple indicator only
-                              <span>{truckPM.is_due ? '⚠️ PM Due' : '✓ PM OK'}</span>
+                              // Mobile: Clickable indicator with expandable details
+                              <div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setExpandedPMStatus(prev => {
+                                      const newSet = new Set(prev)
+                                      if (newSet.has(truck.id)) {
+                                        newSet.delete(truck.id)
+                                      } else {
+                                        newSet.add(truck.id)
+                                      }
+                                      return newSet
+                                    })
+                                  }}
+                                  className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                                >
+                                  <span>{truckPM.is_due ? '⚠️ PM Due' : '✓ PM OK'}</span>
+                                  <svg
+                                    className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                                {isExpanded && (
+                                  <div className="mt-2 pl-4 border-l-2 border-gray-300 space-y-1">
+                                    {truckPM.is_due ? (
+                                      <>
+                                        {truckPM.last_pm_date && truckPM.days_overdue !== null && (
+                                          <div className="text-red-600">
+                                            {truckPM.days_overdue} days overdue
+                                          </div>
+                                        )}
+                                        {!truckPM.last_pm_date && (
+                                          <div className="text-gray-600">No PM recorded</div>
+                                        )}
+                                        {truckPM.last_pm_date && (
+                                          <div className="text-gray-600">
+                                            Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}
+                                          </div>
+                                        )}
+                                        {truckPM.pm_threshold_months && (
+                                          <div className="text-gray-500 text-xs">
+                                            Threshold: {truckPM.pm_threshold_months} months
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        {truckPM.last_pm_date && (
+                                          <div className="text-gray-600">
+                                            Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}
+                                          </div>
+                                        )}
+                                        {truckPM.days_since_pm !== null && (
+                                          <div className="text-gray-600">
+                                            {truckPM.days_since_pm} days ago
+                                          </div>
+                                        )}
+                                        {truckPM.pm_threshold_months && (
+                                          <div className="text-gray-500 text-xs">
+                                            Threshold: {truckPM.pm_threshold_months} months
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               // Desktop: Full details
                               <>
