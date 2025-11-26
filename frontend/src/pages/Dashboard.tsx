@@ -888,28 +888,28 @@ export default function Dashboard() {
                       </div>
                     </div>
                     
-                    {/* Repair Expenses Details - Collapsible */}
+                    {/* Repair Expenses Details - Collapsible only when repairs exist */}
                     <div className="mt-6">
-                      <button
-                        onClick={() => setRepairExpensesExpanded(!repairExpensesExpanded)}
-                        className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded mb-3"
-                      >
-                        <h4 className="text-md font-semibold text-gray-800">
-                          Repair Expenses {expenseAnalysisView === 'weekly' ? 'This Week' : expenseAnalysisView === 'monthly' ? 'This Month' : 'This Year'}
-                        </h4>
-                        <svg
-                          className={`w-5 h-5 text-gray-600 transition-transform ${repairExpensesExpanded ? 'transform rotate-180' : ''}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                      
-                      {repairExpensesExpanded && (
+                      {repairsForPeriod.length > 0 ? (
                         <>
-                          {repairsForPeriod.length > 0 ? (
+                          <button
+                            onClick={() => setRepairExpensesExpanded(!repairExpensesExpanded)}
+                            className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded mb-3"
+                          >
+                            <h4 className="text-md font-semibold text-gray-800">
+                              Repair Expenses {expenseAnalysisView === 'weekly' ? 'This Week' : expenseAnalysisView === 'monthly' ? 'This Month' : 'This Year'}
+                            </h4>
+                            <svg
+                              className={`w-5 h-5 text-gray-600 transition-transform ${repairExpensesExpanded ? 'transform rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          
+                          {repairExpensesExpanded && (
                             <div className="space-y-3">
                               {repairsForPeriod.map((repair: RepairByMonth) => {
                                 const isPM = repair.category === 'maintenance'
@@ -964,14 +964,14 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             </div>
-                          ) : (
-                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
-                              <p className="text-sm text-gray-600">
-                                No repair expenses {expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}
-                              </p>
-                            </div>
                           )}
                         </>
+                      ) : (
+                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                          <p className="text-sm text-gray-600">
+                            No repairs {expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -997,8 +997,8 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Settlement Breakdown - Show which settlements contribute */}
-              {expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && Array.isArray((selectedPeriodData as any).settlements) && (selectedPeriodData as any).settlements.length > 0 && (
+              {/* Settlement Breakdown - Show which settlements contribute - Only for trucks */}
+              {vehicleTypeFilter === 'trucks' && expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && Array.isArray((selectedPeriodData as any).settlements) && (selectedPeriodData as any).settlements.length > 0 && (
                 <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <button
                     onClick={() => setSettlementsInfoExpanded(!settlementsInfoExpanded)}
