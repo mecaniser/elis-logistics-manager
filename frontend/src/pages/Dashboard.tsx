@@ -729,72 +729,78 @@ export default function Dashboard() {
             </div>
           ) : selectedPeriodData ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-gray-600">Gross Revenue</div>
-                  <div className="text-2xl font-bold text-blue-600">
-                    ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                <div className="bg-blue-50 p-2 sm:p-4 rounded-lg">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
+                    <span className="text-base sm:text-xl font-bold text-blue-600">
+                      ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-gray-600">Total Expenses</div>
-                  <div className="text-2xl font-bold text-red-600">
-                    ${(() => {
-                      const pd = selectedPeriodData as any
-                      
-                      // For trailers, use the expenses field directly from settlements
-                      // This is the total expenses set in the settlement (income - net_profit = expenses)
-                      if (vehicleTypeFilter === 'trailers') {
-                        // Use settlement.expenses field directly from database
-                        if (pd.expenses !== undefined && pd.expenses !== null) {
-                          const settlementExpenses = Number(pd.expenses) || 0
-                          // Add repairs if applicable (for yearly/monthly/all_time views)
-                          const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                          return settlementExpenses + repairs
+                <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
+                    <span className="text-base sm:text-xl font-bold text-red-600">
+                      ${(() => {
+                        const pd = selectedPeriodData as any
+                        
+                        // For trailers, use the expenses field directly from settlements
+                        // This is the total expenses set in the settlement (income - net_profit = expenses)
+                        if (vehicleTypeFilter === 'trailers') {
+                          // Use settlement.expenses field directly from database
+                          if (pd.expenses !== undefined && pd.expenses !== null) {
+                            const settlementExpenses = Number(pd.expenses) || 0
+                            // Add repairs if applicable (for yearly/monthly/all_time views)
+                            const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                            return settlementExpenses + repairs
+                          }
+                          // Fallback: sum custom and repairs if expenses field not available
+                          const trailerExpenses = (
+                            (Number(pd.custom) || 0) +
+                            (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                          )
+                          return trailerExpenses
                         }
-                        // Fallback: sum custom and repairs if expenses field not available
-                        const trailerExpenses = (
+                        
+                        // For trucks, use backend's calculated total_expenses if available and > 0
+                        if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                          return pd.total_expenses
+                        }
+                        
+                        // For trucks, sum all categories
+                        const sum = (
+                          (Number(pd.fuel) || 0) +
+                          (Number(pd.dispatch_fee) || 0) +
+                          (Number(pd.insurance) || 0) +
+                          (Number(pd.safety) || 0) +
+                          (Number(pd.prepass) || 0) +
+                          (Number(pd.ifta) || 0) +
+                          (Number(pd.loan_interest) || 0) +
+                          (Number(pd.truck_parking) || 0) +
                           (Number(pd.custom) || 0) +
+                          (Number(pd.driver_pay) || 0) +
+                          (Number(pd.payroll_fee) || 0) +
+                          // Repairs are only included for yearly/monthly/all_time, not weekly
                           (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                         )
-                        return trailerExpenses
-                      }
-                      
-                      // For trucks, use backend's calculated total_expenses if available and > 0
-                      if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                        return pd.total_expenses
-                      }
-                      
-                      // For trucks, sum all categories
-                      const sum = (
-                        (Number(pd.fuel) || 0) +
-                        (Number(pd.dispatch_fee) || 0) +
-                        (Number(pd.insurance) || 0) +
-                        (Number(pd.safety) || 0) +
-                        (Number(pd.prepass) || 0) +
-                        (Number(pd.ifta) || 0) +
-                        (Number(pd.loan_interest) || 0) +
-                        (Number(pd.truck_parking) || 0) +
-                        (Number(pd.custom) || 0) +
-                        (Number(pd.driver_pay) || 0) +
-                        (Number(pd.payroll_fee) || 0) +
-                        // Repairs are only included for yearly/monthly/all_time, not weekly
-                        (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                      )
-                      return isNaN(sum) ? 0 : sum
-                    })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        return isNaN(sum) ? 0 : sum
+                      })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-sm font-medium text-gray-600">Net Profit</div>
-                  <div className={`text-2xl font-bold ${
-                    selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
+                    <span className={`text-base sm:text-xl font-bold ${
+                      selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
               </div>
 
