@@ -62,7 +62,6 @@ export default function Dashboard() {
   const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
   const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
   const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
-  const [periodDetailsExpanded, setPeriodDetailsExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
@@ -628,8 +627,8 @@ export default function Dashboard() {
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="flex flex-col mb-6 gap-4">
             <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
-            <div className="flex flex-col md:flex-row gap-3 md:items-center">
-              {/* Vehicle Type Filter - Removed "All" option */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              {/* Vehicle Type Filter - Left */}
               <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
                 <button
                   type="button"
@@ -654,8 +653,8 @@ export default function Dashboard() {
                   🚛 Trailers
                 </button>
               </div>
-              {/* Time Range Filter - Simplified on mobile, timeline style on desktop */}
-              <div className="hidden md:flex items-center justify-center gap-2">
+              {/* Time Range Filter - Center (Same design for mobile and desktop) */}
+              <div className="flex items-center justify-center flex-1 gap-2 overflow-x-auto">
                 {vehicleTypeFilter === 'trucks' && (
                   <>
                     <button
@@ -673,7 +672,7 @@ export default function Dashboard() {
                       }`} />
                       <span className="text-xs font-medium">Weekly</span>
                     </button>
-                    <div className="h-px w-8 bg-gray-300" />
+                    <div className="h-px w-4 md:w-8 bg-gray-300" />
                   </>
                 )}
                 <button
@@ -691,7 +690,7 @@ export default function Dashboard() {
                   }`} />
                   <span className="text-xs font-medium">Monthly</span>
                 </button>
-                <div className="h-px w-8 bg-gray-300" />
+                <div className="h-px w-4 md:w-8 bg-gray-300" />
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('yearly')}
@@ -707,7 +706,7 @@ export default function Dashboard() {
                   }`} />
                   <span className="text-xs font-medium">Yearly</span>
                 </button>
-                <div className="h-px w-8 bg-gray-300" />
+                <div className="h-px w-4 md:w-8 bg-gray-300" />
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('all_time')}
@@ -724,41 +723,30 @@ export default function Dashboard() {
                   <span className="text-xs font-medium">All Time</span>
                 </button>
               </div>
-              {/* Mobile: Simplified dropdown for time range */}
-              <div className="md:hidden w-full">
+              {/* Period Selector - Right */}
+              {expenseAnalysisView !== 'all_time' && (
+              <div className="w-full md:w-auto">
                 <select
-                  value={expenseAnalysisView}
-                  onChange={(e) => setExpenseAnalysisView(e.target.value as 'weekly' | 'monthly' | 'yearly' | 'all_time')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  value={selectedExpensePeriod}
+                  onChange={(e) => setSelectedExpensePeriod(e.target.value)}
+                  className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
-                  {vehicleTypeFilter === 'trucks' && <option value="weekly">Weekly</option>}
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                  <option value="all_time">All Time</option>
+                  {(expenseAnalysisView === 'weekly' 
+                    ? (timeSeriesData?.by_week || []) 
+                    : expenseAnalysisView === 'monthly'
+                    ? (timeSeriesData?.by_month || [])
+                    : (timeSeriesData?.by_year || [])
+                  ).map((period: any) => {
+                    const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
+                    const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
+                    return (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
-              {/* Period Selector */}
-              {expenseAnalysisView !== 'all_time' && (
-              <select
-                value={selectedExpensePeriod}
-                onChange={(e) => setSelectedExpensePeriod(e.target.value)}
-                className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                {(expenseAnalysisView === 'weekly' 
-                  ? (timeSeriesData?.by_week || []) 
-                  : expenseAnalysisView === 'monthly'
-                  ? (timeSeriesData?.by_month || [])
-                  : (timeSeriesData?.by_year || [])
-                ).map((period: any) => {
-                  const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
-                  const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
-                  return (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  )
-                })}
-              </select>
               )}
             </div>
           </div>
@@ -769,62 +757,6 @@ export default function Dashboard() {
             </div>
           ) : selectedPeriodData ? (
             <div className="space-y-6">
-              {/* Period Summary */}
-              <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                <div 
-                  onClick={() => setPeriodDetailsExpanded(!periodDetailsExpanded)}
-                  className="cursor-pointer flex items-center justify-between"
-                >
-                  <p className="text-sm text-gray-700">
-                    <strong>Period Selected:</strong> {expenseAnalysisView === 'all_time'
-                      ? 'All Time'
-                      : expenseAnalysisView === 'weekly' 
-                      ? (() => {
-                          const label = (selectedPeriodData as any).week_label || ''
-                          // Extract just the date part (e.g., "Jan 1, 2024" from "Week of Jan 1, 2024")
-                          const dateMatch = label.match(/([A-Za-z]{3}\s+\d{1,2},\s+\d{4})/)
-                          return dateMatch ? dateMatch[1] : label
-                        })()
-                      : expenseAnalysisView === 'monthly'
-                      ? (() => {
-                          const label = (selectedPeriodData as any).month_label || ''
-                          // Extract just the month/year (e.g., "Jan 2024" from "January 2024" or "Jan 2024")
-                          const monthMatch = label.match(/([A-Za-z]{3,9}\s+\d{4})/)
-                          return monthMatch ? monthMatch[1] : label
-                        })()
-                      : (selectedPeriodData as any).year_label || ''}
-                  </p>
-                  <span className="text-gray-500 text-xs">
-                    {periodDetailsExpanded ? '▼' : '▶'} {periodDetailsExpanded ? 'Hide' : 'Details'}
-                  </span>
-                </div>
-                {periodDetailsExpanded && (
-                  <div className="mt-3 pt-3 border-t border-gray-300">
-                    <p className="text-sm text-gray-700">
-                      <strong>Full Period:</strong> {expenseAnalysisView === 'all_time'
-                        ? 'All Time'
-                        : expenseAnalysisView === 'weekly' 
-                        ? (selectedPeriodData as any).week_label 
-                        : expenseAnalysisView === 'monthly'
-                        ? (selectedPeriodData as any).month_label
-                        : (selectedPeriodData as any).year_label}
-                      {' '}
-                      ({expenseAnalysisView === 'all_time'
-                        ? 'Cumulative totals from all periods'
-                        : expenseAnalysisView === 'weekly' 
-                        ? 'This week only' 
-                        : expenseAnalysisView === 'monthly'
-                        ? 'This month only - not cumulative'
-                        : 'This year only - not cumulative'})
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {expenseAnalysisView === 'all_time'
-                        ? 'All amounts below are cumulative totals from all settlements across all time periods.'
-                        : `All amounts below are totals for this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only, aggregated from all settlements in the selected period.`}
-                    </p>
-                  </div>
-                )}
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="text-sm font-medium text-gray-600">Gross Revenue</div>
