@@ -3,8 +3,10 @@ import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
+import { useMobile } from '../utils/useMobile'
 
 export default function Settlements() {
+  const isMobile = useMobile()
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
@@ -1502,9 +1504,16 @@ export default function Settlements() {
                             e.stopPropagation()
                             setSettlementToDelete(settlement.id)
                           }}
-                          className="text-red-600 hover:text-red-800 text-sm"
+                          className="text-red-600 hover:text-red-800 text-sm flex items-center"
+                          title="Delete"
                         >
-                          Delete
+                          {isMobile ? (
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          ) : (
+                            'Delete'
+                          )}
                         </button>
                       )}
                     </div>
@@ -1512,18 +1521,7 @@ export default function Settlements() {
                       {new Date(settlement.settlement_date).toLocaleDateString()}
                     </p>
                     <div className="space-y-2 text-sm mb-3">
-                      {settlement.miles_driven && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Miles:</span>
-                          <span className="font-medium">{settlement.miles_driven.toLocaleString()}</span>
-                        </div>
-                      )}
-                      {settlement.blocks_delivered && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Blocks:</span>
-                          <span className="font-medium">{settlement.blocks_delivered}</span>
-                        </div>
-                      )}
+                      {/* Always show Revenue and Profit */}
                       {settlement.gross_revenue && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Revenue:</span>
@@ -1542,34 +1540,56 @@ export default function Settlements() {
                           </span>
                         </div>
                       )}
+                      {/* Hide secondary fields on mobile, show on desktop */}
+                      {!isMobile && (
+                        <>
+                          {settlement.miles_driven && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Miles:</span>
+                              <span className="font-medium">{settlement.miles_driven.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {settlement.blocks_delivered && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Blocks:</span>
+                              <span className="font-medium">{settlement.blocks_delivered}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
-                    {settlement.pdf_file_path && (
-                      <div className="mb-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            window.open(getPdfUrl(settlement.pdf_file_path!), '_blank')
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-                        >
-                          <span>📄</span>
-                          <span>View PDF</span>
-                        </button>
-                      </div>
-                    )}
-                    {settlement.settlement_type && (
-                      <div className="mb-2">
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                          {settlement.settlement_type}
-                        </span>
-                      </div>
-                    )}
-                    {settlement.custom_expense_descriptions?.total_expenses && (
-                      <div className="mb-2">
-                        <span className="text-xs text-gray-600 italic">
-                          {settlement.custom_expense_descriptions.total_expenses}
-                        </span>
-                      </div>
+                    {/* Hide PDF, type, and custom descriptions on mobile */}
+                    {!isMobile && (
+                      <>
+                        {settlement.pdf_file_path && (
+                          <div className="mb-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                window.open(getPdfUrl(settlement.pdf_file_path!), '_blank')
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+                            >
+                              <span>📄</span>
+                              <span>View PDF</span>
+                            </button>
+                          </div>
+                        )}
+                        {settlement.settlement_type && (
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                              {settlement.settlement_type}
+                            </span>
+                          </div>
+                        )}
+                        {settlement.custom_expense_descriptions?.total_expenses && (
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-600 italic">
+                              {settlement.custom_expense_descriptions.total_expenses}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
                     {!deleteMode && (
                       <div className="mt-2 pt-2 border-t border-gray-100">

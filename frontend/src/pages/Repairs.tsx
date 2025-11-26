@@ -3,8 +3,10 @@ import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
+import { useMobile } from '../utils/useMobile'
 
 export default function Repairs() {
+  const isMobile = useMobile()
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
@@ -718,7 +720,8 @@ export default function Repairs() {
                     <h3 className="text-base font-semibold text-gray-900 mb-2">
                       {repair.title || repair.description || 'Untitled Repair'}
                     </h3>
-                    {repair.details && (
+                    {/* Hide details on mobile */}
+                    {!isMobile && repair.details && (
                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">{repair.details}</p>
                     )}
                     <p className="text-sm text-gray-500 mb-1">
@@ -731,69 +734,99 @@ export default function Repairs() {
                       )}
                     </p>
                     <p className="text-lg font-semibold text-red-600 mb-3">${repair.cost.toLocaleString()}</p>
-                    {repair.invoice_number && (
-                      <div className="mb-2">
-                        <p className="text-xs text-gray-400">Invoice #</p>
-                        <p className="text-sm font-mono font-semibold text-gray-700">{repair.invoice_number}</p>
-                      </div>
-                    )}
-                    {repair.receipt_path && (
-                      <div className="mb-2">
-                        <button
-                          onClick={() => window.open(getPdfUrl(repair.receipt_path!, repair.id), '_blank')}
-                          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          View Invoice
-                        </button>
-                      </div>
-                    )}
-                    {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
-                      <div className="mb-3 flex gap-2 flex-wrap">
-                        {repair.image_paths.slice(0, 3).map((img, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => window.open(getImageUrl(img), '_blank')}
-                            className="relative group cursor-pointer"
-                          >
-                            <img
-                              src={getImageUrl(img)}
-                              alt={`Repair ${idx + 1}`}
-                              className="h-16 w-16 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity"
-                            />
-                            {isCloudinaryImage(img) ? (
-                              <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
-                                Cloud
-                              </div>
-                            ) : (
-                              <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
-                                Local
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                        {repair.image_paths.length > 3 && (
-                          <div className="h-16 w-16 flex items-center justify-center bg-gray-100 rounded border border-gray-200 text-xs text-gray-600">
-                            +{repair.image_paths.length - 3}
+                    {/* Hide invoice number and PDF link on mobile */}
+                    {!isMobile && (
+                      <>
+                        {repair.invoice_number && (
+                          <div className="mb-2">
+                            <p className="text-xs text-gray-400">Invoice #</p>
+                            <p className="text-sm font-mono font-semibold text-gray-700">{repair.invoice_number}</p>
                           </div>
                         )}
-                      </div>
+                        {repair.receipt_path && (
+                          <div className="mb-2">
+                            <button
+                              onClick={() => window.open(getPdfUrl(repair.receipt_path!, repair.id), '_blank')}
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              View Invoice
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {/* Show image count badge on mobile, full gallery on desktop */}
+                    {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
+                      <>
+                        {isMobile ? (
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                              📷 {repair.image_paths.length} image{repair.image_paths.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mb-3 flex gap-2 flex-wrap">
+                            {repair.image_paths.slice(0, 3).map((img, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => window.open(getImageUrl(img), '_blank')}
+                                className="relative group cursor-pointer"
+                              >
+                                <img
+                                  src={getImageUrl(img)}
+                                  alt={`Repair ${idx + 1}`}
+                                  className="h-16 w-16 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity"
+                                />
+                                {isCloudinaryImage(img) ? (
+                                  <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
+                                    Cloud
+                                  </div>
+                                ) : (
+                                  <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
+                                    Local
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                            {repair.image_paths.length > 3 && (
+                              <div className="h-16 w-16 flex items-center justify-center bg-gray-100 rounded border border-gray-200 text-xs text-gray-600">
+                                +{repair.image_paths.length - 3}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                   <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
                     <button
                       onClick={() => handleEdit(repair)}
-                      className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors"
+                      className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
+                      title="Edit"
                     >
-                      Edit
+                      {isMobile ? (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      ) : (
+                        'Edit'
+                      )}
                     </button>
                     <button
                       onClick={() => setRepairToDelete(repair.id)}
-                      className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors"
+                      className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors flex items-center justify-center"
+                      title="Delete"
                     >
-                      Delete
+                      {isMobile ? (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      ) : (
+                        'Delete'
+                      )}
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { analyticsApi, trucksApi, Truck, TimeSeriesData } from '../services/api'
 import ReactECharts from 'echarts-for-react'
+import { useMobile } from '../utils/useMobile'
 
 // Type definitions for dashboard data structures
 interface RepairByMonth {
@@ -42,6 +43,7 @@ interface ExpenseData {
 }
 
 export default function Dashboard() {
+  const isMobile = useMobile()
   const [data, setData] = useState<any>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
@@ -49,17 +51,18 @@ export default function Dashboard() {
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
-  const [showProfitDetails, setShowProfitDetails] = useState(false)
+  const [showProfitDetails, setShowProfitDetails] = useState(false) // Collapsed by default, especially on mobile
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
-  const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(false) // Collapsed by default
+  // Collapse sections by default on mobile, expand on desktop
+  const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(!isMobile)
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'trucks' | 'trailers'>('trucks') // Filter for graphs and expense details - no 'all' option
   const [selectedBlockData, setSelectedBlockData] = useState<BlockByTruckMonth | null>(null) // Track clicked block data
   const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
-  const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(false) // Collapsed by default
-  const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(false) // Collapsed by default
-  const [periodDetailsExpanded, setPeriodDetailsExpanded] = useState<boolean>(false) // Collapsed by default
+  const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
+  const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
+  const [periodDetailsExpanded, setPeriodDetailsExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
@@ -651,8 +654,8 @@ export default function Dashboard() {
                   🚛 Trailers
                 </button>
               </div>
-              {/* Time Range Filter - Timeline Style */}
-              <div className="w-full md:w-auto flex items-center justify-center gap-2">
+              {/* Time Range Filter - Simplified on mobile, timeline style on desktop */}
+              <div className="hidden md:flex items-center justify-center gap-2">
                 {vehicleTypeFilter === 'trucks' && (
                   <>
                     <button
@@ -720,6 +723,19 @@ export default function Dashboard() {
                   }`} />
                   <span className="text-xs font-medium">All Time</span>
                 </button>
+              </div>
+              {/* Mobile: Simplified dropdown for time range */}
+              <div className="md:hidden w-full">
+                <select
+                  value={expenseAnalysisView}
+                  onChange={(e) => setExpenseAnalysisView(e.target.value as 'weekly' | 'monthly' | 'yearly' | 'all_time')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  {vehicleTypeFilter === 'trucks' && <option value="weekly">Weekly</option>}
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                  <option value="all_time">All Time</option>
+                </select>
               </div>
               {/* Period Selector */}
               {expenseAnalysisView !== 'all_time' && (
@@ -1301,7 +1317,7 @@ export default function Dashboard() {
                       }
                     ]
                   }}
-                  style={{ height: '500px', width: '100%' }}
+                  style={{ height: isMobile ? '350px' : '500px', width: '100%' }}
                   opts={{ renderer: 'svg' }}
                 />
                   )
@@ -1487,7 +1503,7 @@ export default function Dashboard() {
                     color: '#374151'
                   }
                 },
-                legend: windowWidth < 768 ? { show: false } : {
+                legend: isMobile ? { show: false } : {
                   orient: 'vertical',
                   right: 10,
                   top: 'center',
@@ -1512,8 +1528,8 @@ export default function Dashboard() {
                   {
                     name: 'Expenses',
                     type: 'pie',
-                    radius: windowWidth < 768 ? ['35%', '65%'] : ['40%', '70%'],
-                    center: windowWidth < 768 ? ['50%', '45%'] : ['35%', '50%'],
+                    radius: isMobile ? ['35%', '65%'] : ['40%', '70%'],
+                    center: isMobile ? ['50%', '45%'] : ['35%', '50%'],
                     avoidLabelOverlap: false,
                     itemStyle: {
                       borderRadius: 8,
@@ -1550,14 +1566,14 @@ export default function Dashboard() {
                   }
                 ]
               }}
-              style={{ height: windowWidth < 768 ? '400px' : '450px', width: '100%' }}
+              style={{ height: isMobile ? '300px' : '450px', width: '100%' }}
               opts={{ renderer: 'svg' }}
               onEvents={windowWidth >= 768 ? {
                 legendselectchanged: handleLegendSelectChange
               } : {}}
             />
             {/* Custom Legend for Mobile */}
-            {windowWidth < 768 && (
+            {isMobile && (
               <div className="mt-1 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {expenseCategoriesData.map((item) => {
                   const total = expenseCategoriesData.reduce((sum, d) => sum + d.value, 0)
@@ -1718,7 +1734,7 @@ export default function Dashboard() {
                   }
                 ]
               }}
-              style={{ height: '450px', width: '100%' }}
+              style={{ height: isMobile ? '300px' : '450px', width: '100%' }}
               opts={{ renderer: 'svg' }}
             />
           </div>
@@ -1901,7 +1917,7 @@ export default function Dashboard() {
                 }
               ]
             }}
-            style={{ height: '450px', width: '100%' }}
+            style={{ height: isMobile ? '300px' : '450px', width: '100%' }}
             opts={{ renderer: 'svg' }}
             onEvents={{
               click: (params: any) => {
@@ -2311,7 +2327,7 @@ export default function Dashboard() {
                 }
               ]
             }}
-            style={{ height: '500px', width: '100%' }}
+            style={{ height: isMobile ? '350px' : '500px', width: '100%' }}
             opts={{ renderer: 'svg' }}
           />
           
@@ -2471,7 +2487,7 @@ export default function Dashboard() {
                         }
                       ]
                     }}
-                    style={{ height: '400px', width: '100%' }}
+                    style={{ height: isMobile ? '300px' : '400px', width: '100%' }}
                     opts={{ renderer: 'svg' }}
                   />
                 )}
@@ -2549,7 +2565,7 @@ export default function Dashboard() {
                         }
                       ]
                     }}
-                    style={{ height: '400px', width: '100%' }}
+                    style={{ height: isMobile ? '300px' : '400px', width: '100%' }}
                     opts={{ renderer: 'svg' }}
                   />
                 )}
@@ -2673,7 +2689,7 @@ export default function Dashboard() {
                           }
                         ]
                   }}
-                  style={{ height: '450px', width: '100%' }}
+                  style={{ height: isMobile ? '300px' : '450px', width: '100%' }}
                   opts={{ renderer: 'svg' }}
                 />
               )}

@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
+import { useMobile } from '../utils/useMobile'
 
 export default function Trucks() {
+  const isMobile = useMobile()
   const navigate = useNavigate()
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
@@ -447,12 +449,14 @@ export default function Trucks() {
                       {truck.license_plate && (
                         <p className="text-sm text-gray-500">License Plate: {truck.license_plate}</p>
                       )}
-                      {truck.license_plate_history && truck.license_plate_history.length > 0 && (
+                      {/* Hide license plate history on mobile */}
+                      {!isMobile && truck.license_plate_history && truck.license_plate_history.length > 0 && (
                         <p className="text-xs text-gray-400">
                           History: {truck.license_plate_history.join(', ')}
                         </p>
                       )}
-                      {(truck.cash_investment || truck.total_cost || truck.registration_fee) && (
+                      {/* Hide investment details on mobile */}
+                      {!isMobile && (truck.cash_investment || truck.total_cost || truck.registration_fee) && (
                         <div className="mt-2 text-xs text-gray-600">
                           <span className="font-medium">Investment: </span>
                           {truck.cash_investment && (
@@ -469,33 +473,41 @@ export default function Trucks() {
                           )}
                         </div>
                       )}
-                      {/* PM Status */}
+                      {/* PM Status - Simplified on mobile */}
                       {(() => {
                         const truckPM = pmStatus.find(pm => pm.truck_id === truck.id)
                         if (!truckPM) return null
                         return (
                           <div className={`mt-2 text-xs ${truckPM.is_due ? 'text-red-700' : 'text-green-700'}`}>
-                            {truckPM.is_due ? (
-                              <span>
-                                ⚠️ PM Due
-                                {truckPM.last_pm_date && truckPM.days_overdue !== null && (
-                                  <span> ({truckPM.days_overdue} days overdue)</span>
-                                )}
-                                {!truckPM.last_pm_date && <span> (No PM recorded)</span>}
-                                {truckPM.last_pm_date && (
-                                  <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
-                                )}
-                              </span>
+                            {isMobile ? (
+                              // Mobile: Simple indicator only
+                              <span>{truckPM.is_due ? '⚠️ PM Due' : '✓ PM OK'}</span>
                             ) : (
-                              <span>
-                                ✓ PM Up to Date
-                                {truckPM.last_pm_date && (
-                                  <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                              // Desktop: Full details
+                              <>
+                                {truckPM.is_due ? (
+                                  <span>
+                                    ⚠️ PM Due
+                                    {truckPM.last_pm_date && truckPM.days_overdue !== null && (
+                                      <span> ({truckPM.days_overdue} days overdue)</span>
+                                    )}
+                                    {!truckPM.last_pm_date && <span> (No PM recorded)</span>}
+                                    {truckPM.last_pm_date && (
+                                      <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                                    )}
+                                  </span>
+                                ) : (
+                                  <span>
+                                    ✓ PM Up to Date
+                                    {truckPM.last_pm_date && (
+                                      <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                                    )}
+                                    {truckPM.days_since_pm !== null && (
+                                      <span className="text-gray-600"> ({truckPM.days_since_pm} days ago)</span>
+                                    )}
+                                  </span>
                                 )}
-                                {truckPM.days_since_pm !== null && (
-                                  <span className="text-gray-600"> ({truckPM.days_since_pm} days ago)</span>
-                                )}
-                              </span>
+                              </>
                             )}
                           </div>
                         )
@@ -504,9 +516,17 @@ export default function Trucks() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => navigate(`/vehicles/${truck.id}`)}
-                        className="text-green-600 hover:text-green-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition-colors flex items-center justify-center`}
+                        title="View Details"
                       >
-                        View Details
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        ) : (
+                          'View Details'
+                        )}
                       </button>
                       <button
                         onClick={() => {
@@ -525,18 +545,32 @@ export default function Trucks() {
                           })
                           setShowForm(true)
                         }}
-                        className="text-blue-600 hover:text-blue-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
+                        title="Edit"
                       >
-                        Edit
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        ) : (
+                          'Edit'
+                        )}
                       </button>
                       <button
                         onClick={() => {
                           setTruckToDelete(truck.id)
                           setTruckToDeleteName(truck.name)
                         }}
-                        className="text-red-600 hover:text-red-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-red-600 text-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center justify-center`}
+                        title="Delete"
                       >
-                        Delete
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        ) : (
+                          'Delete'
+                        )}
                       </button>
                     </div>
                   </div>
@@ -562,7 +596,8 @@ export default function Trucks() {
                       {trailer.tag_number && (
                         <p className="text-sm text-gray-500">Tag Number: {trailer.tag_number}</p>
                       )}
-                      {(trailer.cash_investment || trailer.total_cost || trailer.registration_fee) && (
+                      {/* Hide investment details on mobile */}
+                      {!isMobile && (trailer.cash_investment || trailer.total_cost || trailer.registration_fee) && (
                         <div className="mt-2 text-xs text-gray-600">
                           <span className="font-medium">Investment: </span>
                           {trailer.cash_investment && (
@@ -580,9 +615,17 @@ export default function Trucks() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => navigate(`/vehicles/${trailer.id}`)}
-                        className="text-green-600 hover:text-green-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition-colors flex items-center justify-center`}
+                        title="View Details"
                       >
-                        View Details
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        ) : (
+                          'View Details'
+                        )}
                       </button>
                       <button
                         onClick={() => {
@@ -601,18 +644,32 @@ export default function Trucks() {
                           })
                           setShowForm(true)
                         }}
-                        className="text-blue-600 hover:text-blue-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
+                        title="Edit"
                       >
-                        Edit
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        ) : (
+                          'Edit'
+                        )}
                       </button>
                       <button
                         onClick={() => {
                           setTruckToDelete(trailer.id)
                           setTruckToDeleteName(trailer.name)
                         }}
-                        className="text-red-600 hover:text-red-800"
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-red-600 text-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center justify-center`}
+                        title="Delete"
                       >
-                        Delete
+                        {isMobile ? (
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        ) : (
+                          'Delete'
+                        )}
                       </button>
                     </div>
                   </div>
