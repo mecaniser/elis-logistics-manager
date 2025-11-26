@@ -59,11 +59,21 @@ export default function Dashboard() {
   const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
   const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(false) // Collapsed by default
   const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(false) // Collapsed by default
+  const [periodDetailsExpanded, setPeriodDetailsExpanded] = useState<boolean>(false) // Collapsed by default
+  const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
     loadTrucks()
     loadDashboard()
   }, [selectedTruck, vehicleTypeFilter])
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
@@ -426,9 +436,6 @@ export default function Dashboard() {
 
   const allCategoriesSelected = expenseCategoriesData.length > 0 && 
     expenseCategoriesData.every(item => selectedCategories[item.name] !== false)
-  
-  const noCategoriesSelected = expenseCategoriesData.length > 0 && 
-    expenseCategoriesData.every(item => selectedCategories[item.name] === false)
 
   // Calculate average expense percentages from all data
   const calculateAveragePercentages = () => {
@@ -597,27 +604,20 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
+      <div className="flex justify-between items-center mb-4 sm:mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="w-full sm:w-auto">
-            <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-0 sm:inline-block sm:mr-2">
-              Filter by Truck:
-            </label>
-            <select
-              value={selectedTruck || ''}
-              onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
-              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="">All Trucks</option>
-              {trucks.map((truck) => (
-                <option key={truck.id} value={truck.id}>
-                  {truck.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <select
+          value={selectedTruck || ''}
+          onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        >
+          <option value="">All Trucks</option>
+          {trucks.map((truck) => (
+            <option key={truck.id} value={truck.id}>
+              {truck.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Detailed Expense Analysis Section - First Chart */}
@@ -651,55 +651,74 @@ export default function Dashboard() {
                   🚛 Trailers
                 </button>
               </div>
-              {/* Time Range Filter */}
-              <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
+              {/* Time Range Filter - Timeline Style */}
+              <div className="w-full md:w-auto flex items-center justify-center gap-2">
                 {vehicleTypeFilter === 'trucks' && (
-                  <button
-                    type="button"
-                    onClick={() => setExpenseAnalysisView('weekly')}
-                    className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border rounded-l-lg ${
-                      expenseAnalysisView === 'weekly'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Weekly
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setExpenseAnalysisView('weekly')}
+                      className={`flex flex-col items-center gap-1 ${
+                        expenseAnalysisView === 'weekly' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                      title="Weekly"
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 ${
+                        expenseAnalysisView === 'weekly'
+                          ? 'bg-blue-600 border-blue-600'
+                          : 'bg-white border-gray-300 hover:border-gray-400'
+                      }`} />
+                      <span className="text-xs font-medium">Weekly</span>
+                    </button>
+                    <div className="h-px w-8 bg-gray-300" />
+                  </>
                 )}
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('monthly')}
-                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border ${
-                    vehicleTypeFilter === 'trailers' ? 'rounded-l-lg' : 'border-t border-b'
-                  } ${
-                    expenseAnalysisView === 'monthly'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  className={`flex flex-col items-center gap-1 ${
+                    expenseAnalysisView === 'monthly' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                   }`}
+                  title="Monthly"
                 >
-                  Monthly
+                  <div className={`w-4 h-4 rounded-full border-2 ${
+                    expenseAnalysisView === 'monthly'
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'bg-white border-gray-300 hover:border-gray-400'
+                  }`} />
+                  <span className="text-xs font-medium">Monthly</span>
                 </button>
+                <div className="h-px w-8 bg-gray-300" />
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('yearly')}
-                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border-t border-b ${
-                    expenseAnalysisView === 'yearly'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  className={`flex flex-col items-center gap-1 ${
+                    expenseAnalysisView === 'yearly' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                   }`}
+                  title="Yearly"
                 >
-                  Yearly
+                  <div className={`w-4 h-4 rounded-full border-2 ${
+                    expenseAnalysisView === 'yearly'
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'bg-white border-gray-300 hover:border-gray-400'
+                  }`} />
+                  <span className="text-xs font-medium">Yearly</span>
                 </button>
+                <div className="h-px w-8 bg-gray-300" />
                 <button
                   type="button"
                   onClick={() => setExpenseAnalysisView('all_time')}
-                  className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium border rounded-r-lg ${
-                    expenseAnalysisView === 'all_time'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  className={`flex flex-col items-center gap-1 ${
+                    expenseAnalysisView === 'all_time' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
                   }`}
+                  title="All Time"
                 >
-                  All Time
+                  <div className={`w-4 h-4 rounded-full border-2 ${
+                    expenseAnalysisView === 'all_time'
+                      ? 'bg-blue-600 border-blue-600'
+                      : 'bg-white border-gray-300 hover:border-gray-400'
+                  }`} />
+                  <span className="text-xs font-medium">All Time</span>
                 </button>
               </div>
               {/* Period Selector */}
@@ -736,28 +755,59 @@ export default function Dashboard() {
             <div className="space-y-6">
               {/* Period Summary */}
               <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                <p className="text-sm text-gray-700">
-                  <strong>Period Selected:</strong> {expenseAnalysisView === 'all_time'
-                    ? 'All Time'
-                    : expenseAnalysisView === 'weekly' 
-                    ? (selectedPeriodData as any).week_label 
-                    : expenseAnalysisView === 'monthly'
-                    ? (selectedPeriodData as any).month_label
-                    : (selectedPeriodData as any).year_label}
-                  {' '}
-                  ({expenseAnalysisView === 'all_time'
-                    ? 'Cumulative totals from all periods'
-                    : expenseAnalysisView === 'weekly' 
-                    ? 'This week only' 
-                    : expenseAnalysisView === 'monthly'
-                    ? 'This month only - not cumulative'
-                    : 'This year only - not cumulative'})
-                </p>
-                <p className="text-xs text-gray-600 mt-1">
-                  {expenseAnalysisView === 'all_time'
-                    ? 'All amounts below are cumulative totals from all settlements across all time periods.'
-                    : `All amounts below are totals for this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only, aggregated from all settlements in the selected period.`}
-                </p>
+                <div 
+                  onClick={() => setPeriodDetailsExpanded(!periodDetailsExpanded)}
+                  className="cursor-pointer flex items-center justify-between"
+                >
+                  <p className="text-sm text-gray-700">
+                    <strong>Period Selected:</strong> {expenseAnalysisView === 'all_time'
+                      ? 'All Time'
+                      : expenseAnalysisView === 'weekly' 
+                      ? (() => {
+                          const label = (selectedPeriodData as any).week_label || ''
+                          // Extract just the date part (e.g., "Jan 1, 2024" from "Week of Jan 1, 2024")
+                          const dateMatch = label.match(/([A-Za-z]{3}\s+\d{1,2},\s+\d{4})/)
+                          return dateMatch ? dateMatch[1] : label
+                        })()
+                      : expenseAnalysisView === 'monthly'
+                      ? (() => {
+                          const label = (selectedPeriodData as any).month_label || ''
+                          // Extract just the month/year (e.g., "Jan 2024" from "January 2024" or "Jan 2024")
+                          const monthMatch = label.match(/([A-Za-z]{3,9}\s+\d{4})/)
+                          return monthMatch ? monthMatch[1] : label
+                        })()
+                      : (selectedPeriodData as any).year_label || ''}
+                  </p>
+                  <span className="text-gray-500 text-xs">
+                    {periodDetailsExpanded ? '▼' : '▶'} {periodDetailsExpanded ? 'Hide' : 'Details'}
+                  </span>
+                </div>
+                {periodDetailsExpanded && (
+                  <div className="mt-3 pt-3 border-t border-gray-300">
+                    <p className="text-sm text-gray-700">
+                      <strong>Full Period:</strong> {expenseAnalysisView === 'all_time'
+                        ? 'All Time'
+                        : expenseAnalysisView === 'weekly' 
+                        ? (selectedPeriodData as any).week_label 
+                        : expenseAnalysisView === 'monthly'
+                        ? (selectedPeriodData as any).month_label
+                        : (selectedPeriodData as any).year_label}
+                      {' '}
+                      ({expenseAnalysisView === 'all_time'
+                        ? 'Cumulative totals from all periods'
+                        : expenseAnalysisView === 'weekly' 
+                        ? 'This week only' 
+                        : expenseAnalysisView === 'monthly'
+                        ? 'This month only - not cumulative'
+                        : 'This year only - not cumulative'})
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {expenseAnalysisView === 'all_time'
+                        ? 'All amounts below are cumulative totals from all settlements across all time periods.'
+                        : `All amounts below are totals for this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only, aggregated from all settlements in the selected period.`}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
@@ -1408,30 +1458,16 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-gray-900">Expenses by Category</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSelectAllCategories}
-                  disabled={allCategoriesSelected}
-                  className={`px-3 py-1 text-xs font-medium rounded ${
-                    allCategoriesSelected
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  Select All
-                </button>
-                <button
-                  onClick={handleDeselectAllCategories}
-                  disabled={noCategoriesSelected}
-                  className={`px-3 py-1 text-xs font-medium rounded ${
-                    noCategoriesSelected
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-gray-600 text-white hover:bg-gray-700'
-                  }`}
-                >
-                  Deselect All
-                </button>
-              </div>
+              <button
+                onClick={allCategoriesSelected ? handleDeselectAllCategories : handleSelectAllCategories}
+                className={`px-3 py-1 text-xs font-medium rounded ${
+                  allCategoriesSelected
+                    ? 'bg-gray-600 text-white hover:bg-gray-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {allCategoriesSelected ? 'Deselect All' : 'Select All'}
+              </button>
             </div>
             <ReactECharts
               option={{
@@ -1451,14 +1487,18 @@ export default function Dashboard() {
                     color: '#374151'
                   }
                 },
-                legend: {
+                legend: windowWidth < 768 ? { show: false } : {
                   orient: 'vertical',
                   right: 10,
                   top: 'center',
                   itemGap: 12,
+                  itemWidth: 14,
+                  itemHeight: 14,
+                  align: 'left',
                   textStyle: {
                     fontSize: 12,
-                    color: '#374151'
+                    color: '#374151',
+                    lineHeight: 16
                   },
                   formatter: (name: string) => {
                     const item = expenseCategoriesData.find(d => d.name === name)
@@ -1472,8 +1512,8 @@ export default function Dashboard() {
                   {
                     name: 'Expenses',
                     type: 'pie',
-                    radius: ['40%', '70%'],
-                    center: ['35%', '50%'],
+                    radius: windowWidth < 768 ? ['35%', '65%'] : ['40%', '70%'],
+                    center: windowWidth < 768 ? ['50%', '45%'] : ['35%', '50%'],
                     avoidLabelOverlap: false,
                     itemStyle: {
                       borderRadius: 8,
@@ -1498,22 +1538,57 @@ export default function Dashboard() {
                     labelLine: {
                       show: false
                     },
-                    data: expenseCategoriesData.map(item => ({
-                      value: item.value,
-                      name: item.name,
-                      itemStyle: {
-                        color: item.color
-                      }
-                    }))
+                    data: expenseCategoriesData
+                      .filter(item => selectedCategories[item.name] !== false)
+                      .map(item => ({
+                        value: item.value,
+                        name: item.name,
+                        itemStyle: {
+                          color: item.color
+                        }
+                      }))
                   }
                 ]
               }}
-              style={{ height: '450px', width: '100%' }}
+              style={{ height: windowWidth < 768 ? '400px' : '450px', width: '100%' }}
               opts={{ renderer: 'svg' }}
-              onEvents={{
+              onEvents={windowWidth >= 768 ? {
                 legendselectchanged: handleLegendSelectChange
-              }}
+              } : {}}
             />
+            {/* Custom Legend for Mobile */}
+            {windowWidth < 768 && (
+              <div className="mt-1 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {expenseCategoriesData.map((item) => {
+                  const total = expenseCategoriesData.reduce((sum, d) => sum + d.value, 0)
+                  const percent = ((item.value / total) * 100).toFixed(1)
+                  const isSelected = selectedCategories[item.name] !== false
+                  return (
+                    <div
+                      key={item.name}
+                      onClick={() => {
+                        const newSelected = { ...selectedCategories }
+                        newSelected[item.name] = !isSelected
+                        setSelectedCategories(newSelected)
+                        // Trigger chart update
+                        handleLegendSelectChange({ selected: newSelected })
+                      }}
+                      className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
+                        isSelected ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-100 opacity-50 hover:bg-gray-200'
+                      }`}
+                    >
+                      <div
+                        className="w-4 h-4 rounded flex-shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-xs text-gray-700 flex-1">
+                        {item.name} ({percent}%)
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1920,67 +1995,123 @@ export default function Dashboard() {
                 </button>
               </div>
               {showBlockDetails && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Truck</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blocks</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block IDs</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {blocksByTruckMonth
-                      .filter((item: BlockByTruckMonth) => !selectedTruck || item.truck_id === selectedTruck)
-                      .sort((a: BlockByTruckMonth, b: BlockByTruckMonth) => {
-                        // Sort by month_key descending, then by truck_name
-                        if (a.month_key !== b.month_key) {
-                          return b.month_key.localeCompare(a.month_key)
-                        }
-                        return (a.truck_name || '').localeCompare(b.truck_name || '')
-                      })
-                      .map((item: BlockByTruckMonth, index: number) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {item.truck_name || `Truck ${item.truck_id}`}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {item.month}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                            {item.blocks}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {item.block_ids && item.block_ids.length > 0 ? (
-                              <div className="flex flex-row flex-wrap gap-2 items-center">
-                                {item.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
-                                  const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
-                                  const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
-                                  
-                                  return (
-                                    <div key={idx} className="flex items-center gap-1">
-                                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap">
-                                        {blockId}
+              <>
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-4">
+                  {blocksByTruckMonth
+                    .filter((item: BlockByTruckMonth) => !selectedTruck || item.truck_id === selectedTruck)
+                    .sort((a: BlockByTruckMonth, b: BlockByTruckMonth) => {
+                      // Sort by month_key descending, then by truck_name
+                      if (a.month_key !== b.month_key) {
+                        return b.month_key.localeCompare(a.month_key)
+                      }
+                      return (a.truck_name || '').localeCompare(b.truck_name || '')
+                    })
+                    .map((item: BlockByTruckMonth, index: number) => (
+                      <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-200">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {item.truck_name || `Truck ${item.truck_id}`}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">{item.month}</div>
+                          </div>
+                          <div className="text-lg font-semibold text-gray-900">
+                            {item.blocks} <span className="text-sm font-normal text-gray-600">blocks</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Block IDs</div>
+                          {item.block_ids && item.block_ids.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {item.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
+                                const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
+                                const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
+                                
+                                return (
+                                  <div key={idx} className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                                      {blockId}
+                                    </span>
+                                    {deliveryDate && (
+                                      <span className="text-xs text-gray-500 text-center">
+                                        {new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                       </span>
-                                      {deliveryDate && (
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">
-                                          ({new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 italic text-sm">No block IDs available</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Truck</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blocks</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block IDs</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {blocksByTruckMonth
+                        .filter((item: BlockByTruckMonth) => !selectedTruck || item.truck_id === selectedTruck)
+                        .sort((a: BlockByTruckMonth, b: BlockByTruckMonth) => {
+                          // Sort by month_key descending, then by truck_name
+                          if (a.month_key !== b.month_key) {
+                            return b.month_key.localeCompare(a.month_key)
+                          }
+                          return (a.truck_name || '').localeCompare(b.truck_name || '')
+                        })
+                        .map((item: BlockByTruckMonth, index: number) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {item.truck_name || `Truck ${item.truck_id}`}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                              {item.month}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                              {item.blocks}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {item.block_ids && item.block_ids.length > 0 ? (
+                                <div className="flex flex-row flex-wrap gap-2 items-center">
+                                  {item.block_ids.map((blockItem: string | BlockWithDate, idx: number) => {
+                                    const blockId = typeof blockItem === 'string' ? blockItem : blockItem.block_id
+                                    const deliveryDate = typeof blockItem === 'object' ? blockItem.delivery_date : undefined
+                                    
+                                    return (
+                                      <div key={idx} className="flex items-center gap-1">
+                                        <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap">
+                                          {blockId}
                                         </span>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400 italic">No block IDs available</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+                                        {deliveryDate && (
+                                          <span className="text-xs text-gray-500 whitespace-nowrap">
+                                            ({new Date(deliveryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                                          </span>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">No block IDs available</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
               )}
             </div>
           )}
