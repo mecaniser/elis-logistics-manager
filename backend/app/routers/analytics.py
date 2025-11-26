@@ -829,6 +829,7 @@ def get_time_series(
     weekly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
         "net_profit": 0.0,
+        "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -850,6 +851,7 @@ def get_time_series(
     monthly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
         "net_profit": 0.0,
+        "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -869,6 +871,7 @@ def get_time_series(
     yearly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
         "net_profit": 0.0,
+        "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -934,6 +937,7 @@ def get_time_series(
         # Aggregate weekly data
         weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
         weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+        weekly_data[week_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
         weekly_data[week_key]["trucks"].add(settlement.truck_id)
         if not weekly_data[week_key]["week_start"]:
             weekly_data[week_key]["week_start"] = week_start
@@ -946,12 +950,14 @@ def get_time_series(
         if month_key:
             monthly_data[month_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
             monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            monthly_data[month_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
         
         # Aggregate yearly data
         if year_key:
             yearly_data[year_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
             yearly_data[year_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            yearly_data[year_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             yearly_data[year_key]["trucks"].add(settlement.truck_id)
         
         # Process expense categories
@@ -1063,6 +1069,7 @@ def get_time_series(
             "week_label": week_label,
             "gross_revenue": round(week_data["gross_revenue"], 2),
             "net_profit": round(week_data["net_profit"], 2),
+            "expenses": round(week_data["expenses"], 2),
             "driver_pay": round(week_data["driver_pay"], 2),
             "payroll_fee": round(week_data["payroll_fee"], 2),
             "fuel": round(week_data["fuel"], 2),
@@ -1145,6 +1152,7 @@ def get_time_series(
             "month_label": month_label,
             "gross_revenue": round(month_data["gross_revenue"], 2),
             "net_profit": round(month_data["net_profit"], 2),
+            "expenses": round(month_data["expenses"], 2),
             "driver_pay": round(month_data["driver_pay"], 2),
             "payroll_fee": round(month_data["payroll_fee"], 2),
             "fuel": round(month_data["fuel"], 2),
@@ -1166,6 +1174,16 @@ def get_time_series(
     repairs_query = db.query(Repair)
     if truck_id is not None:
         repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
+    elif vehicle_type:
+        # Filter repairs by vehicle type when no specific truck_id is provided
+        vt = vehicle_type.lower()
+        if vt in ["truck", "trailer"]:
+            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt).all()]
+            if vehicle_ids:
+                repairs_query = repairs_query.filter(Repair.truck_id.in_(vehicle_ids))
+            else:
+                # No vehicles of this type; return empty results
+                repairs_query = repairs_query.filter(False)
     
     repairs = repairs_query.all()
     for repair in repairs:
@@ -1214,6 +1232,7 @@ def get_time_series(
             "year_label": year_label,
             "gross_revenue": round(year_data["gross_revenue"], 2),
             "net_profit": round(year_data["net_profit"], 2),
+            "expenses": round(year_data["expenses"], 2),
             "driver_pay": round(year_data["driver_pay"], 2),
             "payroll_fee": round(year_data["payroll_fee"], 2),
             "fuel": round(year_data["fuel"], 2),

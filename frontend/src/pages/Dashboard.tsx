@@ -483,48 +483,9 @@ export default function Dashboard() {
 
   // Get selected period data
   const getSelectedPeriodData = () => {
-    // For "All Time", aggregate from timeSeriesData to keep it in sync with period views
+    // For "All Time", use dashboard data which has correct totals
     if (expenseAnalysisView === 'all_time') {
-      if (timeSeriesData) {
-        const source = Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : []
-        if (source.length > 0) {
-          const sumField = (field: string) => source.reduce((sum, period) => sum + (Number((period as any)[field]) || 0), 0)
-          const trucksSet = new Set<number>()
-          source.forEach((period: any) => {
-            if (Array.isArray(period.trucks)) {
-              period.trucks.forEach((t: any) => {
-                if (t.truck_id !== undefined) trucksSet.add(t.truck_id)
-              })
-            }
-          })
-          
-          const grossRevenue = sumField('gross_revenue')
-          const netProfit = sumField('net_profit')
-          
-          return {
-            all_time_key: 'all_time',
-            all_time_label: 'All Time',
-            gross_revenue: grossRevenue,
-            net_profit: netProfit,
-            total_expenses: grossRevenue - netProfit,
-            driver_pay: sumField('driver_pay'),
-            payroll_fee: sumField('payroll_fee'),
-            fuel: sumField('fuel'),
-            dispatch_fee: sumField('dispatch_fee'),
-            insurance: sumField('insurance'),
-            safety: sumField('safety'),
-            prepass: sumField('prepass'),
-            ifta: sumField('ifta'),
-            loan_interest: sumField('loan_interest'),
-            truck_parking: sumField('truck_parking'),
-            custom: sumField('custom'),
-            repairs: sumField('repairs'),
-            trucks: Array.from(trucksSet).map(truck_id => ({ truck_id, truck_name: `Truck ${truck_id}` }))
-          }
-        }
-      }
-      
-      // Fallback to dashboard data if time series not available
+      // Always use dashboard data for "all time" as it has accurate totals
       if (!data) return null
       
       // Get expense categories based on vehicle type filter
@@ -556,6 +517,17 @@ export default function Dashboard() {
         all_time_label: 'All Time',
         gross_revenue: grossRevenue,
         net_profit: netProfit,
+        expenses: (() => {
+          // For trailers, use total_expenses from dashboard data
+          // For trucks, use total_expenses from dashboard data
+          if (vehicleTypeFilter === 'trucks' && data.trucks) {
+            return data.trucks.total_expenses || 0
+          } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
+            return data.trailers.total_expenses || 0
+          } else {
+            return 0
+          }
+        })(),
         total_expenses: (() => {
           // Use backend's calculated total_expenses if available, otherwise calculate from categories
           if (vehicleTypeFilter === 'trucks' && data.trucks) {
@@ -757,7 +729,7 @@ export default function Dashboard() {
             </div>
           ) : selectedPeriodData ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="text-sm font-medium text-gray-600">Gross Revenue</div>
                   <div className="text-2xl font-bold text-blue-600">
@@ -770,28 +742,23 @@ export default function Dashboard() {
                   <div className="text-2xl font-bold text-red-600">
                     ${(() => {
                       const pd = selectedPeriodData as any
-                      const revenue = pd.gross_revenue || 0
-                      const profit = pd.net_profit || 0
                       
-                      // For trailers, calculate as revenue - profit if total_expenses is not available or seems incorrect
+                      // For trailers, use the expenses field directly from settlements
+                      // This is the total expenses set in the settlement (income - net_profit = expenses)
                       if (vehicleTypeFilter === 'trailers') {
-                        // Use backend's calculated total_expenses if available and > 0
-                        if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                          return pd.total_expenses
+                        // Use settlement.expenses field directly from database
+                        if (pd.expenses !== undefined && pd.expenses !== null) {
+                          const settlementExpenses = Number(pd.expenses) || 0
+                          // Add repairs if applicable (for yearly/monthly/all_time views)
+                          const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                          return settlementExpenses + repairs
                         }
-                        
-                        // Fallback: calculate from revenue - profit
-                        const calculated = revenue - profit
-                        if (calculated > 0) {
-                          return calculated
-                        }
-                        
-                        // Last resort: sum repairs and custom expenses
-                        const sum = (
+                        // Fallback: sum custom and repairs if expenses field not available
+                        const trailerExpenses = (
                           (Number(pd.custom) || 0) +
                           (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                         )
-                        return isNaN(sum) ? 0 : sum
+                        return trailerExpenses
                       }
                       
                       // For trucks, use backend's calculated total_expenses if available and > 0
@@ -817,6 +784,15 @@ export default function Dashboard() {
                       )
                       return isNaN(sum) ? 0 : sum
                     })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <div className="text-sm font-medium text-gray-600">Net Profit</div>
+                  <div className={`text-2xl font-bold ${
+                    selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                 </div>
