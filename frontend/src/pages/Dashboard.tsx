@@ -50,7 +50,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
-  const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
+  const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('monthly')
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
@@ -2086,41 +2086,39 @@ export default function Dashboard() {
       {/* Time-Series Charts Section - Only show for trucks */}
       {vehicleTypeFilter === 'trucks' && timeSeriesData && (
         <div className="mt-8">
-          <div className="mb-4">
+          <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">Time-Series Analytics</h2>
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => setActiveTimeView('weekly')}
+                className={`px-2 py-1 text-xs font-medium border rounded-l-lg ${
+                  activeTimeView === 'weekly'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Weekly
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTimeView('monthly')}
+                className={`px-2 py-1 text-xs font-medium border rounded-r-lg ${
+                  activeTimeView === 'monthly'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Revenue Chart */}
             {currentData.labels.length > 0 && (
               <div className="bg-white p-6 rounded-lg shadow">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-semibold text-gray-900">Revenue Over Time</h3>
-                  <div className="inline-flex rounded-md shadow-sm" role="group">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTimeView('weekly')}
-                      className={`px-2 py-1 text-xs font-medium border rounded-l-lg ${
-                        activeTimeView === 'weekly'
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Weekly
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTimeView('monthly')}
-                      className={`px-2 py-1 text-xs font-medium border rounded-r-lg ${
-                        activeTimeView === 'monthly'
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Monthly
-                    </button>
-                  </div>
-                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Revenue Over Time</h3>
                 {timeSeriesLoading ? (
                   <div className="text-center py-8 text-gray-500">Loading...</div>
                 ) : (
