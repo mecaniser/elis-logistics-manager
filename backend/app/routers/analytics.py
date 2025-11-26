@@ -711,6 +711,67 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
         }
     }
 
+@router.get("/pm-status")
+def get_pm_status(db: Session = Depends(get_db)):
+    """
+    Get PM (Preventive Maintenance) status for all trucks.
+    Returns PM status information for each truck based on D13 full PM repairs.
+    """
+    pm_status = []
+    trucks_for_pm = db.query(Truck).filter(Truck.vehicle_type == 'truck').all()  # Only trucks, not trailers
+    today = datetime.now().date()
+    pm_threshold_months = 3
+    
+    for truck in trucks_for_pm:
+        # Find all D13 full pm repairs for this truck
+        # Search for "d13" and "full pm" in description (case-insensitive)
+        # Both terms must be present in the description
+        pm_repairs = db.query(Repair).filter(
+            and_(
+                Repair.truck_id == truck.id,
+                Repair.description.ilike('%d13%'),
+                Repair.description.ilike('%full pm%')
+            )
+        ).order_by(Repair.repair_date.desc()).all()
+        
+        last_pm_date = None
+        last_pm_repair_id = None
+        if pm_repairs:
+            last_pm_repair = pm_repairs[0]  # Most recent
+            last_pm_date = last_pm_repair.repair_date
+            last_pm_repair_id = last_pm_repair.id
+        
+        # Calculate if due for PM
+        is_due = False
+        days_since_pm = None
+        days_overdue = None
+        
+        if last_pm_date:
+            days_since_pm = (today - last_pm_date).days
+            # PM is due every 3 months (approximately 90 days)
+            days_threshold = pm_threshold_months * 30
+            is_due = days_since_pm >= days_threshold
+            if is_due:
+                days_overdue = days_since_pm - days_threshold
+        else:
+            # No PM found - truck is overdue
+            is_due = True
+            days_overdue = None
+        
+        pm_status.append({
+            "truck_id": truck.id,
+            "truck_name": truck.name,
+            "vin": truck.vin,
+            "last_pm_date": last_pm_date.isoformat() if last_pm_date else None,
+            "last_pm_repair_id": last_pm_repair_id,
+            "is_due": is_due,
+            "days_since_pm": days_since_pm,
+            "days_overdue": days_overdue,
+            "pm_threshold_months": pm_threshold_months
+        })
+    
+    return {"pm_status": pm_status}
+
 @router.get("/time-series")
 def get_time_series(
     group_by: Optional[str] = "week_start",

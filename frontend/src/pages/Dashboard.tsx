@@ -15,18 +15,6 @@ interface RepairByMonth {
   repair_date?: string
 }
 
-interface PMStatus {
-  truck_id: number
-  truck_name: string
-  vin?: string | null
-  last_pm_date: string | null
-  last_pm_repair_id: number | null
-  is_due: boolean
-  days_since_pm: number | null
-  days_overdue: number | null
-  pm_threshold_months: number
-}
-
 interface BlockWithDate {
   block_id: string
   delivery_date?: string
@@ -59,7 +47,6 @@ export default function Dashboard() {
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
-  const [groupBy, setGroupBy] = useState<'week_start' | 'settlement_date'>('week_start')
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
   const [showProfitDetails, setShowProfitDetails] = useState(false)
@@ -76,7 +63,7 @@ export default function Dashboard() {
   useEffect(() => {
     loadTrucks()
     loadDashboard()
-  }, [selectedTruck, groupBy, vehicleTypeFilter])
+  }, [selectedTruck, vehicleTypeFilter])
 
   useEffect(() => {
     // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
@@ -88,7 +75,7 @@ export default function Dashboard() {
       setExpenseAnalysisView('monthly')
     }
     loadTimeSeries()
-  }, [selectedTruck, groupBy, vehicleTypeFilter])
+  }, [selectedTruck, vehicleTypeFilter])
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
@@ -208,7 +195,7 @@ export default function Dashboard() {
       setTimeSeriesLoading(true)
       // Map vehicle type filter to backend parameter
       const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
-      const response = await analyticsApi.getTimeSeries(groupBy, selectedTruck || undefined, vehicleType)
+      const response = await analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType)
       // Ensure response.data has array properties
       const data = response.data || {}
       setTimeSeriesData({
@@ -357,16 +344,6 @@ export default function Dashboard() {
   }
 
   const blocksChartData = processBlocksData()
-  const pmStatus: PMStatus[] = data.pm_status || []
-
-  // Filter PM status by selected truck if applicable
-  const filteredPMStatus = selectedTruck 
-    ? pmStatus.filter((pm: PMStatus) => pm.truck_id === selectedTruck)
-    : pmStatus
-
-  // Separate trucks due vs not due
-  const trucksDueForPM = filteredPMStatus.filter((pm: PMStatus) => pm.is_due)
-  const trucksNotDueForPM = filteredPMStatus.filter((pm: PMStatus) => !pm.is_due)
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_week) || data.by_week.length === 0) {
@@ -640,59 +617,8 @@ export default function Dashboard() {
               ))}
             </select>
           </div>
-          <div className="w-full sm:w-auto">
-            <label className="block text-sm font-medium text-gray-700 mb-2 sm:mb-0 sm:inline-block sm:mr-2">
-              Week Grouping:
-            </label>
-            <div className="inline-flex rounded-md shadow-sm" role="group">
-              <button
-                type="button"
-                onClick={() => setGroupBy('week_start')}
-                className={`px-3 py-2 text-sm font-medium border rounded-l-lg ${
-                  groupBy === 'week_start'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Week Start
-              </button>
-              <button
-                type="button"
-                onClick={() => setGroupBy('settlement_date')}
-                className={`px-3 py-2 text-sm font-medium border rounded-r-lg ${
-                  groupBy === 'settlement_date'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Settlement Date
-              </button>
-            </div>
-          </div>
         </div>
       </div>
-
-      {/* PM Status Alert - All Trucks */}
-      {pmStatus.length > 0 && (
-        <div className={`border-l-2 px-3 py-2 mb-4 rounded-r text-sm ${trucksDueForPM.length > 0 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
-          {trucksDueForPM.length > 0 ? (
-            <div>
-              <span className="text-red-800 font-medium">
-                ⚠️ {trucksDueForPM.length} Truck{trucksDueForPM.length !== 1 ? 's' : ''} due for PM: {trucksDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}
-              </span>
-              {trucksNotDueForPM.length > 0 && (
-                <div className="mt-1 text-green-700 text-xs">
-                  ✓ {trucksNotDueForPM.length} up to date: {trucksNotDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className="text-gray-700">
-              ✓ PM Status: <span className="text-green-700 font-medium">{trucksNotDueForPM.length} truck{trucksNotDueForPM.length !== 1 ? 's' : ''} up to date: {trucksNotDueForPM.map((pm: PMStatus) => `${pm.truck_name}${pm.vin ? ` (VIN: ${pm.vin})` : ''}`).join(', ')}</span>
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Detailed Expense Analysis Section - First Chart */}
       {timeSeriesData && (

@@ -132,6 +132,22 @@ export interface DashboardData {
   }>
 }
 
+export interface PMStatus {
+  truck_id: number
+  truck_name: string
+  vin?: string | null
+  last_pm_date: string | null
+  last_pm_repair_id: number | null
+  is_due: boolean
+  days_since_pm: number | null
+  days_overdue: number | null
+  pm_threshold_months: number
+}
+
+export interface PMStatusResponse {
+  pm_status: PMStatus[]
+}
+
 // Truck API (also handles trailers)
 export const trucksApi = {
   getAll: (vehicleType?: 'truck' | 'trailer') => {
@@ -450,4 +466,6 @@ export const analyticsApi = {
     if (vehicleType) params.vehicle_type = vehicleType
     return api.get<TimeSeriesData>('/analytics/time-series', { params })
   },
+  getPMStatus: () =>
+    api.get<PMStatusResponse>('/analytics/pm-status'),
 }

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { trucksApi, Truck } from '../services/api'
+import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function Trucks() {
   const navigate = useNavigate()
   const [trucks, setTrucks] = useState<Truck[]>([])
+  const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -34,7 +35,19 @@ export default function Trucks() {
 
   useEffect(() => {
     loadTrucks()
+    loadPMStatus()
   }, [vehicleTypeFilter])
+
+  const loadPMStatus = async () => {
+    try {
+      const response = await analyticsApi.getPMStatus()
+      setPmStatus(response.data.pm_status || [])
+    } catch (err) {
+      // Silently fail - PM status is not critical
+      console.error('Failed to load PM status:', err)
+      setPmStatus([])
+    }
+  }
 
   // Auto-calculate total cost when investment fields change
   useEffect(() => {
@@ -456,6 +469,37 @@ export default function Trucks() {
                           )}
                         </div>
                       )}
+                      {/* PM Status */}
+                      {(() => {
+                        const truckPM = pmStatus.find(pm => pm.truck_id === truck.id)
+                        if (!truckPM) return null
+                        return (
+                          <div className={`mt-2 text-xs ${truckPM.is_due ? 'text-red-700' : 'text-green-700'}`}>
+                            {truckPM.is_due ? (
+                              <span>
+                                ⚠️ PM Due
+                                {truckPM.last_pm_date && truckPM.days_overdue !== null && (
+                                  <span> ({truckPM.days_overdue} days overdue)</span>
+                                )}
+                                {!truckPM.last_pm_date && <span> (No PM recorded)</span>}
+                                {truckPM.last_pm_date && (
+                                  <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span>
+                                ✓ PM Up to Date
+                                {truckPM.last_pm_date && (
+                                  <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                                )}
+                                {truckPM.days_since_pm !== null && (
+                                  <span className="text-gray-600"> ({truckPM.days_since_pm} days ago)</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div className="flex gap-2">
                       <button
