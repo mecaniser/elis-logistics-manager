@@ -68,14 +68,24 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
 @router.get("/", response_model=List[SettlementResponse])
 def get_settlements(
     truck_id: Optional[int] = None,
+    skip: Optional[int] = 0,
+    limit: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    """Get all settlements, optionally filtered by truck"""
+    """Get all settlements, optionally filtered by truck, with pagination support"""
     try:
         query = db.query(Settlement)
         if truck_id:
             query = query.filter(Settlement.truck_id == truck_id)
-        settlements = query.order_by(Settlement.settlement_date.desc()).all()
+        query = query.order_by(Settlement.settlement_date.desc())
+        
+        # Apply pagination
+        if skip:
+            query = query.offset(skip)
+        if limit:
+            query = query.limit(limit)
+        
+        settlements = query.all()
         return settlements
     except Exception as e:
         import traceback

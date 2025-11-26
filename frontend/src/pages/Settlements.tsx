@@ -1,16 +1,22 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 
+const SETTLEMENTS_PER_PAGE = 20
+
 export default function Settlements() {
   const isMobile = useMobile()
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [skip, setSkip] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const observerTarget = useRef<HTMLDivElement>(null)
   const [selectedTruck] = useState<number | null>(null)
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -115,12 +121,37 @@ export default function Settlements() {
 
   useEffect(() => {
     loadTrucks()
-    loadSettlements()
+    loadSettlements(true)
   }, [])
 
   useEffect(() => {
-    loadSettlements()
+    loadSettlements(true)
   }, [selectedTruck])
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (searchFilter) return // Don't trigger infinite scroll when searching
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadSettlements(false)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasMore, loadingMore, loading, searchFilter])
 
   const getTruckName = (truckId: number) => {
     const truck = trucks.find(t => t.id === truckId)
@@ -164,24 +195,49 @@ export default function Settlements() {
     }
   }
 
-  const loadSettlements = async () => {
+  const loadSettlements = async (reset: boolean = false) => {
     try {
-      setLoading(true)
-      const response = await settlementsApi.getAll(selectedTruck || undefined)
+      if (reset) {
+        setLoading(true)
+        setSkip(0)
+        setHasMore(true)
+      } else {
+        setLoadingMore(true)
+      }
+
+      const currentSkip = reset ? 0 : skip
+      const response = await settlementsApi.getAll(
+        selectedTruck || undefined,
+        currentSkip,
+        SETTLEMENTS_PER_PAGE
+      )
       const newSettlements = Array.isArray(response.data) ? response.data : []
-      setSettlements(newSettlements)
+      
+      if (reset) {
+        setSettlements(newSettlements)
+      } else {
+        setSettlements(prev => [...prev, ...newSettlements])
+      }
+      
+      // Check if there are more settlements to load
+      setHasMore(newSettlements.length === SETTLEMENTS_PER_PAGE)
+      setSkip(currentSkip + newSettlements.length)
       
       // Clear selections if any selected IDs don't exist in the new settlements
-      const newSettlementIds = new Set(newSettlements.map(s => s.id))
+      const allSettlements = reset ? newSettlements : [...settlements, ...newSettlements]
+      const newSettlementIds = new Set(allSettlements.map(s => s.id))
       const validSelections = Array.from(selectedSettlements).filter(id => newSettlementIds.has(id))
       if (validSelections.length !== selectedSettlements.size) {
         setSelectedSettlements(new Set(validSelections))
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load settlements')
-      setSettlements([])
+      if (reset) {
+        setSettlements([])
+      }
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }
 
@@ -209,7 +265,7 @@ export default function Settlements() {
       setSelectedTruckForUpload(null)
       setShowUploadForm(false)
       setSelectedSettlements(new Set()) // Clear any selected settlements
-      loadSettlements()
+      loadSettlements(true)
     } catch (err: any) {
       console.error('Upload error:', err)
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to upload settlement'
@@ -225,7 +281,7 @@ export default function Settlements() {
       await settlementsApi.delete(settlementToDelete)
       showToast('Settlement deleted successfully!', 'success')
       setSettlementToDelete(null)
-      loadSettlements()
+      loadSettlements(true)
     } catch (err: any) {
       showToast(err.response?.data?.detail || err.message || 'Failed to delete settlement', 'error')
       setSettlementToDelete(null)
@@ -263,7 +319,7 @@ export default function Settlements() {
       setSelectedSettlements(new Set())
       setSettlementToDelete(null)
       setDeleteMode(false)
-      loadSettlements()
+      loadSettlements(true)
     } catch (err: any) {
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete settlements', 'error')
       setSettlementToDelete(null)
@@ -656,7 +712,7 @@ export default function Settlements() {
       })
       setExpensesDescription('')
       setVinLookup('')
-      loadSettlements()
+      loadSettlements(true)
     } catch (err: any) {
       console.error('Error creating settlement:', err)
       console.error('Error response:', err.response?.data)
@@ -729,7 +785,7 @@ export default function Settlements() {
         } else {
           await settlementsApi.update(editingSettlement.id, editFormData)
         }
-        await loadSettlements()
+        await loadSettlements(true)
         showToast('Settlement saved successfully', 'success')
         // Reset PDF file after save
         setEditPdfFile(null)
@@ -797,7 +853,7 @@ export default function Settlements() {
       } else {
         await settlementsApi.update(editingSettlement.id, editFormData)
       }
-      await loadSettlements()
+      await loadSettlements(true)
       // Update original data to reflect saved state
       setOriginalFormData({ ...editFormData })
       showToast('Settlement updated successfully!', 'success')
@@ -1601,6 +1657,28 @@ export default function Settlements() {
               </div>
               )
             })}
+            {/* Infinite scroll observer target and loading indicator */}
+            {!searchFilter && (
+              <>
+                <div ref={observerTarget} className="h-4" />
+                {loadingMore && (
+                  <div className="col-span-full flex justify-center items-center py-8">
+                    <div className="flex items-center space-x-2 text-gray-600">
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-sm">Loading more settlements...</span>
+                    </div>
+                  </div>
+                )}
+                {!hasMore && settlements.length > 0 && (
+                  <div className="col-span-full text-center py-8 text-gray-500 text-sm">
+                    No more settlements to load
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
