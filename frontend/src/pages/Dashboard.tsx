@@ -51,7 +51,6 @@ export default function Dashboard() {
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('weekly')
-  const [showProfitDetails, setShowProfitDetails] = useState(false) // Collapsed by default, especially on mobile
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
@@ -273,7 +272,6 @@ export default function Dashboard() {
   
   const expenseCategoriesData = getExpenseCategoriesData()
 
-  const truckProfitsData = data.truck_profits || []
   const blocksByTruckMonth: BlockByTruckMonth[] = data.blocks_by_truck_month || []
   const repairsByMonth: RepairByMonth[] = data.repairs_by_month || []
 
@@ -1133,21 +1131,32 @@ export default function Dashboard() {
                         },
                         legend: {
                           data: ['Selected Period', 'Average %'],
-                          top: 10
+                          top: isMobile ? 'bottom' : 10,
+                          bottom: isMobile ? 0 : 'auto',
+                          orient: 'horizontal',
+                          type: isMobile ? 'scroll' : 'plain',
+                          textStyle: {
+                            fontSize: isMobile ? 10 : 12
+                          },
+                          itemGap: isMobile ? 8 : 20,
+                          itemWidth: isMobile ? 12 : 25,
+                          itemHeight: isMobile ? 8 : 14
                         },
                         grid: {
-                          left: '3%',
-                          right: '4%',
-                          bottom: '3%',
-                          top: '15%',
+                          left: isMobile ? '15%' : '10%',
+                          right: isMobile ? '12%' : '8%',
+                          bottom: isMobile ? '25%' : '3%',
+                          top: isMobile ? '8%' : '15%',
                           containLabel: true
                         },
                         xAxis: {
                           type: 'category',
                           data: sortedLabels,
                           axisLabel: {
-                            rotate: 45,
-                            fontSize: 11
+                            rotate: isMobile ? 45 : 45,
+                            fontSize: isMobile ? 9 : 11,
+                            interval: isMobile ? 'auto' : 0,
+                            margin: isMobile ? 8 : 10
                           }
                         },
                         yAxis: [
@@ -1155,6 +1164,11 @@ export default function Dashboard() {
                             type: 'value',
                             name: 'Amount ($)',
                             position: 'left',
+                            nameGap: isMobile ? 50 : 40,
+                            nameLocation: 'middle',
+                            nameTextStyle: {
+                              padding: [0, 0, 0, 0]
+                            },
                             axisLabel: {
                               formatter: (value: number) => `$${value.toLocaleString()}`
                             }
@@ -1192,7 +1206,7 @@ export default function Dashboard() {
                           borderRadius: [4, 4, 0, 0]
                         },
                         label: {
-                          show: true,
+                          show: !isMobile, // Hide labels on mobile to prevent overlap
                           position: 'top',
                           formatter: (params: any) => {
                             const value = params.value || 0
@@ -1604,23 +1618,30 @@ export default function Dashboard() {
                   padding: [8, 12]
                 },
                 grid: {
-                  left: '3%',
-                  right: '4%',
-                  bottom: '10%',
+                  left: isMobile ? '15%' : '10%',
+                  right: isMobile ? '4%' : '4%',
+                  bottom: isMobile ? (xAxisData.length > 10 ? '25%' : '20%') : '10%',
+                  top: isMobile ? '5%' : 'auto',
                   containLabel: true
                 },
                 xAxis: {
                   type: 'category',
                   data: xAxisData,
                   axisLabel: {
-                    rotate: xAxisData.length > 10 ? 45 : 0,
-                    fontSize: 10,
-                    interval: 0
+                    rotate: isMobile ? (xAxisData.length > 6 ? 45 : 0) : (xAxisData.length > 10 ? 45 : 0),
+                    fontSize: isMobile ? 9 : 10,
+                    interval: isMobile ? 'auto' : 0,
+                    margin: isMobile ? 8 : 10
                   }
                 },
                 yAxis: {
                   type: 'value',
                   name: 'Cost ($)',
+                  nameGap: isMobile ? 50 : 40,
+                  nameLocation: 'middle',
+                  nameTextStyle: {
+                    padding: [0, 0, 0, 0]
+                  },
                   axisLabel: {
                     formatter: (value: number) => `$${value.toLocaleString()}`
                   }
@@ -1637,13 +1658,13 @@ export default function Dashboard() {
                       }
                     })),
                     label: {
-                      show: true,
+                      show: !isMobile, // Hide labels on mobile to prevent overlap
                       position: 'top',
                       formatter: (params: any) => {
                         const value = params.value || 0
                         return value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
                       },
-                      fontSize: 9
+                      fontSize: isMobile ? 8 : 9
                     }
                   }
                 ]
@@ -1690,29 +1711,42 @@ export default function Dashboard() {
               },
               legend: {
                 data: [...blocksChartData.series.map(s => s.name), 'Average'],
-                top: 30,
+                top: isMobile ? 'bottom' : 30,
+                bottom: isMobile ? 0 : 'auto',
+                orient: isMobile ? 'horizontal' : 'horizontal',
+                type: isMobile ? 'scroll' : 'plain',
                 textStyle: {
-                  fontSize: 12
-                }
+                  fontSize: isMobile ? 10 : 12
+                },
+                itemGap: isMobile ? 8 : 20,
+                itemWidth: isMobile ? 12 : 25,
+                itemHeight: isMobile ? 8 : 14
               },
               grid: {
-                left: '3%',
-                right: '4%',
-                bottom: '3%',
-                top: '15%',
+                left: isMobile ? '15%' : '10%',
+                right: isMobile ? '4%' : '4%',
+                bottom: isMobile ? (blocksChartData.months.length > 6 ? '25%' : '20%') : '3%',
+                top: isMobile ? '8%' : '15%',
                 containLabel: true
               },
               xAxis: {
                 type: 'category',
                 data: blocksChartData.months,
                 axisLabel: {
-                  rotate: blocksChartData.months.length > 6 ? 45 : 0,
-                  fontSize: 11
+                  rotate: isMobile ? (blocksChartData.months.length > 4 ? 45 : 0) : (blocksChartData.months.length > 6 ? 45 : 0),
+                  fontSize: isMobile ? 9 : 11,
+                  interval: isMobile ? 'auto' : 0,
+                  margin: isMobile ? 8 : 10
                 }
               },
               yAxis: {
                 type: 'value',
                 name: 'Blocks',
+                nameGap: isMobile ? 50 : 40,
+                nameLocation: 'middle',
+                nameTextStyle: {
+                  padding: [0, 0, 0, 0]
+                },
                 axisLabel: {
                   formatter: (value: number) => Math.round(value).toString()
                 }
@@ -1757,7 +1791,7 @@ export default function Dashboard() {
                         const value = params.value || 0
                         return value > 0 ? value.toString() : ''
                       },
-                      fontSize: 10,
+                      fontSize: isMobile ? 9 : 10,
                       color: '#fff'
                     },
                     markLine: {
@@ -1768,11 +1802,11 @@ export default function Dashboard() {
                         width: 2
                       },
                       label: {
-                        show: true,
+                        show: !isMobile, // Hide target label on mobile to prevent overlap
                         position: 'end',
                         formatter: 'Target: 11 blocks',
                         color: '#f59e0b',
-                        fontSize: 11,
+                        fontSize: isMobile ? 9 : 11,
                         fontWeight: 'bold'
                       },
                       data: [
@@ -2048,292 +2082,45 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Net Profit vs Repair Costs Chart - Enhanced - Only show for trucks */}
-      {vehicleTypeFilter === 'trucks' && truckProfitsData.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <div className="mb-6 flex justify-between items-start">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Profit Analysis by Truck</h2>
-              <p className="text-sm text-gray-600">Showing profit before repairs, repair costs, and final net profit after repairs. Percentage indicates repair cost as % of profit before repairs.</p>
-            </div>
-            <button
-              onClick={() => setShowProfitDetails(!showProfitDetails)}
-              className="ml-4 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors flex items-center gap-2"
-            >
-              {showProfitDetails ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                  Hide Details
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                  Show Details
-                </>
-              )}
-            </button>
-          </div>
-          <ReactECharts
-            option={{
-              tooltip: {
-                trigger: 'axis',
-                axisPointer: {
-                  type: 'shadow'
-                },
-                formatter: (params: any) => {
-                  const truck = truckProfitsData.find((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name === params[0]?.axisValue)
-                  let result = `<strong>${params[0]?.axisValue}</strong><br/>`
-                  
-                  params.forEach((param: any) => {
-                    const value = param.value || 0
-                    const formatted = `$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    result += `${param.marker}${param.seriesName}: ${formatted}<br/>`
-                  })
-                  
-                  // Add additional context
-                  if (truck) {
-                    const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
-                    result += `<hr style="margin: 8px 0; border-color: #e5e7eb;"/>`
-                    result += `Total Revenue: $${truck.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
-                    result += `Settlement Expenses: $${(truck.settlement_expenses || truck.total_expenses - truck.repair_costs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
-                    result += `Profit Before Repairs: $${profitBeforeRepairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
-                    result += `Repair Costs: $${truck.repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
-                    result += `<strong>Net Profit (After Repairs): $${truck.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>`
-                    if (truck.repair_costs > 0 && profitBeforeRepairs > 0) {
-                      const ratio = (truck.repair_costs / profitBeforeRepairs) * 100
-                      result += `<br/>Repair Ratio: ${ratio.toFixed(1)}% of profit before repairs`
-                    }
-                  }
-                  
-                  return result
-                },
-                backgroundColor: '#fff',
-                borderColor: '#e5e7eb',
-                borderWidth: 1,
-                borderRadius: 8,
-                padding: [8, 12]
-              },
-              legend: {
-                data: ['Profit Before Repairs', 'Repair Costs', 'Net Profit (After Repairs)'],
-                top: 30,
-                textStyle: {
-                  fontSize: 12
-                },
-                selectedMode: true
-              },
-              grid: {
-                left: '3%',
-                right: '4%',
-                bottom: '3%',
-                top: '15%',
-                containLabel: true
-              },
-              xAxis: {
-                type: 'category',
-                data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.truck_name),
-                axisLabel: {
-                  rotate: truckProfitsData.length > 6 ? 45 : 0,
-                  fontSize: 11
-                }
-              },
-              yAxis: {
-                type: 'value',
-                name: 'Amount ($)',
-                axisLabel: {
-                  formatter: (value: number) => `$${Math.abs(value).toLocaleString()}`
-                },
-                splitLine: {
-                  show: true,
-                  lineStyle: {
-                    type: 'dashed',
-                    opacity: 0.3
-                  }
-                }
-              },
-              series: [
-                {
-                  name: 'Profit Before Repairs',
-                  type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))),
-                  itemStyle: {
-                    color: '#3b82f6',  // Blue for profit before repairs
-                    borderRadius: [4, 4, 0, 0]
-                  },
-                  label: {
-                    show: true,
-                    position: 'top',
-                    formatter: (params: any) => {
-                      const value = params.value || 0
-                      return value !== 0 ? `$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
-                    },
-                    fontSize: 9,
-                    color: '#3b82f6'
-                  }
-                },
-                {
-                  name: 'Repair Costs',
-                  type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => ({
-                    value: t.repair_costs || 0,
-                    profitBeforeRepairs: t.profit_before_repairs || (t.total_revenue - (t.settlement_expenses || t.total_expenses - t.repair_costs))
-                  })),
-                  itemStyle: {
-                    color: '#f97316',
-                    borderRadius: [4, 4, 0, 0]
-                  },
-                  label: {
-                    show: true,
-                    position: 'inside',
-                    formatter: (params: any) => {
-                      const repairCost = params.value?.value || params.value || 0
-                      const profitBeforeRepairs = params.value?.profitBeforeRepairs || truckProfitsData[params.dataIndex]?.profit_before_repairs || (truckProfitsData[params.dataIndex]?.total_revenue - (truckProfitsData[params.dataIndex]?.settlement_expenses || truckProfitsData[params.dataIndex]?.total_expenses - truckProfitsData[params.dataIndex]?.repair_costs))
-                      
-                      if (repairCost === 0) return ''
-                      
-                      // Calculate percentage: (repair_cost / profit_before_repairs) * 100
-                      let percentage = ''
-                      if (profitBeforeRepairs > 0) {
-                        const ratio = (repairCost / profitBeforeRepairs) * 100
-                        percentage = `${ratio.toFixed(1)}%`
-                      } else if (profitBeforeRepairs < 0) {
-                        percentage = 'N/A'
-                      } else {
-                        percentage = profitBeforeRepairs === 0 && repairCost > 0 ? '∞' : ''
-                      }
-                      
-                      return percentage
-                    },
-                    fontSize: 11,
-                    fontWeight: 'bold',
-                    color: '#fff',
-                    textBorderColor: '#000',
-                    textBorderWidth: 1
-                  }
-                },
-                {
-                  name: 'Net Profit (After Repairs)',
-                  type: 'bar',
-                  data: truckProfitsData.map((t: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => t.net_profit),
-                  itemStyle: {
-                    color: (params: any) => {
-                      const value = params.value || 0
-                      return value >= 0 ? '#10b981' : '#ef4444'  // Green for positive, red for negative
-                    },
-                    borderRadius: [4, 4, 0, 0]
-                  },
-                  label: {
-                    show: true,
-                    position: 'top',
-                    formatter: (params: any) => {
-                      const value = params.value || 0
-                      return value !== 0 ? `$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
-                    },
-                    fontSize: 9,
-                    color: (params: any) => {
-                      const value = params.value || 0
-                      return value >= 0 ? '#10b981' : '#ef4444'
-                    }
-                  }
-                }
-              ]
-            }}
-            style={{ height: isMobile ? '350px' : '500px', width: '100%' }}
-            opts={{ renderer: 'svg' }}
-          />
-          
-          {/* Summary Stats - Collapsible */}
-          {showProfitDetails && (
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-gray-200">
-            {truckProfitsData.map((truck: { truck_id: number; truck_name: string; license_plate?: string; vin?: string; total_revenue: number; total_expenses: number; settlement_expenses: number; repair_costs: number; profit_before_repairs: number; net_profit: number }) => {
-              const profitBeforeRepairs = truck.profit_before_repairs || (truck.total_revenue - (truck.settlement_expenses || truck.total_expenses - truck.repair_costs))
-              const repairRatio = profitBeforeRepairs > 0 && truck.repair_costs > 0 
-                ? ((truck.repair_costs / profitBeforeRepairs) * 100).toFixed(1)
-                : truck.repair_costs > 0 ? 'N/A' : '0'
-              
-              return (
-                <div key={truck.truck_id} className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-1">{truck.truck_name}</h3>
-                  {(truck.license_plate || truck.vin) && (
-                    <div className="text-xs text-gray-500 mb-2">
-                      {truck.license_plate && <span>Plate: {truck.license_plate}</span>}
-                      {truck.license_plate && truck.vin && <span className="mx-2">•</span>}
-                      {truck.vin && <span>VIN: {truck.vin}</span>}
-                    </div>
-                  )}
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Profit Before Repairs:</span>
-                      <span className="font-medium text-blue-600">
-                        ${profitBeforeRepairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Repair Costs:</span>
-                      <span className="font-medium text-orange-600">
-                        ${truck.repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="flex justify-between pt-1 border-t border-gray-200">
-                      <span className="text-gray-700 font-medium">Actual Profit (After Repairs):</span>
-                      <span className={`font-semibold ${truck.net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        ${truck.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    {truck.repair_costs > 0 && profitBeforeRepairs > 0 && (
-                      <div className="flex justify-between pt-1 border-t border-gray-200">
-                        <span className="text-gray-600">Repair Ratio:</span>
-                        <span className="font-semibold text-gray-900">{repairRatio}%</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Time-Series Charts Section - Only show for trucks */}
       {vehicleTypeFilter === 'trucks' && timeSeriesData && (
         <div className="mt-8">
-          <div className="flex justify-between items-center mb-4">
+          <div className="mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">Time-Series Analytics</h2>
-            <div className="inline-flex rounded-md shadow-sm" role="group">
-              <button
-                type="button"
-                onClick={() => setActiveTimeView('weekly')}
-                className={`px-4 py-2 text-sm font-medium border rounded-l-lg ${
-                  activeTimeView === 'weekly'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Weekly
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTimeView('monthly')}
-                className={`px-4 py-2 text-sm font-medium border rounded-r-lg ${
-                  activeTimeView === 'monthly'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Monthly
-              </button>
-            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Revenue Chart */}
             {currentData.labels.length > 0 && (
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Revenue Over Time</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-semibold text-gray-900">Revenue Over Time</h3>
+                  <div className="inline-flex rounded-md shadow-sm" role="group">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTimeView('weekly')}
+                      className={`px-2 py-1 text-xs font-medium border rounded-l-lg ${
+                        activeTimeView === 'weekly'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      Weekly
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTimeView('monthly')}
+                      className={`px-2 py-1 text-xs font-medium border rounded-r-lg ${
+                        activeTimeView === 'monthly'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      Monthly
+                    </button>
+                  </div>
+                </div>
                 {timeSeriesLoading ? (
                   <div className="text-center py-8 text-gray-500">Loading...</div>
                 ) : (
@@ -2358,26 +2145,42 @@ export default function Dashboard() {
                       },
                       legend: {
                         data: ['Gross Revenue', 'Net Profit'],
-                        top: 10
+                        top: isMobile ? 'bottom' : 10,
+                        bottom: isMobile ? 0 : 'auto',
+                        orient: 'horizontal',
+                        type: isMobile ? 'scroll' : 'plain',
+                        textStyle: {
+                          fontSize: isMobile ? 10 : 12
+                        },
+                        itemGap: isMobile ? 8 : 20,
+                        itemWidth: isMobile ? 12 : 25,
+                        itemHeight: isMobile ? 8 : 14
                       },
                       grid: {
-                        left: '3%',
-                        right: '4%',
-                        bottom: '3%',
-                        top: '15%',
+                        left: isMobile ? '15%' : '10%',
+                        right: isMobile ? '4%' : '4%',
+                        bottom: isMobile ? (currentData.labels.length > 10 ? '25%' : '20%') : '3%',
+                        top: isMobile ? '8%' : '15%',
                         containLabel: true
                       },
                       xAxis: {
                         type: 'category',
                         data: currentData.labels,
                         axisLabel: {
-                          rotate: currentData.labels.length > 10 ? 45 : 0,
-                          fontSize: 11
+                          rotate: isMobile ? (currentData.labels.length > 6 ? 45 : 0) : (currentData.labels.length > 10 ? 45 : 0),
+                          fontSize: isMobile ? 9 : 11,
+                          interval: isMobile ? 'auto' : 0,
+                          margin: isMobile ? 8 : 10
                         }
                       },
                       yAxis: {
                         type: 'value',
                         name: 'Amount ($)',
+                        nameGap: isMobile ? 50 : 40,
+                        nameLocation: 'middle',
+                        nameTextStyle: {
+                          padding: [0, 0, 0, 0]
+                        },
                         axisLabel: {
                           formatter: (value: number) => `$${value.toLocaleString()}`
                         }
@@ -2436,26 +2239,42 @@ export default function Dashboard() {
                       },
                       legend: {
                         data: ["Driver's Pay", 'Payroll Fee'],
-                        top: 10
+                        top: isMobile ? 'bottom' : 10,
+                        bottom: isMobile ? 0 : 'auto',
+                        orient: 'horizontal',
+                        type: isMobile ? 'scroll' : 'plain',
+                        textStyle: {
+                          fontSize: isMobile ? 10 : 12
+                        },
+                        itemGap: isMobile ? 8 : 20,
+                        itemWidth: isMobile ? 12 : 25,
+                        itemHeight: isMobile ? 8 : 14
                       },
                       grid: {
-                        left: '3%',
-                        right: '4%',
-                        bottom: '3%',
-                        top: '15%',
+                        left: isMobile ? '15%' : '10%',
+                        right: isMobile ? '4%' : '4%',
+                        bottom: isMobile ? (currentData.labels.length > 10 ? '25%' : '20%') : '3%',
+                        top: isMobile ? '8%' : '15%',
                         containLabel: true
                       },
                       xAxis: {
                         type: 'category',
                         data: currentData.labels,
                         axisLabel: {
-                          rotate: currentData.labels.length > 10 ? 45 : 0,
-                          fontSize: 11
+                          rotate: isMobile ? (currentData.labels.length > 6 ? 45 : 0) : (currentData.labels.length > 10 ? 45 : 0),
+                          fontSize: isMobile ? 9 : 11,
+                          interval: isMobile ? 'auto' : 0,
+                          margin: isMobile ? 8 : 10
                         }
                       },
                       yAxis: {
                         type: 'value',
                         name: 'Amount ($)',
+                        nameGap: isMobile ? 50 : 40,
+                        nameLocation: 'middle',
+                        nameTextStyle: {
+                          padding: [0, 0, 0, 0]
+                        },
                         axisLabel: {
                           formatter: (value: number) => `$${value.toLocaleString()}`
                         }
@@ -2517,28 +2336,42 @@ export default function Dashboard() {
                     },
                     legend: {
                       data: ['Fuel', 'Dispatch Fee', 'Insurance', 'Safety', 'Prepass', 'IFTA', 'Truck Parking', 'Custom'],
-                      top: 10,
+                      top: isMobile ? 'bottom' : 10,
+                      bottom: isMobile ? 0 : 'auto',
                       type: 'scroll',
-                      orient: 'horizontal'
+                      orient: 'horizontal',
+                      textStyle: {
+                        fontSize: isMobile ? 10 : 12
+                      },
+                      itemGap: isMobile ? 8 : 20,
+                      itemWidth: isMobile ? 12 : 25,
+                      itemHeight: isMobile ? 8 : 14
                     },
                     grid: {
-                      left: '3%',
-                      right: '4%',
-                      bottom: '15%',
-                      top: '20%',
+                      left: isMobile ? '15%' : '10%',
+                      right: isMobile ? '4%' : '4%',
+                      bottom: isMobile ? (currentData.labels.length > 10 ? '30%' : '25%') : '15%',
+                      top: isMobile ? '8%' : '20%',
                       containLabel: true
                     },
                     xAxis: {
                       type: 'category',
                       data: currentData.labels,
                       axisLabel: {
-                        rotate: currentData.labels.length > 10 ? 45 : 0,
-                        fontSize: 11
+                        rotate: isMobile ? (currentData.labels.length > 6 ? 45 : 0) : (currentData.labels.length > 10 ? 45 : 0),
+                        fontSize: isMobile ? 9 : 11,
+                        interval: isMobile ? 'auto' : 0,
+                        margin: isMobile ? 8 : 10
                       }
                     },
                     yAxis: {
                       type: 'value',
                       name: 'Amount ($)',
+                      nameGap: isMobile ? 50 : 40,
+                      nameLocation: 'middle',
+                      nameTextStyle: {
+                        padding: [0, 0, 0, 0]
+                      },
                       axisLabel: {
                         formatter: (value: number) => `$${value.toLocaleString()}`
                       }
