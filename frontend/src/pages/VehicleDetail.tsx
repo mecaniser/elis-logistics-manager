@@ -60,7 +60,14 @@ export default function VehicleDetail() {
     )
   }
 
-  const recoveryPercentage = roiData.investment_recovery_percentage ?? 0
+  // Use cash recovery metrics for Investment Recovery section
+  const cashRecoveryPercentage = roiData.cash_recovery_percentage ?? 0
+  const cashRecoveryAmount = roiData.cash_recovery_amount ?? 0
+  const isCashRecovered = roiData.cash_recovery_achieved ?? false
+  const remainingToCashRecovery = roiData.remaining_to_cash_recovery ?? 0
+  
+  // Keep overall ROI metrics for reference
+  const investmentRecoveryPercentage = roiData.investment_recovery_percentage ?? 0
   const isBreakEven = roiData.break_even_achieved
   const remaining = roiData.remaining_to_break_even ?? 0
 
@@ -198,34 +205,34 @@ export default function VehicleDetail() {
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-600">Investment Recovery</span>
               <span className={`text-2xl font-bold ${
-                isBreakEven ? 'text-green-600' : 'text-blue-600'
+                isCashRecovered ? 'text-green-600' : 'text-blue-600'
               }`}>
-                {recoveryPercentage.toFixed(2)}%
+                {cashRecoveryPercentage.toFixed(2)}%
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-4 mb-2">
               <div
                 className={`h-4 rounded-full transition-all ${
-                  isBreakEven ? 'bg-green-600' : 'bg-blue-600'
+                  isCashRecovered ? 'bg-green-600' : 'bg-blue-600'
                 }`}
-                style={{ width: `${Math.min(100, Math.max(0, recoveryPercentage))}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, cashRecoveryPercentage))}%` }}
               />
             </div>
             <div className="text-xs text-gray-500">
-              {isBreakEven ? (
-                <span className="text-green-600 font-medium">✓ Break-even achieved!</span>
+              {isCashRecovered ? (
+                <span className="text-green-600 font-medium">✓ Cash investment fully recovered!</span>
               ) : (
-                <span>Recovered ${roiData.cumulative_net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} of ${roiData.cash_investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>Recovered ${cashRecoveryAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} of ${roiData.cash_investment?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</span>
               )}
             </div>
           </div>
 
-          {/* Remaining to Break-Even */}
-          {!isBreakEven && (
+          {/* Remaining to Cash Recovery */}
+          {!isCashRecovered && roiData.cash_investment && roiData.cash_investment > 0 && (
             <div className="mb-4">
-              <span className="text-sm font-medium text-gray-600">Remaining to Break-Even</span>
+              <span className="text-sm font-medium text-gray-600">Remaining to Cash Recovery</span>
               <p className="text-xl font-semibold text-orange-600 mt-1">
-                ${remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${remainingToCashRecovery.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           )}
@@ -261,20 +268,17 @@ export default function VehicleDetail() {
                   </div>
                   <div className="text-xs text-gray-600">
                     {roiData.current_loan_balance < roiData.loan_amount ? (
-                      <>
-                        <span className="font-medium">${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> principal paid of ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
-                        <br />
-                        <span className="text-gray-500">Principal payments start after cash investment is 100% recovered</span>
-                      </>
-                    ) : (
-                      <span className="text-gray-500">Cash investment not yet recovered - no principal payments applied</span>
+                      <span className="font-medium">${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    ) : null}
+                    {roiData.current_loan_balance < roiData.loan_amount && (
+                      <span> paid of ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</span>
                     )}
                   </div>
                 </>
               )}
               {roiData.current_loan_balance === 0 && (
                 <div className="text-xs text-green-600 font-medium">
-                  ✓ Loan fully paid off! All excess profit after cash recovery was applied to principal.
+                  ✓ Loan fully paid off
                 </div>
               )}
             </div>

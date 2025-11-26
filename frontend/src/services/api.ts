@@ -35,6 +35,7 @@ export interface VehicleROI {
   cash_investment: number | null
   loan_amount: number | null
   current_loan_balance: number | null
+  principal_paid_from_excess: number
   interest_rate: number
   total_cost: number | null
   registration_fee: number | null
@@ -43,6 +44,10 @@ export interface VehicleROI {
   cumulative_repair_costs: number
   cumulative_loan_interest: number
   cumulative_net_profit: number
+  cash_recovery_percentage: number | null
+  cash_recovery_amount: number | null
+  cash_recovery_achieved: boolean
+  remaining_to_cash_recovery: number | null
   investment_recovery_percentage: number | null
   remaining_to_break_even: number | null
   break_even_achieved: boolean

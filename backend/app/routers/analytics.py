@@ -55,7 +55,6 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
     # Get investment fields
     cash_investment = float(vehicle.cash_investment) if vehicle.cash_investment else None
     loan_amount = float(vehicle.loan_amount) if vehicle.loan_amount else None
-    current_loan_balance = float(vehicle.current_loan_balance) if vehicle.current_loan_balance is not None else loan_amount
     interest_rate = float(vehicle.interest_rate) if vehicle.interest_rate else 0.07  # Default 7%
     total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
     registration_fee = float(vehicle.registration_fee) if vehicle.registration_fee else None
@@ -74,6 +73,39 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
     # Note: settlement_expenses already includes loan_interest, so we don't subtract it again
     cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
     
+    # Calculate cash recovery metrics (based on cash_investment only)
+    cash_recovery_percentage = None
+    cash_recovery_amount = None
+    cash_recovery_achieved = False
+    remaining_to_cash_recovery = None
+    
+    if cash_investment and cash_investment > 0:
+        # Cash recovery amount is capped at cash_investment
+        cash_recovery_amount = min(cumulative_net_profit, cash_investment)
+        cash_recovery_percentage = (cash_recovery_amount / cash_investment) * 100
+        cash_recovery_achieved = cumulative_net_profit >= cash_investment
+        remaining_to_cash_recovery = max(0.0, cash_investment - cumulative_net_profit)
+    
+    # Calculate loan balance dynamically based on current cumulative net profit
+    # Excess profit after cash recovery goes toward loan principal
+    principal_paid_from_excess = 0.0
+    calculated_loan_balance = None
+    
+    if vehicle.vehicle_type == 'truck' and loan_amount and loan_amount > 0:
+        if cash_investment and cash_investment > 0 and cumulative_net_profit >= cash_investment:
+            # Cash is recovered, excess profit goes to loan principal
+            excess_profit = cumulative_net_profit - cash_investment
+            principal_paid_from_excess = min(excess_profit, loan_amount)
+            calculated_loan_balance = max(0.0, loan_amount - principal_paid_from_excess)
+        else:
+            # Cash not yet recovered, no principal payments
+            calculated_loan_balance = loan_amount
+            principal_paid_from_excess = 0.0
+    elif vehicle.vehicle_type == 'truck' and loan_amount:
+        # No cash investment, but has loan (edge case)
+        calculated_loan_balance = loan_amount
+        principal_paid_from_excess = 0.0
+    
     # Calculate ROI metrics based on total_cost (which includes cash, loan, and registration)
     investment_recovery_percentage = None
     remaining_to_break_even = None
@@ -90,7 +122,8 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
         "vehicle_type": vehicle.vehicle_type,
         "cash_investment": cash_investment,
         "loan_amount": loan_amount,
-        "current_loan_balance": round(current_loan_balance, 2) if current_loan_balance is not None else None,
+        "current_loan_balance": round(calculated_loan_balance, 2) if calculated_loan_balance is not None else None,
+        "principal_paid_from_excess": round(principal_paid_from_excess, 2),
         "interest_rate": interest_rate,
         "total_cost": total_cost,
         "registration_fee": registration_fee,
@@ -99,6 +132,10 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
         "cumulative_repair_costs": float(repair_costs),
         "cumulative_loan_interest": round(cumulative_loan_interest, 2),
         "cumulative_net_profit": round(cumulative_net_profit, 2),
+        "cash_recovery_percentage": round(cash_recovery_percentage, 2) if cash_recovery_percentage is not None else None,
+        "cash_recovery_amount": round(cash_recovery_amount, 2) if cash_recovery_amount is not None else None,
+        "cash_recovery_achieved": cash_recovery_achieved,
+        "remaining_to_cash_recovery": round(remaining_to_cash_recovery, 2) if remaining_to_cash_recovery is not None else None,
         "investment_recovery_percentage": round(investment_recovery_percentage, 2) if investment_recovery_percentage is not None else None,
         "remaining_to_break_even": round(remaining_to_break_even, 2) if remaining_to_break_even is not None else None,
         "break_even_achieved": break_even_achieved
