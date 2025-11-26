@@ -65,11 +65,6 @@ export default function VehicleDetail() {
   const cashRecoveryAmount = roiData.cash_recovery_amount ?? 0
   const isCashRecovered = roiData.cash_recovery_achieved ?? false
   const remainingToCashRecovery = roiData.remaining_to_cash_recovery ?? 0
-  
-  // Keep overall ROI metrics for reference
-  const investmentRecoveryPercentage = roiData.investment_recovery_percentage ?? 0
-  const isBreakEven = roiData.break_even_achieved
-  const remaining = roiData.remaining_to_break_even ?? 0
 
   return (
     <div>
