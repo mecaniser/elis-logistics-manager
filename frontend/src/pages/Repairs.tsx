@@ -368,15 +368,18 @@ export default function Repairs() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Repairs</h1>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:flex-initial sm:w-64">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Repairs</h1>
+          <span className="text-xl text-gray-500 font-medium">({repairs.length})</span>
+        </div>
+        <div className="flex flex-row gap-2 w-full items-center">
+          <div className="relative flex-1">
             <input
               type="text"
               placeholder="Search by invoice #, description, or truck..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-[42px]"
             />
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -392,48 +395,76 @@ export default function Repairs() {
               </button>
             )}
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setShowManualForm(!showManualForm)
-                setShowUploadForm(false)
-                if (showManualForm) {
-                  // Reset manual form state when closing
-                  setManualFormData({
-                    truck_id: undefined,
-                    repair_date: undefined,
-                    title: '',
-                    details: '',
-                    description: '',
-                    category: '',
-                    cost: undefined,
-                    invoice_number: ''
-                  })
-                  setManualFormImages([])
-                }
-              }}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 whitespace-nowrap"
-            >
-              {showManualForm ? 'Cancel' : 'Add Repair Manually'}
-            </button>
-            <button
-              onClick={() => {
-                setShowUploadForm(!showUploadForm)
-                setShowManualForm(false)
-                if (showUploadForm) {
-                  // Reset form state when closing
-                  setUploadFile(null)
-                  setUploadImages([])
-                  setSelectedTruckForUpload(null)
-                  setExtractedVin(null)
-                  setRequiresTruckSelection(false)
-                }
-              }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 whitespace-nowrap"
-            >
-              {showUploadForm ? 'Cancel' : 'Upload Repair'}
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setShowManualForm(!showManualForm)
+              setShowUploadForm(false)
+              if (showManualForm) {
+                // Reset manual form state when closing
+                setManualFormData({
+                  truck_id: undefined,
+                  repair_date: undefined,
+                  title: '',
+                  details: '',
+                  description: '',
+                  category: '',
+                  cost: undefined,
+                  invoice_number: ''
+                })
+                setManualFormImages([])
+              }
+            }}
+            className="px-3 py-2 lg:px-4 lg:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
+            title={showManualForm ? 'Cancel' : 'Add Repair Manually'}
+          >
+            {showManualForm ? (
+              <>
+                <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="hidden lg:inline">Cancel</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden lg:inline">Add Repair Manually</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setShowUploadForm(!showUploadForm)
+              setShowManualForm(false)
+              if (showUploadForm) {
+                // Reset form state when closing
+                setUploadFile(null)
+                setUploadImages([])
+                setSelectedTruckForUpload(null)
+                setExtractedVin(null)
+                setRequiresTruckSelection(false)
+              }
+            }}
+            className="px-3 py-2 lg:px-4 lg:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
+            title={showUploadForm ? 'Cancel' : 'Upload Repair'}
+          >
+            {showUploadForm ? (
+              <>
+                <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="hidden lg:inline">Cancel</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span className="hidden lg:inline">Upload Repair</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 

@@ -17,6 +17,9 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/extractor', label: 'Extractor' },
   ]
 
+  // Get current page label for mobile display
+  const currentPage = navLinks.find(link => link.path === location.pathname) || navLinks[0]
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm border-b">
@@ -25,7 +28,10 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
                 <h1 className="text-lg sm:text-xl font-bold text-gray-900">
-                  Elis Logistics
+                  <span className="hidden sm:inline">Elis Logistics</span>
+                  <span className="sm:hidden">
+                    Elis Logistics <span className="text-gray-500 font-normal">- {currentPage.label}</span>
+                  </span>
                 </h1>
               </div>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">

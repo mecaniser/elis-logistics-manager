@@ -1040,14 +1040,14 @@ export default function Settlements() {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlements</h1>
           <span className="text-xl text-gray-500 font-medium">({settlements.length})</span>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:flex-initial sm:w-64">
+        <div className="flex flex-row gap-2 w-full items-center">
+          <div className="relative flex-1">
             <input
               type="text"
               placeholder="Search by truck, date, type, or expenses..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-[42px]"
             />
             <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1063,14 +1063,12 @@ export default function Settlements() {
               </button>
             )}
           </div>
-        </div>
-        <div className="flex gap-2 items-center">
           {deleteMode ? (
             <>
               {selectedSettlements.size > 0 && (
                 <button
                   onClick={() => setSettlementToDelete(0)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium"
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium h-[42px]"
                 >
                   Delete Selected ({selectedSettlements.size})
                 </button>
@@ -1080,7 +1078,7 @@ export default function Settlements() {
                   setDeleteMode(false)
                   setSelectedSettlements(new Set())
                 }}
-                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 h-[42px]"
               >
                 Cancel
               </button>
@@ -1089,7 +1087,7 @@ export default function Settlements() {
             <>
               <button
                 onClick={() => setDeleteMode(true)}
-                className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center min-w-[44px]"
+                className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center min-w-[44px] h-[42px] flex-shrink-0"
                 title="Delete"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1112,7 +1110,7 @@ export default function Settlements() {
                     setVinLookup('')
                   }
                 }}
-                className="px-3 py-2 lg:px-4 lg:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto"
+                className="px-3 py-2 lg:px-4 lg:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
                 title={showManualForm ? 'Cancel' : 'Add Manual Settlement'}
               >
                 {showManualForm ? (
@@ -1140,7 +1138,7 @@ export default function Settlements() {
                     setSelectedTruckForUpload(null)
                   }
                 }}
-                className="px-3 py-2 lg:px-4 lg:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto"
+                className="px-3 py-2 lg:px-4 lg:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
                 title={showUploadForm ? 'Cancel' : 'Upload Settlement'}
               >
                 {showUploadForm ? (
