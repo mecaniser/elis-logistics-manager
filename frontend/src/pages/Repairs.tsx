@@ -49,6 +49,7 @@ export default function Repairs() {
   const [creating, setCreating] = useState(false)
   const [manualCustomCategory, setManualCustomCategory] = useState<string>('')
   const [editCustomCategory, setEditCustomCategory] = useState<string>('')
+  const [expandedImageRepairs, setExpandedImageRepairs] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     loadTrucks()
@@ -789,47 +790,61 @@ export default function Repairs() {
                         )}
                       </>
                     )}
-                    {/* Show image count badge on mobile, full gallery on desktop */}
+                    {/* Show images with expandable functionality */}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
-                      <>
-                        {isMobile ? (
-                          <div className="mb-2">
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                              📷 {repair.image_paths.length} image{repair.image_paths.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="mb-3 flex gap-2 flex-wrap">
-                            {repair.image_paths.slice(0, 3).map((img, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => window.open(getImageUrl(img), '_blank')}
-                                className="relative group cursor-pointer"
-                              >
-                                <img
-                                  src={getImageUrl(img)}
-                                  alt={`Repair ${idx + 1}`}
-                                  className="h-16 w-16 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity"
-                                />
-                                {isCloudinaryImage(img) ? (
-                                  <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
-                                    Cloud
-                                  </div>
-                                ) : (
-                                  <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
-                                    Local
-                                  </div>
-                                )}
-                              </button>
-                            ))}
-                            {repair.image_paths.length > 3 && (
-                              <div className="h-16 w-16 flex items-center justify-center bg-gray-100 rounded border border-gray-200 text-xs text-gray-600">
-                                +{repair.image_paths.length - 3}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </>
+                      <div className="mb-3">
+                        <div className="flex gap-2 flex-wrap">
+                          {(expandedImageRepairs.has(repair.id) ? repair.image_paths : repair.image_paths.slice(0, 3)).map((img, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => window.open(getImageUrl(img), '_blank')}
+                              className="relative group cursor-pointer"
+                            >
+                              <img
+                                src={getImageUrl(img)}
+                                alt={`Repair ${idx + 1}`}
+                                className={`${isMobile ? 'h-12 w-12' : 'h-16 w-16'} object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity`}
+                              />
+                              {isCloudinaryImage(img) ? (
+                                <div className="absolute top-1 left-1 bg-green-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
+                                  Cloud
+                                </div>
+                              ) : (
+                                <div className="absolute top-1 left-1 bg-gray-500 text-white text-xs px-1 py-0.5 rounded shadow-md">
+                                  Local
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                          {repair.image_paths.length > 3 && !expandedImageRepairs.has(repair.id) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedImageRepairs(prev => new Set(prev).add(repair.id))
+                              }}
+                              className={`${isMobile ? 'h-12 w-12' : 'h-16 w-16'} flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded border border-gray-200 text-xs text-gray-600 cursor-pointer transition-colors`}
+                            >
+                              +{repair.image_paths.length - 3}
+                            </button>
+                          )}
+                          {expandedImageRepairs.has(repair.id) && repair.image_paths.length > 3 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setExpandedImageRepairs(prev => {
+                                  const newSet = new Set(prev)
+                                  newSet.delete(repair.id)
+                                  return newSet
+                                })
+                              }}
+                              className={`${isMobile ? 'h-12 w-12' : 'h-16 w-16'} flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded border border-gray-300 text-xs text-gray-700 cursor-pointer transition-colors`}
+                              title="Show less"
+                            >
+                              Less
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                   <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
