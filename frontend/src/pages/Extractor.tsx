@@ -817,12 +817,12 @@ export default function Extractor() {
                       </div>
 
                       {/* Revenue Section */}
-                      <div className="mb-3 border border-green-200 bg-green-50 rounded-lg p-2">
+                      <div className="mb-3 border border-blue-200 bg-blue-50 rounded-lg p-2">
                         <h5 className="text-xs font-semibold text-gray-900 mb-2">Revenue</h5>
                         <div className="space-y-1.5">
                           <div>
                             <span className="text-xs text-gray-500">Gross Revenue:</span>
-                            <p className="text-base font-bold text-green-700">{formatCurrency(settlement.revenue.gross_revenue)}</p>
+                            <p className="text-base font-bold text-blue-700">{formatCurrency(settlement.revenue.gross_revenue)}</p>
                           </div>
                           <div>
                             <span className="text-xs text-gray-500">Net Profit:</span>

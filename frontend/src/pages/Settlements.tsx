@@ -1579,7 +1579,7 @@ export default function Settlements() {
                       {settlement.gross_revenue && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Revenue:</span>
-                          <span className="font-medium text-green-600">
+                          <span className="font-medium text-blue-600">
                             ${settlement.gross_revenue.toLocaleString()}
                           </span>
                         </div>
@@ -1588,7 +1588,7 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Profit:</span>
                           <span className={`font-medium ${
-                            settlement.net_profit < 0 ? 'text-red-600' : 'text-blue-600'
+                            settlement.net_profit < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
                             ${settlement.net_profit.toLocaleString()}
                           </span>
