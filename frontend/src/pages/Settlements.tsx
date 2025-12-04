@@ -7,6 +7,43 @@ import { useMobile } from '../utils/useMobile'
 
 const SETTLEMENTS_PER_PAGE = 20
 
+// Helper component for input with clear button - defined outside to prevent re-creation on render
+const InputWithClear = ({ 
+  value, 
+  onClear, 
+  children, 
+  showClear = true 
+}: { 
+  value: any, 
+  onClear: () => void, 
+  children: React.ReactElement,
+  showClear?: boolean 
+}) => {
+  const hasValue = value !== undefined && value !== null && value !== ''
+  const shouldShowClear = showClear && hasValue
+  
+  return (
+    <div className="relative">
+      {children}
+      {shouldShowClear && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClear()
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+          title="Clear field"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function Settlements() {
   const isMobile = useMobile()
   const [settlements, setSettlements] = useState<Settlement[]>([])
@@ -563,43 +600,6 @@ export default function Settlements() {
       return `-$${Math.abs(numValue).toFixed(2)}`
     }
     return `$${numValue.toFixed(2)}`
-  }
-
-  // Helper component for input with clear button
-  const InputWithClear = ({ 
-    value, 
-    onClear, 
-    children, 
-    showClear = true 
-  }: { 
-    value: any, 
-    onClear: () => void, 
-    children: React.ReactElement,
-    showClear?: boolean 
-  }) => {
-    const hasValue = value !== undefined && value !== null && value !== ''
-    const shouldShowClear = showClear && hasValue
-    
-    return (
-      <div className="relative">
-        {children}
-        {shouldShowClear && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClear()
-            }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-            title="Clear field"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
-      </div>
-    )
   }
 
   // Parse currency input (remove dollar sign and commas, preserve minus sign)
