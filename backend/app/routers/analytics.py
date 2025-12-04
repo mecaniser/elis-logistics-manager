@@ -163,6 +163,20 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
 @router.get("/dashboard")
 def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: Session = Depends(get_db)):
     """Get dashboard summary data with expense categories. Separates trucks and trailers."""
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        return _get_dashboard_impl(truck_id, vehicle_type, db)
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"Dashboard error: {error_trace}")
+        print(f"DASHBOARD ERROR: {error_trace}")
+        raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}\n\nTraceback:\n{error_trace}")
+
+def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session):
+    """Internal implementation of dashboard endpoint."""
     # Build queries with optional truck filter
     trucks_query = db.query(Truck)
     settlements_query = db.query(Settlement)
@@ -941,6 +955,25 @@ def get_time_series(
         truck_id: Optional truck filter
         vehicle_type: Optional vehicle type filter ('truck' or 'trailer')
     """
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        return _get_time_series_impl(group_by, truck_id, vehicle_type, db)
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"Time-series error: {error_trace}")
+        print(f"TIME-SERIES ERROR: {error_trace}")
+        raise HTTPException(status_code=500, detail=f"Time-series error: {str(e)}\n\nTraceback:\n{error_trace}")
+
+def _get_time_series_impl(
+    group_by: str,
+    truck_id: Optional[int],
+    vehicle_type: Optional[str],
+    db: Session
+):
+    """Internal implementation of time-series endpoint."""
     # Validate group_by parameter
     if group_by not in ["week_start", "settlement_date"]:
         group_by = "week_start"
