@@ -461,22 +461,22 @@ export default function Settlements() {
     
     const formData = {
       truck_id: settlement.truck_id,
-      driver_id: settlement.driver_id || undefined,
+      driver_id: settlement.driver_id ?? null,
       settlement_date: settlement.settlement_date,
-      week_start: settlement.week_start || undefined,
-      week_end: settlement.week_end || undefined,
-      miles_driven: settlement.miles_driven || undefined,
-      blocks_delivered: settlement.blocks_delivered || undefined,
-      gross_revenue: settlement.gross_revenue || undefined,
-      expenses: settlement.expenses || undefined,
+      week_start: settlement.week_start ?? null,
+      week_end: settlement.week_end ?? null,
+      miles_driven: settlement.miles_driven ?? null,
+      blocks_delivered: settlement.blocks_delivered ?? null,
+      gross_revenue: settlement.gross_revenue ?? null,
+      expenses: settlement.expenses ?? null,
       expense_categories: categories,
       custom_expense_descriptions: settlement.custom_expense_descriptions || {},
       custom_expense_validation: settlement.custom_expense_validation || {},
-      reimbursement_details: settlement.reimbursement_details || undefined,
-      deduction_details: settlement.deduction_details || undefined,
-      net_profit: settlement.net_profit || undefined,
-      license_plate: settlement.license_plate || undefined,
-      settlement_type: settlement.settlement_type || undefined,
+      reimbursement_details: settlement.reimbursement_details ?? null,
+      deduction_details: settlement.deduction_details ?? null,
+      net_profit: settlement.net_profit ?? null,
+      license_plate: settlement.license_plate ?? null,
+      settlement_type: settlement.settlement_type ?? null,
     }
     
     setEditFormData(formData)
@@ -923,7 +923,7 @@ export default function Settlements() {
       return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : null
     
     setEditFormData({
       ...editFormData,
@@ -934,7 +934,7 @@ export default function Settlements() {
     
     // Update total expenses input and net profit input to reflect the changes
     setTotalExpensesInput(formatCurrency(totalExpenses))
-    if (netProfit !== undefined) {
+    if (netProfit !== null) {
       setNetProfitInput(formatCurrency(netProfit))
     }
   }
@@ -966,7 +966,7 @@ export default function Settlements() {
       return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : null
     
     setEditFormData({
       ...editFormData,
@@ -977,7 +977,7 @@ export default function Settlements() {
     
     // Update total expenses input and net profit input to reflect the changes
     setTotalExpensesInput(formatCurrency(totalExpenses))
-    if (netProfit !== undefined) {
+    if (netProfit !== null) {
       setNetProfitInput(formatCurrency(netProfit))
     }
   }
@@ -1015,7 +1015,7 @@ export default function Settlements() {
       return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
-    const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
+    const netProfit = grossRevenue ? grossRevenue - totalExpenses : null
     
     // Also remove description if it exists
     const updatedDescriptions = { ...(editFormData.custom_expense_descriptions || {}) }
@@ -1043,7 +1043,7 @@ export default function Settlements() {
     
     // Update total expenses input and net profit input to reflect the changes
     setTotalExpensesInput(formatCurrency(totalExpenses))
-    if (netProfit !== undefined) {
+    if (netProfit !== null) {
       setNetProfitInput(formatCurrency(netProfit))
     }
   }
@@ -1783,7 +1783,7 @@ export default function Settlements() {
                       <h4 className="text-base sm:text-lg font-medium text-gray-900 whitespace-nowrap">Settlement Data</h4>
                       <InputWithClear
                         value={editFormData.settlement_date}
-                        onClear={() => setEditFormData({ ...editFormData, settlement_date: undefined })}
+                        onClear={() => setEditFormData({ ...editFormData, settlement_date: null })}
                       >
                         <input
                           type="date"
@@ -1814,12 +1814,12 @@ export default function Settlements() {
                           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">Miles Driven</label>
                           <InputWithClear
                             value={editFormData.miles_driven}
-                            onClear={() => setEditFormData({ ...editFormData, miles_driven: undefined })}
+                            onClear={() => setEditFormData({ ...editFormData, miles_driven: null })}
                           >
                             <input
                               type="number"
                               value={editFormData.miles_driven || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, miles_driven: e.target.value ? Number(e.target.value) : undefined })}
+                              onChange={(e) => setEditFormData({ ...editFormData, miles_driven: e.target.value ? Number(e.target.value) : null })}
                               className="w-full px-3 py-2 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                               placeholder="0"
                             />
@@ -1829,12 +1829,12 @@ export default function Settlements() {
                           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">Blocks Delivered</label>
                           <InputWithClear
                             value={editFormData.blocks_delivered}
-                            onClear={() => setEditFormData({ ...editFormData, blocks_delivered: undefined })}
+                            onClear={() => setEditFormData({ ...editFormData, blocks_delivered: null })}
                           >
                             <input
                               type="number"
                               value={editFormData.blocks_delivered || ''}
-                              onChange={(e) => setEditFormData({ ...editFormData, blocks_delivered: e.target.value ? Number(e.target.value) : undefined })}
+                              onChange={(e) => setEditFormData({ ...editFormData, blocks_delivered: e.target.value ? Number(e.target.value) : null })}
                               className="w-full px-3 py-2 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                               placeholder="0"
                             />
@@ -1853,7 +1853,7 @@ export default function Settlements() {
                             value={grossRevenueInput}
                             onClear={() => {
                               setGrossRevenueInput('')
-                              setEditFormData({ ...editFormData, gross_revenue: undefined })
+                              setEditFormData({ ...editFormData, gross_revenue: null })
                             }}
                           >
                             <input
@@ -1864,7 +1864,7 @@ export default function Settlements() {
                               const inputValue = parseCurrencyInput(e.target.value)
                               if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                 setGrossRevenueInput(e.target.value)
-                                const revenue = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
+                                const revenue = inputValue && inputValue !== '.' ? Number(inputValue) : null
                                 
                                 // Recalculate dispatch fee when gross revenue changes
                                 let updatedCategories = { ...editFormData.expense_categories }
@@ -1876,7 +1876,7 @@ export default function Settlements() {
                                 
                                 // Recalculate total expenses
                                 const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
-                                const netProfit = revenue && totalExpenses ? revenue - totalExpenses : (revenue ? revenue : undefined)
+                                const netProfit = revenue && totalExpenses ? revenue - totalExpenses : (revenue ? revenue : null)
                                 
                                 setEditFormData({
                                   ...editFormData,
@@ -1897,7 +1897,7 @@ export default function Settlements() {
                               const inputValue = parseCurrencyInput(e.target.value.trim())
                               if (inputValue === '' || inputValue === '.') {
                                 setGrossRevenueInput('')
-                                setEditFormData({ ...editFormData, gross_revenue: undefined })
+                                setEditFormData({ ...editFormData, gross_revenue: null })
                               } else {
                                 const revenue = parseFloat(inputValue)
                                 if (!isNaN(revenue)) {
@@ -1905,7 +1905,7 @@ export default function Settlements() {
                                   setEditFormData({ ...editFormData, gross_revenue: revenue })
                                 } else {
                                   setGrossRevenueInput('')
-                                  setEditFormData({ ...editFormData, gross_revenue: undefined })
+                                  setEditFormData({ ...editFormData, gross_revenue: null })
                                 }
                               }
                             }}
@@ -1920,7 +1920,7 @@ export default function Settlements() {
                             value={totalExpensesInput}
                             onClear={() => {
                               setTotalExpensesInput('')
-                              setEditFormData({ ...editFormData, expenses: undefined })
+                              setEditFormData({ ...editFormData, expenses: null })
                             }}
                           >
                             <input
@@ -1931,7 +1931,7 @@ export default function Settlements() {
                               const inputValue = parseCurrencyInput(e.target.value)
                               if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                 setTotalExpensesInput(e.target.value)
-                                const expenses = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
+                                const expenses = inputValue && inputValue !== '.' ? Number(inputValue) : null
                                 const revenue = editFormData.gross_revenue || 0
                                 setEditFormData({
                                   ...editFormData,
@@ -1944,7 +1944,7 @@ export default function Settlements() {
                               const inputValue = parseCurrencyInput(e.target.value.trim())
                               if (inputValue === '' || inputValue === '.') {
                                 setTotalExpensesInput('')
-                                setEditFormData({ ...editFormData, expenses: undefined })
+                                setEditFormData({ ...editFormData, expenses: null })
                               } else {
                                 const expenses = parseFloat(inputValue)
                                 if (!isNaN(expenses)) {
@@ -1952,7 +1952,7 @@ export default function Settlements() {
                                   setEditFormData({ ...editFormData, expenses: expenses })
                                 } else {
                                   setTotalExpensesInput('')
-                                  setEditFormData({ ...editFormData, expenses: undefined })
+                                  setEditFormData({ ...editFormData, expenses: null })
                                 }
                               }
                             }}
@@ -2014,7 +2014,7 @@ export default function Settlements() {
                             value={netProfitInput}
                             onClear={() => {
                               setNetProfitInput('')
-                              setEditFormData({ ...editFormData, net_profit: undefined })
+                              setEditFormData({ ...editFormData, net_profit: null })
                             }}
                           >
                             <input
@@ -2025,7 +2025,7 @@ export default function Settlements() {
                                 const inputValue = parseCurrencyInput(e.target.value)
                                 if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                   setNetProfitInput(e.target.value)
-                                  const profit = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
+                                  const profit = inputValue && inputValue !== '.' ? Number(inputValue) : null
                                   const revenue = editFormData.gross_revenue || 0
                                   setEditFormData({
                                     ...editFormData,
@@ -2038,7 +2038,7 @@ export default function Settlements() {
                                 const inputValue = parseCurrencyInput(e.target.value.trim())
                                 if (inputValue === '' || inputValue === '.') {
                                   setNetProfitInput('')
-                                  setEditFormData({ ...editFormData, net_profit: undefined })
+                                  setEditFormData({ ...editFormData, net_profit: null })
                                 } else {
                                   const profit = parseFloat(inputValue)
                                   if (!isNaN(profit)) {
@@ -2046,7 +2046,7 @@ export default function Settlements() {
                                     setEditFormData({ ...editFormData, net_profit: profit })
                                   } else {
                                     setNetProfitInput('')
-                                    setEditFormData({ ...editFormData, net_profit: undefined })
+                                    setEditFormData({ ...editFormData, net_profit: null })
                                   }
                                 }
                               }}

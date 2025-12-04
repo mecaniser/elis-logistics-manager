@@ -188,8 +188,16 @@ export const settlementsApi = {
   getById: (id: number) => api.get<Settlement>(`/settlements/${id}`),
   create: (data: Partial<Settlement>) =>
     api.post<Settlement>('/settlements', data),
-  update: (id: number, data: Partial<Settlement>) =>
-    api.put<Settlement>(`/settlements/${id}`, data),
+  update: (id: number, data: Partial<Settlement>) => {
+    // Always use form data because the backend endpoint expects it when File/Form params exist
+    const formData = new FormData()
+    formData.append('settlement_update_json', JSON.stringify(data))
+    return api.put<Settlement>(`/settlements/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
   updateWithPdf: (id: number, data: Partial<Settlement>, pdfFile?: File) => {
     const formData = new FormData()
     formData.append('settlement_update_json', JSON.stringify(data))
