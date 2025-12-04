@@ -62,14 +62,14 @@ export interface Settlement {
   week_end?: string | null
   miles_driven?: number | null
   blocks_delivered?: number | null
-  block_ids?: (string | { block_id: string; delivery_date?: string })[]  // Array of block IDs (strings) or objects with block_id and delivery_date
+  block_ids?: (string | { block_id: string; delivery_date?: string })[] | null  // Array of block IDs (strings) or objects with block_id and delivery_date
   gross_revenue?: number | null
   expenses?: number | null
   expense_categories?: { [key: string]: number } | null
-  custom_expense_descriptions?: { [key: string]: string }  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
-  custom_expense_validation?: { [key: string]: boolean }  // Validation status for custom expenses: {deduct: true, decals: false}
-  reimbursement_details?: Array<{ description: string; amount: number | null }>  // Reimbursement details from PDF
-  deduction_details?: Array<{ description: string; amount: number | null }>  // Deduction details from PDF
+  custom_expense_descriptions?: { [key: string]: string } | null  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
+  custom_expense_validation?: { [key: string]: boolean } | null  // Validation status for custom expenses: {deduct: true, decals: false}
+  reimbursement_details?: Array<{ description: string; amount: number | null }> | null  // Reimbursement details from PDF
+  deduction_details?: Array<{ description: string; amount: number | null }> | null  // Deduction details from PDF
   net_profit?: number | null
   pdf_file_path?: string | null
   settlement_type?: string | null

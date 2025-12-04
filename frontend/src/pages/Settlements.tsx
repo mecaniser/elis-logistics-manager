@@ -203,7 +203,7 @@ export default function Settlements() {
     const searchLower = searchFilter.toLowerCase()
     return settlements.filter(settlement => {
       const truckName = getTruckName(settlement.truck_id).toLowerCase()
-      const settlementDate = new Date(settlement.settlement_date).toLocaleDateString().toLowerCase()
+      const settlementDate = settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString().toLowerCase() : ''
       const settlementType = (settlement.settlement_type || '').toLowerCase()
       const customExpenses = (settlement.custom_expense_descriptions?.total_expenses || '').toLowerCase()
       const truckId = settlement.truck_id.toString()
@@ -669,8 +669,8 @@ export default function Settlements() {
   // Helper function to get sorted settlements (newest first)
   const getSortedSettlements = () => {
     return [...settlements].sort((a, b) => {
-      const dateA = new Date(a.settlement_date).getTime()
-      const dateB = new Date(b.settlement_date).getTime()
+      const dateA = a.settlement_date ? new Date(a.settlement_date).getTime() : 0
+      const dateB = b.settlement_date ? new Date(b.settlement_date).getTime() : 0
       if (dateB !== dateA) return dateB - dateA
       return b.id - a.id
     })
@@ -1590,7 +1590,7 @@ export default function Settlements() {
                       )}
                     </div>
                     <p className="text-sm text-gray-500 mb-3">
-                      {new Date(settlement.settlement_date).toLocaleDateString()}
+                      {settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : 'No date'}
                     </p>
                     <div className="space-y-2 text-sm mb-3">
                       {/* Always show Revenue and Profit */}
@@ -1602,7 +1602,7 @@ export default function Settlements() {
                           </span>
                         </div>
                       )}
-                      {settlement.net_profit !== undefined && (
+                      {settlement.net_profit != null && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Profit:</span>
                           <span className={`font-medium ${
@@ -1766,7 +1766,7 @@ export default function Settlements() {
                   <h3 className="text-sm sm:text-lg md:text-xl font-semibold text-gray-900 truncate">
                     <span className="hidden sm:inline">Edit Settlement - </span>
                     <span>{getTruckName(editingSettlement.truck_id)}</span>
-                    <span className="hidden md:inline"> - {new Date(editingSettlement.settlement_date).toLocaleDateString()}</span>
+                    <span className="hidden md:inline"> - {editingSettlement.settlement_date ? new Date(editingSettlement.settlement_date).toLocaleDateString() : ''}</span>
                   </h3>
                 </div>
                 <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-500 flex-shrink-0 ml-2">
@@ -2006,7 +2006,7 @@ export default function Settlements() {
                         </div>
                         <div>
                           <label className={`block text-xs sm:text-sm font-medium mb-1.5 ${
-                            editFormData.net_profit !== undefined && editFormData.net_profit < 0 
+                            editFormData.net_profit != null && editFormData.net_profit < 0 
                               ? 'text-red-600' 
                               : 'text-green-600'
                           }`}>Net Profit</label>
@@ -2051,7 +2051,7 @@ export default function Settlements() {
                                 }
                               }}
                               className={`w-full px-3 py-2 pr-8 text-sm border rounded-md focus:outline-none focus:ring-2 font-medium ${
-                                editFormData.net_profit !== undefined && editFormData.net_profit < 0
+                                editFormData.net_profit != null && editFormData.net_profit < 0
                                   ? 'border-red-300 text-red-700 focus:ring-red-500'
                                   : 'border-green-300 text-green-700 focus:ring-green-500'
                               }`}
