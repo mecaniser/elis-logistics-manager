@@ -565,6 +565,43 @@ export default function Settlements() {
     return `$${numValue.toFixed(2)}`
   }
 
+  // Helper component for input with clear button
+  const InputWithClear = ({ 
+    value, 
+    onClear, 
+    children, 
+    showClear = true 
+  }: { 
+    value: any, 
+    onClear: () => void, 
+    children: React.ReactElement,
+    showClear?: boolean 
+  }) => {
+    const hasValue = value !== undefined && value !== null && value !== ''
+    const shouldShowClear = showClear && hasValue
+    
+    return (
+      <div className="relative">
+        {children}
+        {shouldShowClear && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClear()
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+            title="Clear field"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+    )
+  }
+
   // Parse currency input (remove dollar sign and commas, preserve minus sign)
   const parseCurrencyInput = (value: string): string => {
     // Remove dollar sign and commas, keep numbers, decimal point, and minus sign
@@ -847,7 +884,6 @@ export default function Settlements() {
   const handleSaveEdit = async () => {
     if (!editingSettlement) return
     try {
-      // Use updateWithPdf if a PDF file is selected, otherwise use regular update
       if (editPdfFile) {
         await settlementsApi.updateWithPdf(editingSettlement.id, editFormData, editPdfFile)
       } else {
@@ -880,17 +916,11 @@ export default function Settlements() {
         : value
     updated[newKey] = numValue
     
-    // Calculate total expenses:
-    // - Standard categories: positive values add to expenses, negative values reduce expenses
-    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
-    // So we flip the sign for custom categories
-    const totalExpenses = Object.entries(updated).reduce((sum, [key, val]) => {
+    // Calculate total expenses: sum all category values
+    // Positive values add to expenses, negative values reduce expenses
+    const totalExpenses = Object.values(updated).reduce((sum, val) => {
       const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
-      // Flip sign for custom categories (non-standard)
-      if (!STANDARD_EXPENSE_CATEGORIES.includes(key)) {
-        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
-      }
-      return sum + numVal  // Standard categories: positive adds, negative subtracts
+      return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
@@ -920,8 +950,6 @@ export default function Settlements() {
     // Allow empty values during typing - don't update the category value yet
     // Only update on blur
     if (value === '' || value === '.' || value === '-') {
-      // Keep the input empty, but don't update the category value yet
-      // The category value will be updated on blur
       return
     }
     
@@ -931,16 +959,11 @@ export default function Settlements() {
     const updated = { ...editFormData.expense_categories }
     updated[key] = isNaN(numValue) ? 0 : numValue
     
-    // Calculate total expenses:
-    // - Standard categories: positive values add to expenses, negative values reduce expenses
-    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
-    const totalExpenses = Object.entries(updated).reduce((sum, [catKey, val]) => {
+    // Calculate total expenses: sum all category values
+    // Positive values add to expenses, negative values reduce expenses
+    const totalExpenses = Object.values(updated).reduce((sum, val) => {
       const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
-      // Flip sign for custom categories (non-standard)
-      if (!STANDARD_EXPENSE_CATEGORIES.includes(catKey)) {
-        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
-      }
-      return sum + numVal  // Standard categories: positive adds, negative subtracts
+      return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
@@ -985,16 +1008,11 @@ export default function Settlements() {
     if (!editFormData.expense_categories) return
     const updated = { ...editFormData.expense_categories }
     delete updated[key]
-    // Calculate total expenses:
-    // - Standard categories: positive values add to expenses, negative values reduce expenses
-    // - Custom categories: positive values are credits (reduce expenses), negative values are charges (add to expenses)
-    const totalExpenses = Object.entries(updated).reduce((sum, [catKey, val]) => {
+    // Calculate total expenses: sum all category values
+    // Positive values add to expenses, negative values reduce expenses
+    const totalExpenses = Object.values(updated).reduce((sum, val) => {
       const numVal = typeof val === 'number' ? val : (parseFloat(String(val)) || 0)
-      // Flip sign for custom categories (non-standard)
-      if (!STANDARD_EXPENSE_CATEGORIES.includes(catKey)) {
-        return sum - numVal  // Flip: positive becomes negative (reduces expenses), negative becomes positive (adds to expenses)
-      }
-      return sum + numVal  // Standard categories: positive adds, negative subtracts
+      return sum + numVal
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : undefined
@@ -1763,12 +1781,17 @@ export default function Settlements() {
                   <div className="space-y-4 sm:space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
                       <h4 className="text-base sm:text-lg font-medium text-gray-900 whitespace-nowrap">Settlement Data</h4>
-                      <input
-                        type="date"
-                        value={editFormData.settlement_date || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, settlement_date: e.target.value })}
-                        className="w-full sm:w-auto min-w-[180px] px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      <InputWithClear
+                        value={editFormData.settlement_date}
+                        onClear={() => setEditFormData({ ...editFormData, settlement_date: undefined })}
+                      >
+                        <input
+                          type="date"
+                          value={editFormData.settlement_date || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, settlement_date: e.target.value })}
+                          className="w-full sm:w-auto min-w-[180px] px-3 py-2 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </InputWithClear>
                     </div>
                     
                     {/* Basic Information Group */}
@@ -1789,23 +1812,33 @@ export default function Settlements() {
                         </div>
                         <div>
                           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">Miles Driven</label>
-                          <input
-                            type="number"
-                            value={editFormData.miles_driven || ''}
-                            onChange={(e) => setEditFormData({ ...editFormData, miles_driven: e.target.value ? Number(e.target.value) : undefined })}
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="0"
-                          />
+                          <InputWithClear
+                            value={editFormData.miles_driven}
+                            onClear={() => setEditFormData({ ...editFormData, miles_driven: undefined })}
+                          >
+                            <input
+                              type="number"
+                              value={editFormData.miles_driven || ''}
+                              onChange={(e) => setEditFormData({ ...editFormData, miles_driven: e.target.value ? Number(e.target.value) : undefined })}
+                              className="w-full px-3 py-2 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="0"
+                            />
+                          </InputWithClear>
                         </div>
                         <div>
                           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">Blocks Delivered</label>
-                          <input
-                            type="number"
-                            value={editFormData.blocks_delivered || ''}
-                            onChange={(e) => setEditFormData({ ...editFormData, blocks_delivered: e.target.value ? Number(e.target.value) : undefined })}
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="0"
-                          />
+                          <InputWithClear
+                            value={editFormData.blocks_delivered}
+                            onClear={() => setEditFormData({ ...editFormData, blocks_delivered: undefined })}
+                          >
+                            <input
+                              type="number"
+                              value={editFormData.blocks_delivered || ''}
+                              onChange={(e) => setEditFormData({ ...editFormData, blocks_delivered: e.target.value ? Number(e.target.value) : undefined })}
+                              className="w-full px-3 py-2 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="0"
+                            />
+                          </InputWithClear>
                         </div>
                       </div>
                     </div>
@@ -1816,11 +1849,18 @@ export default function Settlements() {
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
                         <div>
                           <label className="block text-xs sm:text-sm font-medium text-blue-600 mb-1.5">Gross Revenue</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
+                          <InputWithClear
                             value={grossRevenueInput}
-                            onChange={(e) => {
+                            onClear={() => {
+                              setGrossRevenueInput('')
+                              setEditFormData({ ...editFormData, gross_revenue: undefined })
+                            }}
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={grossRevenueInput}
+                              onChange={(e) => {
                               const inputValue = parseCurrencyInput(e.target.value)
                               if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                 setGrossRevenueInput(e.target.value)
@@ -1869,17 +1909,25 @@ export default function Settlements() {
                                 }
                               }
                             }}
-                            className="w-full px-3 py-2 text-sm border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 font-medium"
+                            className="w-full px-3 py-2 pr-8 text-sm border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-700 font-medium"
                             placeholder="$0.00"
                           />
+                          </InputWithClear>
                         </div>
                         <div>
                           <label className="block text-xs sm:text-sm font-medium text-red-600 mb-1.5">Total Expenses</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
+                          <InputWithClear
                             value={totalExpensesInput}
-                            onChange={(e) => {
+                            onClear={() => {
+                              setTotalExpensesInput('')
+                              setEditFormData({ ...editFormData, expenses: undefined })
+                            }}
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={totalExpensesInput}
+                              onChange={(e) => {
                               const inputValue = parseCurrencyInput(e.target.value)
                               if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
                                 setTotalExpensesInput(e.target.value)
@@ -1908,30 +1956,53 @@ export default function Settlements() {
                                 }
                               }
                             }}
-                            className="w-full px-3 py-2 text-sm border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
+                            className="w-full px-3 py-2 pr-8 text-sm border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-red-700 font-medium"
                             placeholder="$0.00"
                           />
-                          <textarea
-                            value={editFormData.custom_expense_descriptions?.total_expenses || ''}
-                            onChange={(e) => {
-                              const description = e.target.value.trim()
-                              const updatedDescriptions: { [key: string]: string } = {
-                                ...(editFormData.custom_expense_descriptions || {})
-                              }
-                              if (description) {
-                                updatedDescriptions.total_expenses = description
-                              } else {
-                                delete updatedDescriptions.total_expenses
-                              }
-                              setEditFormData({
-                                ...editFormData,
-                                custom_expense_descriptions: Object.keys(updatedDescriptions).length > 0 ? updatedDescriptions : undefined
-                              })
-                            }}
-                            placeholder="Describe expenses (e.g., fuel, repairs, maintenance)"
-                            rows={2}
-                            className="w-full mt-2 px-3 py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
+                          </InputWithClear>
+                          <div className="relative mt-2">
+                            <textarea
+                              value={editFormData.custom_expense_descriptions?.total_expenses || ''}
+                              onChange={(e) => {
+                                const description = e.target.value.trim()
+                                const updatedDescriptions: { [key: string]: string } = {
+                                  ...(editFormData.custom_expense_descriptions || {})
+                                }
+                                if (description) {
+                                  updatedDescriptions.total_expenses = description
+                                } else {
+                                  delete updatedDescriptions.total_expenses
+                                }
+                                setEditFormData({
+                                  ...editFormData,
+                                  custom_expense_descriptions: Object.keys(updatedDescriptions).length > 0 ? updatedDescriptions : undefined
+                                })
+                              }}
+                              placeholder="Describe expenses (e.g., fuel, repairs, maintenance)"
+                              rows={2}
+                              className="w-full px-3 py-2 pr-8 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            {editFormData.custom_expense_descriptions?.total_expenses && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const updatedDescriptions = { ...(editFormData.custom_expense_descriptions || {}) }
+                                  delete updatedDescriptions.total_expenses
+                                  setEditFormData({
+                                    ...editFormData,
+                                    custom_expense_descriptions: Object.keys(updatedDescriptions).length > 0 ? updatedDescriptions : undefined
+                                  })
+                                }}
+                                className="absolute right-2 top-2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                                title="Clear description"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div>
                           <label className={`block text-xs sm:text-sm font-medium mb-1.5 ${
@@ -1939,46 +2010,54 @@ export default function Settlements() {
                               ? 'text-red-600' 
                               : 'text-green-600'
                           }`}>Net Profit</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
+                          <InputWithClear
                             value={netProfitInput}
-                            onChange={(e) => {
-                              const inputValue = parseCurrencyInput(e.target.value)
-                              if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                setNetProfitInput(e.target.value)
-                                const profit = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
-                                const revenue = editFormData.gross_revenue || 0
-                                setEditFormData({
-                                  ...editFormData,
-                                  net_profit: profit,
-                                  expenses: revenue && profit ? revenue - profit : editFormData.expenses
-                                })
-                              }
+                            onClear={() => {
+                              setNetProfitInput('')
+                              setEditFormData({ ...editFormData, net_profit: undefined })
                             }}
-                            onBlur={(e) => {
-                              const inputValue = parseCurrencyInput(e.target.value.trim())
-                              if (inputValue === '' || inputValue === '.') {
-                                setNetProfitInput('')
-                                setEditFormData({ ...editFormData, net_profit: undefined })
-                              } else {
-                                const profit = parseFloat(inputValue)
-                                if (!isNaN(profit)) {
-                                  setNetProfitInput(formatCurrency(profit))
-                                  setEditFormData({ ...editFormData, net_profit: profit })
-                                } else {
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={netProfitInput}
+                              onChange={(e) => {
+                                const inputValue = parseCurrencyInput(e.target.value)
+                                if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                  setNetProfitInput(e.target.value)
+                                  const profit = inputValue && inputValue !== '.' ? Number(inputValue) : undefined
+                                  const revenue = editFormData.gross_revenue || 0
+                                  setEditFormData({
+                                    ...editFormData,
+                                    net_profit: profit,
+                                    expenses: revenue && profit ? revenue - profit : editFormData.expenses
+                                  })
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const inputValue = parseCurrencyInput(e.target.value.trim())
+                                if (inputValue === '' || inputValue === '.') {
                                   setNetProfitInput('')
                                   setEditFormData({ ...editFormData, net_profit: undefined })
+                                } else {
+                                  const profit = parseFloat(inputValue)
+                                  if (!isNaN(profit)) {
+                                    setNetProfitInput(formatCurrency(profit))
+                                    setEditFormData({ ...editFormData, net_profit: profit })
+                                  } else {
+                                    setNetProfitInput('')
+                                    setEditFormData({ ...editFormData, net_profit: undefined })
+                                  }
                                 }
-                              }
-                            }}
-                            className={`w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 font-medium ${
-                              editFormData.net_profit !== undefined && editFormData.net_profit < 0
-                                ? 'border-red-300 text-red-700 focus:ring-red-500'
-                                : 'border-green-300 text-green-700 focus:ring-green-500'
-                            }`}
-                            placeholder="$0.00"
-                          />
+                              }}
+                              className={`w-full px-3 py-2 pr-8 text-sm border rounded-md focus:outline-none focus:ring-2 font-medium ${
+                                editFormData.net_profit !== undefined && editFormData.net_profit < 0
+                                  ? 'border-red-300 text-red-700 focus:ring-red-500'
+                                  : 'border-green-300 text-green-700 focus:ring-green-500'
+                              }`}
+                              placeholder="$0.00"
+                            />
+                          </InputWithClear>
                         </div>
                       </div>
                     </div>
@@ -2059,44 +2138,52 @@ export default function Settlements() {
                                     <span className="truncate">{displayName}</span>
                                     {percentageDisplay}
                                   </label>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
+                                  <InputWithClear
                                     value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                    onChange={(e) => {
-                                      const rawValue = e.target.value
-                                      const inputValue = parseCurrencyInput(rawValue)
-                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                        // Store raw input value
-                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
-                                        
-                                        // Update category value during typing to recalculate net profit
-                                        if (inputValue === '' || inputValue === '.') {
-                                          handleExpenseCategoryChange(category, category, 0)
-                                        } else {
-                                          handleExpenseCategoryAmountChange(category, inputValue)
-                                        }
-                                      }
+                                    onClear={() => {
+                                      handleExpenseCategoryChange(category, category, 0)
+                                      setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
                                     }}
-                                    onBlur={(e) => {
-                                      const inputValue = parseCurrencyInput(e.target.value.trim())
-                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                        handleExpenseCategoryChange(category, category, 0)
-                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                      } else {
-                                        const numValue = parseFloat(inputValue)
-                                        if (!isNaN(numValue)) {
-                                          handleExpenseCategoryChange(category, category, numValue)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
-                                        } else {
+                                  >
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                      onChange={(e) => {
+                                        const rawValue = e.target.value
+                                        const inputValue = parseCurrencyInput(rawValue)
+                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                          // Store raw input value
+                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
+                                          
+                                          // Update category value during typing to recalculate net profit
+                                          if (inputValue === '' || inputValue === '.') {
+                                            handleExpenseCategoryChange(category, category, 0)
+                                          } else {
+                                            handleExpenseCategoryAmountChange(category, inputValue)
+                                          }
+                                        }
+                                      }}
+                                      onBlur={(e) => {
+                                        const inputValue = parseCurrencyInput(e.target.value.trim())
+                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
                                           handleExpenseCategoryChange(category, category, 0)
                                           setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                        } else {
+                                          const numValue = parseFloat(inputValue)
+                                          if (!isNaN(numValue)) {
+                                            handleExpenseCategoryChange(category, category, numValue)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
+                                          } else {
+                                            handleExpenseCategoryChange(category, category, 0)
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                          }
                                         }
-                                      }
-                                    }}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
-                                    placeholder="0.00"
-                                  />
+                                      }}
+                                      className="w-full px-2 py-1.5 pr-7 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+                                      placeholder="0.00"
+                                    />
+                                  </InputWithClear>
                                 </div>
                               )
                             })}
@@ -2195,55 +2282,63 @@ export default function Settlements() {
                                         ✕
                                       </button>
                                     </div>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
+                                    <InputWithClear
                                       value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                      onChange={(e) => {
-                                        const rawValue = e.target.value
-                                        const inputValue = parseCurrencyInput(rawValue)
-                                        
-                                        // Only allow valid decimal input (including negative)
-                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                          // Store raw input value
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
-                                          
-                                          // Update category value during typing to recalculate net profit
-                                          // But don't format the input until blur
-                                          if (inputValue === '' || inputValue === '.' || inputValue === '-') {
-                                            handleExpenseCategoryChange(key, key, 0)
-                                          } else {
-                                            // Parse the value, preserving negative sign
-                                            handleExpenseCategoryAmountChange(key, inputValue)
-                                          }
-                                        }
+                                      onClear={() => {
+                                        handleExpenseCategoryChange(key, key, 0)
+                                        setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
                                       }}
-                                      onBlur={(e) => {
-                                        const inputValue = parseCurrencyInput(e.target.value.trim())
-                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                          // Empty value - set to 0
-                                          handleExpenseCategoryChange(key, key, 0)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                        } else {
-                                          const numValue = parseFloat(inputValue)
-                                          if (!isNaN(numValue)) {
-                                            // Valid number - update category and format the input
-                                            handleExpenseCategoryChange(key, key, numValue)
-                                            setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
-                                          } else {
-                                            // Invalid - set to 0
+                                    >
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                        onChange={(e) => {
+                                          const rawValue = e.target.value
+                                          const inputValue = parseCurrencyInput(rawValue)
+                                          
+                                          // Only allow valid decimal input (including negative)
+                                          if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                            // Store raw input value
+                                            setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
+                                            
+                                            // Update category value during typing to recalculate net profit
+                                            // But don't format the input until blur
+                                            if (inputValue === '' || inputValue === '.' || inputValue === '-') {
+                                              handleExpenseCategoryChange(key, key, 0)
+                                            } else {
+                                              // Parse the value, preserving negative sign
+                                              handleExpenseCategoryAmountChange(key, inputValue)
+                                            }
+                                          }
+                                        }}
+                                        onBlur={(e) => {
+                                          const inputValue = parseCurrencyInput(e.target.value.trim())
+                                          if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                            // Empty value - set to 0
                                             handleExpenseCategoryChange(key, key, 0)
                                             setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                          } else {
+                                            const numValue = parseFloat(inputValue)
+                                            if (!isNaN(numValue)) {
+                                              // Valid number - update category and format the input
+                                              handleExpenseCategoryChange(key, key, numValue)
+                                              setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
+                                            } else {
+                                              // Invalid - set to 0
+                                              handleExpenseCategoryChange(key, key, 0)
+                                              setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                            }
                                           }
-                                        }
-                                      }}
-                                      className={`w-full px-2 py-1.5 border rounded-md focus:outline-none focus:ring-2 text-xs sm:text-sm ${
-                                        (value || 0) < 0
-                                          ? 'border-red-300 text-red-700 focus:ring-red-500'
-                                          : 'border-green-300 text-green-700 focus:ring-green-500'
-                                      }`}
-                                      placeholder="0.00"
-                                    />
+                                        }}
+                                        className={`w-full px-2 py-1.5 pr-7 border rounded-md focus:outline-none focus:ring-2 text-xs sm:text-sm ${
+                                          (value || 0) < 0
+                                            ? 'border-red-300 text-red-700 focus:ring-red-500'
+                                            : 'border-green-300 text-green-700 focus:ring-green-500'
+                                        }`}
+                                        placeholder="0.00"
+                                      />
+                                    </InputWithClear>
                                   </div>
                                 )
                               })}
