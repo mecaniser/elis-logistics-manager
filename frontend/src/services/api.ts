@@ -56,24 +56,24 @@ export interface VehicleROI {
 export interface Settlement {
   id: number
   truck_id: number
-  driver_id?: number
-  settlement_date: string
-  week_start?: string
-  week_end?: string
-  miles_driven?: number
-  blocks_delivered?: number
+  driver_id?: number | null
+  settlement_date: string | null
+  week_start?: string | null
+  week_end?: string | null
+  miles_driven?: number | null
+  blocks_delivered?: number | null
   block_ids?: (string | { block_id: string; delivery_date?: string })[]  // Array of block IDs (strings) or objects with block_id and delivery_date
-  gross_revenue?: number
-  expenses?: number
-  expense_categories?: { [key: string]: number }
+  gross_revenue?: number | null
+  expenses?: number | null
+  expense_categories?: { [key: string]: number } | null
   custom_expense_descriptions?: { [key: string]: string }  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
   custom_expense_validation?: { [key: string]: boolean }  // Validation status for custom expenses: {deduct: true, decals: false}
   reimbursement_details?: Array<{ description: string; amount: number | null }>  // Reimbursement details from PDF
   deduction_details?: Array<{ description: string; amount: number | null }>  // Deduction details from PDF
-  net_profit?: number
-  pdf_file_path?: string
-  settlement_type?: string
-  license_plate?: string
+  net_profit?: number | null
+  pdf_file_path?: string | null
+  settlement_type?: string | null
+  license_plate?: string | null
 }
 
 export interface Repair {
