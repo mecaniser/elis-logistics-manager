@@ -17,6 +17,7 @@ class Repair(Base):
     description = Column(Text)  # Legacy field - kept for backward compatibility
     category = Column(String(50))  # engine, tires, maintenance, etc
     cost = Column(Numeric(10, 2), nullable=True)  # Made optional - can be set manually if PDF parsing fails
+    miles = Column(Numeric(10, 2), nullable=True)  # Miles/odometer reading at time of repair (for PM tracking)
     receipt_path = Column(String(255))
     invoice_number = Column(String(50), nullable=True)  # Invoice number from PDF
     image_paths = Column(JSON, nullable=True)  # List of image file paths

@@ -27,6 +27,7 @@ def parse_repair_invoice_pdf(file_path: str) -> Dict:
         "category": None,
         "vin": None,
         "invoice_number": None,
+        "miles": None,
     }
     
     try:
@@ -102,6 +103,31 @@ def parse_repair_invoice_pdf(file_path: str) -> Dict:
                     vin_match = re.search(r'\b([A-Z0-9]{17})\b', text)
                     if vin_match:
                         repair_data["vin"] = vin_match.group(1).upper()
+            
+            # Extract Miles/Odometer Reading
+            # Common patterns: 
+            # - "CURRENT: 564,880" (primary - odometer reading at time of repair)
+            # - "RETURN: 584,880" (secondary - return mileage)
+            # - "MILES: 123,456", "MILEAGE: 123456", "ODOMETER: 123,456", "MILES 123456"
+            miles_patterns = [
+                r'CURRENT\s*:?\s*([\d,]+\.?\d*)',  # "CURRENT: 564,880" - prefer this as it's the repair mileage
+                r'(?:MILES|MILEAGE|ODOMETER)\s*:?\s*([\d,]+\.?\d*)',  # "MILES: 123,456" or "ODOMETER 123456"
+                r'([\d,]{4,})\s*(?:MILES|MI)',  # "123456 MILES" or "123,456 MI"
+            ]
+            
+            for pattern in miles_patterns:
+                miles_match = re.search(pattern, text, re.IGNORECASE)
+                if miles_match:
+                    try:
+                        # Extract the number and remove commas
+                        miles_str = miles_match.group(1).replace(",", "").strip()
+                        miles_value = float(miles_str)
+                        # Sanity check: odometer readings are typically between 0 and 1,000,000 miles
+                        if 0 <= miles_value <= 1000000:
+                            repair_data["miles"] = miles_value
+                            break
+                    except (ValueError, IndexError):
+                        continue
             
             # Extract Description - prioritize table extraction for structured data
             description_parts = []

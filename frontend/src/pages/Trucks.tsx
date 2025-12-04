@@ -513,7 +513,12 @@ export default function Trucks() {
                                   <div className="mt-2 pl-4 border-l-2 border-gray-300 space-y-1">
                                     {truckPM.is_due ? (
                                       <>
-                                        {truckPM.last_pm_date && truckPM.days_overdue !== null && (
+                                        {truckPM.pm_method === 'mileage' && truckPM.miles_overdue !== null && (
+                                          <div className="text-red-600">
+                                            {truckPM.miles_overdue.toLocaleString()} miles overdue
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'time' && truckPM.days_overdue !== null && (
                                           <div className="text-red-600">
                                             {truckPM.days_overdue} days overdue
                                           </div>
@@ -526,9 +531,29 @@ export default function Trucks() {
                                             Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}
                                           </div>
                                         )}
-                                        {truckPM.pm_threshold_months && (
+                                        {truckPM.last_pm_miles !== null && (
+                                          <div className="text-gray-600">
+                                            Last PM Miles: {truckPM.last_pm_miles.toLocaleString()}
+                                          </div>
+                                        )}
+                                        {truckPM.current_miles !== null && (
+                                          <div className="text-gray-600">
+                                            Current Miles: {truckPM.current_miles.toLocaleString()}
+                                          </div>
+                                        )}
+                                        {truckPM.next_pm_miles !== null && (
                                           <div className="text-gray-500 text-xs">
-                                            Threshold: {truckPM.pm_threshold_months} months
+                                            Next PM Due: {truckPM.next_pm_miles.toLocaleString()} miles
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'mileage' && (
+                                          <div className="text-gray-500 text-xs">
+                                            Threshold: {truckPM.pm_threshold_miles.toLocaleString()} miles
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'time' && (
+                                          <div className="text-gray-500 text-xs">
+                                            Threshold: {truckPM.pm_threshold_days} days ({Math.round(truckPM.pm_threshold_days / 7)} weeks)
                                           </div>
                                         )}
                                       </>
@@ -539,14 +564,34 @@ export default function Trucks() {
                                             Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}
                                           </div>
                                         )}
-                                        {truckPM.days_since_pm !== null && (
+                                        {truckPM.last_pm_miles !== null && (
                                           <div className="text-gray-600">
-                                            {truckPM.days_since_pm} days ago
+                                            Last PM Miles: {truckPM.last_pm_miles.toLocaleString()}
                                           </div>
                                         )}
-                                        {truckPM.pm_threshold_months && (
+                                        {truckPM.current_miles !== null && (
+                                          <div className="text-gray-600">
+                                            Current Miles: {truckPM.current_miles.toLocaleString()}
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'mileage' && truckPM.miles_until_due !== null && (
+                                          <div className="text-gray-600">
+                                            {truckPM.miles_until_due.toLocaleString()} miles until due
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'time' && truckPM.days_until_due !== null && (
+                                          <div className="text-gray-600">
+                                            {truckPM.days_until_due} days until due
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'mileage' && (
                                           <div className="text-gray-500 text-xs">
-                                            Threshold: {truckPM.pm_threshold_months} months
+                                            Threshold: {truckPM.pm_threshold_miles.toLocaleString()} miles
+                                          </div>
+                                        )}
+                                        {truckPM.pm_method === 'time' && (
+                                          <div className="text-gray-500 text-xs">
+                                            Threshold: {truckPM.pm_threshold_days} days ({Math.round(truckPM.pm_threshold_days / 7)} weeks)
                                           </div>
                                         )}
                                       </>
@@ -560,12 +605,21 @@ export default function Trucks() {
                                 {truckPM.is_due ? (
                                   <span>
                                     ⚠️ PM Due
-                                    {truckPM.last_pm_date && truckPM.days_overdue !== null && (
+                                    {truckPM.pm_method === 'mileage' && truckPM.miles_overdue !== null && (
+                                      <span> ({truckPM.miles_overdue.toLocaleString()} miles overdue)</span>
+                                    )}
+                                    {truckPM.pm_method === 'time' && truckPM.days_overdue !== null && (
                                       <span> ({truckPM.days_overdue} days overdue)</span>
                                     )}
                                     {!truckPM.last_pm_date && <span> (No PM recorded)</span>}
                                     {truckPM.last_pm_date && (
                                       <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
+                                    )}
+                                    {truckPM.last_pm_miles !== null && (
+                                      <span className="text-gray-600"> • Miles: {truckPM.last_pm_miles.toLocaleString()}</span>
+                                    )}
+                                    {truckPM.current_miles !== null && (
+                                      <span className="text-gray-600"> • Current: {truckPM.current_miles.toLocaleString()}</span>
                                     )}
                                   </span>
                                 ) : (
@@ -574,8 +628,14 @@ export default function Trucks() {
                                     {truckPM.last_pm_date && (
                                       <span className="text-gray-600"> • Last PM: {new Date(truckPM.last_pm_date).toLocaleDateString()}</span>
                                     )}
-                                    {truckPM.days_since_pm !== null && (
-                                      <span className="text-gray-600"> ({truckPM.days_since_pm} days ago)</span>
+                                    {truckPM.pm_method === 'mileage' && truckPM.miles_until_due !== null && (
+                                      <span className="text-gray-600"> • {truckPM.miles_until_due.toLocaleString()} miles until due</span>
+                                    )}
+                                    {truckPM.pm_method === 'time' && truckPM.days_until_due !== null && (
+                                      <span className="text-gray-600"> • {truckPM.days_until_due} days until due</span>
+                                    )}
+                                    {truckPM.last_pm_miles !== null && (
+                                      <span className="text-gray-600"> • Miles: {truckPM.last_pm_miles.toLocaleString()}</span>
                                     )}
                                   </span>
                                 )}

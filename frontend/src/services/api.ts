@@ -84,6 +84,7 @@ export interface Repair {
   details?: string
   description: string
   cost: number
+  miles?: number  // Miles/odometer reading at time of repair (for PM tracking)
   category?: string
   invoice_number?: string
   receipt_path?: string
@@ -137,11 +138,24 @@ export interface PMStatus {
   truck_name: string
   vin?: string | null
   last_pm_date: string | null
+  last_pm_miles: number | null
+  current_miles: number | null
   last_pm_repair_id: number | null
   is_due: boolean
+  pm_method?: 'mileage' | 'time' | null
+  // Mileage-based fields
+  miles_since_pm: number | null
+  miles_overdue: number | null
+  miles_until_due: number | null
+  next_pm_miles: number | null
+  pm_threshold_miles: number
+  // Time-based fields (fallback)
   days_since_pm: number | null
   days_overdue: number | null
-  pm_threshold_months: number
+  days_until_due: number | null
+  next_pm_date: string | null
+  pm_threshold_days: number
+  pm_threshold_months?: number  // Legacy field for backward compatibility
 }
 
 export interface PMStatusResponse {

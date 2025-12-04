@@ -109,6 +109,14 @@ async def create_repair(
         except (ValueError, TypeError):
             cost = None
     
+    # Handle miles conversion
+    miles = repair_data.get("miles")
+    if miles is not None:
+        try:
+            miles = float(miles)
+        except (ValueError, TypeError):
+            miles = None
+    
     db_repair = Repair(
         truck_id=repair_data.get("truck_id"),
         repair_date=repair_date,
@@ -117,6 +125,7 @@ async def create_repair(
         description=repair_data.get("description") or None,
         category=repair_data.get("category") or None,
         cost=cost,
+        miles=miles,
         receipt_path=repair_data.get("receipt_path") or None,
         invoice_number=repair_data.get("invoice_number") or None,
         image_paths=image_paths if image_paths else None
@@ -476,6 +485,7 @@ async def upload_repair_invoice(
             description=repair_data.get("description"),
             category=repair_data.get("category"),
             cost=repair_data.get("cost"),
+            miles=repair_data.get("miles"),
             receipt_path=receipt_path,
             invoice_number=repair_data.get("invoice_number"),
             image_paths=image_paths if image_paths else None

@@ -14,6 +14,25 @@ from collections import defaultdict
 
 router = APIRouter()
 
+def get_current_mileage(truck_id: int, db: Session) -> Optional[float]:
+    """
+    Get the current mileage for a truck.
+    Returns the most recent repair's miles value, or None if no repair has miles recorded.
+    """
+    # Get the most recent repair with miles recorded
+    latest_repair_with_miles = db.query(Repair).filter(
+        Repair.truck_id == truck_id,
+        Repair.miles.isnot(None)
+    ).order_by(
+        Repair.repair_date.desc().nullslast(),
+        Repair.created_at.desc()
+    ).first()
+    
+    if latest_repair_with_miles and latest_repair_with_miles.miles:
+        return float(latest_repair_with_miles.miles)
+    
+    return None
+
 @router.get("/truck-profit/{truck_id}")
 def get_truck_profit(truck_id: int, db: Session = Depends(get_db)):
     """Calculate profit per truck (settlements - repairs)"""
@@ -619,59 +638,125 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
     # Sort by month_key and repair_date
     repairs_by_month.sort(key=lambda x: (x["month_key"], x["repair_date"] or ""))
     
-    # Get PM (D13 full pm) status for each truck (exclude trailers)
+    # Get PM (Preventive Maintenance) status for each truck (exclude trailers)
     # Calculate PM status dynamically by querying repairs (not from truck model fields)
+    # PM is based on time: every 10 weeks (70 days) (primary)
+    # Fallback to mileage-based: every 25,000 miles when date is not available
     pm_status = []
     trucks_for_pm = trucks_query.filter(Truck.vehicle_type == 'truck').all()  # Only trucks, not trailers
-    today = datetime.now().date()
-    pm_threshold_months = 3
+    pm_threshold_miles = 25000  # PM due every 25,000 miles (fallback when date unavailable)
+    pm_threshold_days = 70  # PM due every 10 weeks (primary method)
     
     for truck in trucks_for_pm:
-        # Find all D13 full pm repairs for this truck
-        # Search for "d13" and "full pm" in description (case-insensitive)
-        # Both terms must be present in the description
-        pm_repairs = db.query(Repair).filter(
+        # Find all PM repairs for this truck
+        # PM repairs are identified by:
+        # 1. Repairs with "d13" AND "full pm" in description (primary pattern)
+        # 2. Repairs with category "maintenance" AND "pm" in description (secondary pattern)
+        pm_repairs_primary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
                 Repair.description.ilike('%d13%'),
                 Repair.description.ilike('%full pm%')
             )
-        ).order_by(Repair.repair_date.desc()).all()
+        ).order_by(Repair.repair_date.desc().nullslast()).all()
+        
+        # Also check for maintenance category repairs with "pm" in description
+        pm_repairs_secondary = db.query(Repair).filter(
+            and_(
+                Repair.truck_id == truck.id,
+                Repair.category == 'maintenance',
+                Repair.description.ilike('%pm%')
+            )
+        ).order_by(Repair.repair_date.desc().nullslast()).all()
+        
+        # Combine and deduplicate, prioritizing primary matches
+        pm_repair_ids = {r.id for r in pm_repairs_primary}
+        all_pm_repairs = list(pm_repairs_primary)
+        for repair in pm_repairs_secondary:
+            if repair.id not in pm_repair_ids:
+                all_pm_repairs.append(repair)
+        
+        # Sort by repair_date descending (most recent first)
+        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at), reverse=True)
         
         last_pm_date = None
+        last_pm_miles = None
         last_pm_repair_id = None
-        if pm_repairs:
-            last_pm_repair = pm_repairs[0]  # Most recent
+        if all_pm_repairs:
+            last_pm_repair = all_pm_repairs[0]  # Most recent
             last_pm_date = last_pm_repair.repair_date
             last_pm_repair_id = last_pm_repair.id
+            if last_pm_repair.miles:
+                last_pm_miles = float(last_pm_repair.miles)
         
-        # Calculate if due for PM
+        # Get current mileage for the truck
+        current_miles = get_current_mileage(truck.id, db)
+        
+        # Calculate if due for PM - use time-based first (10 weeks), fallback to mileage-based
         is_due = False
+        miles_since_pm = None
+        miles_overdue = None
+        miles_until_due = None
+        next_pm_miles = None
         days_since_pm = None
         days_overdue = None
+        days_until_due = None
+        next_pm_date = None
+        pm_method = None  # 'time' or 'mileage'
         
-        if last_pm_date:
+        # Primary method: Time-based PM (10 weeks / 70 days)
+        if last_pm_date is not None:
+            pm_method = 'time'
+            today = date.today()
             days_since_pm = (today - last_pm_date).days
-            # PM is due every 3 months (approximately 90 days)
-            days_threshold = pm_threshold_months * 30
-            is_due = days_since_pm >= days_threshold
+            next_pm_date = last_pm_date + timedelta(days=pm_threshold_days)
+            is_due = days_since_pm >= pm_threshold_days
+            
             if is_due:
-                days_overdue = days_since_pm - days_threshold
+                days_overdue = days_since_pm - pm_threshold_days
+            else:
+                days_until_due = pm_threshold_days - days_since_pm
+        
+        # Fallback method: Mileage-based PM (when date is not available but mileage is)
+        elif last_pm_miles is not None and current_miles is not None:
+            pm_method = 'mileage'
+            # Calculate next PM milestone
+            next_pm_miles = last_pm_miles + pm_threshold_miles
+            miles_since_pm = current_miles - last_pm_miles
+            is_due = current_miles >= next_pm_miles
+            
+            if is_due:
+                miles_overdue = current_miles - next_pm_miles
+            else:
+                miles_until_due = next_pm_miles - current_miles
+        
+        # No PM history - truck needs PM
         else:
-            # No PM found - truck is overdue
             is_due = True
-            days_overdue = None
+            pm_method = None
         
         pm_status.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
             "vin": truck.vin,
             "last_pm_date": last_pm_date.isoformat() if last_pm_date else None,
+            "last_pm_miles": last_pm_miles,
+            "current_miles": current_miles,
             "last_pm_repair_id": last_pm_repair_id,
             "is_due": is_due,
+            "pm_method": pm_method,  # 'time', 'mileage', or None
+            # Mileage-based fields (fallback)
+            "miles_since_pm": miles_since_pm,
+            "miles_overdue": miles_overdue,
+            "miles_until_due": miles_until_due,
+            "next_pm_miles": next_pm_miles,
+            "pm_threshold_miles": pm_threshold_miles,
+            # Time-based fields (primary)
             "days_since_pm": days_since_pm,
             "days_overdue": days_overdue,
-            "pm_threshold_months": pm_threshold_months
+            "days_until_due": days_until_due,
+            "next_pm_date": next_pm_date.isoformat() if next_pm_date else None,
+            "pm_threshold_days": pm_threshold_days
         })
     
     return {
@@ -715,59 +800,128 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
 def get_pm_status(db: Session = Depends(get_db)):
     """
     Get PM (Preventive Maintenance) status for all trucks.
-    Returns PM status information for each truck based on D13 full PM repairs.
+    Returns PM status information for each truck based on PM repairs.
+    PM is calculated based on time: every 10 weeks (70 days) (primary)
+    Fallback to mileage-based: every 25,000 miles when date is not available.
+    PM repairs are identified by:
+    - Repairs with "d13" AND "full pm" in description (primary pattern)
+    - Repairs with category "maintenance" AND "pm" in description (secondary pattern)
     """
     pm_status = []
     trucks_for_pm = db.query(Truck).filter(Truck.vehicle_type == 'truck').all()  # Only trucks, not trailers
-    today = datetime.now().date()
-    pm_threshold_months = 3
+    pm_threshold_miles = 25000  # PM due every 25,000 miles (fallback when date unavailable)
+    pm_threshold_days = 70  # PM due every 10 weeks (primary method)
     
     for truck in trucks_for_pm:
-        # Find all D13 full pm repairs for this truck
-        # Search for "d13" and "full pm" in description (case-insensitive)
-        # Both terms must be present in the description
-        pm_repairs = db.query(Repair).filter(
+        # Find all PM repairs for this truck
+        # PM repairs are identified by:
+        # 1. Repairs with "d13" AND "full pm" in description (primary pattern)
+        # 2. Repairs with category "maintenance" AND "pm" in description (secondary pattern)
+        pm_repairs_primary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
                 Repair.description.ilike('%d13%'),
                 Repair.description.ilike('%full pm%')
             )
-        ).order_by(Repair.repair_date.desc()).all()
+        ).order_by(Repair.repair_date.desc().nullslast()).all()
+        
+        # Also check for maintenance category repairs with "pm" in description
+        pm_repairs_secondary = db.query(Repair).filter(
+            and_(
+                Repair.truck_id == truck.id,
+                Repair.category == 'maintenance',
+                Repair.description.ilike('%pm%')
+            )
+        ).order_by(Repair.repair_date.desc().nullslast()).all()
+        
+        # Combine and deduplicate, prioritizing primary matches
+        pm_repair_ids = {r.id for r in pm_repairs_primary}
+        all_pm_repairs = list(pm_repairs_primary)
+        for repair in pm_repairs_secondary:
+            if repair.id not in pm_repair_ids:
+                all_pm_repairs.append(repair)
+        
+        # Sort by repair_date descending (most recent first)
+        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at), reverse=True)
         
         last_pm_date = None
+        last_pm_miles = None
         last_pm_repair_id = None
-        if pm_repairs:
-            last_pm_repair = pm_repairs[0]  # Most recent
+        if all_pm_repairs:
+            last_pm_repair = all_pm_repairs[0]  # Most recent
             last_pm_date = last_pm_repair.repair_date
             last_pm_repair_id = last_pm_repair.id
+            if last_pm_repair.miles:
+                last_pm_miles = float(last_pm_repair.miles)
         
-        # Calculate if due for PM
+        # Get current mileage for the truck
+        current_miles = get_current_mileage(truck.id, db)
+        
+        # Calculate if due for PM - use time-based first (10 weeks), fallback to mileage-based
         is_due = False
+        miles_since_pm = None
+        miles_overdue = None
+        miles_until_due = None
+        next_pm_miles = None
         days_since_pm = None
         days_overdue = None
+        days_until_due = None
+        next_pm_date = None
+        pm_method = None  # 'time' or 'mileage'
         
-        if last_pm_date:
+        # Primary method: Time-based PM (10 weeks / 70 days)
+        if last_pm_date is not None:
+            pm_method = 'time'
+            today = date.today()
             days_since_pm = (today - last_pm_date).days
-            # PM is due every 3 months (approximately 90 days)
-            days_threshold = pm_threshold_months * 30
-            is_due = days_since_pm >= days_threshold
+            next_pm_date = last_pm_date + timedelta(days=pm_threshold_days)
+            is_due = days_since_pm >= pm_threshold_days
+            
             if is_due:
-                days_overdue = days_since_pm - days_threshold
+                days_overdue = days_since_pm - pm_threshold_days
+            else:
+                days_until_due = pm_threshold_days - days_since_pm
+        
+        # Fallback method: Mileage-based PM (when date is not available but mileage is)
+        elif last_pm_miles is not None and current_miles is not None:
+            pm_method = 'mileage'
+            # Calculate next PM milestone
+            next_pm_miles = last_pm_miles + pm_threshold_miles
+            miles_since_pm = current_miles - last_pm_miles
+            is_due = current_miles >= next_pm_miles
+            
+            if is_due:
+                miles_overdue = current_miles - next_pm_miles
+            else:
+                miles_until_due = next_pm_miles - current_miles
+        
+        # No PM history - truck needs PM
         else:
-            # No PM found - truck is overdue
             is_due = True
-            days_overdue = None
+            pm_method = None
         
         pm_status.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
             "vin": truck.vin,
             "last_pm_date": last_pm_date.isoformat() if last_pm_date else None,
+            "last_pm_miles": last_pm_miles,
+            "current_miles": current_miles,
             "last_pm_repair_id": last_pm_repair_id,
             "is_due": is_due,
+            "pm_method": pm_method,  # 'time', 'mileage', or None
+            # Mileage-based fields (fallback)
+            "miles_since_pm": miles_since_pm,
+            "miles_overdue": miles_overdue,
+            "miles_until_due": miles_until_due,
+            "next_pm_miles": next_pm_miles,
+            "pm_threshold_miles": pm_threshold_miles,
+            # Time-based fields (primary)
             "days_since_pm": days_since_pm,
             "days_overdue": days_overdue,
-            "pm_threshold_months": pm_threshold_months
+            "days_until_due": days_until_due,
+            "next_pm_date": next_pm_date.isoformat() if next_pm_date else None,
+            "pm_threshold_days": pm_threshold_days
         })
     
     return {"pm_status": pm_status}

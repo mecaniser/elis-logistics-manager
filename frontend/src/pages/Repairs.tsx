@@ -178,6 +178,7 @@ export default function Repairs() {
         description: manualFormData.description || undefined,
         category: categoryToSave || undefined,
         cost: manualFormData.cost || undefined,
+        miles: manualFormData.miles || undefined,
         invoice_number: manualFormData.invoice_number || undefined
       }
       
@@ -228,7 +229,8 @@ export default function Repairs() {
       details: repair.details || '',
       description: repair.description || '',
       category: isCustomCategory ? 'other' : category,
-      cost: repair.cost
+      cost: repair.cost,
+      miles: repair.miles
     })
     setEditCustomCategory(isCustomCategory ? category : '')
     setEditImages([])
@@ -627,6 +629,18 @@ export default function Repairs() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Miles (Odometer)</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={manualFormData.miles || ''}
+                  onChange={(e) => setManualFormData({ ...manualFormData, miles: e.target.value ? Number(e.target.value) : undefined })}
+                  disabled={creating}
+                  placeholder="Optional - for PM tracking"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                 <select
                   value={manualFormData.category || ''}
@@ -766,9 +780,17 @@ export default function Repairs() {
                       )}
                     </p>
                     <p className="text-lg font-semibold text-red-600 mb-3">${repair.cost.toLocaleString()}</p>
-                    {/* Hide invoice number and PDF link on mobile */}
+                    {/* Hide invoice number, miles, and PDF link on mobile */}
                     {!isMobile && (
                       <>
+                        {repair.miles && (
+                          <div className="mb-2">
+                            <p className="text-xs text-gray-400">Miles</p>
+                            <p className="text-sm font-semibold text-gray-700">
+                              {typeof repair.miles === 'number' ? repair.miles.toLocaleString() : Number(repair.miles).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
                         {repair.invoice_number && (
                           <div className="mb-2">
                             <p className="text-xs text-gray-400">Invoice #</p>
@@ -1028,6 +1050,18 @@ export default function Repairs() {
                 onChange={(e) => setEditFormData({ ...editFormData, cost: parseFloat(e.target.value) })}
                 required
                 disabled={saving}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Miles (Odometer)</label>
+              <input
+                type="number"
+                step="1"
+                value={editFormData.miles || ''}
+                onChange={(e) => setEditFormData({ ...editFormData, miles: e.target.value ? Number(e.target.value) : undefined })}
+                disabled={saving}
+                placeholder="Optional - for PM tracking"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

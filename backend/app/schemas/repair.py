@@ -14,6 +14,7 @@ class RepairBase(BaseModel):
     description: Optional[str] = None  # Legacy field - kept for backward compatibility
     category: Optional[str] = None
     cost: Optional[Decimal] = None  # Optional - can be set manually if PDF parsing fails
+    miles: Optional[Decimal] = None  # Miles/odometer reading at time of repair (for PM tracking)
     receipt_path: Optional[str] = None
     invoice_number: Optional[str] = None
     image_paths: Optional[List[str]] = None
@@ -29,6 +30,7 @@ class RepairUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     cost: Optional[Decimal] = None
+    miles: Optional[Decimal] = None
 
 class RepairResponse(RepairBase):
     id: int
