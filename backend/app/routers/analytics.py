@@ -677,7 +677,7 @@ def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: 
                 all_pm_repairs.append(repair)
         
         # Sort by repair_date descending (most recent first)
-        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at), reverse=True)
+        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at or datetime.min), reverse=True)
         
         last_pm_date = None
         last_pm_miles = None
@@ -842,7 +842,7 @@ def get_pm_status(db: Session = Depends(get_db)):
                 all_pm_repairs.append(repair)
         
         # Sort by repair_date descending (most recent first)
-        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at), reverse=True)
+        all_pm_repairs.sort(key=lambda r: (r.repair_date or date.min, r.created_at or datetime.min), reverse=True)
         
         last_pm_date = None
         last_pm_miles = None
