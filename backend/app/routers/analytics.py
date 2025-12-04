@@ -1044,6 +1044,10 @@ def get_time_series(
     
     # Process each settlement
     for settlement in settlements:
+        # Skip settlements without a settlement_date (required for grouping)
+        if not settlement.settlement_date:
+            continue
+            
         # Determine week key based on group_by parameter
         # When grouping by "week_start", we actually group by settlement_date (pay period end date)
         # because settlements with the same pay period should be grouped together,
@@ -1247,6 +1251,10 @@ def get_time_series(
     # Build a map of which settlements contribute to each month for debugging
     month_settlements_map = defaultdict(list)
     for settlement in settlements:
+        # Skip settlements without a settlement_date
+        if not settlement.settlement_date:
+            continue
+            
         # Recalculate month_key for this settlement to match what we used above
         date_to_use = None
         if settlement.week_start:
