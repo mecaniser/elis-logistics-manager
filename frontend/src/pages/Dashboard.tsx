@@ -859,35 +859,47 @@ export default function Dashboard() {
                     
                     {/* Net Profit Breakdown */}
                     <div className="mb-6 space-y-3">
+                      {/* Settlement Net Profit: profit from settlement BEFORE loan interest was deducted */}
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
                         <span className="text-sm font-medium text-gray-700">Settlement Net Profit</span>
                         <span className="text-sm font-semibold text-gray-900">
-                          ${(netProfitValue + loanInterest + repairs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${(netProfitValue + loanInterest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       
+                      {/* Loan Interest: informative - already deducted in settlement */}
                       {loanInterest > 0 && (
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Loan Interest</span>
+                          <span className="text-sm text-gray-600">Less: Loan Interest (included in settlement)</span>
                           <span className="text-sm font-medium text-red-600">
                             -${loanInterest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       )}
                       
+                      {/* Net Profit After Interest = same as Net Profit card */}
+                      <div className="flex justify-between items-center py-2 border-b border-gray-200 bg-gray-50 -mx-2 px-2">
+                        <span className="text-sm font-medium text-gray-700">Net Profit (After Interest)</span>
+                        <span className={`text-sm font-semibold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      
+                      {/* Repair Expenses: separate from settlement, shown for context */}
                       {repairs > 0 && (
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Repair Expenses</span>
+                          <span className="text-sm text-gray-600">Less: Repair Expenses (this period)</span>
                           <span className="text-sm font-medium text-red-600">
                             -${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       )}
                       
+                      {/* True Net Profit: after all deductions including repairs */}
                       <div className="flex justify-between items-center pt-2">
                         <span className="text-base font-semibold text-gray-900">True Net Profit</span>
-                        <span className={`text-xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className={`text-xl font-bold ${(netProfitValue - repairs) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${(netProfitValue - repairs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
