@@ -89,7 +89,7 @@ export default function Settlements() {
   // Validation state - flash when expenses exceed revenue
   const [expenseValidationError, setExpenseValidationError] = useState(false)
   // Auto-save debounce ref
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Track if auto-save is pending
   const [autoSavePending, setAutoSavePending] = useState(false)
   const [grossRevenueInput, setGrossRevenueInput] = useState<string>('')
