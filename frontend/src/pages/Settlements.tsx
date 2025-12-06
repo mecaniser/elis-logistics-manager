@@ -84,6 +84,14 @@ export default function Settlements() {
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
   const [categoryNameInputs, setCategoryNameInputs] = useState<{ [key: string]: string }>({})
   const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8 | 10>(6)
+  // Track modified expense fields for visual feedback
+  const [modifiedExpenseFields, setModifiedExpenseFields] = useState<Set<string>>(new Set())
+  // Validation state - flash when expenses exceed revenue
+  const [expenseValidationError, setExpenseValidationError] = useState(false)
+  // Auto-save debounce ref
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Track if auto-save is pending
+  const [autoSavePending, setAutoSavePending] = useState(false)
   const [grossRevenueInput, setGrossRevenueInput] = useState<string>('')
   const [totalExpensesInput, setTotalExpensesInput] = useState<string>('')
   const [netProfitInput, setNetProfitInput] = useState<string>('')
@@ -110,6 +118,32 @@ export default function Settlements() {
     'truck_parking',
     'service_on_truck'
   ]
+
+  // Expense category groups for information hierarchy
+  // Grouped by: trip-related (variable + labor) vs fixed (monthly) vs maintenance
+  const EXPENSE_GROUPS = {
+    trip: {
+      label: 'Trip Expenses',
+      icon: '🚚',
+      categories: ['fuel', 'driver_pay'],
+      subcategories: {
+        fees: {
+          label: 'Fees',
+          categories: ['payroll_fee', 'dispatch_fee']
+        }
+      }
+    },
+    fixed: {
+      label: 'Monthly Fixed',
+      icon: '📅',
+      categories: ['insurance', 'loan_interest', 'safety', 'ifta', 'truck_parking', 'prepass']
+    },
+    maintenance: {
+      label: 'Maintenance / Misc',
+      icon: '🔧',
+      categories: ['service_on_truck']
+    }
+  }
 
   // Helper function to format category display names
   const getCategoryDisplayName = (category: string): string => {
@@ -138,23 +172,24 @@ export default function Settlements() {
     ).join(' ')
   }
 
-  // Color codes for expense categories
-  const getCategoryColor = (category: string) => {
-    const colorMap: { [key: string]: { bg: string; border: string; text: string } } = {
-      fuel: { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-700' },
-      dispatch_fee: { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700' },
-      insurance: { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700' },
-      safety: { bg: 'bg-yellow-50', border: 'border-yellow-300', text: 'text-yellow-700' },
-      prepass: { bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-700' },
-      ifta: { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
-      driver_pay: { bg: 'bg-pink-50', border: 'border-pink-300', text: 'text-pink-700' },
-      payroll_fee: { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-700' },
-      loan_interest: { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700' },
-      truck_parking: { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-700' },
-      service_on_truck: { bg: 'bg-cyan-50', border: 'border-cyan-300', text: 'text-cyan-700' },
+  // Simplified color strategy based on value state
+  const getExpenseColor = (value: number, isModified: boolean = false) => {
+    if (isModified) {
+      // Recently modified - blue highlight
+      return { bg: 'bg-blue-50', border: 'border-blue-400', text: 'text-blue-700' }
     }
-    return colorMap[category] || { bg: 'bg-gray-50', border: 'border-gray-300', text: 'text-gray-700' }
+    if (value === 0 || value === null || value === undefined) {
+      // Zero value - gray/muted
+      return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-400' }
+    }
+    if (value < 0) {
+      // Negative (reimbursement) - green
+      return { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700' }
+    }
+    // Positive expense - warm red/orange
+    return { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-700' }
   }
+
 
   useEffect(() => {
     loadTrucks()
@@ -164,6 +199,18 @@ export default function Settlements() {
   useEffect(() => {
     loadSettlements(true)
   }, [selectedTruck])
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (editingSettlement) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [editingSettlement])
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
@@ -900,6 +947,39 @@ export default function Settlements() {
     }
   }
 
+  // Trigger auto-save with debounce
+  const triggerAutoSave = () => {
+    // Clear any existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    setAutoSavePending(true)
+    
+    // Set new timeout for auto-save (1.5 seconds after last change)
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      if (editingSettlement && editFormData) {
+        try {
+          await settlementsApi.update(editingSettlement.id, editFormData as Settlement)
+          setAutoSavePending(false)
+          // Clear modified fields after successful save
+          setModifiedExpenseFields(new Set())
+        } catch (err) {
+          console.error('Auto-save failed:', err)
+          setAutoSavePending(false)
+        }
+      }
+    }, 1500)
+  }
+
+  // Validate expenses vs revenue and trigger visual feedback
+  const validateExpenses = (totalExpenses: number, grossRevenue: number) => {
+    if (grossRevenue > 0 && totalExpenses > grossRevenue) {
+      // Expenses exceed revenue - trigger red flash
+      setExpenseValidationError(true)
+      setTimeout(() => setExpenseValidationError(false), 800)
+    }
+  }
+
   const handleExpenseCategoryChange = (oldKey: string, newKey: string, value: string | number) => {
     if (!editFormData.expense_categories) {
       setEditFormData({ ...editFormData, expense_categories: {} })
@@ -916,6 +996,17 @@ export default function Settlements() {
         : value
     updated[newKey] = numValue
     
+    // Track modified field
+    setModifiedExpenseFields(prev => new Set(prev).add(newKey))
+    // Clear modified status after 2 seconds
+    setTimeout(() => {
+      setModifiedExpenseFields(prev => {
+        const next = new Set(prev)
+        next.delete(newKey)
+        return next
+      })
+    }, 2000)
+    
     // Calculate total expenses: sum all category values
     // Positive values add to expenses, negative values reduce expenses
     const totalExpenses = Object.values(updated).reduce((sum, val) => {
@@ -924,6 +1015,9 @@ export default function Settlements() {
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : null
+    
+    // Validate expenses vs revenue
+    validateExpenses(totalExpenses, grossRevenue)
     
     setEditFormData({
       ...editFormData,
@@ -937,6 +1031,9 @@ export default function Settlements() {
     if (netProfit !== null) {
       setNetProfitInput(formatCurrency(netProfit))
     }
+    
+    // Trigger auto-save
+    triggerAutoSave()
   }
 
   const handleExpenseCategoryAmountChange = (key: string, value: string) => {
@@ -959,6 +1056,17 @@ export default function Settlements() {
     const updated = { ...editFormData.expense_categories }
     updated[key] = isNaN(numValue) ? 0 : numValue
     
+    // Track modified field
+    setModifiedExpenseFields(prev => new Set(prev).add(key))
+    // Clear modified status after 2 seconds
+    setTimeout(() => {
+      setModifiedExpenseFields(prev => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }, 2000)
+    
     // Calculate total expenses: sum all category values
     // Positive values add to expenses, negative values reduce expenses
     const totalExpenses = Object.values(updated).reduce((sum, val) => {
@@ -967,6 +1075,9 @@ export default function Settlements() {
     }, 0)
     const grossRevenue = editFormData.gross_revenue || 0
     const netProfit = grossRevenue ? grossRevenue - totalExpenses : null
+    
+    // Validate expenses vs revenue
+    validateExpenses(totalExpenses, grossRevenue)
     
     setEditFormData({
       ...editFormData,
@@ -980,6 +1091,9 @@ export default function Settlements() {
     if (netProfit !== null) {
       setNetProfitInput(formatCurrency(netProfit))
     }
+    
+    // Trigger auto-save
+    triggerAutoSave()
   }
 
   const handleAddExpenseCategory = () => {
@@ -1724,11 +1838,11 @@ export default function Settlements() {
       />
 
       {editingSettlement && (
-            <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="fixed inset-0 z-50 overflow-hidden">
               <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCancelEdit} />
-              <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
+              <div className="flex min-h-full items-center justify-center p-2 sm:p-4 overflow-y-auto">
                 <div
-                  className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-full sm:max-w-2xl md:max-w-4xl lg:w-[66vw] max-h-[95vh] lg:max-h-[98vh] flex flex-col"
+                  className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all w-full max-w-full sm:max-w-2xl md:max-w-4xl lg:w-[76vw] max-h-[95vh] lg:max-h-[98vh] flex flex-col"
                   onClick={(e) => e.stopPropagation()}
                 >
               <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
@@ -2101,9 +2215,17 @@ export default function Settlements() {
                       </div>
                     )}
                     
-                    <div className="border-t pt-4">
+                    <div className={`border-t pt-4 transition-all duration-300 ${expenseValidationError ? 'bg-red-100 -mx-4 px-4 rounded-lg' : ''}`}>
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-2">
-                        <h5 className="text-sm sm:text-md font-medium text-gray-900">Expense Categories</h5>
+                        <div className="flex items-center gap-2">
+                          <h5 className="text-sm sm:text-md font-medium text-gray-900">Expense Categories</h5>
+                          {autoSavePending && (
+                            <span className="text-xs text-blue-500 animate-pulse">Saving...</span>
+                          )}
+                          {expenseValidationError && (
+                            <span className="text-xs text-red-600 font-medium animate-pulse">⚠️ Expenses exceed revenue!</span>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={handleAddExpenseCategory}
@@ -2112,234 +2234,387 @@ export default function Settlements() {
                           + Add Category
                         </button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-2 max-h-96 lg:max-h-[70vh] overflow-y-auto w-full">
+                      
+                      {/* Grouped expense categories */}
+                      <div className="space-y-4 max-h-96 lg:max-h-[70vh] overflow-y-auto w-full">
                         {editFormData.expense_categories ? (
                           <>
-                            {/* Display standard categories */}
-                            {STANDARD_EXPENSE_CATEGORIES.map((category) => {
-                              const value = editFormData.expense_categories![category] || 0
-                              const displayName = getCategoryDisplayName(category)
+                            {/* Render each expense group */}
+                            {Object.entries(EXPENSE_GROUPS).map(([groupKey, group], groupIndex) => {
+                              // Calculate group subtotal (including subcategories)
+                              let groupSubtotal = group.categories.reduce((sum, cat) => {
+                                const val = editFormData.expense_categories?.[cat] || 0
+                                return sum + (typeof val === 'number' ? val : parseFloat(String(val)) || 0)
+                              }, 0)
                               
-                              // Calculate payroll fee percentage if this is payroll_fee and driver_pay exists
-                              let percentageDisplay = null
-                              if (category === 'payroll_fee' && editFormData.expense_categories?.driver_pay && editFormData.expense_categories.driver_pay > 0 && value > 0) {
-                                const percent = (value / editFormData.expense_categories.driver_pay) * 100
-                                percentageDisplay = (
-                                  <span className="text-[10px] text-gray-500 ml-1">
-                                    ({percent.toFixed(1)}%)
-                                  </span>
-                                )
+                              // Add subcategory values to group subtotal
+                              if ('subcategories' in group && group.subcategories) {
+                                Object.values(group.subcategories).forEach((subcat: any) => {
+                                  subcat.categories.forEach((cat: string) => {
+                                    const val = editFormData.expense_categories?.[cat] || 0
+                                    groupSubtotal += typeof val === 'number' ? val : parseFloat(String(val)) || 0
+                                  })
+                                })
                               }
                               
-                              const categoryColor = getCategoryColor(category)
+                              // Calculate total expenses for percentage
+                              const totalExpenses = Object.values(editFormData.expense_categories || {}).reduce((sum, val) => {
+                                const numVal = typeof val === 'number' ? val : parseFloat(String(val)) || 0
+                                return sum + (numVal > 0 ? numVal : 0)
+                              }, 0)
+                              
+                              const groupPercentage = totalExpenses > 0 ? (groupSubtotal / totalExpenses) * 100 : 0
+                              
                               return (
-                                <div key={category} className={`flex items-center ${categoryColor.bg} ${categoryColor.border} border rounded-md overflow-hidden`}>
-                                  <label className={`px-2 py-1.5 text-[11px] sm:text-xs font-medium ${categoryColor.text} shrink-0 border-r ${categoryColor.border}`}>
-                                    <span className="whitespace-nowrap">{displayName}</span>
-                                    {percentageDisplay}
-                                  </label>
-                                  <div className="flex-1 min-w-0 relative">
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                      onChange={(e) => {
-                                        const rawValue = e.target.value
-                                        const inputValue = parseCurrencyInput(rawValue)
-                                        if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
-                                          if (inputValue === '' || inputValue === '.') {
-                                            handleExpenseCategoryChange(category, category, 0)
-                                          } else {
-                                            handleExpenseCategoryAmountChange(category, inputValue)
-                                          }
-                                        }
-                                      }}
-                                      onBlur={(e) => {
-                                        const inputValue = parseCurrencyInput(e.target.value.trim())
-                                        if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                          handleExpenseCategoryChange(category, category, 0)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                        } else {
-                                          const numValue = parseFloat(inputValue)
-                                          if (!isNaN(numValue)) {
-                                            handleExpenseCategoryChange(category, category, numValue)
-                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
-                                          } else {
-                                            handleExpenseCategoryChange(category, category, 0)
-                                            setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                          }
-                                        }
-                                      }}
-                                      className={`w-full px-2 py-1.5 pr-7 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${categoryColor.text}`}
-                                      placeholder="0.00"
-                                    />
-                                    {(expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleExpenseCategoryChange(category, category, 0)
-                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
-                                        }}
-                                        className={`absolute right-1.5 top-1/2 -translate-y-1/2 ${categoryColor.text} hover:opacity-70 text-sm`}
-                                      >
-                                        ×
-                                      </button>
-                                    )}
+                                <div key={groupKey} className="border border-gray-200 rounded-lg overflow-hidden">
+                                  {/* Group header */}
+                                  <div className="bg-gray-50 px-3 py-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm">{group.icon}</span>
+                                      <span className="text-xs sm:text-sm font-semibold text-gray-700">{group.label}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-xs sm:text-sm font-medium ${groupSubtotal > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                                        {formatCurrency(groupSubtotal)}
+                                      </span>
+                                      {groupPercentage > 0 && (
+                                        <span className="text-[10px] text-gray-500">({groupPercentage.toFixed(1)}%)</span>
+                                      )}
+                                    </div>
                                   </div>
+                                  
+                                  {/* Group categories */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-2">
+                                    {group.categories.map((category, catIndex) => {
+                                      const value = editFormData.expense_categories![category] || 0
+                                      const displayName = getCategoryDisplayName(category)
+                                      const isModified = modifiedExpenseFields.has(category)
+                                      const expenseColor = getExpenseColor(value, isModified)
+                                      
+                                      // Calculate percentage of total for visual emphasis
+                                      const valuePercent = totalExpenses > 0 && value > 0 ? (value / totalExpenses) * 100 : 0
+                                      const isHighValue = valuePercent > 15 // Highlight if > 15% of total
+                                      
+                                      // Calculate payroll fee percentage
+                                      let percentageDisplay = null
+                                      if (category === 'payroll_fee' && editFormData.expense_categories?.driver_pay && editFormData.expense_categories.driver_pay > 0 && value > 0) {
+                                        const percent = (value / editFormData.expense_categories.driver_pay) * 100
+                                        percentageDisplay = (
+                                          <span className="text-[10px] opacity-70 ml-1">
+                                            ({percent.toFixed(1)}%)
+                                          </span>
+                                        )
+                                      }
+                                      
+                                      // Tab index for keyboard navigation
+                                      const tabIdx = groupIndex * 10 + catIndex + 1
+                                      
+                                      return (
+                                        <div 
+                                          key={category} 
+                                          className={`flex items-center ${expenseColor.bg} ${expenseColor.border} border rounded-md overflow-hidden transition-all duration-200 ${isHighValue && value > 0 ? 'ring-2 ring-orange-300 shadow-sm' : ''} ${isModified ? 'ring-2 ring-blue-400' : ''}`}
+                                        >
+                                          <label className={`px-2 py-1.5 text-[11px] sm:text-xs ${isHighValue && value > 0 ? 'font-bold' : 'font-medium'} ${expenseColor.text} shrink-0 border-r ${expenseColor.border} ${value === 0 ? 'opacity-50' : ''}`}>
+                                            <span className="whitespace-nowrap">{displayName}</span>
+                                            {percentageDisplay}
+                                          </label>
+                                          <div className="flex-1 min-w-[100px] relative">
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              tabIndex={tabIdx}
+                                              value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                              onChange={(e) => {
+                                                const rawValue = e.target.value
+                                                const inputValue = parseCurrencyInput(rawValue)
+                                                if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                                  setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
+                                                  if (inputValue === '' || inputValue === '.') {
+                                                    handleExpenseCategoryChange(category, category, 0)
+                                                  } else {
+                                                    handleExpenseCategoryAmountChange(category, inputValue)
+                                                  }
+                                                }
+                                              }}
+                                              onBlur={(e) => {
+                                                const inputValue = parseCurrencyInput(e.target.value.trim())
+                                                if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                                  handleExpenseCategoryChange(category, category, 0)
+                                                  setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                                } else {
+                                                  const numValue = parseFloat(inputValue)
+                                                  if (!isNaN(numValue)) {
+                                                    handleExpenseCategoryChange(category, category, numValue)
+                                                    setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
+                                                  } else {
+                                                    handleExpenseCategoryChange(category, category, 0)
+                                                    setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                                  }
+                                                }
+                                              }}
+                                              className={`w-full px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${expenseColor.text} ${value === 0 ? 'opacity-50' : ''} ${isHighValue && value > 0 ? 'font-semibold' : ''}`}
+                                              placeholder="0.00"
+                                            />
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  
+                                  {/* Subcategories */}
+                                  {'subcategories' in group && group.subcategories && Object.entries(group.subcategories).map(([subKey, subcat]: [string, any]) => {
+                                    const subcatSubtotal = subcat.categories.reduce((sum: number, cat: string) => {
+                                      const val = editFormData.expense_categories?.[cat] || 0
+                                      return sum + (typeof val === 'number' ? val : parseFloat(String(val)) || 0)
+                                    }, 0)
+                                    
+                                    const subcatPercentage = totalExpenses > 0 ? (subcatSubtotal / totalExpenses) * 100 : 0
+                                    
+                                    return (
+                                      <div key={subKey} className="border-t border-gray-100">
+                                        {/* Subcategory header */}
+                                        <div className="bg-gray-25 px-3 py-1.5 flex items-center justify-between border-b border-gray-100">
+                                          <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{subcat.label}</span>
+                                          <div className="flex items-center gap-2">
+                                            <span className={`text-[11px] font-medium ${subcatSubtotal > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
+                                              {formatCurrency(subcatSubtotal)}
+                                            </span>
+                                            {subcatPercentage > 0 && (
+                                              <span className="text-[10px] text-gray-500">({subcatPercentage.toFixed(1)}%)</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {/* Subcategory items */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 p-2 bg-gray-50/50">
+                                          {subcat.categories.map((category: string, catIndex: number) => {
+                                            const value = editFormData.expense_categories![category] || 0
+                                            const displayName = getCategoryDisplayName(category)
+                                            const isModified = modifiedExpenseFields.has(category)
+                                            const expenseColor = getExpenseColor(value, isModified)
+                                            
+                                            const valuePercent = totalExpenses > 0 && value > 0 ? (value / totalExpenses) * 100 : 0
+                                            const isHighValue = valuePercent > 15
+                                            
+                                            let percentageDisplay = null
+                                            if (category === 'payroll_fee' && editFormData.expense_categories?.driver_pay && editFormData.expense_categories.driver_pay > 0 && value > 0) {
+                                              const percent = (value / editFormData.expense_categories.driver_pay) * 100
+                                              percentageDisplay = (
+                                                <span className="text-[10px] opacity-70 ml-1">
+                                                  ({percent.toFixed(1)}%)
+                                                </span>
+                                              )
+                                            }
+                                            
+                                            const tabIdx = groupIndex * 10 + group.categories.length + catIndex + 1
+                                            
+                                            return (
+                                              <div 
+                                                key={category} 
+                                                className={`flex items-center ${expenseColor.bg} ${expenseColor.border} border rounded-md overflow-hidden transition-all duration-200 ${isHighValue && value > 0 ? 'ring-2 ring-orange-300 shadow-sm' : ''} ${isModified ? 'ring-2 ring-blue-400' : ''}`}
+                                              >
+                                                <label className={`px-2 py-1.5 text-[11px] sm:text-xs ${isHighValue && value > 0 ? 'font-bold' : 'font-medium'} ${expenseColor.text} shrink-0 border-r ${expenseColor.border} ${value === 0 ? 'opacity-50' : ''}`}>
+                                                  <span className="whitespace-nowrap">{displayName}</span>
+                                                  {percentageDisplay}
+                                                </label>
+                                                <div className="flex-1 min-w-[160px] relative">
+                                                  <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    tabIndex={tabIdx}
+                                                    value={expenseCategoryInputs[category] !== undefined ? expenseCategoryInputs[category] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                                    onChange={(e) => {
+                                                      const rawValue = e.target.value
+                                                      const inputValue = parseCurrencyInput(rawValue)
+                                                      if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: rawValue }))
+                                                        if (inputValue === '' || inputValue === '.') {
+                                                          handleExpenseCategoryChange(category, category, 0)
+                                                        } else {
+                                                          handleExpenseCategoryAmountChange(category, inputValue)
+                                                        }
+                                                      }
+                                                    }}
+                                                    onBlur={(e) => {
+                                                      const inputValue = parseCurrencyInput(e.target.value.trim())
+                                                      if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                                        handleExpenseCategoryChange(category, category, 0)
+                                                        setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                                      } else {
+                                                        const numValue = parseFloat(inputValue)
+                                                        if (!isNaN(numValue)) {
+                                                          handleExpenseCategoryChange(category, category, numValue)
+                                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: formatCurrency(numValue) }))
+                                                        } else {
+                                                          handleExpenseCategoryChange(category, category, 0)
+                                                          setExpenseCategoryInputs(prev => ({ ...prev, [category]: '' }))
+                                                        }
+                                                      }
+                                                    }}
+                                                    className={`w-full px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${expenseColor.text} ${value === 0 ? 'opacity-50' : ''} ${isHighValue && value > 0 ? 'font-semibold' : ''}`}
+                                                    placeholder="0.00"
+                                                  />
+                                                </div>
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
                                 </div>
                               )
                             })}
-                            {/* Display any additional non-standard categories as editable */}
+                            
+                            {/* Custom categories section */}
                             {Object.entries(editFormData.expense_categories)
                               .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
-                              .map(([key, value]) => {
-                                // For custom categories, show description input instead of renaming
-                                const isCustomCategory = key === 'custom' || key.startsWith('custom_')
-                                // Get description from categoryNameInputs (initialized from settlement), or from editFormData, or fallback
-                                const currentDescription = categoryNameInputs[key] !== undefined && categoryNameInputs[key] !== ''
-                                  ? categoryNameInputs[key] 
-                                  : isCustomCategory 
-                                    ? (editFormData.custom_expense_descriptions?.[key] || getCustomDescription(key))
-                                    : key
-                                
-                                // Custom categories use green for positive (reimbursements) and red for negative (expenses)
-                                const customColor = (value || 0) < 0
-                                  ? { bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-700' }
-                                  : { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700' }
-                                
-                                return (
-                                  <div key={key} className="flex items-center gap-1.5">
-                                    <div className={`flex items-center flex-1 ${customColor.bg} ${customColor.border} border rounded-md overflow-hidden`}>
-                                      {isCustomCategory ? (
-                                        <>
-                                          <span className={`px-2 py-1.5 text-[11px] sm:text-xs font-medium ${customColor.text} shrink-0 border-r ${customColor.border} whitespace-nowrap`}>
-                                            Custom
-                                          </span>
-                                          <input
-                                            type="text"
-                                            value={currentDescription}
-                                            onChange={(e) => {
-                                              setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
-                                            }}
-                                            onBlur={(e) => {
-                                              const description = e.target.value.trim()
-                                              const updatedDescriptions = {
-                                                ...(editFormData.custom_expense_descriptions || {}),
-                                                [key]: description
-                                              }
-                                              if (!description) {
-                                                delete updatedDescriptions[key]
-                                              }
-                                              setEditFormData({
-                                                ...editFormData,
-                                                custom_expense_descriptions: updatedDescriptions
-                                              })
-                                              setCategoryNameInputs(prev => ({ ...prev, [key]: description }))
-                                            }}
-                                            className={`flex-1 min-w-0 px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${customColor.text}`}
-                                            placeholder="Description"
-                                          />
-                                        </>
-                                      ) : (
-                                        <input
-                                          type="text"
-                                          value={currentDescription}
-                                          onChange={(e) => {
-                                            setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
-                                          }}
-                                          onBlur={(e) => {
-                                            const newKey = e.target.value.trim()
-                                            if (newKey && newKey !== key) {
-                                              const currentCategories = editFormData.expense_categories || {}
-                                              if (currentCategories[newKey] !== undefined && newKey !== key) {
-                                                showModal('Error', `Category "${newKey}" already exists.`, 'error')
-                                                setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                                return
-                                              }
-                                              handleExpenseCategoryChange(key, newKey, value || 0)
-                                              setCategoryNameInputs(prev => {
-                                                const updated = { ...prev }
-                                                delete updated[key]
-                                                updated[newKey] = newKey
-                                                return updated
-                                              })
-                                            } else if (!newKey) {
-                                              setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
-                                            } else {
-                                              setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
-                                            }
-                                          }}
-                                          className={`px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-[11px] sm:text-xs font-medium ${customColor.text} shrink-0 min-w-[60px]`}
-                                          placeholder="Name"
-                                        />
-                                      )}
-                                      <div className={`border-l ${customColor.border} flex-shrink-0`}>
-                                        <div className="relative">
-                                          <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
-                                            onChange={(e) => {
-                                              const rawValue = e.target.value
-                                              const inputValue = parseCurrencyInput(rawValue)
-                                              if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
-                                                setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
-                                                if (inputValue === '' || inputValue === '.' || inputValue === '-') {
-                                                  handleExpenseCategoryChange(key, key, 0)
-                                                } else {
-                                                  handleExpenseCategoryAmountChange(key, inputValue)
-                                                }
-                                              }
-                                            }}
-                                            onBlur={(e) => {
-                                              const inputValue = parseCurrencyInput(e.target.value.trim())
-                                              if (inputValue === '' || inputValue === '.' || inputValue === null) {
-                                                handleExpenseCategoryChange(key, key, 0)
-                                                setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                              } else {
-                                                const numValue = parseFloat(inputValue)
-                                                if (!isNaN(numValue)) {
-                                                  handleExpenseCategoryChange(key, key, numValue)
-                                                  setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
-                                                } else {
-                                                  handleExpenseCategoryChange(key, key, 0)
-                                                  setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                                }
-                                              }
-                                            }}
-                                            className={`w-24 px-2 py-1.5 pr-6 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${customColor.text} text-right`}
-                                            placeholder="0.00"
-                                          />
-                                          {(expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))) && (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                handleExpenseCategoryChange(key, key, 0)
-                                                setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
-                                              }}
-                                              className={`absolute right-1 top-1/2 -translate-y-1/2 ${customColor.text} hover:opacity-70 text-sm`}
-                                            >
-                                              ×
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveExpenseCategory(key)}
-                                      className="text-red-600 hover:text-red-800 p-1 text-xs shrink-0"
-                                      title="Remove category"
-                                    >
-                                      ✕
-                                    </button>
+                              .length > 0 && (
+                              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="bg-gray-50 px-3 py-2 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm">📝</span>
+                                    <span className="text-xs sm:text-sm font-semibold text-gray-700">Custom</span>
                                   </div>
-                                )
-                              })}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2">
+                                  {Object.entries(editFormData.expense_categories)
+                                    .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key))
+                                    .map(([key, value], customIndex) => {
+                                      const isCustomCategory = key === 'custom' || key.startsWith('custom_')
+                                      const currentDescription = categoryNameInputs[key] !== undefined && categoryNameInputs[key] !== ''
+                                        ? categoryNameInputs[key] 
+                                        : isCustomCategory 
+                                          ? (editFormData.custom_expense_descriptions?.[key] || getCustomDescription(key))
+                                          : key
+                                      
+                                      const isModified = modifiedExpenseFields.has(key)
+                                      const customColor = getExpenseColor(value || 0, isModified)
+                                      const tabIdx = 100 + customIndex
+                                      
+                                      return (
+                                        <div key={key} className="flex items-center gap-1.5">
+                                          <div className={`flex items-center flex-1 ${customColor.bg} ${customColor.border} border rounded-md overflow-hidden transition-all duration-200 ${isModified ? 'ring-2 ring-blue-400' : ''}`}>
+                                            {isCustomCategory ? (
+                                              <>
+                                                <span className={`px-2 py-1.5 text-[11px] sm:text-xs font-medium ${customColor.text} shrink-0 border-r ${customColor.border} whitespace-nowrap`}>
+                                                  Custom
+                                                </span>
+                                                <input
+                                                  type="text"
+                                                  value={currentDescription}
+                                                  onChange={(e) => {
+                                                    setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                                  }}
+                                                  onBlur={(e) => {
+                                                    const description = e.target.value.trim()
+                                                    const updatedDescriptions = {
+                                                      ...(editFormData.custom_expense_descriptions || {}),
+                                                      [key]: description
+                                                    }
+                                                    if (!description) {
+                                                      delete updatedDescriptions[key]
+                                                    }
+                                                    setEditFormData({
+                                                      ...editFormData,
+                                                      custom_expense_descriptions: updatedDescriptions
+                                                    })
+                                                    setCategoryNameInputs(prev => ({ ...prev, [key]: description }))
+                                                  }}
+                                                  className={`flex-1 min-w-0 px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${customColor.text}`}
+                                                  placeholder="Description"
+                                                />
+                                              </>
+                                            ) : (
+                                              <input
+                                                type="text"
+                                                value={currentDescription}
+                                                onChange={(e) => {
+                                                  setCategoryNameInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                                }}
+                                                onBlur={(e) => {
+                                                  const newKey = e.target.value.trim()
+                                                  if (newKey && newKey !== key) {
+                                                    const currentCategories = editFormData.expense_categories || {}
+                                                    if (currentCategories[newKey] !== undefined && newKey !== key) {
+                                                      showModal('Error', `Category "${newKey}" already exists.`, 'error')
+                                                      setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
+                                                      return
+                                                    }
+                                                    handleExpenseCategoryChange(key, newKey, value || 0)
+                                                    setCategoryNameInputs(prev => {
+                                                      const updated = { ...prev }
+                                                      delete updated[key]
+                                                      updated[newKey] = newKey
+                                                      return updated
+                                                    })
+                                                  } else if (!newKey) {
+                                                    setCategoryNameInputs(prev => ({ ...prev, [key]: key }))
+                                                  } else {
+                                                    setCategoryNameInputs(prev => ({ ...prev, [key]: newKey }))
+                                                  }
+                                                }}
+                                                className={`px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-[11px] sm:text-xs font-medium ${customColor.text} shrink-0 min-w-[60px]`}
+                                                placeholder="Name"
+                                              />
+                                            )}
+                                            <div className={`border-l ${customColor.border} flex-shrink-0`}>
+                                              <div className="relative">
+                                                <input
+                                                  type="text"
+                                                  inputMode="decimal"
+                                                  tabIndex={tabIdx}
+                                                  value={expenseCategoryInputs[key] !== undefined ? expenseCategoryInputs[key] : (value === 0 || value === null || value === undefined ? '' : formatCurrency(value))}
+                                                  onChange={(e) => {
+                                                    const rawValue = e.target.value
+                                                    const inputValue = parseCurrencyInput(rawValue)
+                                                    if (inputValue === '' || /^-?\d*\.?\d*$/.test(inputValue)) {
+                                                      setExpenseCategoryInputs(prev => ({ ...prev, [key]: rawValue }))
+                                                      if (inputValue === '' || inputValue === '.' || inputValue === '-') {
+                                                        handleExpenseCategoryChange(key, key, 0)
+                                                      } else {
+                                                        handleExpenseCategoryAmountChange(key, inputValue)
+                                                      }
+                                                    }
+                                                  }}
+                                                  onBlur={(e) => {
+                                                    const inputValue = parseCurrencyInput(e.target.value.trim())
+                                                    if (inputValue === '' || inputValue === '.' || inputValue === null) {
+                                                      handleExpenseCategoryChange(key, key, 0)
+                                                      setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                                    } else {
+                                                      const numValue = parseFloat(inputValue)
+                                                      if (!isNaN(numValue)) {
+                                                        handleExpenseCategoryChange(key, key, numValue)
+                                                        setExpenseCategoryInputs(prev => ({ ...prev, [key]: formatCurrency(numValue) }))
+                                                      } else {
+                                                        handleExpenseCategoryChange(key, key, 0)
+                                                        setExpenseCategoryInputs(prev => ({ ...prev, [key]: '' }))
+                                                      }
+                                                    }
+                                                  }}
+                                                  className={`w-28 px-2 py-1.5 bg-transparent border-none focus:outline-none focus:ring-0 text-xs sm:text-sm ${customColor.text} text-right`}
+                                                  placeholder="0.00"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveExpenseCategory(key)}
+                                            className="text-red-600 hover:text-red-800 p-1 text-xs shrink-0"
+                                            title="Remove category"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      )
+                                    })}
+                                </div>
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <p className="col-span-full text-xs sm:text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
+                          <p className="text-xs sm:text-sm text-gray-500 italic py-2">No expense categories. Click "+ Add Category" to add one.</p>
                         )}
                       </div>
                     </div>
