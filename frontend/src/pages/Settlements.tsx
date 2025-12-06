@@ -136,7 +136,7 @@ export default function Settlements() {
     fixed: {
       label: 'Monthly Fixed',
       icon: '📅',
-      categories: ['insurance', 'loan_interest', 'safety', 'ifta', 'truck_parking', 'prepass']
+      categories: ['insurance', 'prepass', 'ifta', 'safety', 'truck_parking', 'loan_interest']
     },
     maintenance: {
       label: 'Maintenance / Misc',
