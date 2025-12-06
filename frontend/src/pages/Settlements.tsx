@@ -1649,9 +1649,12 @@ export default function Settlements() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
             {filteredSettlements.map((settlement) => {
-              // Determine background color based on profit
-              const profitBgColor = settlement.net_profit !== undefined && settlement.net_profit !== null
-                ? settlement.net_profit < 0
+              // Determine background color based on true profit (revenue - expenses)
+              const trueProfit = settlement.gross_revenue != null && settlement.expenses != null 
+                ? settlement.gross_revenue - settlement.expenses 
+                : null
+              const profitBgColor = trueProfit !== null
+                ? trueProfit < 0
                   ? 'bg-red-50 border-red-200'
                   : 'bg-green-50 border-green-200'
                 : 'bg-white border-gray-200'
@@ -1707,8 +1710,8 @@ export default function Settlements() {
                       {settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : 'No date'}
                     </p>
                     <div className="space-y-2 text-sm mb-3">
-                      {/* Always show Revenue and Profit */}
-                      {settlement.gross_revenue && (
+                      {/* Show Revenue, Expenses, and True Net Profit */}
+                      {settlement.gross_revenue != null && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Revenue:</span>
                           <span className="font-medium text-blue-600">
@@ -1716,13 +1719,21 @@ export default function Settlements() {
                           </span>
                         </div>
                       )}
-                      {settlement.net_profit != null && (
+                      {settlement.expenses != null && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Expenses:</span>
+                          <span className="font-medium text-orange-600">
+                            ${settlement.expenses.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.gross_revenue != null && settlement.expenses != null && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Profit:</span>
                           <span className={`font-medium ${
-                            settlement.net_profit < 0 ? 'text-red-600' : 'text-green-600'
+                            (settlement.gross_revenue - settlement.expenses) < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
-                            ${settlement.net_profit.toLocaleString()}
+                            ${(settlement.gross_revenue - settlement.expenses).toLocaleString()}
                           </span>
                         </div>
                       )}

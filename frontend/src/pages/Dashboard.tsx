@@ -727,80 +727,130 @@ export default function Dashboard() {
             </div>
           ) : selectedPeriodData ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                <div className="bg-blue-50 p-2 sm:p-4 rounded-lg">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
-                    <span className="text-base sm:text-xl font-bold text-blue-600">
-                      ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
+              {(() => {
+                // Calculate repairs for the selected period to show True Net Profit
+                const pd = selectedPeriodData as any
+                let repairsForPeriod = 0
+                
+                if (vehicleTypeFilter === 'trucks') {
+                  // For trucks, calculate repairs from repairsByMonth for weekly/monthly/yearly views
+                  if (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') {
+                    const periodKey = expenseAnalysisView === 'weekly' 
+                      ? pd.week_key 
+                      : expenseAnalysisView === 'monthly' 
+                      ? pd.month_key 
+                      : pd.year_key
+                    
+                    let repairsForPeriodList: RepairByMonth[] = []
+                    
+                    if (expenseAnalysisView === 'monthly') {
+                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => repair.month_key === periodKey)
+                    } else if (expenseAnalysisView === 'yearly') {
+                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => {
+                        if (!repair.repair_date) return false
+                        const repairYear = new Date(repair.repair_date).getFullYear().toString()
+                        return repairYear === periodKey
+                      })
+                    } else if (expenseAnalysisView === 'weekly') {
+                      const weekSettlementDate = new Date(periodKey)
+                      const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+                      const weekEnd = new Date(weekSettlementDate)
+                      
+                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => {
+                        if (!repair.repair_date) return false
+                        const repairDate = new Date(repair.repair_date)
+                        return repairDate >= weekStart && repairDate <= weekEnd
+                      })
+                    }
+                    
+                    repairsForPeriod = repairsForPeriodList.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
+                  } else if (expenseAnalysisView === 'all_time') {
+                    // For all_time view, use repairs from selectedPeriodData if available
+                    repairsForPeriod = Number(pd.repairs) || 0
+                  }
+                } else {
+                  // For trailers, use repairs from selectedPeriodData if available
+                  repairsForPeriod = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                }
+                
+                const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                const trueNetProfit = netProfitValue - repairsForPeriod
+                
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                    <div className="bg-blue-50 p-2 sm:p-4 rounded-lg">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
+                        <span className="text-base sm:text-xl font-bold text-blue-600">
+                          ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                    </div>
+                    <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
+                        <span className="text-base sm:text-xl font-bold text-red-600">
+                          ${(() => {
+                            // For trailers, use the expenses field directly from settlements
+                            // This is the total expenses set in the settlement (income - net_profit = expenses)
+                            if (vehicleTypeFilter === 'trailers') {
+                              // Use settlement.expenses field directly from database
+                              if (pd.expenses !== undefined && pd.expenses !== null) {
+                                const settlementExpenses = Number(pd.expenses) || 0
+                                // Add repairs if applicable (for yearly/monthly/all_time views)
+                                const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                                return settlementExpenses + repairs
+                              }
+                              // Fallback: sum custom and repairs if expenses field not available
+                              const trailerExpenses = (
+                                (Number(pd.custom) || 0) +
+                                (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                              )
+                              return trailerExpenses
+                            }
+                            
+                            // For trucks, use backend's calculated total_expenses if available and > 0
+                            if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                              return pd.total_expenses
+                            }
+                            
+                            // For trucks, sum all categories
+                            const sum = (
+                              (Number(pd.fuel) || 0) +
+                              (Number(pd.dispatch_fee) || 0) +
+                              (Number(pd.insurance) || 0) +
+                              (Number(pd.safety) || 0) +
+                              (Number(pd.prepass) || 0) +
+                              (Number(pd.ifta) || 0) +
+                              (Number(pd.loan_interest) || 0) +
+                              (Number(pd.truck_parking) || 0) +
+                              (Number(pd.custom) || 0) +
+                              (Number(pd.driver_pay) || 0) +
+                              (Number(pd.payroll_fee) || 0) +
+                              // Repairs are only included for yearly/monthly/all_time, not weekly
+                              (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                            )
+                            return isNaN(sum) ? 0 : sum
+                          })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                    </div>
+                    <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
+                        <span className={`text-base sm:text-xl font-bold ${
+                          trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          ${trueNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                    </div>
                   </div>
-                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                </div>
-                <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
-                    <span className="text-base sm:text-xl font-bold text-red-600">
-                      ${(() => {
-                        const pd = selectedPeriodData as any
-                        
-                        // For trailers, use the expenses field directly from settlements
-                        // This is the total expenses set in the settlement (income - net_profit = expenses)
-                        if (vehicleTypeFilter === 'trailers') {
-                          // Use settlement.expenses field directly from database
-                          if (pd.expenses !== undefined && pd.expenses !== null) {
-                            const settlementExpenses = Number(pd.expenses) || 0
-                            // Add repairs if applicable (for yearly/monthly/all_time views)
-                            const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                            return settlementExpenses + repairs
-                          }
-                          // Fallback: sum custom and repairs if expenses field not available
-                          const trailerExpenses = (
-                            (Number(pd.custom) || 0) +
-                            (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                          )
-                          return trailerExpenses
-                        }
-                        
-                        // For trucks, use backend's calculated total_expenses if available and > 0
-                        if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                          return pd.total_expenses
-                        }
-                        
-                        // For trucks, sum all categories
-                        const sum = (
-                          (Number(pd.fuel) || 0) +
-                          (Number(pd.dispatch_fee) || 0) +
-                          (Number(pd.insurance) || 0) +
-                          (Number(pd.safety) || 0) +
-                          (Number(pd.prepass) || 0) +
-                          (Number(pd.ifta) || 0) +
-                          (Number(pd.loan_interest) || 0) +
-                          (Number(pd.truck_parking) || 0) +
-                          (Number(pd.custom) || 0) +
-                          (Number(pd.driver_pay) || 0) +
-                          (Number(pd.payroll_fee) || 0) +
-                          // Repairs are only included for yearly/monthly/all_time, not weekly
-                          (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                        )
-                        return isNaN(sum) ? 0 : sum
-                      })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                </div>
-                <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
-                    <span className={`text-base sm:text-xl font-bold ${
-                      selectedPeriodData.net_profit >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      ${selectedPeriodData.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                </div>
-              </div>
+                )
+              })()}
 
               {/* Net Profit Details & Repair Expenses - Only show for trucks in weekly/monthly/yearly view */}
               {vehicleTypeFilter === 'trucks' && (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') && selectedPeriodData && (() => {
