@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { accountingApi, IncomeStatement as IncomeStatementType } from '../services/api'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function IncomeStatement() {
+  const { currentTenant } = useTenant()
   const [incomeStatement, setIncomeStatement] = useState<IncomeStatementType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -16,9 +18,10 @@ export default function IncomeStatement() {
 
   useEffect(() => {
     if (startDate && endDate) {
+      setIncomeStatement(null)
       loadIncomeStatement()
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, currentTenant?.id])
 
   const loadIncomeStatement = async () => {
     if (!startDate || !endDate) return

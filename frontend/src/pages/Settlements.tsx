@@ -5,6 +5,7 @@ import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import Extractor from './Extractor'
+import { useTenant } from '../contexts/TenantContext'
 
 const SETTLEMENTS_PER_PAGE = 20
 
@@ -47,6 +48,7 @@ const InputWithClear = ({
 
 export default function Settlements() {
   const isMobile = useMobile()
+  const { currentTenant } = useTenant()
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
@@ -194,9 +196,14 @@ export default function Settlements() {
 
 
   useEffect(() => {
+    // Reset state when tenant changes
+    setSettlements([])
+    setTrucks([])
+    setSkip(0)
+    setHasMore(true)
     loadTrucks()
     loadSettlements(true)
-  }, [])
+  }, [currentTenant?.id])
 
   useEffect(() => {
     loadSettlements(true)

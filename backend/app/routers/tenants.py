@@ -71,15 +71,66 @@ def update_tenant(tenant_id: int, tenant_update: TenantUpdate, db: Session = Dep
 
 @router.delete("/{tenant_id}")
 def delete_tenant(tenant_id: int, db: Session = Depends(get_db)):
-    """Delete a tenant"""
+    """Delete a tenant and all associated data"""
+    from app.models.truck import Truck
+    from app.models.settlement import Settlement
+    from app.models.repair import Repair
+    from app.models.chart_of_accounts import ChartOfAccount
+    from app.models.journal_entry import JournalEntry
+    from app.models.journal_entry_line import JournalEntryLine
+    
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     
-    # TODO: Check if tenant has any data (trucks, settlements, etc.) before deletion
-    # For now, allow deletion but warn about cascading
+    # Check if this is the last tenant
+    total_tenants = db.query(Tenant).count()
+    if total_tenants <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the last remaining tenant. At least one tenant must exist."
+        )
     
-    db.delete(tenant)
-    db.commit()
-    return {"message": "Tenant deleted successfully"}
+    try:
+        # Delete all related data in the correct order (respecting foreign key constraints)
+        
+        # 1. Delete journal entry lines first (they reference journal entries)
+        journal_entries = db.query(JournalEntry).filter(JournalEntry.tenant_id == tenant_id).all()
+        journal_entry_ids = [je.id for je in journal_entries]
+        if journal_entry_ids:
+            db.query(JournalEntryLine).filter(JournalEntryLine.journal_entry_id.in_(journal_entry_ids)).delete(synchronize_session=False)
+        
+        # 2. Delete journal entries
+        db.query(JournalEntry).filter(JournalEntry.tenant_id == tenant_id).delete(synchronize_session=False)
+        
+        # 3. Delete chart of accounts
+        db.query(ChartOfAccount).filter(ChartOfAccount.tenant_id == tenant_id).delete(synchronize_session=False)
+        
+        # 4. Get trucks for this tenant to delete related settlements and repairs
+        trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+        truck_ids = [truck.id for truck in trucks]
+        
+        # 5. Delete repairs (they reference trucks)
+        if truck_ids:
+            db.query(Repair).filter(Repair.truck_id.in_(truck_ids)).delete(synchronize_session=False)
+        
+        # 6. Delete settlements (they reference trucks)
+        if truck_ids:
+            db.query(Settlement).filter(Settlement.truck_id.in_(truck_ids)).delete(synchronize_session=False)
+        
+        # 7. Delete trucks
+        db.query(Truck).filter(Truck.tenant_id == tenant_id).delete(synchronize_session=False)
+        
+        # 8. Finally, delete the tenant
+        db.delete(tenant)
+        db.commit()
+        
+        return {"message": f"Tenant '{tenant.name}' and all associated data deleted successfully"}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete tenant: {str(e)}"
+        )
 

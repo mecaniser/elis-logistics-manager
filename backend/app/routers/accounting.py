@@ -43,6 +43,43 @@ def initialize_chart_of_accounts(db: Session = Depends(get_db), tenant_id: int =
     return accounts
 
 
+@router.delete("/chart-of-accounts/reset")
+def reset_chart_of_accounts(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
+    """
+    Reset (delete) all chart of accounts for the current tenant.
+    WARNING: This will delete all accounts. Journal entries referencing these accounts will also be affected.
+    Use this to re-initialize accounts with the correct business type.
+    """
+    # Check if there are any journal entries using these accounts
+    account_ids = [acc.id for acc in db.query(ChartOfAccount).filter(ChartOfAccount.tenant_id == tenant_id).all()]
+    
+    if account_ids:
+        # Check for journal entry lines referencing these accounts
+        journal_entry_lines_count = db.query(JournalEntryLine).filter(
+            JournalEntryLine.account_id.in_(account_ids)
+        ).count()
+        
+        if journal_entry_lines_count > 0:
+            # Delete journal entry lines first
+            db.query(JournalEntryLine).filter(
+                JournalEntryLine.account_id.in_(account_ids)
+            ).delete(synchronize_session=False)
+            
+            # Delete journal entries for this tenant
+            db.query(JournalEntry).filter(
+                JournalEntry.tenant_id == tenant_id
+            ).delete(synchronize_session=False)
+        
+        # Delete all accounts for this tenant
+        db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id
+        ).delete(synchronize_session=False)
+        
+        db.commit()
+    
+    return {"message": "All accounts have been reset. You can now re-initialize with the correct business type."}
+
+
 @router.get("/chart-of-accounts", response_model=List[ChartOfAccountResponse])
 def get_chart_of_accounts(
     account_type: Optional[str] = None,
@@ -227,13 +264,14 @@ def get_general_ledger(
 @router.get("/balance-sheet", response_model=BalanceSheetResponse)
 def get_balance_sheet(
     as_of_date: Optional[date] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Get balance sheet as of a specific date."""
     if not as_of_date:
         as_of_date = date.today()
     
-    balance_sheet = generate_balance_sheet(db, as_of_date)
+    balance_sheet = generate_balance_sheet(db, tenant_id, as_of_date)
     return BalanceSheetResponse(**balance_sheet)
 
 
@@ -241,12 +279,13 @@ def get_balance_sheet(
 def get_income_statement(
     start_date: date = Query(...),
     end_date: date = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Get income statement for a date range."""
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be before end_date")
     
-    income_statement = generate_income_statement(db, start_date, end_date)
+    income_statement = generate_income_statement(db, tenant_id, start_date, end_date)
     return IncomeStatementResponse(**income_statement)
 

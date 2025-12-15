@@ -90,6 +90,7 @@ export default function Layout({ children }: LayoutProps) {
                           key={tenant.id}
                           onClick={() => {
                             setCurrentTenant(tenant)
+                            localStorage.setItem('currentTenantId', tenant.id.toString())
                             setShowBusinessMenu(false)
                             // Reload page to refresh data for new tenant
                             window.location.reload()

@@ -9,11 +9,23 @@ const api = axios.create({
 
 // Add tenant ID interceptor to include X-Tenant-ID header in all requests
 api.interceptors.request.use((config) => {
+  // Skip adding tenant_id header for tenants endpoints (they don't need it)
+  if (config.url?.includes('/tenants') && config.method === 'get' && !config.url.match(/\/tenants\/\d+/)) {
+    return config
+  }
+  
   const tenantId = localStorage.getItem('currentTenantId')
-  if (tenantId) {
-    config.headers['X-Tenant-ID'] = tenantId
+  if (!tenantId) {
+    // If no tenant ID, this will cause an error - which is correct behavior
+    // The user must select a tenant before making API calls
+    console.error('No tenant ID found in localStorage. Please select a business first.')
+    throw new Error('No tenant ID available. Please select a business.')
+  } else {
+    config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
   }
   return config
+}, (error) => {
+  return Promise.reject(error)
 })
 
 // Types
@@ -629,9 +641,16 @@ export interface Tenant {
   updated_at?: string
 }
 
-// Tenant API
+// Tenant API - these endpoints don't require tenant_id header
 export const tenantsApi = {
-  getTenants: () => api.get<Tenant[]>('/tenants'),
+  getTenants: () => {
+    // Create a separate axios instance without the interceptor for tenant management
+    const tempApi = axios.create({
+      baseURL: '/api',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    return tempApi.get<Tenant[]>('/tenants')
+  },
   getTenant: (tenantId: number) => api.get<Tenant>(`/tenants/${tenantId}`),
   createTenant: (tenant: Partial<Tenant>) =>
     api.post<Tenant>('/tenants', tenant),
@@ -644,6 +663,8 @@ export const tenantsApi = {
 export const accountingApi = {
   initializeChartOfAccounts: () =>
     api.post<ChartOfAccount[]>('/accounting/chart-of-accounts/initialize'),
+  resetChartOfAccounts: () =>
+    api.delete<{ message: string }>('/accounting/chart-of-accounts/reset'),
   getChartOfAccounts: (accountType?: string, isActive?: boolean) => {
     const params: Record<string, any> = {}
     if (accountType) params.account_type = accountType

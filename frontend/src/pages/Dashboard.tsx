@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { analyticsApi, trucksApi, Truck, TimeSeriesData } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
+import { useTenant } from '../contexts/TenantContext'
 
 // Type definitions for dashboard data structures
 interface RepairByMonth {
@@ -44,6 +45,7 @@ interface ExpenseData {
 
 export default function Dashboard() {
   const isMobile = useMobile()
+  const { currentTenant } = useTenant()
   const [data, setData] = useState<any>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
@@ -64,9 +66,18 @@ export default function Dashboard() {
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
-    loadTrucks()
-    loadDashboard()
-  }, [selectedTruck, vehicleTypeFilter])
+    // Reset selected truck when tenant changes
+    setSelectedTruck(null)
+    setTrucks([])
+    setData(null)
+    // Only load logistics data for logistics businesses
+    if (currentTenant?.business_type === 'logistics') {
+      loadTrucks()
+      loadDashboard()
+    } else {
+      setLoading(false)
+    }
+  }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type])
 
   useEffect(() => {
     const handleResize = () => {
@@ -77,6 +88,9 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    // Only run for logistics businesses
+    if (currentTenant?.business_type !== 'logistics') return
+    
     // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
     setSelectedExpensePeriod('')
     // Set default view based on vehicle type: weekly for trucks, monthly for trailers
@@ -86,7 +100,7 @@ export default function Dashboard() {
       setExpenseAnalysisView('monthly')
     }
     loadTimeSeries()
-  }, [selectedTruck, vehicleTypeFilter])
+  }, [selectedTruck, vehicleTypeFilter, currentTenant?.business_type])
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
@@ -224,6 +238,49 @@ export default function Dashboard() {
     } finally {
       setTimeSeriesLoading(false)
     }
+  }
+
+  // Show placeholder dashboard for non-logistics businesses FIRST (before any data checks)
+  if (currentTenant && currentTenant.business_type !== 'logistics') {
+    const businessTypeLabels: Record<string, { title: string; description: string; icon: string }> = {
+      'tech': {
+        title: 'IT Services Dashboard',
+        description: 'Track projects, clients, contracts, and revenue for your IT consulting business.',
+        icon: '💻'
+      },
+      'real_estate': {
+        title: 'Real Estate Dashboard', 
+        description: 'Monitor properties, rentals, occupancy rates, and rental income.',
+        icon: '🏠'
+      }
+    }
+    
+    const businessInfo = businessTypeLabels[currentTenant.business_type] || {
+      title: `${currentTenant.name} Dashboard`,
+      description: 'Dashboard coming soon for this business type.',
+      icon: '📊'
+    }
+
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-lg mx-auto px-4">
+          <div className="text-6xl mb-6">{businessInfo.icon}</div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">
+            {businessInfo.title}
+          </h1>
+          <p className="text-gray-600 mb-8">
+            {businessInfo.description}
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <h3 className="font-semibold text-blue-900 mb-2">Coming Soon</h3>
+            <p className="text-blue-700 text-sm">
+              We're building a specialized dashboard for <strong>{currentTenant.name}</strong>. 
+              In the meantime, you can use the Accounting features to track your finances.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {

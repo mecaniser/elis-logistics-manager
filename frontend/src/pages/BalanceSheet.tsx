@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { accountingApi, BalanceSheet as BalanceSheetType } from '../services/api'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function BalanceSheet() {
+  const { currentTenant } = useTenant()
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
 
   useEffect(() => {
+    setBalanceSheet(null)
     loadBalanceSheet()
-  }, [asOfDate])
+  }, [asOfDate, currentTenant?.id])
 
   const loadBalanceSheet = async () => {
     try {

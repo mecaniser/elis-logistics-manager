@@ -4,9 +4,11 @@ import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function Repairs() {
   const isMobile = useMobile()
+  const { currentTenant } = useTenant()
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,9 +54,12 @@ export default function Repairs() {
   const [expandedImageRepairs, setExpandedImageRepairs] = useState<Set<number>>(new Set())
 
   useEffect(() => {
+    // Reset state when tenant changes
+    setRepairs([])
+    setTrucks([])
     loadTrucks()
     loadRepairs()
-  }, [])
+  }, [currentTenant?.id])
 
   const loadTrucks = async () => {
     try {

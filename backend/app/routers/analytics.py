@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.truck import Truck
+from app.dependencies import get_tenant_id
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, date
 from collections import defaultdict
@@ -34,8 +35,13 @@ def get_current_mileage(truck_id: int, db: Session) -> Optional[float]:
     return None
 
 @router.get("/truck-profit/{truck_id}")
-def get_truck_profit(truck_id: int, db: Session = Depends(get_db)):
+def get_truck_profit(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Calculate profit per truck (settlements - repairs)"""
+    # Verify truck belongs to tenant
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+    if not truck:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    
     # Get total settlements
     settlements_total = db.query(
         func.sum(Settlement.net_profit).label("total")
@@ -56,10 +62,10 @@ def get_truck_profit(truck_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/vehicle/{truck_id}/roi")
-def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
+def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Calculate ROI metrics for a specific vehicle (truck or trailer)"""
-    # Get the vehicle
-    vehicle = db.query(Truck).filter(Truck.id == truck_id).first()
+    # Get the vehicle (verify it belongs to tenant)
+    vehicle = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     
@@ -161,26 +167,31 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db)):
     }
 
 @router.get("/dashboard")
-def get_dashboard(truck_id: int = None, vehicle_type: Optional[str] = None, db: Session = Depends(get_db)):
+def get_dashboard(
+    truck_id: int = None, 
+    vehicle_type: Optional[str] = None, 
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
+):
     """Get dashboard summary data with expense categories. Separates trucks and trailers."""
     import traceback
     import logging
     logger = logging.getLogger(__name__)
     
     try:
-        return _get_dashboard_impl(truck_id, vehicle_type, db)
+        return _get_dashboard_impl(truck_id, vehicle_type, db, tenant_id)
     except Exception as e:
         error_trace = traceback.format_exc()
         logger.error(f"Dashboard error: {error_trace}")
         print(f"DASHBOARD ERROR: {error_trace}")
         raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}\n\nTraceback:\n{error_trace}")
 
-def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session):
+def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session, tenant_id: int):
     """Internal implementation of dashboard endpoint."""
-    # Build queries with optional truck filter
-    trucks_query = db.query(Truck)
-    settlements_query = db.query(Settlement)
-    repairs_query = db.query(Repair)
+    # Build queries with tenant filter
+    trucks_query = db.query(Truck).filter(Truck.tenant_id == tenant_id)
+    settlements_query = db.query(Settlement).join(Truck).filter(Truck.tenant_id == tenant_id)
+    repairs_query = db.query(Repair).join(Truck).filter(Truck.tenant_id == tenant_id)
     
     if truck_id is not None:
         trucks_query = trucks_query.filter(Truck.id == truck_id)
@@ -191,8 +202,9 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session)
         vt = vehicle_type.lower()
         if vt in ["truck", "trailer"]:
             trucks_query = trucks_query.filter(Truck.vehicle_type == vt)
-            settlements_query = settlements_query.join(Truck, Settlement.truck_id == Truck.id).filter(Truck.vehicle_type == vt)
-            repairs_query = repairs_query.join(Truck, Repair.truck_id == Truck.id).filter(Truck.vehicle_type == vt)
+            # Already joined Truck above, just add filter
+            settlements_query = settlements_query.filter(Truck.vehicle_type == vt)
+            repairs_query = repairs_query.filter(Truck.vehicle_type == vt)
     
     # Separate trucks and trailers queries
     trucks_only_query = trucks_query.filter(Truck.vehicle_type == 'truck')
@@ -811,7 +823,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session)
     }
 
 @router.get("/pm-status")
-def get_pm_status(db: Session = Depends(get_db)):
+def get_pm_status(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """
     Get PM (Preventive Maintenance) status for all trucks.
     Returns PM status information for each truck based on PM repairs.
@@ -822,7 +834,7 @@ def get_pm_status(db: Session = Depends(get_db)):
     - Repairs with category "maintenance" AND "pm" in description (secondary pattern)
     """
     pm_status = []
-    trucks_for_pm = db.query(Truck).filter(Truck.vehicle_type == 'truck').all()  # Only trucks, not trailers
+    trucks_for_pm = db.query(Truck).filter(Truck.vehicle_type == 'truck', Truck.tenant_id == tenant_id).all()  # Only trucks for this tenant
     pm_threshold_miles = 25000  # PM due every 25,000 miles (fallback when date unavailable)
     pm_threshold_days = 70  # PM due every 10 weeks (primary method)
     
@@ -945,7 +957,8 @@ def get_time_series(
     group_by: Optional[str] = "week_start",
     truck_id: Optional[int] = None,
     vehicle_type: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """
     Get time-series data grouped by week and month.
@@ -960,7 +973,7 @@ def get_time_series(
     logger = logging.getLogger(__name__)
     
     try:
-        return _get_time_series_impl(group_by, truck_id, vehicle_type, db)
+        return _get_time_series_impl(group_by, truck_id, vehicle_type, db, tenant_id)
     except Exception as e:
         error_trace = traceback.format_exc()
         logger.error(f"Time-series error: {error_trace}")
@@ -971,15 +984,16 @@ def _get_time_series_impl(
     group_by: str,
     truck_id: Optional[int],
     vehicle_type: Optional[str],
-    db: Session
+    db: Session,
+    tenant_id: int
 ):
     """Internal implementation of time-series endpoint."""
     # Validate group_by parameter
     if group_by not in ["week_start", "settlement_date"]:
         group_by = "week_start"
     
-    # Build query with optional truck filter
-    settlements_query = db.query(Settlement)
+    # Build query with tenant filter
+    settlements_query = db.query(Settlement).join(Truck).filter(Truck.tenant_id == tenant_id)
     if truck_id is not None:
         settlements_query = settlements_query.filter(Settlement.truck_id == truck_id)
     
@@ -987,7 +1001,7 @@ def _get_time_series_impl(
     if vehicle_type:
         vt = vehicle_type.lower()
         if vt in ["truck", "trailer"]:
-            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt).all()]
+            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt, Truck.tenant_id == tenant_id).all()]
             if vehicle_ids:
                 settlements_query = settlements_query.filter(Settlement.truck_id.in_(vehicle_ids))
             else:
@@ -996,8 +1010,8 @@ def _get_time_series_impl(
     
     settlements = settlements_query.order_by(Settlement.settlement_date).all()
     
-    # Get truck names for reference
-    trucks = db.query(Truck).all()
+    # Get truck names for reference (only for this tenant)
+    trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
     truck_map = {truck.id: truck.name for truck in trucks}
     
     # Helper function to extract description from custom category key
@@ -1366,14 +1380,14 @@ def _get_time_series_impl(
         })
     
     # Add repairs to yearly/monthly data and subtract from net profit
-    repairs_query = db.query(Repair)
+    repairs_query = db.query(Repair).join(Truck).filter(Truck.tenant_id == tenant_id)
     if truck_id is not None:
         repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
     elif vehicle_type:
         # Filter repairs by vehicle type when no specific truck_id is provided
         vt = vehicle_type.lower()
         if vt in ["truck", "trailer"]:
-            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt).all()]
+            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt, Truck.tenant_id == tenant_id).all()]
             if vehicle_ids:
                 repairs_query = repairs_query.filter(Repair.truck_id.in_(vehicle_ids))
             else:

@@ -3,9 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { analyticsApi, trucksApi, Truck, VehicleROI } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function VehicleDetail() {
   const isMobile = useMobile()
+  const { currentTenant } = useTenant()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [vehicle, setVehicle] = useState<Truck | null>(null)
@@ -22,9 +24,11 @@ export default function VehicleDetail() {
 
   useEffect(() => {
     if (id) {
+      setVehicle(null)
+      setRoiData(null)
       loadVehicleData()
     }
-  }, [id])
+  }, [id, currentTenant?.id])
 
   const loadVehicleData = async () => {
     if (!id) return

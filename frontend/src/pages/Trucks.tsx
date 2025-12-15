@@ -4,9 +4,11 @@ import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import { useMobile } from '../utils/useMobile'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function Trucks() {
   const isMobile = useMobile()
+  const { currentTenant } = useTenant()
   const navigate = useNavigate()
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
@@ -37,9 +39,12 @@ export default function Trucks() {
   })
 
   useEffect(() => {
+    // Reset state when tenant changes
+    setTrucks([])
+    setPmStatus([])
     loadTrucks()
     loadPMStatus()
-  }, [vehicleTypeFilter])
+  }, [vehicleTypeFilter, currentTenant?.id])
 
   const loadPMStatus = async () => {
     try {

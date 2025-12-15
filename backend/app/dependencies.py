@@ -7,12 +7,12 @@ from typing import Optional
 def get_tenant_id(x_tenant_id: Optional[int] = Header(None, alias="X-Tenant-ID")) -> int:
     """
     Extract tenant ID from request header.
-    For now, defaults to tenant_id=1 if not provided (backward compatibility).
-    In production, this should be extracted from authentication token.
+    Required for all requests to ensure proper tenant isolation.
     """
     if x_tenant_id is None:
-        # Default to tenant 1 for backward compatibility
-        # TODO: Remove this default once all clients send tenant ID
-        return 1
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Tenant-ID header is required"
+        )
     return x_tenant_id
 

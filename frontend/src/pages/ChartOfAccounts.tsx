@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react'
 import { accountingApi, ChartOfAccount as ChartOfAccountType } from '../services/api'
+import { useTenant } from '../contexts/TenantContext'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function ChartOfAccounts() {
+  const { currentTenant } = useTenant()
   const [accounts, setAccounts] = useState<ChartOfAccountType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [accountTypeFilter, setAccountTypeFilter] = useState<string>('')
+  const [showResetModal, setShowResetModal] = useState(false)
 
   useEffect(() => {
+    setAccounts([])
     loadAccounts()
-  }, [accountTypeFilter])
+  }, [accountTypeFilter, currentTenant?.id])
 
   const loadAccounts = async () => {
     try {
@@ -35,6 +40,20 @@ export default function ChartOfAccounts() {
       await loadAccounts()
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to initialize chart of accounts')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetAccounts = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      await accountingApi.resetChartOfAccounts()
+      await loadAccounts()
+      setShowResetModal(false)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to reset chart of accounts')
     } finally {
       setLoading(false)
     }
@@ -82,14 +101,33 @@ export default function ChartOfAccounts() {
               </option>
             ))}
           </select>
+          {accounts.length > 0 && (
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+            >
+              Reset Accounts
+            </button>
+          )}
           <button
             onClick={initializeAccounts}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
           >
-            Initialize Accounts
+            {accounts.length > 0 ? 'Re-initialize Accounts' : 'Initialize Accounts'}
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onConfirm={resetAccounts}
+        title="Reset Chart of Accounts"
+        message={`Are you sure you want to reset all accounts for ${currentTenant?.name}? This will delete all accounts and any associated journal entries. This action cannot be undone.`}
+        confirmText="Reset All Accounts"
+        cancelText="Cancel"
+        type="danger"
+      />
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { accountingApi, JournalEntry as JournalEntryType, ChartOfAccount } from '../services/api'
+import { useTenant } from '../contexts/TenantContext'
 
 export default function JournalEntries() {
+  const { currentTenant } = useTenant()
   const [entries, setEntries] = useState<JournalEntryType[]>([])
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -11,9 +13,11 @@ export default function JournalEntries() {
   const [referenceTypeFilter, setReferenceTypeFilter] = useState('')
 
   useEffect(() => {
+    setEntries([])
+    setAccounts([])
     loadEntries()
     loadAccounts()
-  }, [startDate, endDate, referenceTypeFilter])
+  }, [startDate, endDate, referenceTypeFilter, currentTenant?.id])
 
   const loadEntries = async () => {
     try {
