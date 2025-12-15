@@ -74,6 +74,17 @@ export interface Settlement {
   pdf_file_path?: string | null
   settlement_type?: string | null
   license_plate?: string | null
+  duplicate_block_ids_warning?: {
+    has_duplicates: boolean
+    duplicate_block_ids: string[]
+    conflicting_settlements: Array<{
+      block_id: string
+      settlement_id: number
+      truck_id: number
+      settlement_date: string | null
+    }>
+    warning_message: string
+  } | null
 }
 
 export interface Repair {

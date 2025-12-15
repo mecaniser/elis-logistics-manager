@@ -1743,13 +1743,33 @@ export default function Settlements() {
                           {settlement.miles_driven && (
                             <div className="flex justify-between">
                               <span className="text-gray-500">Miles:</span>
-                              <span className="font-medium">{settlement.miles_driven.toLocaleString()}</span>
+                              <span className="font-medium text-gray-800">{settlement.miles_driven.toLocaleString()}</span>
                             </div>
                           )}
                           {settlement.blocks_delivered && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">Blocks:</span>
-                              <span className="font-medium">{settlement.blocks_delivered}</span>
+                            <div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Blocks:</span>
+                                <span className="font-medium text-gray-900">
+                                  {settlement.blocks_delivered}
+                                </span>
+                              </div>
+                              {settlement.block_ids && settlement.block_ids.length > 0 && (
+                                <div className="mt-1 text-xs text-gray-800">
+                                  {settlement.block_ids.map((item: string | { block_id: string; delivery_date?: string }, idx: number) => {
+                                    const blockId = typeof item === 'string' ? item : item.block_id
+                                    const isDuplicate = settlement.duplicate_block_ids_warning?.duplicate_block_ids?.includes(blockId) || false
+                                    return (
+                                      <div key={idx}>
+                                        <span className={isDuplicate ? 'text-red-600 font-semibold' : ''}>
+                                          {blockId}
+                                        </span>
+                                        {isDuplicate && <span className="ml-1 text-red-600 text-xs">- duplicate block ID detected</span>}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
                             </div>
                           )}
                         </>

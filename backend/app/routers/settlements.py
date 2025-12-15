@@ -14,6 +14,7 @@ from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_
 from app.utils.settlement_extractor import SettlementExtractor
 from app.utils.cloudinary import upload_pdf
 from app.utils.loan_interest import calculate_weekly_loan_interest, calculate_principal_payment
+from app.utils.block_id_validator import validate_block_ids
 import os
 import json
 from datetime import datetime
@@ -63,6 +64,42 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     if principal_payment > 0:
         truck.current_loan_balance = new_loan_balance
         db.commit()
+
+@router.get("/duplicate-block-ids")
+def get_duplicate_block_ids(db: Session = Depends(get_db)):
+    """
+    Find all duplicate block IDs across settlements.
+    Returns a report of which block IDs appear in multiple settlements.
+    """
+    from app.utils.block_id_validator import extract_block_ids
+    from collections import defaultdict
+    
+    # Get all settlements with block_ids
+    settlements = db.query(Settlement).filter(Settlement.block_ids.isnot(None)).all()
+    
+    # Map block_id -> list of settlements containing it
+    block_id_to_settlements = defaultdict(list)
+    
+    for settlement in settlements:
+        block_ids = extract_block_ids(settlement.block_ids)
+        for block_id in block_ids:
+            block_id_to_settlements[block_id].append({
+                "settlement_id": settlement.id,
+                "truck_id": settlement.truck_id,
+                "settlement_date": str(settlement.settlement_date) if settlement.settlement_date else None,
+            })
+    
+    # Filter to only duplicates (appearing in 2+ settlements)
+    duplicates = {
+        block_id: settlements_list
+        for block_id, settlements_list in block_id_to_settlements.items()
+        if len(settlements_list) > 1
+    }
+    
+    return {
+        "total_duplicate_block_ids": len(duplicates),
+        "duplicates": duplicates
+    }
 
 @router.get("", response_model=List[SettlementResponse])
 @router.get("/", response_model=List[SettlementResponse])
@@ -224,7 +261,7 @@ async def upload_settlement_pdf(
                     revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                     settlement_data["net_profit"] = revenue - settlement_data["expenses"]
             
-            # Check for duplicates
+            # Check for duplicate settlement (same truck + date)
             existing = db.query(Settlement).filter(
                 Settlement.truck_id == settlement_data["truck_id"],
                 Settlement.settlement_date == settlement_data.get("settlement_date")
@@ -241,6 +278,24 @@ async def upload_settlement_pdf(
                     status_code=400,
                     detail=f"Settlement for truck ID {settlement_data['truck_id']} on {settlement_data.get('settlement_date')} already exists"
                 )
+            
+            # Check for duplicate block IDs (flag but don't reject)
+            has_duplicates, warning_msg, duplicates = validate_block_ids(
+                settlement_data.get("block_ids"),
+                db
+            )
+            
+            # Store duplicate warning if found
+            if has_duplicates:
+                duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                settlement_data["duplicate_block_ids_warning"] = {
+                    "has_duplicates": True,
+                    "duplicate_block_ids": duplicate_block_ids,
+                    "conflicting_settlements": duplicates,
+                    "warning_message": warning_msg
+                }
+            else:
+                settlement_data["duplicate_block_ids_warning"] = None
             
             # Create settlement
             db_settlement = Settlement(**settlement_data)
@@ -426,7 +481,7 @@ async def upload_settlement_pdf_bulk(
                             revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                             settlement_data["net_profit"] = revenue - settlement_data["expenses"]
                     
-                    # Check for duplicates
+                    # Check for duplicate settlement (same truck + date)
                     existing = db.query(Settlement).filter(
                         Settlement.truck_id == settlement_data["truck_id"],
                         Settlement.settlement_date == settlement_data.get("settlement_date")
@@ -447,6 +502,24 @@ async def upload_settlement_pdf_bulk(
                         })
                         file_failed += 1
                         continue
+                    
+                    # Check for duplicate block IDs (flag but don't reject)
+                    has_duplicates, warning_msg, duplicates = validate_block_ids(
+                        settlement_data.get("block_ids"),
+                        db
+                    )
+                    
+                    # Store duplicate warning if found
+                    if has_duplicates:
+                        duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                        settlement_data["duplicate_block_ids_warning"] = {
+                            "has_duplicates": True,
+                            "duplicate_block_ids": duplicate_block_ids,
+                            "conflicting_settlements": duplicates,
+                            "warning_message": warning_msg
+                        }
+                    else:
+                        settlement_data["duplicate_block_ids_warning"] = None
                     
                     # Create settlement
                     db_settlement = Settlement(**settlement_data)
@@ -548,8 +621,26 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
                 detail=f"Settlement for truck ID {settlement.truck_id} on {settlement.settlement_date} already exists"
             )
         
+        # Check for duplicate block IDs (flag but don't reject)
+        has_duplicates, warning_msg, duplicates = validate_block_ids(
+            settlement.block_ids,
+            db
+        )
+        
         # Use model_dump() for Pydantic v2
         settlement_dict = settlement.model_dump()
+        
+        # Store duplicate warning if found
+        if has_duplicates:
+            duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+            settlement_dict["duplicate_block_ids_warning"] = {
+                "has_duplicates": True,
+                "duplicate_block_ids": duplicate_block_ids,
+                "conflicting_settlements": duplicates,
+                "warning_message": warning_msg
+            }
+        else:
+            settlement_dict["duplicate_block_ids_warning"] = None
         
         # Calculate and add loan interest to expense_categories
         if truck.vehicle_type == 'truck':
@@ -665,6 +756,26 @@ async def update_settlement(
         # Update pdf_file_path in settlement
         if pdf_path:
             update_data["pdf_file_path"] = pdf_path
+    
+    # Check for duplicate block IDs if block_ids are being updated (flag but don't reject)
+    if "block_ids" in update_data:
+        has_duplicates, warning_msg, duplicates = validate_block_ids(
+            update_data["block_ids"],
+            db,
+            exclude_settlement_id=settlement.id
+        )
+        
+        # Store duplicate warning if found
+        if has_duplicates:
+            duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+            update_data["duplicate_block_ids_warning"] = {
+                "has_duplicates": True,
+                "duplicate_block_ids": duplicate_block_ids,
+                "conflicting_settlements": duplicates,
+                "warning_message": warning_msg
+            }
+        else:
+            update_data["duplicate_block_ids_warning"] = None
     
     # Update settlement fields
     for field, value in update_data.items():
@@ -868,7 +979,7 @@ def upload_consolidated_settlements(
                         skipped_count += 1
                         continue
                     
-                    # Check for duplicates
+                    # Check for duplicate settlement (same truck + date)
                     existing = db.query(Settlement).filter(
                         Settlement.truck_id == entry_data["truck_id"],
                         Settlement.settlement_date == entry_data["settlement_date"]
@@ -876,6 +987,25 @@ def upload_consolidated_settlements(
                     
                     if existing:
                         if not dry_run:
+                            # Check for duplicate block IDs (flag but don't reject)
+                            has_duplicates, warning_msg, duplicates = validate_block_ids(
+                                entry_data.get("block_ids"),
+                                db,
+                                exclude_settlement_id=existing.id
+                            )
+                            
+                            # Store duplicate warning if found
+                            if has_duplicates:
+                                duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                                entry_data["duplicate_block_ids_warning"] = {
+                                    "has_duplicates": True,
+                                    "duplicate_block_ids": duplicate_block_ids,
+                                    "conflicting_settlements": duplicates,
+                                    "warning_message": warning_msg
+                                }
+                            else:
+                                entry_data["duplicate_block_ids_warning"] = None
+                            
                             # Update existing
                             for k, v in entry_data.items():
                                 setattr(existing, k, v)
@@ -884,6 +1014,24 @@ def upload_consolidated_settlements(
                         else:
                             would_update_count += 1
                     else:
+                        # Check for duplicate block IDs (flag but don't reject)
+                        has_duplicates, warning_msg, duplicates = validate_block_ids(
+                            entry_data.get("block_ids"),
+                            db
+                        )
+                        
+                        # Store duplicate warning if found
+                        if has_duplicates:
+                            duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                            entry_data["duplicate_block_ids_warning"] = {
+                                "has_duplicates": True,
+                                "duplicate_block_ids": duplicate_block_ids,
+                                "conflicting_settlements": duplicates,
+                                "warning_message": warning_msg
+                            }
+                        else:
+                            entry_data["duplicate_block_ids_warning"] = None
+                        
                         if not dry_run:
                             db_settlement = Settlement(**entry_data)
                             db.add(db_settlement)
@@ -911,7 +1059,7 @@ def upload_consolidated_settlements(
                             skipped_count += 1
                             continue
                         
-                        # Check for duplicates
+                        # Check for duplicate settlement (same truck + date)
                         existing = db.query(Settlement).filter(
                             Settlement.truck_id == entry_data["truck_id"],
                             Settlement.settlement_date == entry_data["settlement_date"]
@@ -919,6 +1067,25 @@ def upload_consolidated_settlements(
                         
                         if existing:
                             if not dry_run:
+                                # Check for duplicate block IDs (flag but don't reject)
+                                has_duplicates, warning_msg, duplicates = validate_block_ids(
+                                    entry_data.get("block_ids"),
+                                    db,
+                                    exclude_settlement_id=existing.id
+                                )
+                                
+                                # Store duplicate warning if found
+                                if has_duplicates:
+                                    duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                                    entry_data["duplicate_block_ids_warning"] = {
+                                        "has_duplicates": True,
+                                        "duplicate_block_ids": duplicate_block_ids,
+                                        "conflicting_settlements": duplicates,
+                                        "warning_message": warning_msg
+                                    }
+                                else:
+                                    entry_data["duplicate_block_ids_warning"] = None
+                                
                                 for k, v in entry_data.items():
                                     setattr(existing, k, v)
                                 db.add(existing)
@@ -926,6 +1093,24 @@ def upload_consolidated_settlements(
                             else:
                                 would_update_count += 1
                         else:
+                            # Check for duplicate block IDs (flag but don't reject)
+                            has_duplicates, warning_msg, duplicates = validate_block_ids(
+                                entry_data.get("block_ids"),
+                                db
+                            )
+                            
+                            # Store duplicate warning if found
+                            if has_duplicates:
+                                duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                                entry_data["duplicate_block_ids_warning"] = {
+                                    "has_duplicates": True,
+                                    "duplicate_block_ids": duplicate_block_ids,
+                                    "conflicting_settlements": duplicates,
+                                    "warning_message": warning_msg
+                                }
+                            else:
+                                entry_data["duplicate_block_ids_warning"] = None
+                            
                             if not dry_run:
                                 db_settlement = Settlement(**entry_data)
                                 db.add(db_settlement)
@@ -1107,6 +1292,15 @@ def upload_settlement_json(
                         detail=f"Settlement for truck ID {truck_id} on {settlement_date} already exists"
                     )
             
+            # Extract block_ids from metrics if available
+            block_ids = metrics.get("block_ids")
+            
+            # Check for duplicate block IDs (flag but don't reject)
+            has_duplicates, warning_msg, duplicates = validate_block_ids(
+                block_ids,
+                db
+            )
+            
             # Create settlement record (without PDF file path)
             settlement_data = {
                 "truck_id": truck_id,
@@ -1116,6 +1310,7 @@ def upload_settlement_json(
                 "week_end": week_end,
                 "miles_driven": metrics.get("miles_driven"),
                 "blocks_delivered": metrics.get("blocks_delivered"),
+                "block_ids": block_ids,
                 "gross_revenue": revenue.get("gross_revenue"),
                 "expenses": expenses.get("total_expenses") + (expense_categories.get("loan_interest", 0) if expense_categories.get("loan_interest") else 0),
                 "expense_categories": expense_categories,
@@ -1124,6 +1319,18 @@ def upload_settlement_json(
                 "settlement_type": metadata.get("settlement_type") or data.get("settlement_type"),
                 "pdf_file_path": None  # No PDF stored
             }
+            
+            # Store duplicate warning if found
+            if has_duplicates:
+                duplicate_block_ids = sorted(set(d["block_id"] for d in duplicates))
+                settlement_data["duplicate_block_ids_warning"] = {
+                    "has_duplicates": True,
+                    "duplicate_block_ids": duplicate_block_ids,
+                    "conflicting_settlements": duplicates,
+                    "warning_message": warning_msg
+                }
+            else:
+                settlement_data["duplicate_block_ids_warning"] = None
             
             db_settlement = Settlement(**settlement_data)
             db.add(db_settlement)

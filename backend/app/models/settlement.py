@@ -29,6 +29,7 @@ class Settlement(Base):
     pdf_file_path = Column(String(255))
     license_plate = Column(String(20), nullable=True)  # License plate from this settlement
     settlement_type = Column(String(50), nullable=True)  # Type of settlement PDF
+    duplicate_block_ids_warning = Column(JSON, nullable=True)  # Warning about duplicate block IDs: {"has_duplicates": true, "duplicate_block_ids": ["B-123"], "conflicting_settlements": [...]}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

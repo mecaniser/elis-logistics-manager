@@ -64,6 +64,7 @@ class SettlementBase(BaseModel):
     net_profit: Optional[Decimal] = None
     license_plate: Optional[str] = None  # License plate from this settlement
     settlement_type: Optional[str] = None  # Type of settlement PDF
+    duplicate_block_ids_warning: Optional[Dict[str, Any]] = None  # Warning about duplicate block IDs
 
 class SettlementCreate(SettlementBase):
     pdf_file_path: Optional[str] = None
