@@ -38,7 +38,7 @@ interface ExtractedData {
   pdf_filename?: string
 }
 
-export default function Extractor() {
+export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }) {
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('single')
@@ -283,9 +283,11 @@ export default function Extractor() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlement Extractor</h1>
-      </div>
+      {!hideTitle && (
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settlement Extractor</h1>
+        </div>
+      )}
 
       <div className="bg-white shadow rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Extract Settlement PDFs to JSON</h2>

@@ -11,11 +11,13 @@ import json
 import logging
 from datetime import datetime
 from app.database import get_db
+from app.dependencies import get_tenant_id
 from app.models.repair import Repair
 from app.models.truck import Truck
 from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadResponse, RepairUpdate
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
 from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
+from app.services.accounting_service import create_repair_journal_entry, delete_repair_journal_entry
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.get("/", response_model=List[RepairResponse])
 def get_repairs(
     truck_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get all repairs, optionally filtered by truck"""
-    query = db.query(Repair)
+    """Get all repairs for the current tenant, optionally filtered by truck"""
+    # Filter repairs through trucks by tenant_id
+    query = db.query(Repair).join(Truck).filter(Truck.tenant_id == tenant_id)
     if truck_id:
+        # Also verify truck belongs to tenant
+        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+        if not truck:
+            raise HTTPException(status_code=404, detail="Truck not found")
         query = query.filter(Repair.truck_id == truck_id)
     return query.order_by(Repair.repair_date.desc()).all()
 
@@ -41,7 +49,8 @@ def get_repairs(
 async def create_repair(
     repair_json: Optional[str] = Form(None),
     images: List[UploadFile] = File(default=[]),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Create a new repair expense"""
     # Parse repair data from JSON string (for FormData) or use RepairCreate directly
@@ -135,6 +144,14 @@ async def create_repair(
         db.add(db_repair)
         db.commit()
         db.refresh(db_repair)
+        
+        # Create accounting journal entry
+        try:
+            create_repair_journal_entry(db, db_repair)
+        except Exception as e:
+            # Log error but don't fail repair creation
+            logger.error(f"Failed to create journal entry for repair {db_repair.id}: {str(e)}")
+        
         return db_repair
     except Exception as e:
         db.rollback()
@@ -298,6 +315,15 @@ async def update_repair(
     
     db.commit()
     db.refresh(repair)
+    
+    # Update accounting journal entry (delete old, create new)
+    try:
+        delete_repair_journal_entry(db, repair.id)
+        create_repair_journal_entry(db, repair)
+    except Exception as e:
+        # Log error but don't fail repair update
+        logger.error(f"Failed to update journal entry for repair {repair.id}: {str(e)}")
+    
     return repair
 
 @router.post("/upload", response_model=RepairUploadResponse)
@@ -494,6 +520,13 @@ async def upload_repair_invoice(
         db.commit()
         db.refresh(db_repair)
         
+        # Create accounting journal entry
+        try:
+            create_repair_journal_entry(db, db_repair)
+        except Exception as e:
+            # Log error but don't fail repair creation
+            logger.error(f"Failed to create journal entry for repair {db_repair.id}: {str(e)}")
+        
         warning_parts = []
         if not repair_data.get("repair_date"):
             warning_parts.append("Repair date could not be extracted from invoice. Please update manually.")
@@ -570,11 +603,22 @@ async def delete_repair_image(
     return {"message": "Image deleted successfully", "repair": repair}
 
 @router.delete("/{repair_id}")
-def delete_repair(repair_id: int, db: Session = Depends(get_db)):
+def delete_repair(repair_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a repair"""
-    repair = db.query(Repair).filter(Repair.id == repair_id).first()
+    repair = db.query(Repair).join(Truck).filter(
+        Repair.id == repair_id,
+        Truck.tenant_id == tenant_id
+    ).first()
     if not repair:
         raise HTTPException(status_code=404, detail="Repair not found")
+    
+    # Delete accounting journal entry
+    try:
+        delete_repair_journal_entry(db, repair_id)
+    except Exception as e:
+        # Log error but don't fail repair deletion
+        logger.error(f"Failed to delete journal entry for repair {repair_id}: {str(e)}")
+    
     db.delete(repair)
     db.commit()
     return {"message": "Repair deleted successfully"}

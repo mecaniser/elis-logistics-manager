@@ -7,6 +7,15 @@ const api = axios.create({
   },
 })
 
+// Add tenant ID interceptor to include X-Tenant-ID header in all requests
+api.interceptors.request.use((config) => {
+  const tenantId = localStorage.getItem('currentTenantId')
+  if (tenantId) {
+    config.headers['X-Tenant-ID'] = tenantId
+  }
+  return config
+})
+
 // Types
 export interface Truck {
   id: number
@@ -504,4 +513,170 @@ export const analyticsApi = {
   },
   getPMStatus: () =>
     api.get<PMStatusResponse>('/analytics/pm-status'),
+}
+
+// Accounting types
+export interface ChartOfAccount {
+  id: number
+  code: string
+  name: string
+  account_type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense'
+  parent_id?: number | null
+  is_active: boolean
+  created_at: string
+}
+
+export interface JournalEntryLine {
+  id: number
+  journal_entry_id: number
+  account_id: number
+  debit: number
+  credit: number
+  description?: string | null
+  truck_id?: number | null
+  created_at: string
+}
+
+export interface JournalEntry {
+  id: number
+  entry_date: string
+  reference_type?: string | null
+  reference_id?: number | null
+  description?: string | null
+  created_at: string
+  lines: JournalEntryLine[]
+}
+
+export interface GeneralLedgerEntry {
+  entry_date: string
+  journal_entry_id: number
+  account_code: string
+  account_name: string
+  description?: string | null
+  debit: number
+  credit: number
+  running_balance: number
+}
+
+export interface GeneralLedger {
+  account_id: number
+  account_code: string
+  account_name: string
+  account_type: string
+  start_balance: number
+  end_balance: number
+  entries: GeneralLedgerEntry[]
+}
+
+export interface BalanceSheet {
+  as_of_date: string
+  assets: {
+    cash: number
+    accounts_receivable: number
+    vehicles: number
+    accumulated_depreciation: number
+    net_vehicles: number
+    total: number
+  }
+  liabilities: {
+    accounts_payable: number
+    loans_payable: number
+    total: number
+  }
+  equity: {
+    owner_equity: number
+    retained_earnings: number
+    total: number
+  }
+  total_liabilities_and_equity: number
+}
+
+export interface IncomeStatement {
+  start_date: string
+  end_date: string
+  revenue: {
+    operating_revenue: number
+    total: number
+  }
+  expenses: { [key: string]: number }
+  total_expenses: number
+  net_income: number
+}
+
+export interface BankAccount {
+  bank_name: string
+  account_number: string
+  routing_number: string
+  account_type?: string  // 'checking', 'savings', etc.
+}
+
+export interface Tenant {
+  id: number
+  name: string
+  business_type: string  // 'logistics', 'tech', 'real_estate', etc.
+  is_active: boolean
+  ein?: string
+  legal_name?: string
+  address?: string
+  city?: string
+  state?: string
+  zip_code?: string
+  phone?: string
+  email?: string
+  bank_accounts?: BankAccount[]
+  notes?: string
+  created_at: string
+  updated_at?: string
+}
+
+// Tenant API
+export const tenantsApi = {
+  getTenants: () => api.get<Tenant[]>('/tenants'),
+  getTenant: (tenantId: number) => api.get<Tenant>(`/tenants/${tenantId}`),
+  createTenant: (tenant: Partial<Tenant>) =>
+    api.post<Tenant>('/tenants', tenant),
+  updateTenant: (tenantId: number, tenant: Partial<Tenant>) =>
+    api.put<Tenant>(`/tenants/${tenantId}`, tenant),
+  deleteTenant: (tenantId: number) => api.delete(`/tenants/${tenantId}`),
+}
+
+// Accounting API
+export const accountingApi = {
+  initializeChartOfAccounts: () =>
+    api.post<ChartOfAccount[]>('/accounting/chart-of-accounts/initialize'),
+  getChartOfAccounts: (accountType?: string, isActive?: boolean) => {
+    const params: Record<string, any> = {}
+    if (accountType) params.account_type = accountType
+    if (isActive !== undefined) params.is_active = isActive
+    return api.get<ChartOfAccount[]>('/accounting/chart-of-accounts', { params })
+  },
+  createChartOfAccount: (account: Omit<ChartOfAccount, 'id' | 'created_at'>) =>
+    api.post<ChartOfAccount>('/accounting/chart-of-accounts', account),
+  getChartOfAccount: (accountId: number) =>
+    api.get<ChartOfAccount>(`/accounting/chart-of-accounts/${accountId}`),
+  getJournalEntries: (startDate?: string, endDate?: string, referenceType?: string, referenceId?: number) => {
+    const params: Record<string, any> = {}
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    if (referenceType) params.reference_type = referenceType
+    if (referenceId) params.reference_id = referenceId
+    return api.get<JournalEntry[]>('/accounting/journal-entries', { params })
+  },
+  createJournalEntry: (entry: { entry_date: string; reference_type?: string; reference_id?: number; description?: string; lines: Array<{ account_id: number; debit: number; credit: number; description?: string; truck_id?: number }> }) =>
+    api.post<JournalEntry>('/accounting/journal-entries', entry),
+  getJournalEntry: (entryId: number) =>
+    api.get<JournalEntry>(`/accounting/journal-entries/${entryId}`),
+  getGeneralLedger: (accountId: number, startDate?: string, endDate?: string) => {
+    const params: Record<string, any> = { account_id: accountId }
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    return api.get<GeneralLedger>('/accounting/general-ledger', { params })
+  },
+  getBalanceSheet: (asOfDate?: string) => {
+    const params: Record<string, any> = {}
+    if (asOfDate) params.as_of_date = asOfDate
+    return api.get<BalanceSheet>('/accounting/balance-sheet', { params })
+  },
+  getIncomeStatement: (startDate: string, endDate: string) =>
+    api.get<IncomeStatement>('/accounting/income-statement', { params: { start_date: startDate, end_date: endDate } }),
 }

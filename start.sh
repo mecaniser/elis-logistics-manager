@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick start script for Elis Logistics App
+# Quick start script for Elis Group Manager
 
-echo "🚀 Starting Elis Logistics App..."
+echo "🚀 Starting Elis Group Manager..."
 echo ""
 
 # Check if Python is available

@@ -1,6 +1,6 @@
 # Railway Deployment Guide
 
-This guide will help you deploy the Elis Logistics App to Railway with your custom domain and PostgreSQL database.
+This guide will help you deploy the Elis Group Manager to Railway with your custom domain and PostgreSQL database.
 
 ## 🎯 Overview
 

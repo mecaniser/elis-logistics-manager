@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from app.database import get_db
+from app.dependencies import get_tenant_id
 from app.models.settlement import Settlement
 from app.models.truck import Truck
 from app.models.repair import Repair
@@ -15,6 +16,7 @@ from app.utils.settlement_extractor import SettlementExtractor
 from app.utils.cloudinary import upload_pdf
 from app.utils.loan_interest import calculate_weekly_loan_interest, calculate_principal_payment
 from app.utils.block_id_validator import validate_block_ids
+from app.services.accounting_service import create_settlement_journal_entry, delete_settlement_journal_entry
 import os
 import json
 from datetime import datetime
@@ -66,7 +68,7 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
         db.commit()
 
 @router.get("/duplicate-block-ids")
-def get_duplicate_block_ids(db: Session = Depends(get_db)):
+def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """
     Find all duplicate block IDs across settlements.
     Returns a report of which block IDs appear in multiple settlements.
@@ -74,8 +76,11 @@ def get_duplicate_block_ids(db: Session = Depends(get_db)):
     from app.utils.block_id_validator import extract_block_ids
     from collections import defaultdict
     
-    # Get all settlements with block_ids
-    settlements = db.query(Settlement).filter(Settlement.block_ids.isnot(None)).all()
+    # Get all settlements with block_ids for current tenant
+    settlements = db.query(Settlement).join(Truck).filter(
+        Truck.tenant_id == tenant_id,
+        Settlement.block_ids.isnot(None)
+    ).all()
     
     # Map block_id -> list of settlements containing it
     block_id_to_settlements = defaultdict(list)
@@ -107,12 +112,18 @@ def get_settlements(
     truck_id: Optional[int] = None,
     skip: Optional[int] = 0,
     limit: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get all settlements, optionally filtered by truck, with pagination support"""
+    """Get all settlements for the current tenant, optionally filtered by truck, with pagination support"""
     try:
-        query = db.query(Settlement)
+        # Filter settlements through trucks by tenant_id
+        query = db.query(Settlement).join(Truck).filter(Truck.tenant_id == tenant_id)
         if truck_id:
+            # Also verify truck belongs to tenant
+            truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+            if not truck:
+                raise HTTPException(status_code=404, detail="Truck not found")
             query = query.filter(Settlement.truck_id == truck_id)
         query = query.order_by(Settlement.settlement_date.desc())
         
@@ -134,7 +145,8 @@ async def upload_settlement_pdf(
     file: UploadFile = File(...),
     truck_id: Optional[int] = Form(None),
     settlement_type: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """
     Upload and parse Amazon Relay settlement PDF.
@@ -313,6 +325,16 @@ async def upload_settlement_pdf(
         # Refresh all created settlements
         for settlement in created_settlements:
             db.refresh(settlement)
+        
+        # Create accounting journal entries for settlements
+        for settlement in created_settlements:
+            try:
+                create_settlement_journal_entry(db, settlement)
+            except Exception as e:
+                # Log error but don't fail settlement creation
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
         
         # Clean up local PDF file if it was uploaded to Cloudinary
         # (Only delete if all settlements were created successfully and PDF is in Cloudinary)
@@ -538,6 +560,17 @@ async def upload_settlement_pdf_bulk(
             # Commit all settlements for this file
             if file_successful > 0:
                 db.commit()
+                # Refresh settlements to get IDs
+                for settlement in file_settlements:
+                    db.refresh(settlement)
+                # Create accounting journal entries
+                for settlement in file_settlements:
+                    try:
+                        create_settlement_journal_entry(db, settlement)
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
                 # Update loan balances for trucks after settlements are created
                 truck_ids_updated = set()
                 for settlement in file_settlements:
@@ -600,12 +633,12 @@ async def upload_settlement_pdf_bulk(
 
 @router.post("", response_model=SettlementResponse)
 @router.post("/", response_model=SettlementResponse)
-def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db)):
+def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Manually create a settlement"""
     try:
-        # Check if truck exists
+        # Check if truck exists and belongs to tenant
         from app.models.truck import Truck
-        truck = db.query(Truck).filter(Truck.id == settlement.truck_id).first()
+        truck = db.query(Truck).filter(Truck.id == settlement.truck_id, Truck.tenant_id == tenant_id).first()
         if not truck:
             raise HTTPException(status_code=400, detail=f"Truck with ID {settlement.truck_id} not found")
         
@@ -677,6 +710,15 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         # Update loan balance if cash investment is recovered
         update_loan_balance_after_settlement(truck.id, db)
         
+        # Create accounting journal entry
+        try:
+            create_settlement_journal_entry(db, db_settlement)
+        except Exception as e:
+            # Log error but don't fail settlement creation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create journal entry for settlement {db_settlement.id}: {str(e)}")
+        
         db.refresh(db_settlement)
         return db_settlement
     except HTTPException:
@@ -687,9 +729,12 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail=f"Failed to create settlement: {str(e)}")
 
 @router.get("/{settlement_id}", response_model=SettlementResponse)
-def get_settlement(settlement_id: int, db: Session = Depends(get_db)):
+def get_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Get a specific settlement"""
-    settlement = db.query(Settlement).filter(Settlement.id == settlement_id).first()
+    settlement = db.query(Settlement).join(Truck).filter(
+        Settlement.id == settlement_id,
+        Truck.tenant_id == tenant_id
+    ).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
     return settlement
@@ -700,14 +745,18 @@ async def update_settlement(
     settlement_update: Optional[SettlementUpdate] = None,
     settlement_update_json: Optional[str] = Form(None),
     pdf_file: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """
     Update a settlement with optional PDF file upload.
     Accepts either JSON body (settlement_update) or Form data with JSON string (settlement_update_json).
     When uploading a PDF file, use Form data with settlement_update_json.
     """
-    settlement = db.query(Settlement).filter(Settlement.id == settlement_id).first()
+    settlement = db.query(Settlement).join(Truck).filter(
+        Settlement.id == settlement_id,
+        Truck.tenant_id == tenant_id
+    ).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
     
@@ -783,6 +832,17 @@ async def update_settlement(
     
     db.commit()
     db.refresh(settlement)
+    
+    # Update accounting journal entry (delete old, create new)
+    try:
+        delete_settlement_journal_entry(db, settlement.id)
+        create_settlement_journal_entry(db, settlement)
+    except Exception as e:
+        # Log error but don't fail settlement update
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to update journal entry for settlement {settlement.id}: {str(e)}")
+    
     return settlement
 
 @router.post("/upload-consolidated")
@@ -1126,6 +1186,28 @@ def upload_consolidated_settlements(
         if not dry_run and (created_settlements or updated_settlements):
             db.commit()
             
+            # Refresh all settlements
+            for settlement in all_settlements:
+                db.refresh(settlement)
+            
+            # Create/update accounting journal entries
+            for settlement in created_settlements:
+                try:
+                    create_settlement_journal_entry(db, settlement)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
+            
+            for settlement in updated_settlements:
+                try:
+                    delete_settlement_journal_entry(db, settlement.id)
+                    create_settlement_journal_entry(db, settlement)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to update journal entry for settlement {settlement.id}: {str(e)}")
+            
             # Update loan balances
             truck_ids_updated = set()
             all_settlements = created_settlements + updated_settlements
@@ -1133,10 +1215,6 @@ def upload_consolidated_settlements(
                 if settlement.truck_id not in truck_ids_updated:
                     update_loan_balance_after_settlement(settlement.truck_id, db)
                     truck_ids_updated.add(settlement.truck_id)
-            
-            # Refresh all settlements
-            for settlement in all_settlements:
-                db.refresh(settlement)
         
         # Return settlements list if not dry run, otherwise return summary only
         if not dry_run:
@@ -1338,16 +1416,25 @@ def upload_settlement_json(
         
         db.commit()
         
+        # Refresh all created settlements
+        for settlement in created_settlements:
+            db.refresh(settlement)
+        
+        # Create accounting journal entries
+        for settlement in created_settlements:
+            try:
+                create_settlement_journal_entry(db, settlement)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
+        
         # Update loan balances for trucks after settlements are created
         truck_ids_updated = set()
         for settlement in created_settlements:
             if settlement.truck_id not in truck_ids_updated:
                 update_loan_balance_after_settlement(settlement.truck_id, db)
                 truck_ids_updated.add(settlement.truck_id)
-        
-        # Refresh all created settlements
-        for settlement in created_settlements:
-            db.refresh(settlement)
         
         return created_settlements
         
@@ -1359,11 +1446,23 @@ def upload_settlement_json(
         raise HTTPException(status_code=400, detail=f"Failed to process JSON: {str(e)}")
 
 @router.delete("/{settlement_id}")
-def delete_settlement(settlement_id: int, db: Session = Depends(get_db)):
+def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a settlement"""
-    settlement = db.query(Settlement).filter(Settlement.id == settlement_id).first()
+    settlement = db.query(Settlement).join(Truck).filter(
+        Settlement.id == settlement_id,
+        Truck.tenant_id == tenant_id
+    ).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
+    
+    # Delete accounting journal entry
+    try:
+        delete_settlement_journal_entry(db, settlement_id)
+    except Exception as e:
+        # Log error but don't fail settlement deletion
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to delete journal entry for settlement {settlement_id}: {str(e)}")
     
     # Delete PDF file if it exists
     if settlement.pdf_file_path and os.path.exists(settlement.pdf_file_path):

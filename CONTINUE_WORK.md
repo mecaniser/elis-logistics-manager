@@ -1,8 +1,8 @@
-# Instructions for Continuing Work on Elis Logistics App
+# Instructions for Continuing Work on Elis Group Manager
 
 ## 📋 Project Context
 
-**Project Name:** elis-logistics-app  
+**Project Name:** elis-group-manager  
 **Location:** `/Users/sergio/GitHub/elis-logistics-app`  
 **Purpose:** Management system for Amazon Relay truck operations (2 trucks)  
 **Tech Stack:** FastAPI (Python) + React (to be created) + PostgreSQL (Railway)

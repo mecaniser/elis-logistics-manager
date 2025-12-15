@@ -1,4 +1,4 @@
-# Elis Logistics Manager
+# Elis Group Manager
 
 Management system for Amazon Relay truck operations. Track settlements, expenses, repairs, and analyze profitability per truck.
 
@@ -134,4 +134,4 @@ Tables are auto-created on first run via `Base.metadata.create_all()` in `main.p
 
 ## License
 
-Private project - Elis Logistics
+Private project - Elis Group

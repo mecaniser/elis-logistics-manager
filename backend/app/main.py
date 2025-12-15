@@ -9,13 +9,13 @@ import os
 from pathlib import Path
 
 from app.database import engine, Base
-from app.routers import trucks, settlements, repairs, analytics, extractor
+from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Elis Logistics Manager",
+    title="Elis Group Manager",
     description="Management system for Amazon Relay truck operations",
     version="1.0.0"
 )
@@ -37,11 +37,13 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(tenants.router, prefix="/api/tenants", tags=["tenants"])
 app.include_router(trucks.router, prefix="/api/trucks", tags=["trucks"])
 app.include_router(settlements.router, prefix="/api/settlements", tags=["settlements"])
 app.include_router(repairs.router, prefix="/api/repairs", tags=["repairs"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"])
+app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
 
 # Serve uploaded files
 # Determine uploads directory - backend runs from backend/ directory
@@ -69,7 +71,7 @@ frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
 @app.get("/api")
 async def api_info():
     return {
-        "message": "Elis Logistics Manager API",
+        "message": "Elis Group Manager API",
         "version": "1.0.0",
         "docs": "/docs"
     }

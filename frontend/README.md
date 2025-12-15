@@ -1,6 +1,6 @@
-# Elis Logistics Frontend
+# Elis Group Manager Frontend
 
-React frontend for the Elis Logistics Manager application.
+React frontend for the Elis Group Manager application.
 
 ## Tech Stack
 

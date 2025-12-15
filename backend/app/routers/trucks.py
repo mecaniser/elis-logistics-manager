@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
+from app.dependencies import get_tenant_id
 from app.models.truck import Truck
 from app.schemas.truck import TruckCreate, TruckResponse, TruckUpdate
 
@@ -14,10 +15,11 @@ router = APIRouter()
 @router.get("/", response_model=List[TruckResponse])
 def get_trucks(
     vehicle_type: Optional[str] = None,  # Filter by 'truck' or 'trailer'
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get all trucks and trailers, optionally filtered by vehicle_type"""
-    query = db.query(Truck)
+    """Get all trucks and trailers for the current tenant, optionally filtered by vehicle_type"""
+    query = db.query(Truck).filter(Truck.tenant_id == tenant_id)
     if vehicle_type:
         vehicle_type_lower = vehicle_type.lower()
         if vehicle_type_lower in ['truck', 'trailer']:
@@ -26,7 +28,7 @@ def get_trucks(
 
 @router.post("", response_model=TruckResponse)
 @router.post("/", response_model=TruckResponse)
-def create_truck(truck: TruckCreate, db: Session = Depends(get_db)):
+def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Create a new truck or trailer"""
     # Validate vehicle_type
     vehicle_type = truck.vehicle_type.lower()
@@ -79,8 +81,9 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db)):
                     detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan}) + registration_fee ({registration})"
                 )
     
-    # Check for duplicate name within same vehicle type
+    # Check for duplicate name within same vehicle type and tenant
     existing = db.query(Truck).filter(
+        Truck.tenant_id == tenant_id,
         Truck.name == truck.name,
         Truck.vehicle_type == vehicle_type
     ).first()
@@ -91,6 +94,7 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db)):
         )
     
     truck_dict = truck.model_dump()
+    truck_dict['tenant_id'] = tenant_id
     truck_dict['vehicle_type'] = vehicle_type  # Ensure lowercase
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
@@ -106,17 +110,17 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db)):
     return db_truck
 
 @router.get("/{truck_id}", response_model=TruckResponse)
-def get_truck(truck_id: int, db: Session = Depends(get_db)):
+def get_truck(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Get a specific truck"""
-    truck = db.query(Truck).filter(Truck.id == truck_id).first()
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     return truck
 
 @router.put("/{truck_id}", response_model=TruckResponse)
-def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends(get_db)):
+def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Update a truck or trailer"""
-    truck = db.query(Truck).filter(Truck.id == truck_id).first()
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     
@@ -190,9 +194,9 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     return truck
 
 @router.delete("/{truck_id}")
-def delete_truck(truck_id: int, db: Session = Depends(get_db)):
+def delete_truck(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a truck or trailer"""
-    truck = db.query(Truck).filter(Truck.id == truck_id).first()
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     

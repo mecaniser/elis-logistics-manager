@@ -4,6 +4,7 @@ import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
+import Extractor from './Extractor'
 
 const SETTLEMENTS_PER_PAGE = 20
 
@@ -103,6 +104,7 @@ export default function Settlements() {
   })
   const [searchFilter, setSearchFilter] = useState<string>('')
   const [editPdfFile, setEditPdfFile] = useState<File | null>(null)
+  const [showExtractor, setShowExtractor] = useState(false)
 
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
@@ -1241,9 +1243,13 @@ export default function Settlements() {
                     setExpensesDescription('')
                     setVinLookup('')
                   }
+                  // Close extractor if open
+                  if (showExtractor) {
+                    setShowExtractor(false)
+                  }
                 }}
                 className="px-3 py-2 lg:px-4 lg:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
-                title={showManualForm ? 'Cancel' : 'Add Manual Settlement'}
+                title={showManualForm ? 'Cancel' : 'Manual Settlement'}
               >
                 {showManualForm ? (
                   <>
@@ -1257,7 +1263,7 @@ export default function Settlements() {
                     <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                    <span className="hidden lg:inline">Add Manual Settlement</span>
+                    <span className="hidden lg:inline">Manual Settlement</span>
                   </>
                 )}
               </button>
@@ -1268,6 +1274,10 @@ export default function Settlements() {
                     // Reset form when closing
                     setUploadFile(null)
                     setSelectedTruckForUpload(null)
+                  }
+                  // Close extractor if open
+                  if (showExtractor) {
+                    setShowExtractor(false)
                   }
                 }}
                 className="px-3 py-2 lg:px-4 lg:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
@@ -1289,10 +1299,57 @@ export default function Settlements() {
                   </>
                 )}
               </button>
+              <button
+                onClick={() => {
+                  setShowExtractor(!showExtractor)
+                  // Close other forms if open
+                  if (showUploadForm) {
+                    setShowUploadForm(false)
+                    setUploadFile(null)
+                    setSelectedTruckForUpload(null)
+                  }
+                  if (showManualForm) {
+                    setShowManualForm(false)
+                    setManualFormData({
+                      truck_id: undefined,
+                      settlement_date: new Date().toISOString().split('T')[0],
+                      gross_revenue: undefined,
+                      expenses: undefined,
+                      net_profit: undefined,
+                    })
+                    setExpensesDescription('')
+                    setVinLookup('')
+                  }
+                }}
+                className="px-3 py-2 lg:px-4 lg:py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center justify-center gap-2 min-w-[44px] lg:min-w-auto whitespace-nowrap h-[42px] flex-shrink-0"
+                title={showExtractor ? 'Close Extractor' : 'Extract to JSON'}
+              >
+                {showExtractor ? (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span className="hidden lg:inline">Close</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 lg:w-4 lg:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="hidden lg:inline">Extract to JSON</span>
+                  </>
+                )}
+              </button>
             </>
           )}
         </div>
       </div>
+
+      {showExtractor && (
+        <div className="mb-6">
+          <Extractor hideTitle={true} />
+        </div>
+      )}
 
       {showUploadForm && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -1393,7 +1450,7 @@ export default function Settlements() {
 
       {showManualForm && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Add Manual Settlement</h2>
+          <h2 className="text-lg font-semibold mb-4">Manual Settlement</h2>
           <p className="text-sm text-gray-600 mb-4">
             Manually create a settlement for trucks or trailers. Useful for tracking revenue from trailers or when PDF parsing fails.
           </p>
@@ -2830,3 +2887,4 @@ export default function Settlements() {
     </div>
   )
 }
+
