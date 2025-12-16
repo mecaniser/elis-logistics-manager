@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { accountingApi, JournalEntry as JournalEntryType, ChartOfAccount } from '../services/api'
+import { accountingApi, JournalEntry as JournalEntryType, ChartOfAccount, trucksApi, Truck } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
+import InfoPanel from '../components/InfoPanel'
 
 export default function JournalEntries() {
   const { currentTenant } = useTenant()
@@ -11,13 +12,36 @@ export default function JournalEntries() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [referenceTypeFilter, setReferenceTypeFilter] = useState('')
+  const [trucks, setTrucks] = useState<Truck[]>([])
+  const [selectedTruckId, setSelectedTruckId] = useState<number | null>(null)
+  
+  const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
+  
+  // Load trucks for logistics businesses
+  useEffect(() => {
+    if (currentTenant?.business_type === 'logistics') {
+      loadTrucks()
+    } else {
+      setTrucks([])
+      setSelectedTruckId(null)
+    }
+  }, [currentTenant?.id, currentTenant?.business_type])
+  
+  const loadTrucks = async () => {
+    try {
+      const response = await trucksApi.getAll()
+      setTrucks(response.data)
+    } catch (err) {
+      console.error('Failed to load trucks:', err)
+    }
+  }
 
   useEffect(() => {
     setEntries([])
     setAccounts([])
     loadEntries()
     loadAccounts()
-  }, [startDate, endDate, referenceTypeFilter, currentTenant?.id])
+  }, [startDate, endDate, referenceTypeFilter, selectedTruckId, currentTenant?.id])
 
   const loadEntries = async () => {
     try {
@@ -26,7 +50,9 @@ export default function JournalEntries() {
       const response = await accountingApi.getJournalEntries(
         startDate || undefined,
         endDate || undefined,
-        referenceTypeFilter || undefined
+        referenceTypeFilter || undefined,
+        undefined,
+        selectedTruckId || undefined
       )
       setEntries(response.data)
     } catch (err: any) {
@@ -38,7 +64,7 @@ export default function JournalEntries() {
 
   const loadAccounts = async () => {
     try {
-      const response = await accountingApi.getChartOfAccounts()
+      const response = await accountingApi.getChartOfAccounts(undefined, undefined, selectedTruckId || undefined)
       setAccounts(response.data)
     } catch (err) {
       // Ignore errors loading accounts
@@ -72,12 +98,69 @@ export default function JournalEntries() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Journal Entries</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-bold text-gray-900">
+          Journal Entries
+          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
+            <span className="text-lg font-normal text-gray-600 ml-2">
+              - {trucks.find(t => t.id === selectedTruckId)?.name}
+            </span>
+          )}
+        </h1>
       </div>
 
+      <InfoPanel
+        title="What are Journal Entries?"
+        content={
+          <div className="space-y-3">
+            <p>
+              <strong>Journal Entries</strong> are the foundation of double-entry bookkeeping. Every financial transaction is recorded as a journal entry with at least two parts: a debit and a credit.
+            </p>
+            <div>
+              <p className="font-semibold mb-2">The Golden Rule:</p>
+              <p className="mb-2">For every transaction, <strong>total debits must equal total credits</strong>. This keeps your books balanced.</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong>Debit (Dr):</strong> Increases assets and expenses; decreases liabilities, equity, and revenue</li>
+                <li><strong>Credit (Cr):</strong> Increases liabilities, equity, and revenue; decreases assets and expenses</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold mb-2">Example:</p>
+              <p className="mb-1">When you receive payment for a settlement:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Debit: Accounts Receivable (money owed to you)</li>
+                <li>Credit: Operating Revenue (money earned)</li>
+              </ul>
+            </div>
+            <p>
+              <strong>Why it matters:</strong> Journal entries create an audit trail of every transaction, making it easy to track where money came from and where it went. They automatically generate when you create settlements or repairs, but you can also create manual entries for other transactions.
+            </p>
+          </div>
+        }
+      />
+
       <div className="bg-white p-4 rounded-lg shadow space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 md:grid-cols-${isLSLogistics && trucks.length > 0 ? '5' : '4'} gap-4`}>
+          {/* Vehicle Selector (LS Logistics only) */}
+          {isLSLogistics && trucks.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Vehicle
+              </label>
+              <select
+                value={selectedTruckId || ''}
+                onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="">Select Vehicle</option>
+                {trucks.map((truck) => (
+                  <option key={truck.id} value={truck.id}>
+                    {truck.name} ({truck.vehicle_type})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Start Date

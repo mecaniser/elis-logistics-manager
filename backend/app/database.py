@@ -12,7 +12,7 @@ load_dotenv()
 # Database URL - use PostgreSQL on Railway, SQLite locally
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./elisogistics.db"
+    "sqlite:///./elisgroup.db"
 )
 
 # Handle Railway PostgreSQL URL format

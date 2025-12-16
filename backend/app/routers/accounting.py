@@ -84,11 +84,27 @@ def reset_chart_of_accounts(db: Session = Depends(get_db), tenant_id: int = Depe
 def get_chart_of_accounts(
     account_type: Optional[str] = None,
     is_active: Optional[bool] = True,
+    truck_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get all chart of accounts for the current tenant, optionally filtered by type."""
+    """Get all chart of accounts for the current tenant, optionally filtered by type and truck_id."""
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    from app.services.accounting_service import uses_per_asset_accounting
+    
     query = db.query(ChartOfAccount).filter(ChartOfAccount.tenant_id == tenant_id)
+    
+    # For per-asset accounting, filter by truck_id
+    if uses_per_asset_accounting(tenant):
+        if truck_id:
+            query = query.filter(ChartOfAccount.truck_id == truck_id)
+        else:
+            # If no truck_id specified, return all per-asset accounts
+            query = query.filter(ChartOfAccount.truck_id.isnot(None))
+    else:
+        # For shared accounting, only return accounts without truck_id
+        query = query.filter(ChartOfAccount.truck_id.is_(None))
     
     if account_type:
         query = query.filter(ChartOfAccount.account_type == account_type)
@@ -105,15 +121,23 @@ def create_chart_of_account(
     tenant_id: int = Depends(get_tenant_id)
 ):
     """Create a new chart of account."""
-    # Check if code already exists for this tenant
-    existing = db.query(ChartOfAccount).filter(
+    # Check if code already exists for this tenant (and truck_id if per-asset)
+    existing_query = db.query(ChartOfAccount).filter(
         ChartOfAccount.tenant_id == tenant_id,
         ChartOfAccount.code == account.code
-    ).first()
+    )
+    if account.truck_id is not None:
+        existing_query = existing_query.filter(ChartOfAccount.truck_id == account.truck_id)
+    else:
+        existing_query = existing_query.filter(ChartOfAccount.truck_id.is_(None))
+    
+    existing = existing_query.first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Account with code {account.code} already exists")
     
-    db_account = ChartOfAccount(**account.model_dump())
+    account_data = account.model_dump()
+    account_data['tenant_id'] = tenant_id
+    db_account = ChartOfAccount(**account_data)
     db.add(db_account)
     db.commit()
     db.refresh(db_account)
@@ -135,10 +159,27 @@ def get_journal_entries(
     end_date: Optional[date] = None,
     reference_type: Optional[str] = None,
     reference_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    truck_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Get all journal entries, optionally filtered."""
-    query = db.query(JournalEntry)
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    from app.services.accounting_service import uses_per_asset_accounting
+    
+    query = db.query(JournalEntry).filter(JournalEntry.tenant_id == tenant_id)
+    
+    # For per-asset accounting, filter by truck_id
+    if uses_per_asset_accounting(tenant):
+        if truck_id:
+            query = query.filter(JournalEntry.truck_id == truck_id)
+        else:
+            # If no truck_id specified, return all per-asset entries
+            query = query.filter(JournalEntry.truck_id.isnot(None))
+    else:
+        # For shared accounting, only return entries without truck_id
+        query = query.filter(JournalEntry.truck_id.is_(None))
     
     if start_date:
         query = query.filter(JournalEntry.entry_date >= start_date)
@@ -155,9 +196,18 @@ def get_journal_entries(
 @router.post("/journal-entries", response_model=JournalEntryResponse)
 def create_journal_entry(
     entry: JournalEntryCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Create a manual journal entry."""
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    from app.services.accounting_service import uses_per_asset_accounting
+    
+    per_asset = uses_per_asset_accounting(tenant)
+    if per_asset and not entry.truck_id:
+        raise HTTPException(status_code=400, detail="truck_id is required for LS Logistics journal entries")
+    
     # Validate that lines balance
     lines_data = [line.model_dump() for line in entry.lines]
     is_valid, error_msg = validate_journal_entry_lines(lines_data)
@@ -166,6 +216,7 @@ def create_journal_entry(
     
     # Create journal entry
     entry_data = entry.model_dump(exclude={"lines"})
+    entry_data['tenant_id'] = tenant_id
     db_entry = JournalEntry(**entry_data)
     db.add(db_entry)
     db.flush()  # Get the ID
@@ -264,28 +315,66 @@ def get_general_ledger(
 @router.get("/balance-sheet", response_model=BalanceSheetResponse)
 def get_balance_sheet(
     as_of_date: Optional[date] = Query(None),
+    truck_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get balance sheet as of a specific date."""
+    """Get balance sheet as of a specific date. For LS Logistics, truck_id is required."""
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    from app.services.accounting_service import uses_per_asset_accounting
+    
     if not as_of_date:
         as_of_date = date.today()
     
-    balance_sheet = generate_balance_sheet(db, tenant_id, as_of_date)
-    return BalanceSheetResponse(**balance_sheet)
+    per_asset = uses_per_asset_accounting(tenant)
+    if per_asset and not truck_id:
+        raise HTTPException(status_code=400, detail="truck_id is required for LS Logistics balance sheet")
+    
+    # If truck_id provided, verify it belongs to the tenant
+    if truck_id:
+        from app.models.truck import Truck
+        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+        if not truck:
+            raise HTTPException(status_code=404, detail="Truck not found or does not belong to this tenant")
+    
+    try:
+        balance_sheet = generate_balance_sheet(db, tenant_id, as_of_date, truck_id)
+        return BalanceSheetResponse(**balance_sheet)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/income-statement", response_model=IncomeStatementResponse)
 def get_income_statement(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    truck_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get income statement for a date range."""
+    """Get income statement for a date range. For LS Logistics, truck_id is required."""
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    from app.services.accounting_service import uses_per_asset_accounting
+    
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="start_date must be before end_date")
     
-    income_statement = generate_income_statement(db, tenant_id, start_date, end_date)
-    return IncomeStatementResponse(**income_statement)
+    per_asset = uses_per_asset_accounting(tenant)
+    if per_asset and not truck_id:
+        raise HTTPException(status_code=400, detail="truck_id is required for LS Logistics income statement")
+    
+    # If truck_id provided, verify it belongs to the tenant
+    if truck_id:
+        from app.models.truck import Truck
+        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+        if not truck:
+            raise HTTPException(status_code=404, detail="Truck not found or does not belong to this tenant")
+    
+    try:
+        income_statement = generate_income_statement(db, tenant_id, start_date, end_date, truck_id)
+        return IncomeStatementResponse(**income_statement)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 

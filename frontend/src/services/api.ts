@@ -606,6 +606,7 @@ export interface BalanceSheet {
 export interface IncomeStatement {
   start_date: string
   end_date: string
+  truck_id?: number | null
   revenue: {
     operating_revenue: number
     total: number
@@ -665,22 +666,24 @@ export const accountingApi = {
     api.post<ChartOfAccount[]>('/accounting/chart-of-accounts/initialize'),
   resetChartOfAccounts: () =>
     api.delete<{ message: string }>('/accounting/chart-of-accounts/reset'),
-  getChartOfAccounts: (accountType?: string, isActive?: boolean) => {
+  getChartOfAccounts: (accountType?: string, isActive?: boolean, truckId?: number) => {
     const params: Record<string, any> = {}
     if (accountType) params.account_type = accountType
     if (isActive !== undefined) params.is_active = isActive
+    if (truckId) params.truck_id = truckId
     return api.get<ChartOfAccount[]>('/accounting/chart-of-accounts', { params })
   },
   createChartOfAccount: (account: Omit<ChartOfAccount, 'id' | 'created_at'>) =>
     api.post<ChartOfAccount>('/accounting/chart-of-accounts', account),
   getChartOfAccount: (accountId: number) =>
     api.get<ChartOfAccount>(`/accounting/chart-of-accounts/${accountId}`),
-  getJournalEntries: (startDate?: string, endDate?: string, referenceType?: string, referenceId?: number) => {
+  getJournalEntries: (startDate?: string, endDate?: string, referenceType?: string, referenceId?: number, truckId?: number) => {
     const params: Record<string, any> = {}
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
     if (referenceType) params.reference_type = referenceType
     if (referenceId) params.reference_id = referenceId
+    if (truckId) params.truck_id = truckId
     return api.get<JournalEntry[]>('/accounting/journal-entries', { params })
   },
   createJournalEntry: (entry: { entry_date: string; reference_type?: string; reference_id?: number; description?: string; lines: Array<{ account_id: number; debit: number; credit: number; description?: string; truck_id?: number }> }) =>
@@ -693,11 +696,15 @@ export const accountingApi = {
     if (endDate) params.end_date = endDate
     return api.get<GeneralLedger>('/accounting/general-ledger', { params })
   },
-  getBalanceSheet: (asOfDate?: string) => {
+  getBalanceSheet: (asOfDate?: string, truckId?: number) => {
     const params: Record<string, any> = {}
     if (asOfDate) params.as_of_date = asOfDate
+    if (truckId) params.truck_id = truckId
     return api.get<BalanceSheet>('/accounting/balance-sheet', { params })
   },
-  getIncomeStatement: (startDate: string, endDate: string) =>
-    api.get<IncomeStatement>('/accounting/income-statement', { params: { start_date: startDate, end_date: endDate } }),
+  getIncomeStatement: (startDate: string, endDate: string, truckId?: number) => {
+    const params: Record<string, any> = { start_date: startDate, end_date: endDate }
+    if (truckId) params.truck_id = truckId
+    return api.get<IncomeStatement>('/accounting/income-statement', { params })
+  },
 }

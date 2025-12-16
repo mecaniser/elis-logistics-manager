@@ -11,6 +11,7 @@ class JournalEntry(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    truck_id = Column(Integer, ForeignKey("trucks.id"), nullable=True, index=True)  # For per-asset accounting (LS logistics)
     entry_date = Column(Date, nullable=False)
     reference_type = Column(String(50), nullable=True)  # 'settlement', 'repair', 'manual', etc.
     reference_id = Column(Integer, nullable=True)  # ID of the referenced record (settlement_id, repair_id, etc.)
@@ -19,6 +20,7 @@ class JournalEntry(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="journal_entries")
+    truck = relationship("Truck")
     lines = relationship("JournalEntryLine", back_populates="journal_entry", cascade="all, delete-orphan")
 
     # Check constraint: reference_type must be valid if reference_id is set

@@ -11,6 +11,7 @@ class ChartOfAccountBase(BaseModel):
     name: str = Field(..., max_length=200)
     account_type: str = Field(..., description="Asset, Liability, Equity, Revenue, Expense")
     parent_id: Optional[int] = None
+    truck_id: Optional[int] = None  # For per-asset accounting (LS logistics)
     is_active: bool = True
 
 
@@ -52,6 +53,7 @@ class JournalEntryBase(BaseModel):
     reference_type: Optional[str] = None
     reference_id: Optional[int] = None
     description: Optional[str] = None
+    truck_id: Optional[int] = None  # For per-asset accounting (LS logistics)
 
 
 class JournalEntryCreate(JournalEntryBase):
@@ -99,6 +101,7 @@ class BalanceSheetResponse(BaseModel):
 class IncomeStatementResponse(BaseModel):
     start_date: str
     end_date: str
+    truck_id: Optional[int] = None
     revenue: dict
     expenses: dict
     total_expenses: float

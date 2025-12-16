@@ -24,14 +24,30 @@ from app.utils.account_mapping import (
 )
 
 
-def get_or_create_account(db: Session, code: str, name: str, account_type: str, tenant_id: int, parent_id: Optional[int] = None) -> ChartOfAccount:
+def uses_per_asset_accounting(tenant: Tenant) -> bool:
     """
-    Get an account by code for a tenant, or create it if it doesn't exist.
+    Check if tenant uses per-asset accounting (LS Logistics).
+    For LS Logistics, each truck/trailer has its own chart of accounts.
     """
-    account = db.query(ChartOfAccount).filter(
+    return tenant.name.lower() == "ls logistics"
+
+
+def get_or_create_account(db: Session, code: str, name: str, account_type: str, tenant_id: int, parent_id: Optional[int] = None, truck_id: Optional[int] = None) -> ChartOfAccount:
+    """
+    Get an account by code for a tenant (and truck if per-asset accounting), or create it if it doesn't exist.
+    """
+    query = db.query(ChartOfAccount).filter(
         ChartOfAccount.code == code,
         ChartOfAccount.tenant_id == tenant_id
-    ).first()
+    )
+    
+    # For per-asset accounting, also filter by truck_id
+    if truck_id is not None:
+        query = query.filter(ChartOfAccount.truck_id == truck_id)
+    else:
+        query = query.filter(ChartOfAccount.truck_id.is_(None))
+    
+    account = query.first()
     if not account:
         account = ChartOfAccount(
             code=code,
@@ -39,6 +55,7 @@ def get_or_create_account(db: Session, code: str, name: str, account_type: str, 
             account_type=account_type,
             tenant_id=tenant_id,
             parent_id=parent_id,
+            truck_id=truck_id,
             is_active=True
         )
         db.add(account)
@@ -47,9 +64,10 @@ def get_or_create_account(db: Session, code: str, name: str, account_type: str, 
     return account
 
 
-def ensure_standard_accounts_exist(db: Session, tenant_id: int):
+def ensure_standard_accounts_exist(db: Session, tenant_id: int, truck_id: Optional[int] = None):
     """
     Ensure all standard chart of accounts exist for a tenant based on business type.
+    For LS Logistics with truck_id, creates accounts per truck/trailer.
     Called during initialization or migration.
     """
     # Get tenant to determine business type
@@ -58,96 +76,104 @@ def ensure_standard_accounts_exist(db: Session, tenant_id: int):
         raise ValueError(f"Tenant {tenant_id} not found")
     
     business_type = tenant.business_type or 'logistics'
+    per_asset = uses_per_asset_accounting(tenant)
+    
+    # For LS Logistics, if truck_id is None, create accounts for all trucks/trailers
+    if per_asset and truck_id is None:
+        trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+        for truck in trucks:
+            ensure_standard_accounts_exist(db, tenant_id, truck.id)
+        return
     
     # Common accounts for all business types
     # Assets
-    get_or_create_account(db, "1000", "Cash", "Asset", tenant_id)
-    get_or_create_account(db, "1100", "Accounts Receivable", "Asset", tenant_id)
+    get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "1100", "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id)
     
     # Liabilities
-    get_or_create_account(db, "2000", "Accounts Payable", "Liability", tenant_id)
-    get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id)
-    get_or_create_account(db, "2200", "Accrued Expenses", "Liability", tenant_id)
+    get_or_create_account(db, "2000", "Accounts Payable", "Liability", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "2200", "Accrued Expenses", "Liability", tenant_id, truck_id=truck_id)
     
     # Equity
-    get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id)
-    get_or_create_account(db, "3100", "Retained Earnings", "Equity", tenant_id)
+    get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "3100", "Retained Earnings", "Equity", tenant_id, truck_id=truck_id)
     
     # Revenue
-    get_or_create_account(db, "4000", "Operating Revenue", "Revenue", tenant_id)
+    get_or_create_account(db, "4000", "Operating Revenue", "Revenue", tenant_id, truck_id=truck_id)
     
     # Business-type-specific accounts
     if business_type == 'logistics':
         # Logistics-specific assets
-        get_or_create_account(db, "1500", "Vehicles", "Asset", tenant_id)
-        get_or_create_account(db, "1501", "Accumulated Depreciation - Vehicles", "Asset", tenant_id)
+        get_or_create_account(db, "1500", "Vehicles", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1501", "Accumulated Depreciation - Vehicles", "Asset", tenant_id, truck_id=truck_id)
         
         # Logistics-specific expenses
-        get_or_create_account(db, "6001", "Fuel Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6002", "Dispatch Fee Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6004", "Safety Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6005", "Prepass Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6006", "IFTA Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6007", "Driver Pay Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6008", "Payroll Fee Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6010", "Parking Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6012", "Decals Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id)
+        get_or_create_account(db, "6001", "Fuel Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6002", "Dispatch Fee Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6004", "Safety Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6005", "Prepass Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6006", "IFTA Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6007", "Driver Pay Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6008", "Payroll Fee Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6010", "Parking Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6012", "Decals Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id, truck_id=truck_id)
     
     elif business_type == 'tech':
         # Tech-specific assets
-        get_or_create_account(db, "1500", "Equipment", "Asset", tenant_id)
-        get_or_create_account(db, "1501", "Accumulated Depreciation - Equipment", "Asset", tenant_id)
-        get_or_create_account(db, "1600", "Software Licenses", "Asset", tenant_id)
+        get_or_create_account(db, "1500", "Equipment", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1501", "Accumulated Depreciation - Equipment", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1600", "Software Licenses", "Asset", tenant_id, truck_id=truck_id)
         
         # Tech-specific expenses
-        get_or_create_account(db, "6001", "Software & Subscriptions Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6002", "Cloud Services Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6004", "Professional Services Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6005", "Equipment Maintenance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6006", "Marketing & Advertising Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6007", "Salaries & Wages Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6008", "Payroll Tax Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6010", "Office Rent Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6011", "Utilities Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6012", "Travel & Entertainment Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id)
+        get_or_create_account(db, "6001", "Software & Subscriptions Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6002", "Cloud Services Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6004", "Professional Services Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6005", "Equipment Maintenance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6006", "Marketing & Advertising Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6007", "Salaries & Wages Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6008", "Payroll Tax Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6010", "Office Rent Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6011", "Utilities Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6012", "Travel & Entertainment Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id, truck_id=truck_id)
     
     elif business_type == 'real_estate':
         # Real Estate-specific assets
-        get_or_create_account(db, "1500", "Properties", "Asset", tenant_id)
-        get_or_create_account(db, "1501", "Accumulated Depreciation - Properties", "Asset", tenant_id)
-        get_or_create_account(db, "1600", "Furniture & Fixtures", "Asset", tenant_id)
+        get_or_create_account(db, "1500", "Properties", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1501", "Accumulated Depreciation - Properties", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1600", "Furniture & Fixtures", "Asset", tenant_id, truck_id=truck_id)
         
         # Real Estate-specific expenses
-        get_or_create_account(db, "6001", "Property Maintenance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6002", "Property Management Fee Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6003", "Property Insurance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6004", "Property Tax Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6005", "Utilities Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6006", "HOA Fees Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6007", "Cleaning & Turnover Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6008", "Legal & Professional Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6010", "Marketing & Advertising Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6011", "Repairs & Improvements Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6012", "Supplies Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id)
+        get_or_create_account(db, "6001", "Property Maintenance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6002", "Property Management Fee Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6003", "Property Insurance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6004", "Property Tax Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6005", "Utilities Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6006", "HOA Fees Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6007", "Cleaning & Turnover Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6008", "Legal & Professional Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6010", "Marketing & Advertising Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6011", "Repairs & Improvements Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6012", "Supplies Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id, truck_id=truck_id)
     
     else:
         # Generic/Other business type - minimal accounts
-        get_or_create_account(db, "1500", "Fixed Assets", "Asset", tenant_id)
-        get_or_create_account(db, "1501", "Accumulated Depreciation", "Asset", tenant_id)
-        get_or_create_account(db, "6001", "Cost of Goods Sold", "Expense", tenant_id)
-        get_or_create_account(db, "6002", "Operating Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id)
-        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id)
+        get_or_create_account(db, "1500", "Fixed Assets", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "1501", "Accumulated Depreciation", "Asset", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6001", "Cost of Goods Sold", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6002", "Operating Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6003", "Insurance Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6009", "Interest Expense", "Expense", tenant_id, truck_id=truck_id)
+        get_or_create_account(db, "6099", "Other Operating Expense", "Expense", tenant_id, truck_id=truck_id)
 
 
 def validate_journal_entry_lines(lines: List[Dict]) -> Tuple[bool, str]:
@@ -179,29 +205,41 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
         return None  # Truck not found
     
     tenant_id = truck.tenant_id
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        return None
+    
+    per_asset = uses_per_asset_accounting(tenant)
+    truck_id_for_accounting = settlement.truck_id if per_asset else None
     
     # Check if journal entry already exists for this settlement
-    existing = db.query(JournalEntry).filter(
+    existing_query = db.query(JournalEntry).filter(
         JournalEntry.tenant_id == tenant_id,
         JournalEntry.reference_type == "settlement",
         JournalEntry.reference_id == settlement.id
-    ).first()
+    )
+    if per_asset:
+        existing_query = existing_query.filter(JournalEntry.truck_id == settlement.truck_id)
+    else:
+        existing_query = existing_query.filter(JournalEntry.truck_id.is_(None))
     
+    existing = existing_query.first()
     if existing:
         return existing  # Already created
     
-    # Ensure accounts exist
-    ensure_standard_accounts_exist(db, tenant_id)
+    # Ensure accounts exist (per-asset for LS Logistics)
+    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting)
     
-    # Get accounts
-    revenue_account = get_or_create_account(db, get_revenue_account_code(), "Operating Revenue", "Revenue", tenant_id)
-    ar_account = get_or_create_account(db, get_accounts_receivable_code(), "Accounts Receivable", "Asset", tenant_id)
+    # Get accounts (per-asset for LS Logistics)
+    revenue_account = get_or_create_account(db, get_revenue_account_code(), "Operating Revenue", "Revenue", tenant_id, truck_id=truck_id_for_accounting)
+    ar_account = get_or_create_account(db, get_accounts_receivable_code(), "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id_for_accounting)
     
     entry_date = settlement.settlement_date or settlement.created_at.date() if settlement.created_at else date.today()
     
-    # Create journal entry
+    # Create journal entry (with truck_id for LS Logistics)
     journal_entry = JournalEntry(
         tenant_id=tenant_id,
+        truck_id=truck_id_for_accounting,
         entry_date=entry_date,
         reference_type="settlement",
         reference_id=settlement.id,
@@ -247,7 +285,8 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                     account_code,
                     f"{category.replace('_', ' ').title()} Expense",
                     "Expense",
-                    tenant_id
+                    tenant_id,
+                    truck_id=truck_id_for_accounting
                 )
                 
                 lines.append({
@@ -282,7 +321,7 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                 "truck_id": settlement.truck_id
             })
             # Credit to a reimbursement income account or reduce expenses
-            reimbursement_account = get_or_create_account(db, "4100", "Reimbursement Income", "Revenue", tenant_id)
+            reimbursement_account = get_or_create_account(db, "4100", "Reimbursement Income", "Revenue", tenant_id, truck_id=truck_id_for_accounting)
             lines.append({
                 "journal_entry_id": journal_entry.id,
                 "account_id": reimbursement_account.id,
@@ -321,32 +360,44 @@ def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[Journal
         return None  # Truck not found
     
     tenant_id = truck.tenant_id
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        return None
+    
+    per_asset = uses_per_asset_accounting(tenant)
+    truck_id_for_accounting = repair.truck_id if per_asset else None
     
     # Check if journal entry already exists for this repair
-    existing = db.query(JournalEntry).filter(
+    existing_query = db.query(JournalEntry).filter(
         JournalEntry.tenant_id == tenant_id,
         JournalEntry.reference_type == "repair",
         JournalEntry.reference_id == repair.id
-    ).first()
+    )
+    if per_asset:
+        existing_query = existing_query.filter(JournalEntry.truck_id == repair.truck_id)
+    else:
+        existing_query = existing_query.filter(JournalEntry.truck_id.is_(None))
     
+    existing = existing_query.first()
     if existing:
         return existing  # Already created
     
     if not repair.cost or float(repair.cost) <= 0:
         return None  # No cost, no entry
     
-    # Ensure accounts exist
-    ensure_standard_accounts_exist(db, tenant_id)
+    # Ensure accounts exist (per-asset for LS Logistics)
+    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting)
     
-    # Get accounts
-    maintenance_account = get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id)
-    cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id)
+    # Get accounts (per-asset for LS Logistics)
+    maintenance_account = get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id, truck_id=truck_id_for_accounting)
+    cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=truck_id_for_accounting)
     
     entry_date = repair.repair_date or (repair.created_at.date() if repair.created_at else date.today())
     
-    # Create journal entry
+    # Create journal entry (with truck_id for LS Logistics)
     journal_entry = JournalEntry(
         tenant_id=tenant_id,
+        truck_id=truck_id_for_accounting,
         entry_date=entry_date,
         reference_type="repair",
         reference_id=repair.id,
@@ -417,15 +468,17 @@ def delete_repair_journal_entry(db: Session, repair_id: int):
         db.commit()
 
 
-def calculate_account_balance(db: Session, account_id: int, start_date: Optional[date] = None, end_date: Optional[date] = None) -> Decimal:
+def calculate_account_balance(db: Session, account_id: int, start_date: Optional[date] = None, end_date: Optional[date] = None, truck_id: Optional[int] = None) -> Decimal:
     """
     Calculate account balance (debits - credits for assets/expenses, credits - debits for liabilities/equity/revenue).
+    For per-asset accounts, filters by account's truck_id and journal entry's truck_id.
+    Optionally filter by truck_id on journal entry lines for operational tracking.
     """
     account = db.query(ChartOfAccount).filter(ChartOfAccount.id == account_id).first()
     if not account:
         return Decimal(0)
     
-    # Build query with date filtering
+    # Build query with date and truck filtering
     total_debits = db.query(func.sum(JournalEntryLine.debit)).join(JournalEntry).filter(
         JournalEntryLine.account_id == account_id
     )
@@ -433,12 +486,25 @@ def calculate_account_balance(db: Session, account_id: int, start_date: Optional
         JournalEntryLine.account_id == account_id
     )
     
+    # For per-asset accounts, filter by journal entry's truck_id matching account's truck_id
+    if account.truck_id is not None:
+        total_debits = total_debits.filter(JournalEntry.truck_id == account.truck_id)
+        total_credits = total_credits.filter(JournalEntry.truck_id == account.truck_id)
+    else:
+        # For shared accounts, only include entries without truck_id
+        total_debits = total_debits.filter(JournalEntry.truck_id.is_(None))
+        total_credits = total_credits.filter(JournalEntry.truck_id.is_(None))
+    
     if start_date:
         total_debits = total_debits.filter(JournalEntry.entry_date >= start_date)
         total_credits = total_credits.filter(JournalEntry.entry_date >= start_date)
     if end_date:
         total_debits = total_debits.filter(JournalEntry.entry_date <= end_date)
         total_credits = total_credits.filter(JournalEntry.entry_date <= end_date)
+    if truck_id:
+        # Additional filter on journal entry lines for operational tracking
+        total_debits = total_debits.filter(JournalEntryLine.truck_id == truck_id)
+        total_credits = total_credits.filter(JournalEntryLine.truck_id == truck_id)
     
     debits = total_debits.scalar() or Decimal(0)
     credits = total_credits.scalar() or Decimal(0)
@@ -451,40 +517,53 @@ def calculate_account_balance(db: Session, account_id: int, start_date: Optional
         return credits - debits
 
 
-def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[date] = None) -> Dict:
+def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[date] = None, truck_id: Optional[int] = None) -> Dict:
     """
     Generate balance sheet as of a specific date for a specific tenant.
+    For LS Logistics, truck_id is required for per-asset accounting.
     """
     if not as_of_date:
         as_of_date = date.today()
     
-    ensure_standard_accounts_exist(db, tenant_id)
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise ValueError(f"Tenant {tenant_id} not found")
+    
+    per_asset = uses_per_asset_accounting(tenant)
+    if per_asset and truck_id is None:
+        raise ValueError("truck_id is required for LS Logistics balance sheet")
+    
+    ensure_standard_accounts_exist(db, tenant_id, truck_id)
+    
+    # Build account query filter
+    account_filter = [ChartOfAccount.tenant_id == tenant_id]
+    if per_asset:
+        account_filter.append(ChartOfAccount.truck_id == truck_id)
+    else:
+        account_filter.append(ChartOfAccount.truck_id.is_(None))
     
     # Assets
-    cash_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == get_cash_account_code(),
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    ar_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == get_accounts_receivable_code(),
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    fixed_assets_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == "1500",
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    acc_dep_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == "1501",
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
+    cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
+    ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
+    fixed_assets_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1500").first()
+    acc_dep_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1501").first()
+    
+    # If accounts don't exist, try to create them
+    if not cash_account or not ar_account:
+        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
+        ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
     
     cash_balance = calculate_account_balance(db, cash_account.id, end_date=as_of_date) if cash_account else Decimal(0)
     ar_balance = calculate_account_balance(db, ar_account.id, end_date=as_of_date) if ar_account else Decimal(0)
     
-    # Fixed assets: for logistics, sum of truck total_cost; for others, use account balance
+    # Fixed assets: for per-asset accounting, use specific truck's total_cost; otherwise sum all trucks or use account balance
     fixed_assets_balance = Decimal(0)
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    if tenant and tenant.business_type == 'logistics':
+    if per_asset and truck_id:
+        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+        if truck and truck.total_cost:
+            fixed_assets_balance = Decimal(str(truck.total_cost))
+    elif tenant.business_type == 'logistics':
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
         for truck in trucks:
             if truck.total_cost:
@@ -498,20 +577,27 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     total_assets = cash_balance + ar_balance + net_fixed_assets
     
     # Liabilities
-    ap_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == "2000",
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    loans_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == get_loans_payable_code(),
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
+    ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
+    loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
+    
+    # If liability accounts don't exist, try to create them
+    if not ap_account or not loans_account:
+        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
+        loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
     
     ap_balance = calculate_account_balance(db, ap_account.id, end_date=as_of_date) if ap_account else Decimal(0)
     
-    # Loans: for logistics, sum of current_loan_balance from trucks; for others, use account balance
+    # Loans: for per-asset accounting, use specific truck's loan balance; otherwise sum all trucks or use account balance
     loans_balance = Decimal(0)
-    if tenant and tenant.business_type == 'logistics':
+    if per_asset and truck_id:
+        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+        if truck:
+            if truck.current_loan_balance:
+                loans_balance = Decimal(str(truck.current_loan_balance))
+            elif truck.loan_amount and truck.vehicle_type == 'truck':
+                loans_balance = Decimal(str(truck.loan_amount))
+    elif tenant.business_type == 'logistics':
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
         for truck in trucks:
             if truck.current_loan_balance:
@@ -524,28 +610,32 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     total_liabilities = ap_balance + loans_balance
     
     # Equity
-    owner_equity_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == "3000",
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    retained_earnings_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == get_retained_earnings_code(),
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
+    owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
+    retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
     
     owner_equity_balance = calculate_account_balance(db, owner_equity_account.id, end_date=as_of_date) if owner_equity_account else Decimal(0)
     
-    # Retained earnings = cumulative net profit (for logistics from settlements/repairs, for others from journal entries)
+    # Retained earnings: for per-asset accounting, calculate from journal entries for this truck; otherwise from all trucks or account balance
     retained_earnings = Decimal(0)
-    if tenant and tenant.business_type == 'logistics':
-        settlements = db.query(Settlement).join(Truck).filter(
+    if per_asset and truck_id:
+        # Calculate from journal entries for this specific truck
+        retained_earnings = calculate_account_balance(db, retained_earnings_account.id, end_date=as_of_date) if retained_earnings_account else Decimal(0)
+    elif tenant.business_type == 'logistics':
+        # Calculate from settlements/repairs (filtered by truck_id if provided)
+        settlement_query = db.query(Settlement).join(Truck).filter(
             Truck.tenant_id == tenant_id,
             Settlement.settlement_date <= as_of_date
-        ).all()
-        repairs = db.query(Repair).join(Truck).filter(
+        )
+        repair_query = db.query(Repair).join(Truck).filter(
             Truck.tenant_id == tenant_id,
             Repair.repair_date <= as_of_date
-        ).all()
+        )
+        if truck_id:
+            settlement_query = settlement_query.filter(Settlement.truck_id == truck_id)
+            repair_query = repair_query.filter(Repair.truck_id == truck_id)
+        
+        settlements = settlement_query.all()
+        repairs = repair_query.all()
         
         total_revenue = sum(float(s.gross_revenue) if s.gross_revenue else 0 for s in settlements)
         total_expenses = sum(float(s.expenses) if s.expenses else 0 for s in settlements)
@@ -583,29 +673,51 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     }
 
 
-def generate_income_statement(db: Session, tenant_id: int, start_date: date, end_date: date) -> Dict:
+def generate_income_statement(db: Session, tenant_id: int, start_date: date, end_date: date, truck_id: Optional[int] = None) -> Dict:
     """
     Generate income statement for a date range for a specific tenant.
+    For LS Logistics, truck_id is required for per-asset accounting.
     """
-    ensure_standard_accounts_exist(db, tenant_id)
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise ValueError(f"Tenant {tenant_id} not found")
+    
+    per_asset = uses_per_asset_accounting(tenant)
+    if per_asset and truck_id is None:
+        raise ValueError("truck_id is required for LS Logistics income statement")
+    
+    ensure_standard_accounts_exist(db, tenant_id, truck_id)
+    
+    # Build account query filter
+    account_filter = [
+        ChartOfAccount.tenant_id == tenant_id
+    ]
+    if per_asset:
+        if truck_id is None:
+            raise ValueError("truck_id cannot be None for per-asset accounting")
+        account_filter.append(ChartOfAccount.truck_id == truck_id)
+    else:
+        account_filter.append(ChartOfAccount.truck_id.is_(None))
     
     # Revenue
-    revenue_account = db.query(ChartOfAccount).filter(
-        ChartOfAccount.code == get_revenue_account_code(),
-        ChartOfAccount.tenant_id == tenant_id
-    ).first()
-    revenue_balance = calculate_account_balance(db, revenue_account.id, start_date, end_date) if revenue_account else Decimal(0)
+    revenue_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_revenue_account_code()).first()
+    if not revenue_account:
+        # If account doesn't exist, try to create it again
+        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        revenue_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_revenue_account_code()).first()
+    
+    revenue_balance = calculate_account_balance(db, revenue_account.id, start_date, end_date, truck_id) if revenue_account else Decimal(0)
     
     # Expenses by category
     expense_accounts = db.query(ChartOfAccount).filter(
-        ChartOfAccount.account_type == "Expense",
-        ChartOfAccount.tenant_id == tenant_id
+        *account_filter,
+        ChartOfAccount.account_type == "Expense"
     ).all()
     expenses_by_category = {}
     total_expenses = Decimal(0)
     
     for account in expense_accounts:
-        balance = calculate_account_balance(db, account.id, start_date, end_date)
+        balance = calculate_account_balance(db, account.id, start_date, end_date, truck_id)
         if balance > 0:
             expenses_by_category[account.name] = float(balance)
             total_expenses += balance
@@ -615,6 +727,7 @@ def generate_income_statement(db: Session, tenant_id: int, start_date: date, end
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
+        "truck_id": truck_id,
         "revenue": {
             "operating_revenue": float(revenue_balance),
             "total": float(revenue_balance)

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { accountingApi, ChartOfAccount as ChartOfAccountType } from '../services/api'
+import { accountingApi, ChartOfAccount as ChartOfAccountType, trucksApi, Truck } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import ConfirmModal from '../components/ConfirmModal'
+import InfoPanel from '../components/InfoPanel'
 
 export default function ChartOfAccounts() {
   const { currentTenant } = useTenant()
@@ -10,11 +11,34 @@ export default function ChartOfAccounts() {
   const [error, setError] = useState<string | null>(null)
   const [accountTypeFilter, setAccountTypeFilter] = useState<string>('')
   const [showResetModal, setShowResetModal] = useState(false)
+  const [trucks, setTrucks] = useState<Truck[]>([])
+  const [selectedTruckId, setSelectedTruckId] = useState<number | null>(null)
+  
+  const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
+  
+  // Load trucks for logistics businesses
+  useEffect(() => {
+    if (currentTenant?.business_type === 'logistics') {
+      loadTrucks()
+    } else {
+      setTrucks([])
+      setSelectedTruckId(null)
+    }
+  }, [currentTenant?.id, currentTenant?.business_type])
+  
+  const loadTrucks = async () => {
+    try {
+      const response = await trucksApi.getAll()
+      setTrucks(response.data)
+    } catch (err) {
+      console.error('Failed to load trucks:', err)
+    }
+  }
 
   useEffect(() => {
     setAccounts([])
     loadAccounts()
-  }, [accountTypeFilter, currentTenant?.id])
+  }, [accountTypeFilter, selectedTruckId, currentTenant?.id])
 
   const loadAccounts = async () => {
     try {
@@ -22,7 +46,8 @@ export default function ChartOfAccounts() {
       setError(null)
       const response = await accountingApi.getChartOfAccounts(
         accountTypeFilter || undefined,
-        true
+        true,
+        selectedTruckId || undefined
       )
       setAccounts(response.data)
     } catch (err: any) {
@@ -86,9 +111,31 @@ export default function ChartOfAccounts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Chart of Accounts</h1>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-bold text-gray-900">
+          Chart of Accounts
+          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
+            <span className="text-lg font-normal text-gray-600 ml-2">
+              - {trucks.find(t => t.id === selectedTruckId)?.name}
+            </span>
+          )}
+        </h1>
+        <div className="flex flex-col sm:flex-row gap-2">
+          {/* Vehicle Selector (LS Logistics only) */}
+          {isLSLogistics && trucks.length > 0 && (
+            <select
+              value={selectedTruckId || ''}
+              onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+            >
+              <option value="">Select Vehicle</option>
+              {trucks.map((truck) => (
+                <option key={truck.id} value={truck.id}>
+                  {truck.name} ({truck.vehicle_type})
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={accountTypeFilter}
             onChange={(e) => setAccountTypeFilter(e.target.value)}
@@ -127,6 +174,30 @@ export default function ChartOfAccounts() {
         confirmText="Reset All Accounts"
         cancelText="Cancel"
         type="danger"
+      />
+
+      <InfoPanel
+        title="What is a Chart of Accounts?"
+        content={
+          <div className="space-y-3">
+            <p>
+              A <strong>Chart of Accounts</strong> is a complete list of all accounts used by your business to organize and categorize financial transactions. Think of it as a filing system for your money.
+            </p>
+            <div>
+              <p className="font-semibold mb-2">Account Types:</p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong>Assets:</strong> What you own (Cash, Vehicles, Equipment, Accounts Receivable)</li>
+                <li><strong>Liabilities:</strong> What you owe (Loans, Accounts Payable, Credit Cards)</li>
+                <li><strong>Equity:</strong> Your ownership stake (Owner Equity, Retained Earnings)</li>
+                <li><strong>Revenue:</strong> Money coming in (Operating Revenue, Sales)</li>
+                <li><strong>Expenses:</strong> Money going out (Fuel, Repairs, Salaries, Rent)</li>
+              </ul>
+            </div>
+            <p>
+              <strong>Why it matters:</strong> Properly categorized accounts help you understand where your money comes from and where it goes, making it easier to track profitability, prepare taxes, and make business decisions.
+            </p>
+          </div>
+        }
       />
 
       {error && (
