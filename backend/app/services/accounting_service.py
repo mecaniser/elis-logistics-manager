@@ -559,7 +559,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     
     # If accounts don't exist, try to create them
     if not cash_account or not ar_account or (tenant.business_type == 'logistics' and (not fixed_assets_account or not acc_dep_account)):
-        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
         db.commit()  # Ensure accounts are committed before querying
         cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
         ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
