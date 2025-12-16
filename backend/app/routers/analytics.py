@@ -3,7 +3,7 @@ Analytics router
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.repair import Repair
@@ -676,22 +676,38 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     for truck in trucks_for_pm:
         # Find all PM repairs for this truck
         # PM repairs are identified by:
-        # 1. Repairs with "d13" AND "full pm" in description (primary pattern)
-        # 2. Repairs with category "maintenance" AND "pm" in description (secondary pattern)
+        # 1. Repairs with "d13" AND "full pm" in description/title/details (primary pattern)
+        # 2. Repairs with category "maintenance" AND "pm" in description/title/details (secondary pattern)
         pm_repairs_primary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
-                Repair.description.ilike('%d13%'),
-                Repair.description.ilike('%full pm%')
+                or_(
+                    and_(
+                        or_(
+                            Repair.description.ilike('%d13%'),
+                            Repair.title.ilike('%d13%'),
+                            Repair.details.ilike('%d13%')
+                        ),
+                        or_(
+                            Repair.description.ilike('%full pm%'),
+                            Repair.title.ilike('%full pm%'),
+                            Repair.details.ilike('%full pm%')
+                        )
+                    )
+                )
             )
         ).order_by(Repair.repair_date.desc().nullslast()).all()
         
-        # Also check for maintenance category repairs with "pm" in description
+        # Also check for maintenance category repairs with "pm" in description/title/details
         pm_repairs_secondary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
                 Repair.category == 'maintenance',
-                Repair.description.ilike('%pm%')
+                or_(
+                    Repair.description.ilike('%pm%'),
+                    Repair.title.ilike('%pm%'),
+                    Repair.details.ilike('%pm%')
+                )
             )
         ).order_by(Repair.repair_date.desc().nullslast()).all()
         
@@ -830,8 +846,8 @@ def get_pm_status(db: Session = Depends(get_db), tenant_id: int = Depends(get_te
     PM is calculated based on time: every 10 weeks (70 days) (primary)
     Fallback to mileage-based: every 25,000 miles when date is not available.
     PM repairs are identified by:
-    - Repairs with "d13" AND "full pm" in description (primary pattern)
-    - Repairs with category "maintenance" AND "pm" in description (secondary pattern)
+    - Repairs with "d13" AND "full pm" in description/title/details (primary pattern)
+    - Repairs with category "maintenance" AND "pm" in description/title/details (secondary pattern)
     """
     pm_status = []
     trucks_for_pm = db.query(Truck).filter(Truck.vehicle_type == 'truck', Truck.tenant_id == tenant_id).all()  # Only trucks for this tenant
@@ -841,22 +857,38 @@ def get_pm_status(db: Session = Depends(get_db), tenant_id: int = Depends(get_te
     for truck in trucks_for_pm:
         # Find all PM repairs for this truck
         # PM repairs are identified by:
-        # 1. Repairs with "d13" AND "full pm" in description (primary pattern)
-        # 2. Repairs with category "maintenance" AND "pm" in description (secondary pattern)
+        # 1. Repairs with "d13" AND "full pm" in description/title/details (primary pattern)
+        # 2. Repairs with category "maintenance" AND "pm" in description/title/details (secondary pattern)
         pm_repairs_primary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
-                Repair.description.ilike('%d13%'),
-                Repair.description.ilike('%full pm%')
+                or_(
+                    and_(
+                        or_(
+                            Repair.description.ilike('%d13%'),
+                            Repair.title.ilike('%d13%'),
+                            Repair.details.ilike('%d13%')
+                        ),
+                        or_(
+                            Repair.description.ilike('%full pm%'),
+                            Repair.title.ilike('%full pm%'),
+                            Repair.details.ilike('%full pm%')
+                        )
+                    )
+                )
             )
         ).order_by(Repair.repair_date.desc().nullslast()).all()
         
-        # Also check for maintenance category repairs with "pm" in description
+        # Also check for maintenance category repairs with "pm" in description/title/details
         pm_repairs_secondary = db.query(Repair).filter(
             and_(
                 Repair.truck_id == truck.id,
                 Repair.category == 'maintenance',
-                Repair.description.ilike('%pm%')
+                or_(
+                    Repair.description.ilike('%pm%'),
+                    Repair.title.ilike('%pm%'),
+                    Repair.details.ilike('%pm%')
+                )
             )
         ).order_by(Repair.repair_date.desc().nullslast()).all()
         
