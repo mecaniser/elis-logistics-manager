@@ -43,6 +43,12 @@ interface ExpenseData {
   custom: number[]
 }
 
+// Helper function to safely format numbers (handles null/undefined)
+const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
+  if (value == null || isNaN(value)) return '0.00'
+  return value.toLocaleString(undefined, options || { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function Dashboard() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -839,7 +845,7 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
                         <span className="text-base sm:text-xl font-bold text-blue-600">
-                          ${selectedPeriodData.gross_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${safeToLocaleString(selectedPeriodData.gross_revenue)}
                         </span>
                       </div>
                       <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
@@ -900,7 +906,7 @@ export default function Dashboard() {
                         <span className={`text-base sm:text-xl font-bold ${
                           trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          ${trueNetProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${safeToLocaleString(trueNetProfit)}
                         </span>
                       </div>
                       <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
@@ -970,7 +976,7 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
                         <span className="text-sm font-medium text-gray-700">Settlement Net Profit</span>
                         <span className="text-sm font-semibold text-gray-900">
-                          ${(netProfitValue + loanInterest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${safeToLocaleString(netProfitValue + loanInterest)}
                         </span>
                       </div>
                       
@@ -979,7 +985,7 @@ export default function Dashboard() {
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <span className="text-sm text-gray-600">Less: Loan Interest (included in settlement)</span>
                           <span className="text-sm font-medium text-red-600">
-                            -${loanInterest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            -${safeToLocaleString(loanInterest)}
                           </span>
                         </div>
                       )}
@@ -988,7 +994,7 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center py-2 border-b border-gray-200 bg-gray-50 -mx-2 px-2">
                         <span className="text-sm font-medium text-gray-700">Net Profit (After Interest)</span>
                         <span className={`text-sm font-semibold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${netProfitValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${safeToLocaleString(netProfitValue)}
                         </span>
                       </div>
                       
@@ -997,7 +1003,7 @@ export default function Dashboard() {
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
                           <span className="text-sm text-gray-600">Less: Repair Expenses (this period)</span>
                           <span className="text-sm font-medium text-red-600">
-                            -${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            -${safeToLocaleString(repairs)}
                           </span>
                         </div>
                       )}
@@ -1006,7 +1012,7 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center pt-2">
                         <span className="text-base font-semibold text-gray-900">True Net Profit</span>
                         <span className={`text-xl font-bold ${(netProfitValue - repairs) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${(netProfitValue - repairs).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${safeToLocaleString(netProfitValue - repairs)}
                         </span>
                       </div>
                     </div>
@@ -1071,7 +1077,7 @@ export default function Dashboard() {
                                       </div>
                                       <div className="ml-4 text-right">
                                         <span className="text-lg font-bold text-red-600">
-                                          ${repair.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          ${(repair.cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                       </div>
                                     </div>
@@ -1082,7 +1088,7 @@ export default function Dashboard() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
                                   <span className="text-base font-bold text-red-600">
-                                    ${repairs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${safeToLocaleString(repairs)}
                                   </span>
                                 </div>
                               </div>
@@ -1162,8 +1168,8 @@ export default function Dashboard() {
                             <td className="px-2 py-1">{settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : '-'}</td>
                             <td className="px-2 py-1">{settlement.week_start ? new Date(settlement.week_start).toLocaleDateString() : '-'}</td>
                             <td className="px-2 py-1">{settlement.truck_name}</td>
-                            <td className="px-2 py-1 text-right">${settlement.insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="px-2 py-1 text-right">${settlement.driver_pay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="px-2 py-1 text-right">${(settlement.insurance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="px-2 py-1 text-right">${(settlement.driver_pay || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1235,7 +1241,7 @@ export default function Dashboard() {
                                 const percent = selectedPeriodData.gross_revenue > 0 
                                   ? ((value / selectedPeriodData.gross_revenue) * 100).toFixed(1)
                                   : '0'
-                                result += `${param.marker}${seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${percent}%)<br/>`
+                                result += `${param.marker}${seriesName}: $${safeToLocaleString(value)} (${percent}%)<br/>`
                               } else {
                                 result += `${param.marker}${seriesName}: ${value.toFixed(1)}%<br/>`
                               }
@@ -1289,7 +1295,7 @@ export default function Dashboard() {
                               padding: [0, 0, 0, 0]
                             },
                             axisLabel: {
-                              formatter: (value: number) => `$${value.toLocaleString()}`
+                              formatter: (value: number) => `$${safeToLocaleString(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                             }
                           },
                           {
@@ -1331,7 +1337,7 @@ export default function Dashboard() {
                             const value = params.value || 0
                             const revenue = selectedPeriodData.gross_revenue || 1
                             const percent = ((value / revenue) * 100).toFixed(1)
-                            return value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}\n(${percent}%)` : ''
+                            return value > 0 ? `$${safeToLocaleString(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}\n(${percent}%)` : ''
                           },
                           fontSize: 9
                         }
@@ -1477,7 +1483,7 @@ export default function Dashboard() {
                               </div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
-                              ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ${safeToLocaleString(amount)}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                               {percent.toFixed(1)}%
@@ -1539,7 +1545,7 @@ export default function Dashboard() {
                   formatter: (params: any) => {
                     const value = params.value || 0
                     const percent = params.percent || 0
-                    return `${params.name}<br/>$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${percent}%)`
+                    return `${params.name}<br/>$${safeToLocaleString(value)} (${percent}%)`
                   },
                   backgroundColor: '#fff',
                   borderColor: '#e5e7eb',
@@ -1693,7 +1699,7 @@ export default function Dashboard() {
             // Create tooltip with repair details
             const isPM = repair.category === 'maintenance'
             const pmIndicator = isPM ? '<br/><span style="color: #3b82f6; font-weight: bold;">🔧 Preventive Maintenance</span>' : ''
-            const tooltip = `${repair.truck_name}<br/>${repair.description || 'No description'}${pmIndicator}<br/>$${repair.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            const tooltip = `${repair.truck_name}<br/>${repair.description || 'No description'}${pmIndicator}<br/>$${(repair.cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             repairTooltips.push(tooltip)
             
             // Color by truck, but highlight PM repairs with blue
@@ -1728,7 +1734,7 @@ export default function Dashboard() {
                   formatter: (params: any) => {
                     const param = params[0]
                     const index = param.dataIndex
-                    return repairTooltips[index] || `${param.axisValue}<br/>$${param.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    return repairTooltips[index] || `${param.axisValue}<br/>$${safeToLocaleString(param.value)}`
                   },
                   backgroundColor: '#fff',
                   borderColor: '#e5e7eb',
@@ -1781,7 +1787,7 @@ export default function Dashboard() {
                       position: 'top',
                       formatter: (params: any) => {
                         const value = params.value || 0
-                        return value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
+                        return value > 0 ? `$${safeToLocaleString(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
                       },
                       fontSize: isMobile ? 8 : 9
                     }

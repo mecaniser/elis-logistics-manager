@@ -5,6 +5,12 @@ import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
 
+// Helper function to safely format numbers (handles null/undefined)
+const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
+  if (value == null || isNaN(value)) return '0.00'
+  return value.toLocaleString(undefined, options || { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function VehicleDetail() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -151,41 +157,41 @@ export default function VehicleDetail() {
               <span className={`text-2xl font-bold ${
                 roiData.cumulative_net_profit >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                ${roiData.cumulative_net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${safeToLocaleString(roiData.cumulative_net_profit)}
               </span>
             </div>
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Revenue</span>
                 <span className="text-sm font-semibold text-gray-900">
-                  ${roiData.cumulative_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${safeToLocaleString(roiData.cumulative_revenue)}
                 </span>
               </div>
               <div className="border-t border-gray-200 pt-2">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm text-gray-600">Total Expenses</span>
                   <span className="text-sm font-semibold text-red-600">
-                    ${(roiData.cumulative_settlement_expenses + roiData.cumulative_repair_costs + roiData.cumulative_loan_interest).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${safeToLocaleString((roiData.cumulative_settlement_expenses || 0) + (roiData.cumulative_repair_costs || 0) + (roiData.cumulative_loan_interest || 0))}
                   </span>
                 </div>
                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-2 mt-2 pl-2 border-l-2 border-gray-200`}>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-500">Settlement</span>
                     <span className="text-xs font-medium text-gray-700">
-                      ${roiData.cumulative_settlement_expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${safeToLocaleString(roiData.cumulative_settlement_expenses)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-500">Repairs</span>
                     <span className="text-xs font-medium text-gray-700">
-                      ${roiData.cumulative_repair_costs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${safeToLocaleString(roiData.cumulative_repair_costs)}
                     </span>
                   </div>
                   {roiData.cumulative_loan_interest > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-500">Interest</span>
                       <span className="text-xs font-medium text-gray-700">
-                        ${roiData.cumulative_loan_interest.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${safeToLocaleString(roiData.cumulative_loan_interest)}
                       </span>
                     </div>
                   )}
@@ -216,7 +222,7 @@ export default function VehicleDetail() {
               {isCashRecovered ? (
                 <span className="text-green-600 font-medium">✓ Cash investment fully recovered!</span>
               ) : (
-                <span>Recovered ${cashRecoveryAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} of ${roiData.cash_investment?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</span>
+                <span>Recovered ${safeToLocaleString(cashRecoveryAmount)} of ${safeToLocaleString(roiData.cash_investment)}</span>
               )}
             </div>
           </div>
@@ -226,7 +232,7 @@ export default function VehicleDetail() {
             <div className="mb-4">
               <span className="text-sm font-medium text-gray-600">Remaining to Cash Recovery</span>
               <p className="text-xl font-semibold text-orange-600 mt-1">
-                ${remainingToCashRecovery.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${safeToLocaleString(remainingToCashRecovery)}
               </p>
             </div>
           )}
@@ -245,7 +251,7 @@ export default function VehicleDetail() {
                   roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' :
                   'text-gray-900'
                 }`}>
-                  ${roiData.current_loan_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${safeToLocaleString(roiData.current_loan_balance)}
                 </span>
               </div>
               {roiData.current_loan_balance > 0 && (
@@ -262,10 +268,10 @@ export default function VehicleDetail() {
                   </div>
                   <div className="text-xs text-gray-600">
                     {roiData.current_loan_balance < roiData.loan_amount ? (
-                      <span className="font-medium">${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="font-medium">${safeToLocaleString((roiData.loan_amount || 0) - (roiData.current_loan_balance || 0))}</span>
                     ) : null}
                     {roiData.current_loan_balance < roiData.loan_amount && (
-                      <span> paid of ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</span>
+                      <span> paid of ${safeToLocaleString(roiData.loan_amount)} total</span>
                     )}
                   </div>
                 </>
@@ -303,7 +309,7 @@ export default function VehicleDetail() {
               <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                 <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Cash Investment</span>
                 <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                  ${roiData.cash_investment?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  ${safeToLocaleString(roiData.cash_investment)}
                 </p>
               </div>
               
@@ -313,7 +319,7 @@ export default function VehicleDetail() {
                   <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                     <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Original Loan</span>
                     <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                      ${roiData.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${safeToLocaleString(roiData.loan_amount)}
                     </p>
                   </div>
                   
@@ -325,11 +331,11 @@ export default function VehicleDetail() {
                         roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' : 
                         'text-gray-900'
                       }`}>
-                        ${roiData.current_loan_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${safeToLocaleString(roiData.current_loan_balance)}
                       </p>
                       {roiData.current_loan_balance < roiData.loan_amount && roiData.current_loan_balance > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
-                          ${(roiData.loan_amount - roiData.current_loan_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} principal paid
+                          ${safeToLocaleString((roiData.loan_amount || 0) - (roiData.current_loan_balance || 0))} principal paid
                         </p>
                       )}
                       {roiData.current_loan_balance === 0 && (
@@ -351,7 +357,7 @@ export default function VehicleDetail() {
               <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                 <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Registration Fee</span>
                 <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                  ${vehicle.registration_fee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  ${safeToLocaleString(vehicle.registration_fee)}
                 </p>
               </div>
               
@@ -359,7 +365,7 @@ export default function VehicleDetail() {
               <div className={`flex flex-col ${isMobile ? 'bg-blue-50 border-2 border-blue-200 rounded-lg p-3' : ''}`}>
                 <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Total Cost</span>
                 <p className={`${isMobile ? 'text-base' : 'text-xl'} font-bold ${isMobile ? 'text-blue-700' : 'text-gray-900'}`}>
-                  ${roiData.total_cost?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  ${safeToLocaleString(roiData.total_cost)}
                 </p>
               </div>
             </div>

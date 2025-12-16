@@ -1779,7 +1779,7 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Revenue:</span>
                           <span className="font-medium text-blue-600">
-                            ${settlement.gross_revenue.toLocaleString()}
+                            ${(settlement.gross_revenue || 0).toLocaleString()}
                           </span>
                         </div>
                       )}
@@ -1787,7 +1787,7 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Expenses:</span>
                           <span className="font-medium text-orange-600">
-                            ${settlement.expenses.toLocaleString()}
+                            ${(settlement.expenses || 0).toLocaleString()}
                           </span>
                         </div>
                       )}
@@ -1795,9 +1795,9 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Profit:</span>
                           <span className={`font-medium ${
-                            (settlement.gross_revenue - settlement.expenses) < 0 ? 'text-red-600' : 'text-green-600'
+                            ((settlement.gross_revenue || 0) - (settlement.expenses || 0)) < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
-                            ${(settlement.gross_revenue - settlement.expenses).toLocaleString()}
+                            ${((settlement.gross_revenue || 0) - (settlement.expenses || 0)).toLocaleString()}
                           </span>
                         </div>
                       )}
@@ -1807,7 +1807,7 @@ export default function Settlements() {
                           {settlement.miles_driven && (
                             <div className="flex justify-between">
                               <span className="text-gray-500">Miles:</span>
-                              <span className="font-medium text-gray-800">{settlement.miles_driven.toLocaleString()}</span>
+                              <span className="font-medium text-gray-800">{(settlement.miles_driven || 0).toLocaleString()}</span>
                             </div>
                           )}
                           {settlement.blocks_delivered && (

@@ -520,7 +520,7 @@ export default function Trucks() {
                                       <>
                                         {truckPM.pm_method === 'mileage' && truckPM.miles_overdue !== null && (
                                           <div className="text-red-600">
-                                            {truckPM.miles_overdue.toLocaleString()} miles overdue
+                                            {(truckPM.miles_overdue || 0).toLocaleString()} miles overdue
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'time' && truckPM.days_overdue !== null && (
@@ -538,22 +538,22 @@ export default function Trucks() {
                                         )}
                                         {truckPM.last_pm_miles !== null && (
                                           <div className="text-gray-600">
-                                            Last PM Miles: {truckPM.last_pm_miles.toLocaleString()}
+                                            Last PM Miles: {(truckPM.last_pm_miles || 0).toLocaleString()}
                                           </div>
                                         )}
                                         {truckPM.current_miles !== null && (
                                           <div className="text-gray-600">
-                                            Current Miles: {truckPM.current_miles.toLocaleString()}
+                                            Current Miles: {(truckPM.current_miles || 0).toLocaleString()}
                                           </div>
                                         )}
                                         {truckPM.next_pm_miles !== null && (
                                           <div className="text-gray-500 text-xs">
-                                            Next PM Due: {truckPM.next_pm_miles.toLocaleString()} miles
+                                            Next PM Due: {(truckPM.next_pm_miles || 0).toLocaleString()} miles
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'mileage' && (
                                           <div className="text-gray-500 text-xs">
-                                            Threshold: {truckPM.pm_threshold_miles.toLocaleString()} miles
+                                            Threshold: {(truckPM.pm_threshold_miles || 0).toLocaleString()} miles
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'time' && (
@@ -571,17 +571,17 @@ export default function Trucks() {
                                         )}
                                         {truckPM.last_pm_miles !== null && (
                                           <div className="text-gray-600">
-                                            Last PM Miles: {truckPM.last_pm_miles.toLocaleString()}
+                                            Last PM Miles: {(truckPM.last_pm_miles || 0).toLocaleString()}
                                           </div>
                                         )}
                                         {truckPM.current_miles !== null && (
                                           <div className="text-gray-600">
-                                            Current Miles: {truckPM.current_miles.toLocaleString()}
+                                            Current Miles: {(truckPM.current_miles || 0).toLocaleString()}
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'mileage' && truckPM.miles_until_due !== null && (
                                           <div className="text-gray-600">
-                                            {truckPM.miles_until_due.toLocaleString()} miles until due
+                                            {(truckPM.miles_until_due || 0).toLocaleString()} miles until due
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'time' && truckPM.days_until_due !== null && (
@@ -591,7 +591,7 @@ export default function Trucks() {
                                         )}
                                         {truckPM.pm_method === 'mileage' && (
                                           <div className="text-gray-500 text-xs">
-                                            Threshold: {truckPM.pm_threshold_miles.toLocaleString()} miles
+                                            Threshold: {(truckPM.pm_threshold_miles || 0).toLocaleString()} miles
                                           </div>
                                         )}
                                         {truckPM.pm_method === 'time' && (

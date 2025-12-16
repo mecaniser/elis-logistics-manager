@@ -784,7 +784,7 @@ export default function Repairs() {
                         <span className="ml-2 text-xs bg-gray-100 px-2 py-0.5 rounded">{repair.category}</span>
                       )}
                     </p>
-                    <p className="text-lg font-semibold text-red-600 mb-3">${repair.cost.toLocaleString()}</p>
+                    <p className="text-lg font-semibold text-red-600 mb-3">${(repair.cost || 0).toLocaleString()}</p>
                     {/* Hide invoice number, miles, and PDF link on mobile */}
                     {!isMobile && (
                       <>
