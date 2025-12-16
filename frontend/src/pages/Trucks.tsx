@@ -27,7 +27,12 @@ export default function Trucks() {
     loan_amount: '',
     interest_rate: '0.07',
     total_cost: '',
-    registration_fee: ''
+    registration_fee: '',
+    purchase_date: '',
+    depreciation_method: 'MACRS_5' as 'MACRS_5' | 'straight_line' | 'none',
+    cost_basis: '',
+    section_179_deduction: '',
+    bonus_depreciation: ''
   })
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
@@ -71,6 +76,24 @@ export default function Trucks() {
     }
   }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, formData.vehicle_type])
 
+  // Auto-calculate cost basis when total cost or deductions change
+  useEffect(() => {
+    const totalCost = parseFloat(formData.total_cost) || 0
+    const section179 = parseFloat(formData.section_179_deduction) || 0
+    const bonusPct = parseFloat(formData.bonus_depreciation) || 0
+    
+    if (totalCost > 0) {
+      const remainingAfter179 = totalCost - section179
+      const bonusAmount = remainingAfter179 * (bonusPct / 100)
+      const costBasis = totalCost - section179 - bonusAmount
+      
+      // Only auto-calculate if cost_basis is empty (user hasn't manually set it)
+      if (!formData.cost_basis && costBasis > 0) {
+        setFormData(prev => ({ ...prev, cost_basis: Math.max(0, costBasis).toFixed(2) }))
+      }
+    }
+  }, [formData.total_cost, formData.section_179_deduction, formData.bonus_depreciation])
+
   const loadTrucks = async () => {
     try {
       setLoading(true)
@@ -109,6 +132,23 @@ export default function Trucks() {
       }
       if (formData.registration_fee) {
         investmentData.registration_fee = parseFloat(formData.registration_fee)
+      }
+      
+      // Depreciation fields
+      if (formData.purchase_date) {
+        investmentData.purchase_date = formData.purchase_date
+      }
+      if (formData.depreciation_method) {
+        investmentData.depreciation_method = formData.depreciation_method
+      }
+      if (formData.cost_basis) {
+        investmentData.cost_basis = parseFloat(formData.cost_basis)
+      }
+      if (formData.section_179_deduction) {
+        investmentData.section_179_deduction = parseFloat(formData.section_179_deduction)
+      }
+      if (formData.bonus_depreciation) {
+        investmentData.bonus_depreciation = parseFloat(formData.bonus_depreciation)
       }
 
       if (editingTruck) {
@@ -153,7 +193,12 @@ export default function Trucks() {
       loan_amount: '',
       interest_rate: '0.07',
       total_cost: '',
-      registration_fee: ''
+      registration_fee: '',
+      purchase_date: '',
+      depreciation_method: 'MACRS_5',
+      cost_basis: '',
+      section_179_deduction: '',
+      bonus_depreciation: ''
     })
   }
 
@@ -413,6 +458,72 @@ export default function Trucks() {
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+              </div>
+            </div>
+            
+            {/* Depreciation Fields */}
+            <div className="mb-4 border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Depreciation Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                  <input
+                    type="date"
+                    value={formData.purchase_date}
+                    onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Date vehicle was purchased/placed in service</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Depreciation Method</label>
+                  <select
+                    value={formData.depreciation_method}
+                    onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as 'MACRS_5' | 'straight_line' | 'none' })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="MACRS_5">MACRS 5-Year (IRS Standard)</option>
+                    <option value="straight_line">Straight-Line</option>
+                    <option value="none">None</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Method for calculating depreciation</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Basis ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.cost_basis}
+                    onChange={(e) => setFormData({ ...formData, cost_basis: e.target.value })}
+                    placeholder="Auto-calculated from total cost"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Depreciable amount (total cost - Section 179 - bonus depreciation)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Section 179 Deduction ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.section_179_deduction}
+                    onChange={(e) => setFormData({ ...formData, section_179_deduction: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">First-year Section 179 deduction (if applicable)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bonus Depreciation (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.bonus_depreciation}
+                    onChange={(e) => setFormData({ ...formData, bonus_depreciation: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Bonus depreciation percentage (e.g., 100 for 100%)</p>
                 </div>
               </div>
             </div>
@@ -678,7 +789,12 @@ export default function Trucks() {
                             loan_amount: truck.loan_amount?.toString() || '',
                             interest_rate: truck.interest_rate?.toString() || '0.07',
                             total_cost: truck.total_cost?.toString() || '',
-                            registration_fee: truck.registration_fee?.toString() || ''
+                            registration_fee: truck.registration_fee?.toString() || '',
+                            purchase_date: truck.purchase_date ? new Date(truck.purchase_date).toISOString().split('T')[0] : '',
+                            depreciation_method: (truck.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
+                            cost_basis: truck.cost_basis?.toString() || '',
+                            section_179_deduction: truck.section_179_deduction?.toString() || '',
+                            bonus_depreciation: truck.bonus_depreciation?.toString() || ''
                           })
                           setShowForm(true)
                         }}
@@ -777,7 +893,12 @@ export default function Trucks() {
                             loan_amount: trailer.loan_amount?.toString() || '',
                             interest_rate: trailer.interest_rate?.toString() || '0.07',
                             total_cost: trailer.total_cost?.toString() || '',
-                            registration_fee: trailer.registration_fee?.toString() || ''
+                            registration_fee: trailer.registration_fee?.toString() || '',
+                            purchase_date: trailer.purchase_date ? new Date(trailer.purchase_date).toISOString().split('T')[0] : '',
+                            depreciation_method: (trailer.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
+                            cost_basis: trailer.cost_basis?.toString() || '',
+                            section_179_deduction: trailer.section_179_deduction?.toString() || '',
+                            bonus_depreciation: trailer.bonus_depreciation?.toString() || ''
                           })
                           setShowForm(true)
                         }}

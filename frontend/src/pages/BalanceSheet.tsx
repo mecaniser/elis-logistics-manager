@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { accountingApi, BalanceSheet as BalanceSheetType, trucksApi, Truck } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import InfoPanel from '../components/InfoPanel'
+import AccountingTooltip from '../components/AccountingTooltip'
 
 export default function BalanceSheet() {
   const { currentTenant } = useTenant()
@@ -40,14 +41,8 @@ export default function BalanceSheet() {
     try {
       setLoading(true)
       setError(null)
-      // For LS Logistics, truck_id is required
-      const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
-      if (isLSLogistics && !selectedTruckId) {
-        setError('Please select a vehicle to view the balance sheet')
-        setLoading(false)
-        return
-      }
-      const truckId = isLSLogistics ? (selectedTruckId ?? undefined) : undefined
+      // For logistics businesses, truck_id is optional - if provided, shows per-vehicle; if not, shows total
+      const truckId = currentTenant?.business_type === 'logistics' ? (selectedTruckId ?? undefined) : undefined
       const response = await accountingApi.getBalanceSheet(asOfDate, truckId)
       setBalanceSheet(response.data)
     } catch (err: any) {
@@ -58,11 +53,12 @@ export default function BalanceSheet() {
   }
 
   const formatCurrency = (amount: number) => {
+    const safeAmount = isNaN(amount) || amount === null || amount === undefined ? 0 : amount
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
-    }).format(amount)
+    }).format(safeAmount)
   }
 
   if (loading) {
@@ -95,22 +91,26 @@ export default function BalanceSheet() {
     )
   }
 
-  const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
+  const isLogistics = currentTenant?.business_type === 'logistics'
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-gray-900">
           Balance Sheet
-          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
+          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) ? (
             <span className="text-lg font-normal text-gray-600 ml-2">
               - {trucks.find(t => t.id === selectedTruckId)?.name}
             </span>
-          )}
+          ) : isLogistics && trucks.length > 0 ? (
+            <span className="text-lg font-normal text-gray-600 ml-2">
+              - All Vehicles (Total)
+            </span>
+          ) : null}
         </h1>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          {/* Vehicle Selector (LS Logistics only) */}
-          {isLSLogistics && trucks.length > 0 && (
+          {/* Vehicle Selector (Logistics businesses) */}
+          {isLogistics && trucks.length > 0 && (
             <div>
               <label className="text-sm font-medium text-gray-700 mr-2">
                 Vehicle:
@@ -120,7 +120,7 @@ export default function BalanceSheet() {
                 onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm"
               >
-                <option value="">Select Vehicle</option>
+                <option value="">All Vehicles (Total)</option>
                 {trucks.map((truck) => (
                   <option key={truck.id} value={truck.id}>
                     {truck.name} ({truck.vehicle_type})
@@ -175,9 +175,9 @@ export default function BalanceSheet() {
             <p>
               <strong>Why it matters:</strong> The balance sheet helps you understand your business's financial health, see if you can pay your debts, and track how your equity changes over time. Investors and lenders use it to assess your business's value and creditworthiness.
             </p>
-            {isLSLogistics && (
+            {isLogistics && (
               <p className="mt-2 pt-2 border-t border-blue-300">
-                <strong>Note:</strong> For LS Logistics, each truck and trailer has its own separate balance sheet. Select a vehicle above to view its financial position.
+                <strong>Note:</strong> For logistics businesses, you can view balance sheets per vehicle or for all vehicles combined. Select a specific vehicle above to see its individual financial position, or leave it as "All Vehicles" to see the total balance sheet.
               </p>
             )}
           </div>
@@ -197,29 +197,64 @@ export default function BalanceSheet() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Assets</h3>
               <div className="space-y-2">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Cash</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Cash"
+                      description="Money in bank accounts and on hand. The most liquid asset - you can use it immediately."
+                    >
+                      Cash
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">{formatCurrency(balanceSheet.assets.cash)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Accounts Receivable</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Accounts Receivable"
+                      description="Money customers owe you for work completed but not yet paid. It's an asset because you expect to receive payment."
+                    >
+                      Accounts Receivable
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.assets.accounts_receivable)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Vehicles</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Vehicles"
+                      description="The original purchase cost of your trucks and trailers. This is what you paid for them, not their current value."
+                    >
+                      Vehicles
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.assets.vehicles)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Less: Accumulated Depreciation</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Accumulated Depreciation"
+                      description="Total amount your vehicles have decreased in value over time due to wear and use. This reduces the value of your vehicles on the balance sheet."
+                    >
+                      Less: Accumulated Depreciation
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium text-red-600">
                     ({formatCurrency(balanceSheet.assets.accumulated_depreciation)})
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700">Net Vehicles</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Net Vehicles"
+                      description="Vehicles minus accumulated depreciation. This is the current book value (what they're worth on paper) of your vehicles."
+                    >
+                      Net Vehicles
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.assets.net_vehicles)}
                   </span>
@@ -238,13 +273,27 @@ export default function BalanceSheet() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Liabilities</h3>
               <div className="space-y-2 mb-6">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Accounts Payable</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Accounts Payable"
+                      description="Money you owe to vendors, suppliers, or contractors for goods or services received but not yet paid. Short-term debts."
+                    >
+                      Accounts Payable
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.liabilities.accounts_payable)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700">Loans Payable</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Loans Payable"
+                      description="Outstanding balance on loans you've taken out (like vehicle loans). The principal amount you still owe, not including future interest."
+                    >
+                      Loans Payable
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.liabilities.loans_payable)}
                   </span>
@@ -260,13 +309,27 @@ export default function BalanceSheet() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Equity</h3>
               <div className="space-y-2">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">Owner Equity</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Owner Equity"
+                      description="Initial investment you put into the business plus any additional capital contributions. This is your ownership stake in the company."
+                    >
+                      Owner Equity
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.equity.owner_equity)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700">Retained Earnings</span>
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Retained Earnings"
+                      description="Cumulative profits (or losses) from all previous periods that you've kept in the business instead of taking as distributions. Increases with profits, decreases with losses."
+                    >
+                      Retained Earnings
+                    </AccountingTooltip>
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(balanceSheet.equity.retained_earnings)}
                   </span>

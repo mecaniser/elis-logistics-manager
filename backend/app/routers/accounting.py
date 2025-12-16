@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from app.database import get_db
 from app.dependencies import get_tenant_id
@@ -31,6 +32,13 @@ from app.services.accounting_service import (
     generate_income_statement,
     validate_journal_entry_lines,
 )
+from app.services.depreciation_service import (
+    calculate_depreciation_for_truck,
+    calculate_accumulated_depreciation,
+    calculate_cost_basis,
+    create_depreciation_journal_entry,
+)
+from app.models.truck import Truck
 
 router = APIRouter()
 

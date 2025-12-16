@@ -530,6 +530,8 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
         raise ValueError(f"Tenant {tenant_id} not found")
     
     per_asset = uses_per_asset_accounting(tenant)
+    # For LS Logistics (per-asset), truck_id is required
+    # For other logistics businesses, truck_id is optional (if provided, shows per-vehicle; if not, shows total)
     if per_asset and truck_id is None:
         raise ValueError("truck_id is required for LS Logistics balance sheet")
     
@@ -538,8 +540,13 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     # Build account query filter
     account_filter = [ChartOfAccount.tenant_id == tenant_id]
     if per_asset:
+        # Per-asset accounting: must filter by truck_id
+        account_filter.append(ChartOfAccount.truck_id == truck_id)
+    elif tenant.business_type == 'logistics' and truck_id:
+        # Logistics business with truck_id selected: show per-vehicle
         account_filter.append(ChartOfAccount.truck_id == truck_id)
     else:
+        # Non-logistics or logistics without truck_id: show shared accounts (total)
         account_filter.append(ChartOfAccount.truck_id.is_(None))
     
     # Assets
@@ -557,22 +564,56 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     cash_balance = calculate_account_balance(db, cash_account.id, end_date=as_of_date) if cash_account else Decimal(0)
     ar_balance = calculate_account_balance(db, ar_account.id, end_date=as_of_date) if ar_account else Decimal(0)
     
-    # Fixed assets: for per-asset accounting, use specific truck's total_cost; otherwise sum all trucks or use account balance
+    # Fixed assets: for per-asset accounting or logistics with truck_id, use specific truck's total_cost; 
+    # for logistics without truck_id, sum all trucks; otherwise use account balance
     fixed_assets_balance = Decimal(0)
-    if per_asset and truck_id:
+    if (per_asset and truck_id) or (tenant.business_type == 'logistics' and truck_id):
+        # Per-vehicle view: use specific truck's cost
         truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
         if truck and truck.total_cost:
             fixed_assets_balance = Decimal(str(truck.total_cost))
     elif tenant.business_type == 'logistics':
+        # Logistics total view: sum all trucks
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
         for truck in trucks:
             if truck.total_cost:
                 fixed_assets_balance += Decimal(str(truck.total_cost))
     else:
+        # Non-logistics: use account balance
         fixed_assets_balance = calculate_account_balance(db, fixed_assets_account.id, end_date=as_of_date) if fixed_assets_account else Decimal(0)
     
+    # Calculate accumulated depreciation
+    # First try to get from journal entries (if depreciation entries exist)
     acc_dep_balance = calculate_account_balance(db, acc_dep_account.id, end_date=as_of_date) if acc_dep_account else Decimal(0)
+    
+    # If no journal entries exist and we have truck data, calculate from depreciation service
+    if acc_dep_balance == 0 and tenant.business_type == 'logistics':
+        from app.services.depreciation_service import calculate_depreciation_for_truck
+        
+        if per_asset and truck_id:
+            # Per-vehicle view: calculate depreciation for specific truck
+            truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+            if truck:
+                calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
+                if calculated_dep:
+                    acc_dep_balance = calculated_dep
+        elif tenant.business_type == 'logistics':
+            # Total view: sum depreciation for all trucks
+            trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+            total_depreciation = Decimal(0)
+            for truck in trucks:
+                if truck.purchase_date and truck.total_cost:
+                    calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
+                    if calculated_dep:
+                        total_depreciation += calculated_dep
+            if total_depreciation > 0:
+                acc_dep_balance = total_depreciation
     net_fixed_assets = fixed_assets_balance - acc_dep_balance
+    
+    # Ensure all values are valid Decimals before converting to float
+    fixed_assets_balance = fixed_assets_balance or Decimal(0)
+    acc_dep_balance = acc_dep_balance or Decimal(0)
+    net_fixed_assets = net_fixed_assets or Decimal(0)
     
     total_assets = cash_balance + ar_balance + net_fixed_assets
     
@@ -588,9 +629,11 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     
     ap_balance = calculate_account_balance(db, ap_account.id, end_date=as_of_date) if ap_account else Decimal(0)
     
-    # Loans: for per-asset accounting, use specific truck's loan balance; otherwise sum all trucks or use account balance
+    # Loans: for per-asset accounting or logistics with truck_id, use specific truck's loan balance;
+    # for logistics without truck_id, sum all trucks; otherwise use account balance
     loans_balance = Decimal(0)
-    if per_asset and truck_id:
+    if (per_asset and truck_id) or (tenant.business_type == 'logistics' and truck_id):
+        # Per-vehicle view: use specific truck's loan balance
         truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
         if truck:
             if truck.current_loan_balance:
@@ -598,6 +641,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
             elif truck.loan_amount and truck.vehicle_type == 'truck':
                 loans_balance = Decimal(str(truck.loan_amount))
     elif tenant.business_type == 'logistics':
+        # Logistics total view: sum all trucks
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
         for truck in trucks:
             if truck.current_loan_balance:
@@ -605,6 +649,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
             elif truck.loan_amount and truck.vehicle_type == 'truck':
                 loans_balance += Decimal(str(truck.loan_amount))
     else:
+        # Non-logistics: use account balance
         loans_balance = calculate_account_balance(db, loans_account.id, end_date=as_of_date) if loans_account else Decimal(0)
     
     total_liabilities = ap_balance + loans_balance
@@ -649,27 +694,35 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     total_equity = owner_equity_balance + retained_earnings
     total_liabilities_and_equity = total_liabilities + total_equity
     
+    # Convert to float, ensuring no NaN values
+    def safe_float(value):
+        try:
+            result = float(value or 0)
+            return result if not (result != result) else 0.0  # Check for NaN
+        except (TypeError, ValueError):
+            return 0.0
+    
     return {
         "as_of_date": as_of_date.isoformat(),
         "assets": {
-            "cash": float(cash_balance),
-            "accounts_receivable": float(ar_balance),
-            "fixed_assets": float(fixed_assets_balance),
-            "accumulated_depreciation": float(acc_dep_balance),
-            "net_fixed_assets": float(net_fixed_assets),
-            "total": float(total_assets)
+            "cash": safe_float(cash_balance),
+            "accounts_receivable": safe_float(ar_balance),
+            "vehicles": safe_float(fixed_assets_balance),
+            "accumulated_depreciation": safe_float(acc_dep_balance),
+            "net_vehicles": safe_float(net_fixed_assets),
+            "total": safe_float(total_assets)
         },
         "liabilities": {
-            "accounts_payable": float(ap_balance),
-            "loans_payable": float(loans_balance),
-            "total": float(total_liabilities)
+            "accounts_payable": safe_float(ap_balance),
+            "loans_payable": safe_float(loans_balance),
+            "total": safe_float(total_liabilities)
         },
         "equity": {
-            "owner_equity": float(owner_equity_balance),
-            "retained_earnings": float(retained_earnings),
-            "total": float(total_equity)
+            "owner_equity": safe_float(owner_equity_balance),
+            "retained_earnings": safe_float(retained_earnings),
+            "total": safe_float(total_equity)
         },
-        "total_liabilities_and_equity": float(total_liabilities_and_equity)
+        "total_liabilities_and_equity": safe_float(total_liabilities_and_equity)
     }
 
 

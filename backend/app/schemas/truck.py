@@ -2,7 +2,7 @@
 Truck schemas - Also supports trailers
 """
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Literal
 
 class TruckBase(BaseModel):
@@ -18,6 +18,12 @@ class TruckBase(BaseModel):
     interest_rate: Optional[float] = 0.07  # Annual interest rate (default 7% = 0.07)
     total_cost: Optional[float] = None  # Total purchase cost (cash + loan for trucks, cash only for trailers)
     registration_fee: Optional[float] = None  # Registration fee for vehicle
+    # Depreciation fields
+    purchase_date: Optional[date] = None  # Date vehicle was purchased/placed in service
+    depreciation_method: Optional[Literal["MACRS_5", "straight_line", "none"]] = "MACRS_5"
+    cost_basis: Optional[float] = None  # Depreciable cost basis (total_cost minus Section 179/bonus depreciation)
+    section_179_deduction: Optional[float] = 0  # Section 179 deduction taken in first year
+    bonus_depreciation: Optional[float] = 0  # Bonus depreciation percentage (e.g., 100 for 100%)
 
 class TruckCreate(TruckBase):
     pass
@@ -35,6 +41,11 @@ class TruckUpdate(BaseModel):
     interest_rate: Optional[float] = None
     total_cost: Optional[float] = None
     registration_fee: Optional[float] = None
+    purchase_date: Optional[date] = None
+    depreciation_method: Optional[Literal["MACRS_5", "straight_line", "none"]] = None
+    cost_basis: Optional[float] = None
+    section_179_deduction: Optional[float] = None
+    bonus_depreciation: Optional[float] = None
 
 class TruckResponse(TruckBase):
     id: int

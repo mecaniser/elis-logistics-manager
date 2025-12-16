@@ -61,6 +61,12 @@ export interface Truck {
   interest_rate?: number  // Annual interest rate (default 0.07 = 7%)
   total_cost?: number  // Total purchase cost (cash + loan for trucks, cash only for trailers)
   registration_fee?: number  // Registration fee for vehicle
+  // Depreciation fields
+  purchase_date?: string  // Date vehicle was purchased/placed in service (ISO date string)
+  depreciation_method?: 'MACRS_5' | 'straight_line' | 'none'  // Depreciation method
+  cost_basis?: number  // Depreciable cost basis
+  section_179_deduction?: number  // Section 179 deduction taken in first year
+  bonus_depreciation?: number  // Bonus depreciation percentage (e.g., 100 for 100%)
   // PM (Preventive Maintenance) Schedule fields (trucks only)
   last_pm_date?: string  // Date of last D13 full PM (ISO date string)
   last_pm_repair_id?: number  // Reference to the repair record
@@ -682,5 +688,21 @@ export const accountingApi = {
     const params: Record<string, any> = { start_date: startDate, end_date: endDate }
     if (truckId) params.truck_id = truckId
     return api.get<IncomeStatement>('/accounting/income-statement', { params })
+  },
+  calculateDepreciation: (truckId: number, asOfDate?: string) => {
+    const params: Record<string, any> = {}
+    if (asOfDate) params.as_of_date = asOfDate
+    return api.post(`/accounting/depreciation/calculate/${truckId}`, null, { params })
+  },
+  recordDepreciation: (truckId: number, entryDate?: string, description?: string) => {
+    const params: Record<string, any> = {}
+    if (entryDate) params.entry_date = entryDate
+    if (description) params.description = description
+    return api.post(`/accounting/depreciation/record/${truckId}`, null, { params })
+  },
+  recordDepreciationAll: (entryDate?: string) => {
+    const params: Record<string, any> = {}
+    if (entryDate) params.entry_date = entryDate
+    return api.post('/accounting/depreciation/record-all', null, { params })
   },
 }

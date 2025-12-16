@@ -3,6 +3,50 @@ import { accountingApi, ChartOfAccount as ChartOfAccountType, trucksApi, Truck }
 import { useTenant } from '../contexts/TenantContext'
 import ConfirmModal from '../components/ConfirmModal'
 import InfoPanel from '../components/InfoPanel'
+import AccountingTooltip from '../components/AccountingTooltip'
+
+// Helper function to get account descriptions
+const getAccountDescription = (accountName: string, accountType: string): string => {
+  const nameLower = accountName.toLowerCase()
+  
+  // Asset accounts
+  if (accountType === 'Asset') {
+    if (nameLower.includes('cash')) return 'Money in bank accounts and on hand. Most liquid asset.'
+    if (nameLower.includes('receivable')) return 'Money customers owe you for completed work.'
+    if (nameLower.includes('vehicle')) return 'The purchase cost of your trucks and trailers.'
+    if (nameLower.includes('depreciation')) return 'Total decrease in vehicle value over time due to wear and use.'
+  }
+  
+  // Liability accounts
+  if (accountType === 'Liability') {
+    if (nameLower.includes('payable')) return 'Money you owe to vendors, suppliers, or contractors.'
+    if (nameLower.includes('loan')) return 'Outstanding balance on loans you\'ve taken out.'
+  }
+  
+  // Equity accounts
+  if (accountType === 'Equity') {
+    if (nameLower.includes('owner')) return 'Your initial investment and capital contributions to the business.'
+    if (nameLower.includes('retained')) return 'Cumulative profits kept in the business instead of distributed.'
+  }
+  
+  // Revenue accounts
+  if (accountType === 'Revenue') {
+    return 'Money earned from business operations (e.g., settlements from completed loads).'
+  }
+  
+  // Expense accounts
+  if (accountType === 'Expense') {
+    if (nameLower.includes('fuel')) return 'Cost of diesel/gasoline for vehicles.'
+    if (nameLower.includes('driver') || nameLower.includes('payroll')) return 'Wages and fees related to driver compensation.'
+    if (nameLower.includes('insurance')) return 'Vehicle and business insurance premiums.'
+    if (nameLower.includes('maintenance') || nameLower.includes('repair') || nameLower.includes('service')) return 'Vehicle maintenance and repair costs.'
+    if (nameLower.includes('interest')) return 'Interest payments on loans.'
+    if (nameLower.includes('dispatch')) return 'Fees paid to dispatch services or brokers.'
+    return 'Operating expense for business operations.'
+  }
+  
+  return `${accountType} account used to categorize financial transactions.`
+}
 
 export default function ChartOfAccounts() {
   const { currentTenant } = useTenant()
@@ -214,7 +258,21 @@ export default function ChartOfAccounts() {
           {Object.entries(groupedAccounts).map(([type, typeAccounts]) => (
             <div key={type} className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 bg-gray-50 border-b">
-                <h2 className="text-lg font-semibold text-gray-900">{type}s</h2>
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <AccountingTooltip
+                    term={`${type}s`}
+                    description={
+                      type === 'Asset' ? 'What you own (Cash, Vehicles, Equipment). Resources that have value.'
+                      : type === 'Liability' ? 'What you owe (Loans, Accounts Payable). Debts and obligations.'
+                      : type === 'Equity' ? 'Your ownership stake in the business. What\'s left after subtracting liabilities from assets.'
+                      : type === 'Revenue' ? 'Money coming into your business from operations. Income earned.'
+                      : type === 'Expense' ? 'Money going out of your business. Costs of operations.'
+                      : `${type} accounts used to categorize transactions.`
+                    }
+                  >
+                    {type}s
+                  </AccountingTooltip>
+                </h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -238,7 +296,14 @@ export default function ChartOfAccounts() {
                           {account.code}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {account.name}
+                          <span className="flex items-center">
+                            <AccountingTooltip
+                              term={account.name}
+                              description={getAccountDescription(account.name, account.account_type)}
+                            >
+                              {account.name}
+                            </AccountingTooltip>
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           {account.is_active ? (

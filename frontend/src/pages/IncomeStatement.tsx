@@ -2,6 +2,27 @@ import { useEffect, useState } from 'react'
 import { accountingApi, IncomeStatement as IncomeStatementType, trucksApi, Truck } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import InfoPanel from '../components/InfoPanel'
+import AccountingTooltip from '../components/AccountingTooltip'
+
+// Helper function to get expense category descriptions
+const getExpenseDescription = (category: string): string => {
+  const descriptions: Record<string, string> = {
+    fuel: 'Cost of diesel/gasoline for your vehicles. One of the largest variable expenses.',
+    driver_pay: 'Wages paid to drivers for their work. This is compensation for their time and labor.',
+    payroll_fee: 'Fees charged by payroll processing companies or services to handle driver payments.',
+    insurance: 'Monthly premiums for vehicle insurance, liability coverage, and other business insurance policies.',
+    safety: 'Safety-related expenses including safety training, equipment, and compliance costs.',
+    prepass: 'Prepass or toll pass fees for electronic toll collection systems.',
+    ifta: 'International Fuel Tax Agreement fees - taxes paid on fuel used across different states.',
+    dispatch_fee: 'Fees paid to dispatch services or brokers for finding and coordinating loads.',
+    loan_interest: 'Interest payments on vehicle loans or other business loans. Only the interest portion, not principal.',
+    truck_parking: 'Costs for parking vehicles at truck stops, terminals, or storage facilities.',
+    service_on_truck: 'Regular maintenance, oil changes, tire replacements, and routine vehicle servicing.',
+    repairs: 'Unexpected repair costs for fixing vehicle breakdowns, accidents, or mechanical issues.',
+    custom: 'Other miscellaneous expenses that don\'t fit into standard categories.',
+  }
+  return descriptions[category.toLowerCase()] || 'Operating expense for this category.'
+}
 
 export default function IncomeStatement() {
   const { currentTenant } = useTenant()
@@ -286,17 +307,29 @@ export default function IncomeStatement() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue</h3>
               <div className="space-y-2">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700">
-                    {Object.keys(incomeStatement.revenue).map(key => 
-                      key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                    ).join(', ')}
+                  <span className="text-gray-700 flex items-center">
+                    <AccountingTooltip
+                      term="Operating Revenue"
+                      description="Total money earned from your business operations (e.g., settlements from completed loads). This is your 'top line' - all income before expenses."
+                    >
+                      {Object.keys(incomeStatement.revenue).map(key => 
+                        key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                      ).join(', ')}
+                    </AccountingTooltip>
                   </span>
                   <span className="font-medium">
                     {formatCurrency(incomeStatement.revenue.total)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 mt-4 border-t-2 border-gray-400">
-                  <span className="text-lg font-semibold text-gray-900">Total Revenue</span>
+                  <span className="text-lg font-semibold text-gray-900 flex items-center">
+                    <AccountingTooltip
+                      term="Total Revenue"
+                      description="Sum of all revenue streams. This is the total amount of money your business earned during this period."
+                    >
+                      Total Revenue
+                    </AccountingTooltip>
+                  </span>
                   <span className="text-lg font-semibold text-gray-900">
                     {formatCurrency(incomeStatement.revenue.total)}
                   </span>
@@ -309,19 +342,35 @@ export default function IncomeStatement() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Expenses</h3>
               <div className="space-y-2">
                 {Object.entries(incomeStatement.expenses)
+                  .filter(([, amount]) => amount > 0)
                   .sort(([, a], [, b]) => b - a) // Sort by amount descending
-                  .map(([name, amount]) => (
-                    <div key={name} className="flex justify-between py-2 border-b">
-                      <span className="text-gray-700">
-                        {name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                      <span className="font-medium text-red-600">
-                        {formatCurrency(amount)}
-                      </span>
-                    </div>
-                  ))}
+                  .map(([name, amount]) => {
+                    const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                    return (
+                      <div key={name} className="flex justify-between py-2 border-b">
+                        <span className="text-gray-700 flex items-center">
+                          <AccountingTooltip
+                            term={displayName}
+                            description={getExpenseDescription(name)}
+                          >
+                            {displayName}
+                          </AccountingTooltip>
+                        </span>
+                        <span className="font-medium text-red-600">
+                          {formatCurrency(amount)}
+                        </span>
+                      </div>
+                    )
+                  })}
                 <div className="flex justify-between py-2 mt-4 border-t-2 border-gray-400">
-                  <span className="text-lg font-semibold text-gray-900">Total Expenses</span>
+                  <span className="text-lg font-semibold text-gray-900 flex items-center">
+                    <AccountingTooltip
+                      term="Total Expenses"
+                      description="Sum of all expenses during this period. This is the total amount of money your business spent."
+                    >
+                      Total Expenses
+                    </AccountingTooltip>
+                  </span>
                   <span className="text-lg font-semibold text-red-600">
                     {formatCurrency(incomeStatement.total_expenses)}
                   </span>
@@ -332,7 +381,14 @@ export default function IncomeStatement() {
             {/* Net Income */}
             <div className="mt-6 pt-6 border-t-4 border-gray-600">
               <div className="flex justify-between">
-                <span className="text-xl font-bold text-gray-900">Net Income</span>
+                <span className="text-xl font-bold text-gray-900 flex items-center">
+                  <AccountingTooltip
+                    term="Net Income"
+                    description="Revenue minus expenses. Positive = profit (you made money). Negative = loss (you spent more than you earned). This is your 'bottom line'."
+                  >
+                    Net Income
+                  </AccountingTooltip>
+                </span>
                 <span
                   className={`text-xl font-bold ${
                     incomeStatement.net_income >= 0 ? 'text-green-600' : 'text-red-600'

@@ -1,7 +1,7 @@
 """
 Truck model - Also supports trailers
 """
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Numeric, UniqueConstraint, CheckConstraint, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Date, JSON, Numeric, UniqueConstraint, CheckConstraint, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -23,6 +23,12 @@ class Truck(Base):
     interest_rate = Column(Numeric(5, 4), nullable=True, default=0.07)  # Annual interest rate (default 7% = 0.07)
     total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan for trucks, cash only for trailers)
     registration_fee = Column(Numeric(10, 2), nullable=True)  # Registration fee for vehicle
+    # Depreciation fields
+    purchase_date = Column(Date, nullable=True)  # Date vehicle was purchased/placed in service (for depreciation)
+    depreciation_method = Column(String(20), nullable=True, default='MACRS_5')  # 'MACRS_5', 'straight_line', 'none'
+    cost_basis = Column(Numeric(10, 2), nullable=True)  # Depreciable cost basis (total_cost minus Section 179/bonus depreciation)
+    section_179_deduction = Column(Numeric(10, 2), nullable=True, default=0)  # Section 179 deduction taken in first year
+    bonus_depreciation = Column(Numeric(10, 2), nullable=True, default=0)  # Bonus depreciation percentage (e.g., 100 for 100%)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -35,5 +41,6 @@ class Truck(Base):
     __table_args__ = (
         UniqueConstraint('tenant_id', 'name', 'vehicle_type', name='unique_name_per_tenant_vehicle_type'),
         CheckConstraint("vehicle_type IN ('truck', 'trailer')", name='check_vehicle_type'),
+        CheckConstraint("depreciation_method IN ('MACRS_5', 'straight_line', 'none') OR depreciation_method IS NULL", name='check_depreciation_method'),
     )
 

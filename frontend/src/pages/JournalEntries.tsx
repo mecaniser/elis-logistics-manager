@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { accountingApi, JournalEntry as JournalEntryType, ChartOfAccount, trucksApi, Truck } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import InfoPanel from '../components/InfoPanel'
+import AccountingTooltip from '../components/AccountingTooltip'
 
 export default function JournalEntries() {
   const { currentTenant } = useTenant()
@@ -269,10 +270,24 @@ export default function JournalEntries() {
                           Account
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Debit
+                          <span className="flex items-center justify-end">
+                            <AccountingTooltip
+                              term="Debit"
+                              description="Increases assets and expenses, decreases liabilities and equity. Think: money going IN to assets or expenses."
+                            >
+                              Debit
+                            </AccountingTooltip>
+                          </span>
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Credit
+                          <span className="flex items-center justify-end">
+                            <AccountingTooltip
+                              term="Credit"
+                              description="Increases liabilities, equity, and revenue, decreases assets and expenses. Think: money coming FROM revenue or going OUT to pay liabilities."
+                            >
+                              Credit
+                            </AccountingTooltip>
+                          </span>
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Description
