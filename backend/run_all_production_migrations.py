@@ -52,6 +52,7 @@ def main():
         ("migrate_add_tenant_support.py", "Add tenant support (tenants table, tenant_id columns)"),
         ("migrate_add_tenant_details.py", "Add tenant business details (EIN, address, etc.)"),
         ("migrate_add_vehicle_type_tag_number.py", "Add vehicle_type and tag_number to trucks"),
+        ("migrate_add_suv_vehicle_type.py", "Add 'suv' as vehicle type option"),
         ("migrate_add_investment_fields.py", "Add investment fields (cash_investment, loan_amount, total_cost)"),
         ("migrate_add_registration_fee.py", "Add registration_fee column"),
         ("migrate_add_interest_rate.py", "Add interest_rate column"),

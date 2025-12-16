@@ -12,7 +12,7 @@ class Truck(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
-    vehicle_type = Column(String(20), nullable=False, default='truck')  # 'truck' or 'trailer'
+    vehicle_type = Column(String(20), nullable=False, default='truck')  # 'truck', 'trailer', or 'suv'
     license_plate = Column(String(20), nullable=True)  # For trucks
     tag_number = Column(String(20), nullable=True)  # For trailers (trailer tag number)
     vin = Column(String(17), nullable=True)  # Vehicle Identification Number
@@ -40,7 +40,7 @@ class Truck(Base):
     # Check constraint: vehicle_type must be 'truck' or 'trailer'
     __table_args__ = (
         UniqueConstraint('tenant_id', 'name', 'vehicle_type', name='unique_name_per_tenant_vehicle_type'),
-        CheckConstraint("vehicle_type IN ('truck', 'trailer')", name='check_vehicle_type'),
+        CheckConstraint("vehicle_type IN ('truck', 'trailer', 'suv')", name='check_vehicle_type'),
         CheckConstraint("depreciation_method IN ('MACRS_5', 'straight_line', 'none') OR depreciation_method IS NULL", name='check_depreciation_method'),
     )
 

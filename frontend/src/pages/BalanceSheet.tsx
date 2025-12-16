@@ -224,7 +224,7 @@ export default function BalanceSheet() {
                   <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Vehicles"
-                      description="The original purchase cost of your trucks and trailers. This is what you paid for them, not their current value."
+                      description="The original purchase cost of your vehicles. This is what you paid for them, not their current value."
                     >
                       <span className="truncate">Vehicles</span>
                     </AccountingTooltip>

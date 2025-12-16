@@ -7,9 +7,9 @@ interface BreadcrumbItem {
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
-  '/trucks': 'Trucks',
+  '/trucks': 'Vehicles',
   '/settlements': 'Settlements',
-  '/repairs': 'Repairs',
+  '/repairs': 'Maintenance & Repairs',
   '/accounting': 'Accounting',
   '/accounting/chart-of-accounts': 'Chart of Accounts',
   '/accounting/journal-entries': 'Journal Entries',
@@ -32,10 +32,10 @@ export default function Breadcrumb() {
   pathnames.forEach((pathname) => {
     // Handle dynamic routes like /vehicles/:id
     if (pathname === 'vehicles' && params.id) {
-      breadcrumbs.push({
-        label: 'Trucks',
-        path: '/trucks',
-      })
+          breadcrumbs.push({
+            label: 'Vehicles',
+            path: '/trucks',
+          })
       currentPath += `/${pathname}/${params.id}`
       breadcrumbs.push({
         label: `Vehicle Details`,

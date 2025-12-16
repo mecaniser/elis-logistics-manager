@@ -14,15 +14,15 @@ router = APIRouter()
 @router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
 def get_trucks(
-    vehicle_type: Optional[str] = None,  # Filter by 'truck' or 'trailer'
+    vehicle_type: Optional[str] = None,  # Filter by 'truck', 'trailer', or 'suv'
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get all trucks and trailers for the current tenant, optionally filtered by vehicle_type"""
+    """Get all trucks, trailers, and SUVs for the current tenant, optionally filtered by vehicle_type"""
     query = db.query(Truck).filter(Truck.tenant_id == tenant_id)
     if vehicle_type:
         vehicle_type_lower = vehicle_type.lower()
-        if vehicle_type_lower in ['truck', 'trailer']:
+        if vehicle_type_lower in ['truck', 'trailer', 'suv']:
             query = query.filter(Truck.vehicle_type == vehicle_type_lower)
     return query.order_by(Truck.vehicle_type, Truck.name).all()
 
@@ -32,15 +32,15 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     """Create a new truck or trailer"""
     # Validate vehicle_type
     vehicle_type = truck.vehicle_type.lower()
-    if vehicle_type not in ['truck', 'trailer']:
+    if vehicle_type not in ['truck', 'trailer', 'suv']:
         raise HTTPException(
             status_code=400,
-            detail="vehicle_type must be 'truck' or 'trailer'"
+            detail="vehicle_type must be 'truck', 'trailer', or 'suv'"
         )
     
-    # Validate: trucks should have license_plate, trailers should have tag_number
-    if vehicle_type == 'truck' and not truck.license_plate:
-        # License plate is optional but recommended for trucks
+    # Validate: trucks and SUVs should have license_plate, trailers should have tag_number
+    if vehicle_type in ['truck', 'suv'] and not truck.license_plate:
+        # License plate is optional but recommended for trucks and SUVs
         pass
     elif vehicle_type == 'trailer' and not truck.tag_number:
         # Tag number is recommended for trailers
@@ -66,8 +66,8 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
                     status_code=400,
                     detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration})"
                 )
-    elif vehicle_type == 'truck':
-        # For trucks, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
+    elif vehicle_type in ['truck', 'suv']:
+        # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
         if truck.cash_investment is not None and truck.total_cost is not None:
             cash = float(truck.cash_investment)
             total = float(truck.total_cost)
@@ -99,8 +99,8 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
         truck_dict['interest_rate'] = 0.07  # Default 7%
-    # Initialize current_loan_balance = loan_amount for trucks
-    if vehicle_type == 'truck' and truck_dict.get('loan_amount'):
+    # Initialize current_loan_balance = loan_amount for trucks and SUVs
+    if vehicle_type in ['truck', 'suv'] and truck_dict.get('loan_amount'):
         if 'current_loan_balance' not in truck_dict or truck_dict['current_loan_balance'] is None:
             truck_dict['current_loan_balance'] = truck_dict['loan_amount']
     db_truck = Truck(**truck_dict)
@@ -159,8 +159,8 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
                         status_code=400,
                         detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration})"
                     )
-        elif vehicle_type == 'truck':
-            # For trucks, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
+        elif vehicle_type in ['truck', 'suv']:
+            # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
             if cash_investment is not None and total_cost is not None:
                 cash = float(cash_investment)
                 total = float(total_cost)
@@ -177,7 +177,7 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     # Update current_loan_balance if loan_amount is being updated
     if 'loan_amount' in update_data:
         new_loan_amount = update_data['loan_amount']
-        if vehicle_type == 'truck' and new_loan_amount:
+        if vehicle_type in ['truck', 'suv'] and new_loan_amount:
             # If loan_amount is updated, reset current_loan_balance to new loan_amount
             # (unless it's being explicitly set in update_data)
             if 'current_loan_balance' not in update_data:

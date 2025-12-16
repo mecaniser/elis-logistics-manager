@@ -998,7 +998,7 @@ def get_time_series(
     Args:
         group_by: How to group weekly data - "week_start" or "settlement_date" (default: "week_start")
         truck_id: Optional truck filter
-        vehicle_type: Optional vehicle type filter ('truck' or 'trailer')
+        vehicle_type: Optional vehicle type filter ('truck', 'trailer', or 'suv')
     """
     import traceback
     import logging
@@ -1418,7 +1418,7 @@ def _get_time_series_impl(
     elif vehicle_type:
         # Filter repairs by vehicle type when no specific truck_id is provided
         vt = vehicle_type.lower()
-        if vt in ["truck", "trailer"]:
+        if vt in ["truck", "trailer", "suv"]:
             vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt, Truck.tenant_id == tenant_id).all()]
             if vehicle_ids:
                 repairs_query = repairs_query.filter(Repair.truck_id.in_(vehicle_ids))

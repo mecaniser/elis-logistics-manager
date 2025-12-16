@@ -646,7 +646,7 @@ export default function Dashboard() {
           onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
           className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         >
-          <option value="">All Trucks</option>
+          <option value="">All Vehicles</option>
           {trucks.map((truck) => (
             <option key={truck.id} value={truck.id}>
               {truck.name}
@@ -672,7 +672,7 @@ export default function Dashboard() {
                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  🚚 Trucks
+                  🚚 Vehicles
                 </button>
                 <button
                   type="button"
@@ -1111,7 +1111,7 @@ export default function Dashboard() {
               {vehicleTypeFilter === 'trucks' && (selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
                 <div className="mb-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">
-                    Trucks Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
+                    Vehicles Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {(selectedPeriodData as any).trucks.map((truck: any) => (

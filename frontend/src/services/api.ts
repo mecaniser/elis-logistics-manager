@@ -50,8 +50,8 @@ formDataApi.interceptors.request.use((config) => {
 export interface Truck {
   id: number
   name: string
-  vehicle_type: 'truck' | 'trailer'
-  license_plate?: string  // For trucks
+  vehicle_type: 'truck' | 'trailer' | 'suv'
+  license_plate?: string  // For trucks and SUVs
   tag_number?: string  // For trailers
   vin?: string
   license_plate_history?: string[]

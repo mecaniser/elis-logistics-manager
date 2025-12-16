@@ -380,7 +380,7 @@ export default function Repairs() {
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div className="flex items-baseline gap-2">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Repairs</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Maintenance & Repairs</h1>
           <span className="text-xl text-gray-500 font-medium">({repairs.length})</span>
         </div>
         <div className="flex flex-row gap-2 w-full items-center">
@@ -494,7 +494,7 @@ export default function Repairs() {
           <form onSubmit={handleUpload}>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Truck {requiresTruckSelection ? '*' : '(Optional - will auto-detect from VIN if available)'}
+                Vehicle {requiresTruckSelection ? '*' : '(Optional - will auto-detect from VIN if available)'}
               </label>
               <select
                 value={selectedTruckForUpload || ''}
@@ -598,7 +598,7 @@ export default function Repairs() {
           <form onSubmit={handleCreateManual}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Truck *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle *</label>
                 <select
                   value={manualFormData.truck_id || ''}
                   onChange={(e) => setManualFormData({ ...manualFormData, truck_id: e.target.value ? Number(e.target.value) : undefined })}
@@ -606,7 +606,7 @@ export default function Repairs() {
                   disabled={creating}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select a truck...</option>
+                  <option value="">Select a vehicle...</option>
                   {trucks.map((truck) => (
                     <option key={truck.id} value={truck.id}>
                       {truck.name} {truck.vin ? `(VIN: ${truck.vin})` : ''}

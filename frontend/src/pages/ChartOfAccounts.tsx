@@ -13,7 +13,7 @@ const getAccountDescription = (accountName: string, accountType: string): string
   if (accountType === 'Asset') {
     if (nameLower.includes('cash')) return 'Money in bank accounts and on hand. Most liquid asset.'
     if (nameLower.includes('receivable')) return 'Money customers owe you for completed work.'
-    if (nameLower.includes('vehicle')) return 'The purchase cost of your trucks and trailers.'
+    if (nameLower.includes('vehicle')) return 'The purchase cost of your vehicles.'
     if (nameLower.includes('depreciation')) return 'Total decrease in vehicle value over time due to wear and use.'
   }
   

@@ -280,9 +280,9 @@ export default function IncomeStatement() {
             {currentTenant?.business_type === 'logistics' && (
               <p className="mt-2 pt-2 border-t border-blue-300">
                 {isLSLogistics ? (
-                  <span><strong>Note:</strong> For LS Logistics, each truck and trailer has its own separate income statement. Select a vehicle above to view its financial performance.</span>
+                  <span><strong>Note:</strong> For LS Logistics, each vehicle has its own separate income statement. Select a vehicle above to view its financial performance.</span>
                 ) : (
-                  <span><strong>Tip:</strong> You can filter by individual vehicle to see which trucks or trailers are most profitable!</span>
+                  <span><strong>Tip:</strong> You can filter by individual vehicle to see which vehicles are most profitable!</span>
                 )}
               </p>
             )}

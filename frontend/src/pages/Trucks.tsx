@@ -16,10 +16,10 @@ export default function Trucks() {
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null)
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'all' | 'truck' | 'trailer'>('all')
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<'all' | 'truck' | 'trailer' | 'suv'>('all')
   const [formData, setFormData] = useState({ 
     name: '', 
-    vehicle_type: 'truck' as 'truck' | 'trailer',
+    vehicle_type: 'truck' as 'truck' | 'trailer' | 'suv',
     vin: '', 
     license_plate: '',
     tag_number: '',
@@ -65,7 +65,7 @@ export default function Trucks() {
   // Auto-calculate total cost when investment fields change
   useEffect(() => {
     const cash = parseFloat(formData.cash_investment) || 0
-    const loan = formData.vehicle_type === 'truck' ? (parseFloat(formData.loan_amount) || 0) : 0
+    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (parseFloat(formData.loan_amount) || 0) : 0
     const registration = parseFloat(formData.registration_fee) || 0
     const total = cash + loan + registration
     
@@ -116,13 +116,13 @@ export default function Trucks() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const vehicleLabel = formData.vehicle_type === 'truck' ? 'Truck' : 'Trailer'
+      const vehicleLabel = formData.vehicle_type === 'truck' ? 'Truck' : formData.vehicle_type === 'suv' ? 'SUV' : 'Trailer'
       
       const investmentData: any = {}
       if (formData.cash_investment) {
         investmentData.cash_investment = parseFloat(formData.cash_investment)
       }
-      if (formData.vehicle_type === 'truck' && formData.loan_amount) {
+      if ((formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && formData.loan_amount) {
         investmentData.loan_amount = parseFloat(formData.loan_amount)
       } else if (formData.vehicle_type === 'trailer') {
         investmentData.loan_amount = null
@@ -156,7 +156,7 @@ export default function Trucks() {
           name: formData.name,
           vehicle_type: formData.vehicle_type,
           vin: formData.vin || undefined,
-          license_plate: formData.vehicle_type === 'truck' ? (formData.license_plate || undefined) : undefined,
+          license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
         })
@@ -166,7 +166,7 @@ export default function Trucks() {
           name: formData.name,
           vehicle_type: formData.vehicle_type,
           vin: formData.vin || undefined,
-          license_plate: formData.vehicle_type === 'truck' ? (formData.license_plate || undefined) : undefined,
+          license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
         })
@@ -224,6 +224,7 @@ export default function Trucks() {
 
   const trucksList = filteredTrucks.filter(t => t.vehicle_type === 'truck')
   const trailersList = filteredTrucks.filter(t => t.vehicle_type === 'trailer')
+  const suvsList = filteredTrucks.filter(t => t.vehicle_type === 'suv')
 
   // Calculate total investments
   const totalTrucksInvestment = trucksList.reduce((sum, truck) => {
@@ -232,6 +233,12 @@ export default function Trucks() {
     return sum + total
   }, 0)
 
+  const totalSuvsInvestment = suvsList.reduce((sum, suv) => {
+    const total = suv.total_cost || 
+      ((suv.cash_investment || 0) + (suv.loan_amount || 0) + (suv.registration_fee || 0))
+    return sum + total
+  }, 0)
+  
   const totalTrailersInvestment = trailersList.reduce((sum, trailer) => {
     const total = trailer.total_cost || 
       ((trailer.cash_investment || 0) + (trailer.registration_fee || 0))
@@ -244,7 +251,7 @@ export default function Trucks() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Trucks & Trailers</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Vehicles</h1>
         <button
           onClick={() => {
             setEditingTruck(null)
@@ -258,15 +265,25 @@ export default function Trucks() {
       </div>
 
       {/* Total Investments Display */}
-      {(totalTrucksInvestment > 0 || totalTrailersInvestment > 0) && (
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      {(totalTrucksInvestment > 0 || totalTrailersInvestment > 0 || totalSuvsInvestment > 0) && (
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {totalTrucksInvestment > 0 && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="text-sm font-medium text-gray-600 mb-1">
-                {trucksList.length === 1 ? 'Total Truck Investment' : `Total Trucks Investment (${trucksList.length})`}
+                {trucksList.length === 1 ? 'Total Vehicle Investment' : `Total Vehicles Investment (${trucksList.length})`}
               </div>
               <div className="text-2xl font-bold text-blue-700">
                 ${totalTrucksInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          )}
+          {totalSuvsInvestment > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="text-sm font-medium text-gray-600 mb-1">
+                {suvsList.length === 1 ? 'Total SUV Investment' : `Total SUVs Investment (${suvsList.length})`}
+              </div>
+              <div className="text-2xl font-bold text-green-700">
+                ${totalSuvsInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           )}
@@ -303,7 +320,17 @@ export default function Trucks() {
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
           }`}
         >
-          Trucks
+          Vehicles
+        </button>
+        <button
+          onClick={() => setVehicleTypeFilter('suv')}
+          className={`px-4 py-2 rounded-md ${
+            vehicleTypeFilter === 'suv'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          SUVs
         </button>
         <button
           onClick={() => setVehicleTypeFilter('trailer')}
@@ -320,7 +347,7 @@ export default function Trucks() {
       {showForm && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">
-            {editingTruck ? `Edit ${editingTruck.vehicle_type === 'truck' ? 'Truck' : 'Trailer'}` : 'Add Vehicle'}
+            {editingTruck ? `Edit ${editingTruck.vehicle_type === 'truck' ? 'Truck' : editingTruck.vehicle_type === 'suv' ? 'SUV' : 'Trailer'}` : 'Add Vehicle'}
           </h2>
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
@@ -328,18 +355,19 @@ export default function Trucks() {
               <select
                 value={formData.vehicle_type}
                 onChange={(e) => {
-                  const newType = e.target.value as 'truck' | 'trailer'
+                  const newType = e.target.value as 'truck' | 'trailer' | 'suv'
                   setFormData({ 
                     ...formData, 
                     vehicle_type: newType,
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
-                    tag_number: newType === 'truck' ? '' : formData.tag_number
+                    tag_number: (newType === 'truck' || newType === 'suv') ? '' : formData.tag_number
                   })
                 }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="truck">Truck</option>
+                <option value="suv">SUV</option>
                 <option value="trailer">Trailer</option>
               </select>
             </div>
@@ -353,7 +381,7 @@ export default function Trucks() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            {formData.vehicle_type === 'truck' && (
+            {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
                 <input
@@ -402,7 +430,7 @@ export default function Trucks() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                {formData.vehicle_type === 'truck' && (
+                {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
                   <>
                     <div className="md:col-span-3">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount ($)</label>
@@ -554,7 +582,7 @@ export default function Trucks() {
       {/* Trucks Section */}
       {vehicleTypeFilter !== 'trailer' && trucksList.length > 0 && (
         <div className="mb-6">
-          <h2 className="text-xl font-semibold mb-3 text-gray-900">Trucks</h2>
+          <h2 className="text-xl font-semibold mb-3 text-gray-900">Vehicles</h2>
           <div className="bg-white shadow overflow-hidden sm:rounded-md">
             <ul className="divide-y divide-gray-200">
               {trucksList.map((truck) => (
@@ -834,8 +862,100 @@ export default function Trucks() {
         </div>
       )}
 
+      {/* SUVs Section */}
+      {vehicleTypeFilter !== 'truck' && vehicleTypeFilter !== 'trailer' && suvsList.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-3 text-gray-900">SUVs</h2>
+          <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <ul className="divide-y divide-gray-200">
+              {suvsList.map((suv) => (
+                <li key={suv.id} className="px-4 py-4 sm:px-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {suv.name}
+                        </p>
+                        {suv.license_plate && (
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            {suv.license_plate}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex items-center text-sm text-gray-500">
+                        {suv.total_cost && (
+                          <span className="mr-4">
+                            Total Cost: ${parseFloat(suv.total_cost.toString()).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {suv.purchase_date && (
+                          <span>
+                            Purchased: {new Date(suv.purchase_date).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className={`flex ${isMobile ? 'flex-col' : ''} gap-2 ml-4`}>
+                      <button
+                        onClick={() => {
+                          setEditingTruck(suv)
+                          setFormData({ 
+                            name: suv.name,
+                            vehicle_type: suv.vehicle_type,
+                            vin: suv.vin || '',
+                            license_plate: suv.license_plate || '',
+                            tag_number: '',
+                            cash_investment: suv.cash_investment?.toString() || '',
+                            loan_amount: suv.loan_amount?.toString() || '',
+                            interest_rate: suv.interest_rate?.toString() || '0.07',
+                            total_cost: suv.total_cost?.toString() || '',
+                            registration_fee: suv.registration_fee?.toString() || '',
+                            purchase_date: suv.purchase_date || '',
+                            depreciation_method: (suv.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
+                            cost_basis: suv.cost_basis?.toString() || '',
+                            section_179_deduction: suv.section_179_deduction?.toString() || '',
+                            bonus_depreciation: suv.bonus_depreciation?.toString() || '',
+                          })
+                          setShowForm(true)
+                        }}
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
+                        title="Edit"
+                      >
+                        {isMobile ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        ) : (
+                          'Edit'
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTruckToDelete(suv.id)
+                          setTruckToDeleteName(suv.name)
+                        }}
+                        className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-red-600 text-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center justify-center`}
+                        title="Delete"
+                      >
+                        {isMobile ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        ) : (
+                          'Delete'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Trailers Section */}
-      {vehicleTypeFilter !== 'truck' && trailersList.length > 0 && (
+      {vehicleTypeFilter !== 'truck' && vehicleTypeFilter !== 'suv' && trailersList.length > 0 && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-3 text-gray-900">Trailers</h2>
           <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -942,7 +1062,7 @@ export default function Trucks() {
       {filteredTrucks.length === 0 && (
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <div className="px-6 py-4 text-gray-500 text-center">
-            No {vehicleTypeFilter === 'all' ? 'vehicles' : vehicleTypeFilter === 'truck' ? 'trucks' : 'trailers'} found.
+            No {vehicleTypeFilter === 'all' ? 'vehicles' : vehicleTypeFilter === 'truck' ? 'trucks' : vehicleTypeFilter === 'suv' ? 'SUVs' : 'trailers'} found.
           </div>
         </div>
       )}
