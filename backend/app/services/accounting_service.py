@@ -556,10 +556,14 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     acc_dep_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1501").first()
     
     # If accounts don't exist, try to create them
-    if not cash_account or not ar_account:
+    if not cash_account or not ar_account or (tenant.business_type == 'logistics' and (not fixed_assets_account or not acc_dep_account)):
         ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        db.commit()  # Ensure accounts are committed before querying
         cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
         ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
+        if tenant.business_type == 'logistics':
+            fixed_assets_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1500").first()
+            acc_dep_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1501").first()
     
     cash_balance = calculate_account_balance(db, cash_account.id, end_date=as_of_date) if cash_account else Decimal(0)
     ar_balance = calculate_account_balance(db, ar_account.id, end_date=as_of_date) if ar_account else Decimal(0)
@@ -631,6 +635,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     # If liability accounts don't exist, try to create them
     if not ap_account or not loans_account:
         ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        db.commit()  # Ensure accounts are committed before querying
         ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
         loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
     
@@ -664,6 +669,13 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     # Equity
     owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
     retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
+    
+    # If equity accounts don't exist, try to create them
+    if not owner_equity_account or not retained_earnings_account:
+        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        db.commit()  # Ensure accounts are committed before querying
+        owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
+        retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
     
     owner_equity_balance = calculate_account_balance(db, owner_equity_account.id, end_date=as_of_date) if owner_equity_account else Decimal(0)
     
