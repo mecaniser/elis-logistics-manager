@@ -218,9 +218,9 @@ export interface PMStatusResponse {
   pm_status: PMStatus[]
 }
 
-// Truck API (also handles trailers)
+// Truck API (also handles trailers and SUVs)
 export const trucksApi = {
-  getAll: (vehicleType?: 'truck' | 'trailer') => {
+  getAll: (vehicleType?: 'truck' | 'trailer' | 'suv') => {
     const params = vehicleType ? { vehicle_type: vehicleType } : {}
     return api.get<Truck[]>('/trucks', { params })
   },
