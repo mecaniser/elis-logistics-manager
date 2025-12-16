@@ -95,30 +95,30 @@ export default function BalanceSheet() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Balance Sheet
+      <div className="flex flex-col gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          <span className="block sm:inline">Balance Sheet</span>
           {selectedTruckId && trucks.find(t => t.id === selectedTruckId) ? (
-            <span className="text-lg font-normal text-gray-600 ml-2">
+            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
               - {trucks.find(t => t.id === selectedTruckId)?.name}
             </span>
           ) : isLogistics && trucks.length > 0 ? (
-            <span className="text-lg font-normal text-gray-600 ml-2">
+            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
               - All Vehicles (Total)
             </span>
           ) : null}
         </h1>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Vehicle Selector (Logistics businesses) */}
           {isLogistics && trucks.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Vehicle:
               </label>
               <select
                 value={selectedTruckId || ''}
                 onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
               >
                 <option value="">All Vehicles (Total)</option>
                 {trucks.map((truck) => (
@@ -129,15 +129,15 @@ export default function BalanceSheet() {
               </select>
             </div>
           )}
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
               As of Date:
             </label>
             <input
               type="date"
               value={asOfDate}
               onChange={(e) => setAsOfDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+              className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
             />
           </div>
         </div>
@@ -190,72 +190,72 @@ export default function BalanceSheet() {
             Balance Sheet as of {new Date(balanceSheet.as_of_date).toLocaleDateString()}
           </h2>
         </div>
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="p-4 sm:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             {/* Assets */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Assets</h3>
               <div className="space-y-2">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Cash"
                       description="Money in bank accounts and on hand. The most liquid asset - you can use it immediately."
                     >
-                      Cash
+                      <span className="truncate">Cash</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">{formatCurrency(balanceSheet.assets.cash)}</span>
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">{formatCurrency(balanceSheet.assets.cash)}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Accounts Receivable"
                       description="Money customers owe you for work completed but not yet paid. It's an asset because you expect to receive payment."
                     >
-                      Accounts Receivable
+                      <span className="truncate">Accounts Receivable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.accounts_receivable)}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Vehicles"
                       description="The original purchase cost of your trucks and trailers. This is what you paid for them, not their current value."
                     >
-                      Vehicles
+                      <span className="truncate">Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.vehicles)}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Accumulated Depreciation"
                       description="Total amount your vehicles have decreased in value over time due to wear and use. This reduces the value of your vehicles on the balance sheet."
                     >
-                      Less: Accumulated Depreciation
+                      <span className="truncate">Less: Accumulated Depreciation</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-red-600">
+                  <span className="font-medium text-red-600 whitespace-nowrap flex-shrink-0">
                     ({formatCurrency(balanceSheet.assets.accumulated_depreciation)})
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b-2 border-gray-400 gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Net Vehicles"
                       description="Vehicles minus accumulated depreciation. This is the current book value (what they're worth on paper) of your vehicles."
                     >
-                      Net Vehicles
+                      <span className="truncate">Net Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.net_vehicles)}
                   </span>
                 </div>
@@ -272,29 +272,29 @@ export default function BalanceSheet() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Liabilities</h3>
               <div className="space-y-2 mb-6">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Accounts Payable"
                       description="Money you owe to vendors, suppliers, or contractors for goods or services received but not yet paid. Short-term debts."
                     >
-                      Accounts Payable
+                      <span className="truncate">Accounts Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.accounts_payable)}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b-2 border-gray-400 gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Loans Payable"
                       description="Outstanding balance on loans you've taken out (like vehicle loans). The principal amount you still owe, not including future interest."
                     >
-                      Loans Payable
+                      <span className="truncate">Loans Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.loans_payable)}
                   </span>
                 </div>
@@ -308,29 +308,29 @@ export default function BalanceSheet() {
 
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Equity</h3>
               <div className="space-y-2">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Owner Equity"
                       description="Initial investment you put into the business plus any additional capital contributions. This is your ownership stake in the company."
                     >
-                      Owner Equity
+                      <span className="truncate">Owner Equity</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.owner_equity)}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b-2 border-gray-400">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b-2 border-gray-400 gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Retained Earnings"
                       description="Cumulative profits (or losses) from all previous periods that you've kept in the business instead of taking as distributions. Increases with profits, decreases with losses."
                     >
-                      Retained Earnings
+                      <span className="truncate">Retained Earnings</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.retained_earnings)}
                   </span>
                 </div>

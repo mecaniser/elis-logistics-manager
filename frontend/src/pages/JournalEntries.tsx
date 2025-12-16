@@ -141,7 +141,7 @@ export default function JournalEntries() {
       />
 
       <div className="bg-white p-4 rounded-lg shadow space-y-4">
-        <div className={`grid grid-cols-1 md:grid-cols-${isLSLogistics && trucks.length > 0 ? '5' : '4'} gap-4`}>
+        <div className={`grid grid-cols-1 ${isLSLogistics && trucks.length > 0 ? 'sm:grid-cols-2 lg:grid-cols-5' : 'sm:grid-cols-2 lg:grid-cols-4'} gap-4`}>
           {/* Vehicle Selector (LS Logistics only) */}
           {isLSLogistics && trucks.length > 0 && (
             <div>
@@ -232,25 +232,25 @@ export default function JournalEntries() {
 
             return (
               <div key={entry.id} className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 bg-gray-50 border-b">
-                  <div className="flex justify-between items-center">
-                    <div>
+                <div className="px-4 sm:px-6 py-4 bg-gray-50 border-b">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-semibold text-gray-900">
                         Entry #{entry.id}
                       </h3>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-gray-500 break-words">
                         Date: {formatDate(entry.entry_date)}
                         {entry.reference_type && (
-                          <span className="ml-4">
+                          <span className="ml-2 sm:ml-4">
                             {entry.reference_type} #{entry.reference_id}
                           </span>
                         )}
                       </p>
                       {entry.description && (
-                        <p className="text-sm text-gray-600 mt-1">{entry.description}</p>
+                        <p className="text-sm text-gray-600 mt-1 break-words">{entry.description}</p>
                       )}
                     </div>
-                    <div className="text-right">
+                    <div className="text-left sm:text-right flex-shrink-0">
                       <div className="text-sm text-gray-500">Total Debits</div>
                       <div className="text-lg font-semibold text-green-600">
                         {formatCurrency(totalDebits)}
@@ -262,14 +262,14 @@ export default function JournalEntries() {
                     </div>
                   </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Account
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           <span className="flex items-center justify-end">
                             <AccountingTooltip
                               term="Debit"
@@ -279,7 +279,7 @@ export default function JournalEntries() {
                             </AccountingTooltip>
                           </span>
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           <span className="flex items-center justify-end">
                             <AccountingTooltip
                               term="Credit"
@@ -289,7 +289,7 @@ export default function JournalEntries() {
                             </AccountingTooltip>
                           </span>
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Description
                         </th>
                       </tr>
@@ -297,17 +297,17 @@ export default function JournalEntries() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {entry.lines.map((line) => (
                         <tr key={line.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {getAccountName(line.account_id)}
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
+                            <span className="truncate block">{getAccountName(line.account_id)}</span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                             {line.debit > 0 ? formatCurrency(line.debit) : '-'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                          <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
                             {line.credit > 0 ? formatCurrency(line.credit) : '-'}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
-                            {line.description || '-'}
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-500">
+                            <span className="truncate block">{line.description || '-'}</span>
                           </td>
                         </tr>
                       ))}

@@ -148,22 +148,22 @@ export default function ChartOfAccounts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Chart of Accounts
+      <div className="flex flex-col gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          <span className="block sm:inline">Chart of Accounts</span>
           {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
-            <span className="text-lg font-normal text-gray-600 ml-2">
+            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
               - {trucks.find(t => t.id === selectedTruckId)?.name}
             </span>
           )}
         </h1>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           {/* Vehicle Selector (LS Logistics only) */}
           {isLSLogistics && trucks.length > 0 && (
             <select
               value={selectedTruckId || ''}
               onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
             >
               <option value="">Select Vehicle</option>
               {trucks.map((truck) => (
@@ -176,7 +176,7 @@ export default function ChartOfAccounts() {
           <select
             value={accountTypeFilter}
             onChange={(e) => setAccountTypeFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
           >
             <option value="">All Types</option>
             {accountTypes.map((type) => (
@@ -188,14 +188,14 @@ export default function ChartOfAccounts() {
           {accounts.length > 0 && (
             <button
               onClick={() => setShowResetModal(true)}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+              className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm whitespace-nowrap"
             >
               Reset Accounts
             </button>
           )}
           <button
             onClick={initializeAccounts}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm whitespace-nowrap"
           >
             {accounts.length > 0 ? 'Re-initialize Accounts' : 'Initialize Accounts'}
           </button>
@@ -274,17 +274,17 @@ export default function ChartOfAccounts() {
                   </AccountingTooltip>
                 </h2>
               </div>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Code
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
                       </th>
                     </tr>
@@ -292,20 +292,20 @@ export default function ChartOfAccounts() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {typeAccounts.map((account) => (
                       <tr key={account.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
                           {account.code}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="flex items-center">
+                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
+                          <span className="flex items-center min-w-0">
                             <AccountingTooltip
                               term={account.name}
                               description={getAccountDescription(account.name, account.account_type)}
                             >
-                              {account.name}
+                              <span className="truncate">{account.name}</span>
                             </AccountingTooltip>
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
                           {account.is_active ? (
                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                               Active

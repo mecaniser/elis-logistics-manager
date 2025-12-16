@@ -63,17 +63,17 @@ export default function Accounting() {
           >
             <Link
               to={link.path}
-              className="block p-6 group"
+              className="block p-4 sm:p-6 group"
             >
-              <div className="flex items-start space-x-4">
+              <div className="flex items-start space-x-3 sm:space-x-4">
                 <div className="flex-shrink-0 text-blue-600 group-hover:text-blue-700">
                   {link.icon}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 group-hover:text-blue-600 break-words">
                     {link.label}
                   </h3>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-xs sm:text-sm text-gray-500 break-words">
                     {link.description}
                   </p>
                 </div>
@@ -84,8 +84,8 @@ export default function Accounting() {
                 </div>
               </div>
             </Link>
-            <div className="border-t border-gray-100 px-6 py-4">
-              <p className="text-xs text-gray-600 leading-relaxed">
+            <div className="border-t border-gray-100 px-4 sm:px-6 py-4">
+              <p className="text-xs text-gray-600 leading-relaxed break-words">
                 {link.info}
               </p>
             </div>

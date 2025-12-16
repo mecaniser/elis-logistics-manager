@@ -159,26 +159,26 @@ export default function IncomeStatement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Income Statement
+      <div className="flex flex-col gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          <span className="block sm:inline">Income Statement</span>
           {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
-            <span className="text-lg font-normal text-gray-600 ml-2">
+            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
               - {trucks.find(t => t.id === selectedTruckId)?.name}
             </span>
           )}
         </h1>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex flex-col gap-3">
           {/* Vehicle Selector */}
           {currentTenant?.business_type === 'logistics' && trucks.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Vehicle:
               </label>
               <select
                 value={selectedTruckId || ''}
                 onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
                 required={isLSLogistics}
               >
                 {!isLSLogistics && <option value="">All Vehicles</option>}
@@ -192,48 +192,48 @@ export default function IncomeStatement() {
             </div>
           )}
           {/* Quick Date Selection Buttons */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setDateRange('1month')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
             >
               1 Month
             </button>
             <button
               onClick={() => setDateRange('3months')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
             >
               3 Months
             </button>
             <button
               onClick={() => setDateRange('1year')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
             >
               1 Year
             </button>
           </div>
           {/* Custom Date Inputs */}
-          <div className="flex items-center gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Start:
               </label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 End:
               </label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
               />
             </div>
           </div>
@@ -300,24 +300,26 @@ export default function IncomeStatement() {
             {new Date(incomeStatement.end_date).toLocaleDateString()}
           </p>
         </div>
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <div className="max-w-2xl mx-auto">
             {/* Revenue */}
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue</h3>
               <div className="space-y-2">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-700 flex items-center">
+                <div className="flex justify-between items-center py-2 border-b gap-2">
+                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Operating Revenue"
                       description="Total money earned from your business operations (e.g., settlements from completed loads). This is your 'top line' - all income before expenses."
                     >
-                      {Object.keys(incomeStatement.revenue).map(key => 
-                        key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                      ).join(', ')}
+                      <span className="truncate">
+                        {Object.keys(incomeStatement.revenue).map(key => 
+                          key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                        ).join(', ')}
+                      </span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium whitespace-nowrap flex-shrink-0">
                     {formatCurrency(incomeStatement.revenue.total)}
                   </span>
                 </div>
@@ -347,31 +349,31 @@ export default function IncomeStatement() {
                   .map(([name, amount]) => {
                     const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
                     return (
-                      <div key={name} className="flex justify-between py-2 border-b">
-                        <span className="text-gray-700 flex items-center">
+                      <div key={name} className="flex justify-between items-center py-2 border-b gap-2">
+                        <span className="text-gray-700 flex items-center min-w-0 flex-1">
                           <AccountingTooltip
                             term={displayName}
                             description={getExpenseDescription(name)}
                           >
-                            {displayName}
+                            <span className="truncate">{displayName}</span>
                           </AccountingTooltip>
                         </span>
-                        <span className="font-medium text-red-600">
+                        <span className="font-medium text-red-600 whitespace-nowrap flex-shrink-0">
                           {formatCurrency(amount)}
                         </span>
                       </div>
                     )
                   })}
-                <div className="flex justify-between py-2 mt-4 border-t-2 border-gray-400">
-                  <span className="text-lg font-semibold text-gray-900 flex items-center">
+                <div className="flex justify-between items-center py-2 mt-4 border-t-2 border-gray-400 gap-2">
+                  <span className="text-lg font-semibold text-gray-900 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Total Expenses"
                       description="Sum of all expenses during this period. This is the total amount of money your business spent."
                     >
-                      Total Expenses
+                      <span className="truncate">Total Expenses</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="text-lg font-semibold text-red-600">
+                  <span className="text-lg font-semibold text-red-600 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(incomeStatement.total_expenses)}
                   </span>
                 </div>
@@ -380,17 +382,17 @@ export default function IncomeStatement() {
 
             {/* Net Income */}
             <div className="mt-6 pt-6 border-t-4 border-gray-600">
-              <div className="flex justify-between">
-                <span className="text-xl font-bold text-gray-900 flex items-center">
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-xl font-bold text-gray-900 flex items-center min-w-0 flex-1">
                   <AccountingTooltip
                     term="Net Income"
                     description="Revenue minus expenses. Positive = profit (you made money). Negative = loss (you spent more than you earned). This is your 'bottom line'."
                   >
-                    Net Income
+                    <span className="truncate">Net Income</span>
                   </AccountingTooltip>
                 </span>
                 <span
-                  className={`text-xl font-bold ${
+                  className={`text-xl font-bold whitespace-nowrap flex-shrink-0 ${
                     incomeStatement.net_income >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}
                 >
