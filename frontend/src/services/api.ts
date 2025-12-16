@@ -242,11 +242,7 @@ export const settlementsApi = {
     // Always use form data because the backend endpoint expects it when File/Form params exist
     const formData = new FormData()
     formData.append('settlement_update_json', JSON.stringify(data))
-    return api.put<Settlement>(`/settlements/${id}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
+    return formDataApi.put<Settlement>(`/settlements/${id}`, formData)
   },
   updateWithPdf: (id: number, data: Partial<Settlement>, pdfFile?: File) => {
     const formData = new FormData()
@@ -254,11 +250,7 @@ export const settlementsApi = {
     if (pdfFile) {
       formData.append('pdf_file', pdfFile)
     }
-    return api.put<Settlement>(`/settlements/${id}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
+    return formDataApi.put<Settlement>(`/settlements/${id}`, formData)
   },
   upload: (file: File, truckId?: number, settlementType?: string) => {
     const formData = new FormData()
@@ -269,15 +261,7 @@ export const settlementsApi = {
     if (settlementType) {
       formData.append('settlement_type', settlementType)
     }
-    return api.post<Settlement>(
-      `/settlements/upload`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    )
+    return formDataApi.post<Settlement>(`/settlements/upload`, formData)
   },
   uploadBulk: (files: File[], truckId?: number, settlementType?: string) => {
     const formData = new FormData()
@@ -290,7 +274,7 @@ export const settlementsApi = {
     if (settlementType) {
       formData.append('settlement_type', settlementType)
     }
-    return api.post<{
+    return formDataApi.post<{
       total: number
       successful: number
       failed: number
@@ -300,22 +284,14 @@ export const settlementsApi = {
         settlement?: Settlement
         error?: string
       }>
-    }>(
-      `/settlements/upload-bulk`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    )
+    }>(`/settlements/upload-bulk`, formData)
   },
   delete: (id: number) => api.delete(`/settlements/${id}`),
   uploadConsolidated: (jsonData: string, dryRun: boolean = false) => {
     const formData = new FormData()
     formData.append('json_data', jsonData)
     formData.append('dry_run', dryRun.toString())
-    return api.post<{
+    return formDataApi.post<{
       settlements?: Settlement[]
       summary: {
         total_entries: number
@@ -329,11 +305,7 @@ export const settlementsApi = {
         error_details?: string[]
         dry_run?: boolean
       }
-    }>('/settlements/upload-consolidated', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
+    }>('/settlements/upload-consolidated', formData)
   },
 }
 
@@ -375,21 +347,13 @@ export const repairsApi = {
     if (truckId !== undefined) {
       formData.append('truck_id', truckId.toString())
     }
-    return api.post<{
+    return formDataApi.post<{
       repair: Repair | null
       warning?: string
       vin_found?: boolean
       vin?: string
       requires_truck_selection?: boolean
-    }>(
-      `/repairs/upload`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    )
+    }>(`/repairs/upload`, formData)
   },
   update: (id: number, data: Partial<Repair>, images?: File[]) => {
     const formData = new FormData()
@@ -404,11 +368,7 @@ export const repairsApi = {
       })
     }
     
-    return api.put<Repair>(`/repairs/${id}`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
+    return formDataApi.put<Repair>(`/repairs/${id}`, formData)
   },
   delete: (id: number) => api.delete(`/repairs/${id}`),
   deleteImage: (repairId: number, imageIndex: number) => 
