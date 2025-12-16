@@ -15,7 +15,7 @@ if str(BASE_DIR) not in sys.path:
 from sqlalchemy import text
 from app.database import SessionLocal, DATABASE_URL
 
-def migrate_add_missing_columns():
+def migrate():
     """Add missing columns to settlements table if they don't exist."""
     db = SessionLocal()
     
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     print(f"Database: {'PostgreSQL' if 'postgresql' in DATABASE_URL.lower() else 'SQLite'}")
     print(f"Running migration: add missing settlement columns\n")
     
-    success = migrate_add_missing_columns()
+    success = migrate()
     
     if success:
         print("\n✓ Migration completed successfully!")

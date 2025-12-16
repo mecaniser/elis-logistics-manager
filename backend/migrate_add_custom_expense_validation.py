@@ -12,7 +12,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_custom_expense_validation():
+def migrate():
     """Add custom_expense_validation column to settlements table if it doesn't exist"""
     
     is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -77,7 +77,7 @@ def migrate_add_custom_expense_validation():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_custom_expense_validation()
+    migrate()
     print("\n✓ Migration completed successfully!")
 
 

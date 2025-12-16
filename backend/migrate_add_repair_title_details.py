@@ -12,7 +12,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_repair_title_details():
+def migrate():
     """Add title and details columns to repairs table if they don't exist"""
     
     is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -96,5 +96,5 @@ def migrate_add_repair_title_details():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_repair_title_details()
+    migrate()
     print("\n✓ Migration completed successfully!")

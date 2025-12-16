@@ -15,7 +15,7 @@ if str(BASE_DIR) not in sys.path:
 from sqlalchemy import text
 from app.database import SessionLocal, DATABASE_URL
 
-def migrate_add_duplicate_block_ids_warning():
+def migrate():
     """Add duplicate_block_ids_warning column to settlements table if it doesn't exist."""
     db = SessionLocal()
     
@@ -61,7 +61,7 @@ def migrate_add_duplicate_block_ids_warning():
 
 if __name__ == "__main__":
     print(f"Running migration: add duplicate_block_ids_warning column\n")
-    success = migrate_add_duplicate_block_ids_warning()
+    success = migrate()
     if success:
         print("\n✓ Migration completed successfully")
     else:

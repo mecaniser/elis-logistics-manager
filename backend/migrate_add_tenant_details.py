@@ -1,14 +1,15 @@
 """
 Migration script to add business details columns to tenants table
+Works with both SQLite (local) and PostgreSQL (Railway)
 """
 import sys
 import os
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from sqlalchemy.exc import OperationalError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, DATABASE_URL
 
 def migrate():
     """Add business details columns to tenants table"""
@@ -19,10 +20,17 @@ def migrate():
         print("TENANT DETAILS MIGRATION")
         print("=" * 80)
 
+        is_sqlite = DATABASE_URL.startswith("sqlite")
+        
         with engine.connect() as connection:
-            # Get existing columns using PRAGMA table_info
-            result = connection.execute(text("PRAGMA table_info(tenants)"))
-            existing_column_names = [row[1] for row in result.fetchall()]
+            # Get existing columns
+            if is_sqlite:
+                result = connection.execute(text("PRAGMA table_info(tenants)"))
+                existing_column_names = [row[1] for row in result.fetchall()]
+            else:
+                # PostgreSQL
+                inspector = inspect(engine)
+                existing_column_names = [col['name'] for col in inspector.get_columns('tenants')]
 
             # List of new columns to add
             new_columns = [

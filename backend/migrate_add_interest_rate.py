@@ -12,7 +12,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_interest_rate():
+def migrate():
     """Add interest_rate column to trucks table if it doesn't exist"""
     
     is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -80,6 +80,6 @@ def migrate_add_interest_rate():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_interest_rate()
+    migrate()
     print("\n✓ Migration completed successfully!")
 

@@ -12,7 +12,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_investment_fields():
+def migrate():
     """Add investment columns to trucks table if they don't exist"""
     
     is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -116,6 +116,6 @@ def migrate_add_investment_fields():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_investment_fields()
+    migrate()
     print("\n✓ Migration completed successfully!")
 

@@ -13,7 +13,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_current_loan_balance():
+def migrate():
     """Add current_loan_balance column and initialize it"""
     
     if "sqlite" in DATABASE_URL.lower():
@@ -96,6 +96,6 @@ def migrate_add_current_loan_balance():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_current_loan_balance()
+    migrate()
     print("\n✓ Migration completed successfully!")
 

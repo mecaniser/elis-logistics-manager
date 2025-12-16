@@ -12,7 +12,7 @@ sys.path.insert(0, backend_dir)
 
 from app.database import engine, DATABASE_URL
 
-def migrate_add_registration_fee():
+def migrate():
     """Add registration_fee column to trucks table if it doesn't exist"""
     
     is_sqlite = DATABASE_URL.startswith("sqlite")
@@ -76,6 +76,6 @@ def migrate_add_registration_fee():
                 raise
 
 if __name__ == "__main__":
-    migrate_add_registration_fee()
+    migrate()
     print("\n✓ Migration completed successfully!")
 
