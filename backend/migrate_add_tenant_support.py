@@ -4,9 +4,6 @@ Creates a default tenant and assigns all existing data to it
 """
 from app.database import SessionLocal, engine, Base
 from app.models.tenant import Tenant
-from app.models.truck import Truck
-from app.models.chart_of_accounts import ChartOfAccount
-from app.models.journal_entry import JournalEntry
 from sqlalchemy import text, inspect
 
 def migrate():
@@ -75,33 +72,33 @@ def migrate():
         
         tenant_id = default_tenant.id
         
-        # Update all trucks to belong to default tenant
-        trucks_without_tenant = db.query(Truck).filter(Truck.tenant_id.is_(None)).all()
-        if trucks_without_tenant:
-            for truck in trucks_without_tenant:
-                truck.tenant_id = tenant_id
+        # Update all trucks to belong to default tenant (using raw SQL to avoid loading columns that don't exist yet)
+        result = db.execute(text("SELECT COUNT(*) FROM trucks WHERE tenant_id IS NULL"))
+        count = result.scalar()
+        if count > 0:
+            db.execute(text("UPDATE trucks SET tenant_id = :tenant_id WHERE tenant_id IS NULL"), {"tenant_id": tenant_id})
             db.commit()
-            print(f"✓ Updated {len(trucks_without_tenant)} trucks to tenant {tenant_id}")
+            print(f"✓ Updated {count} trucks to tenant {tenant_id}")
         else:
             print("✓ All trucks already have tenant_id")
         
-        # Update all chart of accounts to belong to default tenant
-        accounts_without_tenant = db.query(ChartOfAccount).filter(ChartOfAccount.tenant_id.is_(None)).all()
-        if accounts_without_tenant:
-            for account in accounts_without_tenant:
-                account.tenant_id = tenant_id
+        # Update all chart of accounts to belong to default tenant (using raw SQL)
+        result = db.execute(text("SELECT COUNT(*) FROM chart_of_accounts WHERE tenant_id IS NULL"))
+        count = result.scalar()
+        if count > 0:
+            db.execute(text("UPDATE chart_of_accounts SET tenant_id = :tenant_id WHERE tenant_id IS NULL"), {"tenant_id": tenant_id})
             db.commit()
-            print(f"✓ Updated {len(accounts_without_tenant)} chart of accounts to tenant {tenant_id}")
+            print(f"✓ Updated {count} chart of accounts to tenant {tenant_id}")
         else:
             print("✓ All chart of accounts already have tenant_id")
         
-        # Update all journal entries to belong to default tenant
-        entries_without_tenant = db.query(JournalEntry).filter(JournalEntry.tenant_id.is_(None)).all()
-        if entries_without_tenant:
-            for entry in entries_without_tenant:
-                entry.tenant_id = tenant_id
+        # Update all journal entries to belong to default tenant (using raw SQL)
+        result = db.execute(text("SELECT COUNT(*) FROM journal_entries WHERE tenant_id IS NULL"))
+        count = result.scalar()
+        if count > 0:
+            db.execute(text("UPDATE journal_entries SET tenant_id = :tenant_id WHERE tenant_id IS NULL"), {"tenant_id": tenant_id})
             db.commit()
-            print(f"✓ Updated {len(entries_without_tenant)} journal entries to tenant {tenant_id}")
+            print(f"✓ Updated {count} journal entries to tenant {tenant_id}")
         else:
             print("✓ All journal entries already have tenant_id")
         
