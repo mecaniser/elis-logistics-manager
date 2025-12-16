@@ -177,17 +177,16 @@ export default function Repairs() {
     try {
       setCreating(true)
       // Clean up the data - remove undefined values and format dates
-      // Note: details and title are NOT saved for manual repairs, only description (legacy) if it has a value
       const cleanedData: Partial<Repair> = {
         truck_id: manualFormData.truck_id,
         repair_date: manualFormData.repair_date || undefined,
-        // Only include description if it has a non-empty value
+        title: manualFormData.title?.trim() || undefined,
+        details: manualFormData.details?.trim() || undefined,
         description: manualFormData.description?.trim() || undefined,
         category: categoryToSave || undefined,
         cost: manualFormData.cost || undefined,
         miles: manualFormData.miles || undefined,
         invoice_number: manualFormData.invoice_number || undefined
-        // Explicitly NOT including: title, details
       }
       
       // Remove undefined and empty string values
