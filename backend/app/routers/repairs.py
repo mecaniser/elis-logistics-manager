@@ -1,7 +1,7 @@
 """
 Repairs router
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import Response, FileResponse
 import httpx
 from sqlalchemy.orm import Session
@@ -47,28 +47,38 @@ def get_repairs(
 
 @router.post("/", response_model=RepairResponse)
 async def create_repair(
-    repair_json: Optional[str] = Form(None),
-    images: List[UploadFile] = File(default=[]),
+    request: Request,
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
     """Create a new repair expense"""
-    # Parse repair data from JSON string (for FormData) or use RepairCreate directly
-    if repair_json:
-        repair_data = json.loads(repair_json)
-    else:
+    # Parse form data manually
+    form_data = await request.form()
+    
+    # Get repair_json from form
+    repair_json = form_data.get("repair_json")
+    if not repair_json:
         raise HTTPException(status_code=400, detail="Repair data is required")
+    
+    # Parse repair data from JSON string
+    try:
+        repair_data = json.loads(repair_json)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON in repair_json: {str(e)}")
+    
+    # Get images from form (they're UploadFile objects)
+    image_files = form_data.getlist("images")
     
     # Upload image files to Cloudinary or save locally
     image_paths = []
-    if images:
+    if image_files:
         import uuid
-        logger.info(f"Processing {len(images)} image(s) for repair creation")
-        for idx, img in enumerate(images):
+        logger.info(f"Processing {len(image_files)} image(s) for repair creation")
+        for idx, img in enumerate(image_files):
             # Read file content once
             img_content = await img.read()
             original_filename = img.filename or f"image_{idx}"
-            logger.info(f"Processing image {idx + 1}/{len(images)}: {original_filename}, size: {len(img_content)} bytes")
+            logger.info(f"Processing image {idx + 1}/{len(image_files)}: {original_filename}, size: {len(img_content)} bytes")
             
             # Generate truly unique filename using UUID + timestamp + index
             img_timestamp = datetime.now().timestamp()

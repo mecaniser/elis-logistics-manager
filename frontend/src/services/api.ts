@@ -344,19 +344,23 @@ export const repairsApi = {
         formData.append('images', img)
       })
     }
-    // Create request config - delete Content-Type to let browser set it with boundary
-    const config: any = {
-      headers: {},
-    }
-    // Add tenant ID header
-    const tenantId = localStorage.getItem('currentTenantId')
-    if (tenantId) {
-      config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
-    }
-    // Delete Content-Type so browser can set it automatically with boundary
-    delete config.headers['Content-Type']
     
-    return api.post<Repair>('/repairs/', formData, config)
+    // Create a new axios instance without default Content-Type header for FormData
+    const formDataApi = axios.create({
+      baseURL: '/api',
+    })
+    
+    // Add tenant ID header via interceptor
+    const tenantId = localStorage.getItem('currentTenantId')
+    formDataApi.interceptors.request.use((config) => {
+      if (tenantId) {
+        config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
+      }
+      // Don't set Content-Type - let browser set it automatically with boundary for FormData
+      return config
+    })
+    
+    return formDataApi.post<Repair>('/repairs/', formData)
   },
   upload: (file: File, images: File[], truckId?: number) => {
     const formData = new FormData()
