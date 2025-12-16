@@ -535,18 +535,20 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     if per_asset and truck_id is None:
         raise ValueError("truck_id is required for LS Logistics balance sheet")
     
-    ensure_standard_accounts_exist(db, tenant_id, truck_id)
+    # Determine the truck_id to use for account creation/querying
+    # For per-asset accounting, we MUST use truck_id
+    # For non-per-asset logistics with truck_id, we use shared accounts (truck_id=None) but filter data by truck_id
+    account_truck_id = truck_id if per_asset else None
+    
+    ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
     
     # Build account query filter
     account_filter = [ChartOfAccount.tenant_id == tenant_id]
     if per_asset:
         # Per-asset accounting: must filter by truck_id
         account_filter.append(ChartOfAccount.truck_id == truck_id)
-    elif tenant.business_type == 'logistics' and truck_id:
-        # Logistics business with truck_id selected: show per-vehicle
-        account_filter.append(ChartOfAccount.truck_id == truck_id)
     else:
-        # Non-logistics or logistics without truck_id: show shared accounts (total)
+        # Non-per-asset: always use shared accounts (truck_id is NULL)
         account_filter.append(ChartOfAccount.truck_id.is_(None))
     
     # Assets
@@ -634,7 +636,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     
     # If liability accounts don't exist, try to create them
     if not ap_account or not loans_account:
-        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
         db.commit()  # Ensure accounts are committed before querying
         ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
         loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
@@ -672,7 +674,7 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     
     # If equity accounts don't exist, try to create them
     if not owner_equity_account or not retained_earnings_account:
-        ensure_standard_accounts_exist(db, tenant_id, truck_id)
+        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
         db.commit()  # Ensure accounts are committed before querying
         owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
         retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
