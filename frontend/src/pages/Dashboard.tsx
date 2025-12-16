@@ -1694,7 +1694,7 @@ export default function Dashboard() {
               ? `${monthLabel} - #${idx + 1}` 
               : monthLabel
             xAxisData.push(label)
-            repairData.push(repair.cost)
+            repairData.push(repair.cost || 0)
             
             // Create tooltip with repair details
             const isPM = repair.category === 'maintenance'
