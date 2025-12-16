@@ -351,6 +351,13 @@ def get_balance_sheet(
         return BalanceSheetResponse(**balance_sheet)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        error_trace = traceback.format_exc()
+        logger.error(f"Balance sheet error: {error_trace}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate balance sheet: {str(e)}")
 
 
 @router.get("/income-statement", response_model=IncomeStatementResponse)

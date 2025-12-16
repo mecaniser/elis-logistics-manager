@@ -588,26 +588,33 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     
     # If no journal entries exist and we have truck data, calculate from depreciation service
     if acc_dep_balance == 0 and tenant.business_type == 'logistics':
-        from app.services.depreciation_service import calculate_depreciation_for_truck
-        
-        if per_asset and truck_id:
-            # Per-vehicle view: calculate depreciation for specific truck
-            truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-            if truck:
-                calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
-                if calculated_dep:
-                    acc_dep_balance = calculated_dep
-        elif tenant.business_type == 'logistics':
-            # Total view: sum depreciation for all trucks
-            trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
-            total_depreciation = Decimal(0)
-            for truck in trucks:
-                if truck.purchase_date and truck.total_cost:
+        try:
+            from app.services.depreciation_service import calculate_depreciation_for_truck
+            
+            if per_asset and truck_id:
+                # Per-vehicle view: calculate depreciation for specific truck
+                truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+                if truck:
                     calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
                     if calculated_dep:
-                        total_depreciation += calculated_dep
-            if total_depreciation > 0:
-                acc_dep_balance = total_depreciation
+                        acc_dep_balance = calculated_dep
+            elif tenant.business_type == 'logistics':
+                # Total view: sum depreciation for all trucks
+                trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+                total_depreciation = Decimal(0)
+                for truck in trucks:
+                    if truck.purchase_date and truck.total_cost:
+                        calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
+                        if calculated_dep:
+                            total_depreciation += calculated_dep
+                if total_depreciation > 0:
+                    acc_dep_balance = total_depreciation
+        except Exception as e:
+            # If depreciation calculation fails, log error but continue with 0 depreciation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to calculate depreciation: {str(e)}")
+            # Continue with acc_dep_balance = 0 (already set above)
     net_fixed_assets = fixed_assets_balance - acc_dep_balance
     
     # Ensure all values are valid Decimals before converting to float
