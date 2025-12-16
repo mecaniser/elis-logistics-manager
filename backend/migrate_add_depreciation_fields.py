@@ -11,6 +11,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.database import DATABASE_URL
 
+def migrate():
+    """Migration function for run_all_production_migrations.py"""
+    migrate_database()
+
 def migrate_database():
     """Add depreciation fields to trucks table"""
     is_sqlite = DATABASE_URL.startswith("sqlite")

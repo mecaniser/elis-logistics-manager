@@ -68,6 +68,7 @@ def main():
         ("migrate_add_repair_miles.py", "Add miles to repairs"),
         ("migrate_add_invoice_number.py", "Add invoice_number to repairs"),
         ("migrate_add_image_paths.py", "Add image_paths to repairs"),
+        ("migrate_add_depreciation_fields.py", "Add depreciation fields to trucks (purchase_date, depreciation_method, cost_basis, etc.)"),
         ("migrate_create_accounting_entries.py", "Create accounting entries for existing data"),
     ]
     
