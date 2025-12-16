@@ -15,7 +15,7 @@ def test_connection():
     print("-" * 50)
     
     # Get database URL
-    database_url = os.getenv("DATABASE_URL", "sqlite:///./elisogistics.db")
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./elisgroup.db")
     
     # Handle Railway PostgreSQL URL format
     if database_url.startswith("postgres://"):

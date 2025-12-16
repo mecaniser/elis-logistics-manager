@@ -157,7 +157,7 @@ If you get `ModuleNotFoundError: No module named 'sqlalchemy'`:
 
 ### Database Connection Error
 
-- For local development: Ensure `elisogistics.db` exists in the backend directory
+- For local development: Ensure `elisgroup.db` exists in the backend directory
 - For Railway: Ensure `DATABASE_URL` environment variable is set correctly
 
 ### No Custom Expenses Found

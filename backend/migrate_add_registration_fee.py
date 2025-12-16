@@ -19,7 +19,7 @@ def migrate_add_registration_fee():
     
     if is_sqlite:
         import sqlite3
-        db_path = os.path.join(backend_dir, "elisogistics.db")
+        db_path = os.path.join(backend_dir, "elisgroup.db")
         
         if not os.path.exists(db_path):
             print("Database file not found. Creating new database with all tables...")
