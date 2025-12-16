@@ -344,11 +344,19 @@ export const repairsApi = {
         formData.append('images', img)
       })
     }
-    return api.post<Repair>('/repairs', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
+    // Create request config - delete Content-Type to let browser set it with boundary
+    const config: any = {
+      headers: {},
+    }
+    // Add tenant ID header
+    const tenantId = localStorage.getItem('currentTenantId')
+    if (tenantId) {
+      config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
+    }
+    // Delete Content-Type so browser can set it automatically with boundary
+    delete config.headers['Content-Type']
+    
+    return api.post<Repair>('/repairs/', formData, config)
   },
   upload: (file: File, images: File[], truckId?: number) => {
     const formData = new FormData()
