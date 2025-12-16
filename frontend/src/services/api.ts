@@ -28,6 +28,24 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error)
 })
 
+// Separate axios instance for FormData requests (no default Content-Type header)
+// This allows the browser to automatically set multipart/form-data with boundary
+const formDataApi = axios.create({
+  baseURL: '/api',
+})
+
+// Add tenant ID interceptor for FormData requests
+formDataApi.interceptors.request.use((config) => {
+  const tenantId = localStorage.getItem('currentTenantId')
+  if (tenantId) {
+    config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
+  }
+  // Don't set Content-Type - let browser set it automatically with boundary for FormData
+  return config
+}, (error) => {
+  return Promise.reject(error)
+})
+
 // Types
 export interface Truck {
   id: number
@@ -345,21 +363,7 @@ export const repairsApi = {
       })
     }
     
-    // Create a new axios instance without default Content-Type header for FormData
-    const formDataApi = axios.create({
-      baseURL: '/api',
-    })
-    
-    // Add tenant ID header via interceptor
-    const tenantId = localStorage.getItem('currentTenantId')
-    formDataApi.interceptors.request.use((config) => {
-      if (tenantId) {
-        config.headers['X-Tenant-ID'] = parseInt(tenantId, 10)
-      }
-      // Don't set Content-Type - let browser set it automatically with boundary for FormData
-      return config
-    })
-    
+    // Use shared FormData axios instance (no default Content-Type header)
     return formDataApi.post<Repair>('/repairs/', formData)
   },
   upload: (file: File, images: File[], truckId?: number) => {
