@@ -20,7 +20,7 @@ from app.services.accounting_service import (
     create_repair_journal_entry,
 )
 
-def migrate_create_accounting_entries():
+def migrate():
     """Create journal entries for all existing settlements and repairs."""
     db = SessionLocal()
     
@@ -156,6 +156,6 @@ def migrate_create_accounting_entries():
     return 0
 
 if __name__ == "__main__":
-    exit_code = migrate_create_accounting_entries()
+    exit_code = migrate()
     sys.exit(exit_code)
 
