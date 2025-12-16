@@ -29,7 +29,7 @@ export default function Breadcrumb() {
 
   // Build breadcrumb items from path
   let currentPath = ''
-  pathnames.forEach((pathname, index) => {
+  pathnames.forEach((pathname) => {
     // Handle dynamic routes like /vehicles/:id
     if (pathname === 'vehicles' && params.id) {
       breadcrumbs.push({

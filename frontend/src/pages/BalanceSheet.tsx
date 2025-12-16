@@ -47,7 +47,7 @@ export default function BalanceSheet() {
         setLoading(false)
         return
       }
-      const truckId = isLSLogistics ? selectedTruckId : undefined
+      const truckId = isLSLogistics ? (selectedTruckId ?? undefined) : undefined
       const response = await accountingApi.getBalanceSheet(asOfDate, truckId)
       setBalanceSheet(response.data)
     } catch (err: any) {

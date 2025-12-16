@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { tenantsApi, Tenant } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
-import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
 
 const BUSINESS_TYPES = [
@@ -12,7 +11,6 @@ const BUSINESS_TYPES = [
 ]
 
 export default function Businesses() {
-  const isMobile = useMobile()
   const { loadTenants } = useTenant()
   const [businesses, setBusinesses] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +32,6 @@ export default function Businesses() {
     bank_accounts: [] as Array<{ bank_name: string; account_number: string; routing_number: string; account_type?: string }>,
     notes: '',
   })
-  const [showDetails, setShowDetails] = useState<number | null>(null)  // Track which business details are expanded
   const [businessToDelete, setBusinessToDelete] = useState<number | null>(null)
   const [businessToDeleteName, setBusinessToDeleteName] = useState<string>('')
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
@@ -636,7 +633,7 @@ export default function Businesses() {
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={handleDelete}
-        onCancel={() => {
+        onClose={() => {
           setBusinessToDelete(null)
           setBusinessToDeleteName('')
         }}

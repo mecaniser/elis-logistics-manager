@@ -86,13 +86,6 @@ export default function ChartOfAccounts() {
 
   const accountTypes = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense']
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount)
-  }
-
   const groupedAccounts = accounts.reduce((acc, account) => {
     if (!acc[account.account_type]) {
       acc[account.account_type] = []

@@ -60,7 +60,7 @@ export default function IncomeStatement() {
         setLoading(false)
         return
       }
-      const truckId = isLSLogistics ? selectedTruckId : (selectedTruckId || undefined)
+      const truckId = isLSLogistics ? (selectedTruckId ?? undefined) : (selectedTruckId ?? undefined)
       const response = await accountingApi.getIncomeStatement(
         startDate, 
         endDate, 
