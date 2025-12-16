@@ -2,6 +2,7 @@
 Migration script to add per-asset accounting support for LS Logistics
 Adds truck_id columns to chart_of_accounts and journal_entries tables
 Updates unique constraint on chart_of_accounts to include truck_id
+Works with both SQLite (local) and PostgreSQL (Railway)
 """
 import sys
 import os
@@ -9,7 +10,7 @@ from sqlalchemy import text, inspect
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, DATABASE_URL
 
 def migrate():
     """Add truck_id columns and update constraints for per-asset accounting"""
@@ -58,82 +59,125 @@ def migrate():
         
         # Update unique constraint on chart_of_accounts
         # SQLite doesn't support ALTER TABLE to modify constraints, so we need to recreate
+        # PostgreSQL can use ALTER TABLE to drop/add constraints
         print("\n3. Checking unique constraint on chart_of_accounts...")
+        is_sqlite = DATABASE_URL.startswith("sqlite")
+        
         with engine.connect() as connection:
-            result = connection.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='chart_of_accounts'"))
-            table_row = result.fetchone()
-            if table_row:
-                table_sql = table_row[0]
-                # Check if constraint already includes truck_id
-                if "UNIQUE (tenant_id, code, truck_id)" in table_sql or "UNIQUE(tenant_id,code,truck_id)" in table_sql.replace(" ", ""):
+            if is_sqlite:
+                # SQLite: Check constraint by reading table SQL
+                result = connection.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='chart_of_accounts'"))
+                table_row = result.fetchone()
+                if table_row and table_row[0]:
+                    table_sql = table_row[0]
+                    # Check if constraint already includes truck_id
+                    if "UNIQUE (tenant_id, code, truck_id)" in table_sql or "UNIQUE(tenant_id,code,truck_id)" in table_sql.replace(" ", ""):
+                        print("   ✓ Unique constraint already includes truck_id")
+                    else:
+                        print("   Recreating table with updated unique constraint...")
+                        
+                        # Backup data
+                        print("   Backing up existing data...")
+                        connection.execute(text("""
+                            CREATE TABLE chart_of_accounts_backup AS 
+                            SELECT * FROM chart_of_accounts
+                        """))
+                        connection.commit()
+                        result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts_backup"))
+                        backup_count = result.fetchone()[0]
+                        print(f"   ✓ Backed up {backup_count} records")
+                        
+                        # Drop old table
+                        print("   Dropping old table...")
+                        connection.execute(text("DROP TABLE chart_of_accounts"))
+                        connection.commit()
+                        print("   ✓ Dropped old table")
+                        
+                        # Create new table with updated constraint
+                        print("   Creating new table with updated constraint...")
+                        connection.execute(text("""
+                            CREATE TABLE chart_of_accounts (
+                                id INTEGER NOT NULL PRIMARY KEY,
+                                tenant_id INTEGER NOT NULL,
+                                truck_id INTEGER,
+                                code VARCHAR(20) NOT NULL,
+                                name VARCHAR(200) NOT NULL,
+                                account_type VARCHAR(20) NOT NULL,
+                                parent_id INTEGER,
+                                is_active BOOLEAN NOT NULL DEFAULT 1,
+                                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                                FOREIGN KEY(parent_id) REFERENCES chart_of_accounts (id),
+                                FOREIGN KEY(tenant_id) REFERENCES tenants (id),
+                                FOREIGN KEY(truck_id) REFERENCES trucks (id),
+                                UNIQUE (tenant_id, code, truck_id)
+                            )
+                        """))
+                        connection.commit()
+                        print("   ✓ Created new table")
+                        
+                        # Create indexes
+                        print("   Creating indexes...")
+                        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chart_of_accounts_tenant_id ON chart_of_accounts (tenant_id)"))
+                        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chart_of_accounts_truck_id ON chart_of_accounts (truck_id)"))
+                        connection.commit()
+                        print("   ✓ Created indexes")
+                        
+                        # Restore data
+                        print("   Restoring data...")
+                        connection.execute(text("""
+                            INSERT INTO chart_of_accounts 
+                            (id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at)
+                            SELECT id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at
+                            FROM chart_of_accounts_backup
+                        """))
+                        connection.commit()
+                        result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts"))
+                        restored_count = result.fetchone()[0]
+                        print(f"   ✓ Restored {restored_count} records")
+                        
+                        # Drop backup table
+                        print("   Cleaning up backup table...")
+                        connection.execute(text("DROP TABLE chart_of_accounts_backup"))
+                        connection.commit()
+                        print("   ✓ Cleaned up")
+            else:
+                # PostgreSQL: Check and update constraint using ALTER TABLE
+                # Check if constraint already exists
+                result = connection.execute(text("""
+                    SELECT constraint_name 
+                    FROM information_schema.table_constraints 
+                    WHERE table_name = 'chart_of_accounts' 
+                    AND constraint_type = 'UNIQUE'
+                    AND constraint_name LIKE '%tenant_id%code%truck_id%'
+                """))
+                constraint_exists = result.fetchone() is not None
+                
+                if constraint_exists:
                     print("   ✓ Unique constraint already includes truck_id")
                 else:
-                    print("   Recreating table with updated unique constraint...")
+                    # Drop old constraint if it exists
+                    result = connection.execute(text("""
+                        SELECT constraint_name 
+                        FROM information_schema.table_constraints 
+                        WHERE table_name = 'chart_of_accounts' 
+                        AND constraint_type = 'UNIQUE'
+                        AND constraint_name LIKE '%tenant_id%code%'
+                    """))
+                    old_constraint = result.fetchone()
+                    if old_constraint:
+                        print(f"   Dropping old constraint: {old_constraint[0]}")
+                        connection.execute(text(f"ALTER TABLE chart_of_accounts DROP CONSTRAINT {old_constraint[0]}"))
+                        connection.commit()
                     
-                    # Backup data
-                    print("   Backing up existing data...")
+                    # Add new constraint
+                    print("   Adding new unique constraint (tenant_id, code, truck_id)...")
                     connection.execute(text("""
-                        CREATE TABLE chart_of_accounts_backup AS 
-                        SELECT * FROM chart_of_accounts
+                        ALTER TABLE chart_of_accounts 
+                        ADD CONSTRAINT unique_code_per_tenant_truck 
+                        UNIQUE (tenant_id, code, truck_id)
                     """))
                     connection.commit()
-                    result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts_backup"))
-                    backup_count = result.fetchone()[0]
-                    print(f"   ✓ Backed up {backup_count} records")
-                    
-                    # Drop old table
-                    print("   Dropping old table...")
-                    connection.execute(text("DROP TABLE chart_of_accounts"))
-                    connection.commit()
-                    print("   ✓ Dropped old table")
-                    
-                    # Create new table with updated constraint
-                    print("   Creating new table with updated constraint...")
-                    connection.execute(text("""
-                        CREATE TABLE chart_of_accounts (
-                            id INTEGER NOT NULL PRIMARY KEY,
-                            tenant_id INTEGER NOT NULL,
-                            truck_id INTEGER,
-                            code VARCHAR(20) NOT NULL,
-                            name VARCHAR(200) NOT NULL,
-                            account_type VARCHAR(20) NOT NULL,
-                            parent_id INTEGER,
-                            is_active BOOLEAN NOT NULL DEFAULT 1,
-                            created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-                            FOREIGN KEY(parent_id) REFERENCES chart_of_accounts (id),
-                            FOREIGN KEY(tenant_id) REFERENCES tenants (id),
-                            FOREIGN KEY(truck_id) REFERENCES trucks (id),
-                            UNIQUE (tenant_id, code, truck_id)
-                        )
-                    """))
-                    connection.commit()
-                    print("   ✓ Created new table")
-                    
-                    # Create indexes
-                    print("   Creating indexes...")
-                    connection.execute(text("CREATE INDEX ix_chart_of_accounts_tenant_id ON chart_of_accounts (tenant_id)"))
-                    connection.execute(text("CREATE INDEX ix_chart_of_accounts_truck_id ON chart_of_accounts (truck_id)"))
-                    connection.commit()
-                    print("   ✓ Created indexes")
-                    
-                    # Restore data
-                    print("   Restoring data...")
-                    connection.execute(text("""
-                        INSERT INTO chart_of_accounts 
-                        (id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at)
-                        SELECT id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at
-                        FROM chart_of_accounts_backup
-                    """))
-                    connection.commit()
-                    result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts"))
-                    restored_count = result.fetchone()[0]
-                    print(f"   ✓ Restored {restored_count} records")
-                    
-                    # Drop backup table
-                    print("   Cleaning up backup table...")
-                    connection.execute(text("DROP TABLE chart_of_accounts_backup"))
-                    connection.commit()
-                    print("   ✓ Cleaned up")
+                    print("   ✓ Added new unique constraint")
         
         print("\n" + "=" * 80)
         print("MIGRATION COMPLETE")
@@ -147,18 +191,19 @@ def migrate():
         import traceback
         traceback.print_exc()
         db.rollback()
-        # Try to restore from backup if it exists
-        try:
-            with engine.connect() as connection:
-                result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='chart_of_accounts_backup'"))
-                if result.fetchone():
-                    print("\nAttempting to restore from backup...")
-                    connection.execute(text("DROP TABLE IF EXISTS chart_of_accounts"))
-                    connection.execute(text("ALTER TABLE chart_of_accounts_backup RENAME TO chart_of_accounts"))
-                    connection.commit()
-                    print("✓ Restored from backup")
-        except:
-            pass
+        # Try to restore from backup if it exists (SQLite only)
+        if DATABASE_URL.startswith("sqlite"):
+            try:
+                with engine.connect() as connection:
+                    result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='chart_of_accounts_backup'"))
+                    if result.fetchone():
+                        print("\nAttempting to restore from backup...")
+                        connection.execute(text("DROP TABLE IF EXISTS chart_of_accounts"))
+                        connection.execute(text("ALTER TABLE chart_of_accounts_backup RENAME TO chart_of_accounts"))
+                        connection.commit()
+                        print("✓ Restored from backup")
+            except:
+                pass
         raise
     finally:
         db.close()
