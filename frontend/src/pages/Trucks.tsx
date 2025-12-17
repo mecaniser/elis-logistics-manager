@@ -66,12 +66,16 @@ export default function Trucks() {
     
     total = cash + loan + registration + additionalTotal
     
-    if (total > 0 || formData.cash_investment || formData.loan_amount || formData.registration_fee || formData.additional_expenses.length > 0) {
-      setFormData(prev => ({ ...prev, total_cost: total.toFixed(2) }))
-    } else {
-      setFormData(prev => ({ ...prev, total_cost: '' }))
-    }
-  }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, formData.additional_expenses, formData.vehicle_type, showForm])
+    // Always update total_cost if any field has a value or if total > 0
+    const newTotalCost = total > 0 ? total.toFixed(2) : ''
+    setFormData(prev => {
+      // Only update if the value actually changed to avoid infinite loops
+      if (prev.total_cost !== newTotalCost) {
+        return { ...prev, total_cost: newTotalCost }
+      }
+      return prev
+    })
+  }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, JSON.stringify(formData.additional_expenses), formData.vehicle_type, showForm])
 
   const loadPMStatus = async () => {
     try {
