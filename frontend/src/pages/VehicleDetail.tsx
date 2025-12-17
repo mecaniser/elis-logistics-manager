@@ -27,9 +27,6 @@ export default function VehicleDetail() {
     type: 'info',
     isVisible: false
   })
-  const [editingInterestRate, setEditingInterestRate] = useState(false)
-  const [interestRateValue, setInterestRateValue] = useState<string>('')
-  const [savingInterestRate, setSavingInterestRate] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -60,76 +57,6 @@ export default function VehicleDetail() {
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
-  }
-
-  const handleStartEditInterestRate = () => {
-    if (vehicle && vehicle.interest_rate !== null && vehicle.interest_rate !== undefined) {
-      setInterestRateValue((vehicle.interest_rate * 100).toFixed(2))
-    } else {
-      setInterestRateValue('')
-    }
-    setEditingInterestRate(true)
-  }
-
-  const handleCancelEditInterestRate = () => {
-    setEditingInterestRate(false)
-    setInterestRateValue('')
-  }
-
-  const handleSaveInterestRate = async () => {
-    if (!vehicle || !id) return
-    
-    try {
-      setSavingInterestRate(true)
-      const value = interestRateValue.trim()
-      
-      if (value === '') {
-        // Delete interest rate
-        await trucksApi.update(parseInt(id), {
-          interest_rate: undefined
-        })
-      } else {
-        const interestRate = parseFloat(value) / 100
-        
-        if (isNaN(interestRate) || interestRate < 0 || interestRate > 1) {
-          showToast('Interest rate must be between 0 and 100', 'error')
-          return
-        }
-        
-        await trucksApi.update(parseInt(id), {
-          interest_rate: interestRate
-        })
-      }
-      
-      await loadVehicleData()
-      setEditingInterestRate(false)
-      setInterestRateValue('')
-      showToast('Interest rate updated successfully', 'success')
-    } catch (err: any) {
-      showToast(err.response?.data?.detail || err.message || 'Failed to update interest rate', 'error')
-    } finally {
-      setSavingInterestRate(false)
-    }
-  }
-
-  const handleDeleteInterestRate = async () => {
-    if (!vehicle || !id) return
-    
-    try {
-      setSavingInterestRate(true)
-      await trucksApi.update(parseInt(id), {
-        interest_rate: undefined
-      })
-      
-      await loadVehicleData()
-      setEditingInterestRate(false)
-      setInterestRateValue('')
-      showToast('Interest rate deleted successfully', 'success')
-    } catch (err: any) {
-      showToast(err.response?.data?.detail || err.message || 'Failed to delete interest rate', 'error')
-    } finally {
-      setSavingInterestRate(false)
-    }
   }
 
   if (loading) return <div className="text-center py-8">Loading vehicle details...</div>
@@ -418,77 +345,10 @@ export default function VehicleDetail() {
                   )}
                   
                   <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs sm:text-sm font-medium text-gray-600">Interest Rate</span>
-                      {!editingInterestRate && (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={handleStartEditInterestRate}
-                            className="text-xs text-blue-600 hover:text-blue-800"
-                            title="Edit interest rate"
-                          >
-                            Edit
-                          </button>
-                          {vehicle.interest_rate !== null && vehicle.interest_rate !== undefined && (
-                            <button
-                              onClick={handleDeleteInterestRate}
-                              className="text-xs text-red-600 hover:text-red-800"
-                              title="Delete interest rate"
-                              disabled={savingInterestRate}
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    {editingInterestRate ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="100"
-                            value={interestRateValue}
-                            onChange={(e) => setInterestRateValue(e.target.value)}
-                            placeholder="0.00"
-                            disabled={savingInterestRate}
-                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-600">%</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSaveInterestRate}
-                            disabled={savingInterestRate}
-                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={handleCancelEditInterestRate}
-                            disabled={savingInterestRate}
-                            className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleDeleteInterestRate}
-                            disabled={savingInterestRate}
-                            className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                        {vehicle.interest_rate !== null && vehicle.interest_rate !== undefined
-                          ? `${(vehicle.interest_rate * 100).toFixed(2)}%`
-                          : 'Not set'}
-                      </p>
-                    )}
+                    <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Interest Rate</span>
+                    <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
+                      {(roiData.interest_rate * 100).toFixed(2)}%
+                    </p>
                   </div>
                 </>
               )}
