@@ -56,6 +56,7 @@ def main():
         ("migrate_add_investment_fields.py", "Add investment fields (cash_investment, loan_amount, total_cost)"),
         ("migrate_add_registration_fee.py", "Add registration_fee column"),
         ("migrate_add_interest_rate.py", "Add interest_rate column"),
+        ("migrate_add_additional_expenses.py", "Add additional_expenses column for custom investment expenses"),
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
         ("migrate_recreate_chart_of_accounts_table.py", "Fix chart of accounts unique constraint"),
         ("migrate_add_per_asset_accounting.py", "Add per-asset accounting support (truck_id columns)"),

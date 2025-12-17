@@ -42,7 +42,13 @@ python3 backend/migrate_add_interest_rate.py
 ```
 - Adds `interest_rate` column
 
-### 7. Current Loan Balance
+### 7. Additional Expenses
+```bash
+python3 backend/migrate_add_additional_expenses.py
+```
+- Adds `additional_expenses` JSON column for custom investment expenses
+
+### 8. Current Loan Balance
 ```bash
 python3 backend/migrate_add_current_loan_balance.py
 ```
@@ -54,7 +60,7 @@ python3 backend/migrate_recreate_chart_of_accounts_table.py
 ```
 - Updates unique constraint from `UNIQUE (code)` to `UNIQUE (tenant_id, code)`
 
-### 9. **Per-Asset Accounting (NEW)**
+### 10. **Per-Asset Accounting (NEW)**
 ```bash
 python3 backend/migrate_add_per_asset_accounting.py
 ```
@@ -62,7 +68,7 @@ python3 backend/migrate_add_per_asset_accounting.py
 - Updates unique constraint to `UNIQUE (tenant_id, code, truck_id)`
 - Creates indexes on `truck_id` columns
 
-### 10. Settlement Columns
+### 11. Settlement Columns
 ```bash
 python3 backend/migrate_add_block_ids.py
 python3 backend/migrate_add_custom_expense_descriptions.py
@@ -73,7 +79,7 @@ python3 backend/migrate_add_duplicate_block_ids_warning.py
 ```
 - Adds various settlement-related columns
 
-### 11. Repair Columns
+### 12. Repair Columns
 ```bash
 python3 backend/migrate_add_repair_title_details.py
 python3 backend/migrate_add_repair_miles.py
@@ -82,7 +88,7 @@ python3 backend/migrate_add_image_paths.py
 ```
 - Adds repair-related columns
 
-### 12. Create Accounting Entries
+### 13. Create Accounting Entries
 ```bash
 python3 backend/migrate_create_accounting_entries.py
 ```
@@ -100,6 +106,7 @@ railway run python3 backend/migrate_add_vehicle_type_tag_number.py
 railway run python3 backend/migrate_add_investment_fields.py
 railway run python3 backend/migrate_add_registration_fee.py
 railway run python3 backend/migrate_add_interest_rate.py
+railway run python3 backend/migrate_add_additional_expenses.py
 railway run python3 backend/migrate_add_current_loan_balance.py
 railway run python3 backend/migrate_recreate_chart_of_accounts_table.py
 railway run python3 backend/migrate_add_per_asset_accounting.py
