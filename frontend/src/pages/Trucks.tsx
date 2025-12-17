@@ -32,7 +32,8 @@ export default function Trucks() {
     depreciation_method: 'MACRS_5' as 'MACRS_5' | 'straight_line' | 'none',
     cost_basis: '',
     section_179_deduction: '',
-    bonus_depreciation: ''
+    bonus_depreciation: '',
+    additional_expenses: [] as Array<{description: string, amount: string}>
   })
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
@@ -50,6 +51,27 @@ export default function Trucks() {
     loadTrucks()
     loadPMStatus()
   }, [vehicleTypeFilter, currentTenant?.id])
+
+  // Calculate total_cost including additional expenses
+  useEffect(() => {
+    if (!showForm) return // Don't calculate when form is not shown
+    
+    let total = 0
+    const cash = parseFloat(formData.cash_investment) || 0
+    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (parseFloat(formData.loan_amount) || 0) : 0
+    const registration = parseFloat(formData.registration_fee) || 0
+    const additionalTotal = formData.additional_expenses.reduce((sum, exp) => {
+      return sum + (parseFloat(exp.amount) || 0)
+    }, 0)
+    
+    total = cash + loan + registration + additionalTotal
+    
+    if (total > 0 || formData.cash_investment || formData.loan_amount || formData.registration_fee || formData.additional_expenses.length > 0) {
+      setFormData(prev => ({ ...prev, total_cost: total.toFixed(2) }))
+    } else {
+      setFormData(prev => ({ ...prev, total_cost: '' }))
+    }
+  }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, formData.additional_expenses, formData.vehicle_type, showForm])
 
   const loadPMStatus = async () => {
     try {
@@ -145,6 +167,22 @@ export default function Trucks() {
       if (formData.registration_fee) {
         investmentData.registration_fee = parseFloat(formData.registration_fee)
       }
+      // Additional expenses
+      if (formData.additional_expenses.length > 0) {
+        const validExpenses = formData.additional_expenses
+          .filter(exp => exp.description.trim() && exp.amount)
+          .map(exp => ({
+            description: exp.description.trim(),
+            amount: parseFloat(exp.amount)
+          }))
+        if (validExpenses.length > 0) {
+          investmentData.additional_expenses = validExpenses
+        } else {
+          investmentData.additional_expenses = undefined
+        }
+      } else {
+        investmentData.additional_expenses = undefined
+      }
       // Interest rate is handled above with loan_amount logic
       
       // Depreciation fields
@@ -211,7 +249,8 @@ export default function Trucks() {
       depreciation_method: 'MACRS_5',
       cost_basis: '',
       section_179_deduction: '',
-      bonus_depreciation: ''
+      bonus_depreciation: '',
+      additional_expenses: []
     })
   }
 
@@ -513,9 +552,9 @@ export default function Trucks() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {formData.vehicle_type === 'truck' 
-                      ? 'Cash + Loan + Registration'
-                      : 'Cash + Registration'}
+                    {formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv'
+                      ? 'Cash + Loan + Registration + Additional Expenses'
+                      : 'Cash + Registration + Additional Expenses'}
                   </p>
                 </div>
                 <div className={formData.vehicle_type === 'truck' ? 'md:col-span-3' : 'md:col-span-6'}>
@@ -528,6 +567,73 @@ export default function Trucks() {
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+                
+                {/* Additional Expenses Section */}
+                <div className="md:col-span-12 border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-medium text-gray-700">Additional Investment Expenses</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          additional_expenses: [...formData.additional_expenses, { description: '', amount: '' }]
+                        })
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      + Add Expense
+                    </button>
+                  </div>
+                  {formData.additional_expenses.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.additional_expenses.map((expense, index) => (
+                        <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                          <div className="md:col-span-5">
+                            <input
+                              type="text"
+                              value={expense.description}
+                              onChange={(e) => {
+                                const updated = [...formData.additional_expenses]
+                                updated[index] = { ...updated[index], description: e.target.value }
+                                setFormData({ ...formData, additional_expenses: updated })
+                              }}
+                              placeholder="Description (e.g., Documentation fee)"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div className="md:col-span-4">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={expense.amount}
+                              onChange={(e) => {
+                                const updated = [...formData.additional_expenses]
+                                updated[index] = { ...updated[index], amount: e.target.value }
+                                setFormData({ ...formData, additional_expenses: updated })
+                              }}
+                              placeholder="0.00"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = formData.additional_expenses.filter((_, i) => i !== index)
+                                setFormData({ ...formData, additional_expenses: updated })
+                              }}
+                              className="w-full px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-md hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 mt-2">Add any additional fees or expenses paid when purchasing the vehicle (e.g., documentation fees, inspection fees, etc.)</p>
                 </div>
               </div>
             </div>
@@ -864,7 +970,11 @@ export default function Trucks() {
                             depreciation_method: (truck.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
                             cost_basis: truck.cost_basis?.toString() || '',
                             section_179_deduction: truck.section_179_deduction?.toString() || '',
-                            bonus_depreciation: truck.bonus_depreciation?.toString() || ''
+                            bonus_depreciation: truck.bonus_depreciation?.toString() || '',
+                            additional_expenses: truck.additional_expenses?.map(exp => ({
+                              description: exp.description || '',
+                              amount: exp.amount?.toString() || ''
+                            })) || []
                           })
                           setShowForm(true)
                         }}
@@ -957,6 +1067,10 @@ export default function Trucks() {
                             cost_basis: suv.cost_basis?.toString() || '',
                             section_179_deduction: suv.section_179_deduction?.toString() || '',
                             bonus_depreciation: suv.bonus_depreciation?.toString() || '',
+                            additional_expenses: suv.additional_expenses?.map(exp => ({
+                              description: exp.description || '',
+                              amount: exp.amount?.toString() || ''
+                            })) || []
                           })
                           setShowForm(true)
                         }}
@@ -1060,7 +1174,11 @@ export default function Trucks() {
                             depreciation_method: (trailer.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
                             cost_basis: trailer.cost_basis?.toString() || '',
                             section_179_deduction: trailer.section_179_deduction?.toString() || '',
-                            bonus_depreciation: trailer.bonus_depreciation?.toString() || ''
+                            bonus_depreciation: trailer.bonus_depreciation?.toString() || '',
+                            additional_expenses: trailer.additional_expenses?.map(exp => ({
+                              description: exp.description || '',
+                              amount: exp.amount?.toString() || ''
+                            })) || []
                           })
                           setShowForm(true)
                         }}

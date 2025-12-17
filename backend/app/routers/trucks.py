@@ -46,6 +46,13 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
         # Tag number is recommended for trailers
         pass
     
+    # Calculate additional expenses total
+    additional_expenses_total = 0.0
+    if truck.additional_expenses:
+        for expense in truck.additional_expenses:
+            if isinstance(expense, dict) and 'amount' in expense:
+                additional_expenses_total += float(expense['amount'])
+    
     # Validate investment fields
     if vehicle_type == 'trailer':
         # Trailers should not have loans
@@ -54,31 +61,31 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
                 status_code=400,
                 detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
             )
-        # For trailers, total_cost should equal cash_investment + registration_fee (if provided)
+        # For trailers, total_cost should equal cash_investment + registration_fee + additional_expenses (if provided)
         if truck.cash_investment is not None and truck.total_cost is not None:
             cash = float(truck.cash_investment)
             total = float(truck.total_cost)
             registration = float(truck.registration_fee) if truck.registration_fee else 0.0
-            expected_total = cash + registration
+            expected_total = cash + registration + additional_expenses_total
             
             if abs(total - expected_total) > 0.01:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration})"
+                    detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
                 )
     elif vehicle_type in ['truck', 'suv']:
-        # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
+        # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee + additional_expenses (if all provided)
         if truck.cash_investment is not None and truck.total_cost is not None:
             cash = float(truck.cash_investment)
             total = float(truck.total_cost)
             loan = float(truck.loan_amount) if truck.loan_amount else 0.0
             registration = float(truck.registration_fee) if truck.registration_fee else 0.0
             
-            expected_total = cash + loan + registration
+            expected_total = cash + loan + registration + additional_expenses_total
             if abs(total - expected_total) > 0.01:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan}) + registration_fee ({registration})"
+                    detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
                 )
     
     # Check for duplicate name within same vehicle type and tenant
@@ -133,8 +140,19 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     else:
         vehicle_type = truck.vehicle_type
     
+    # Calculate additional expenses total
+    additional_expenses_total = 0.0
+    if 'additional_expenses' in update_data and update_data.get('additional_expenses'):
+        for expense in update_data['additional_expenses']:
+            if isinstance(expense, dict) and 'amount' in expense:
+                additional_expenses_total += float(expense['amount'])
+    elif truck.additional_expenses:
+        for expense in truck.additional_expenses:
+            if isinstance(expense, dict) and 'amount' in expense:
+                additional_expenses_total += float(expense['amount'])
+    
     # Validate investment fields if being updated
-    if 'loan_amount' in update_data or 'cash_investment' in update_data or 'total_cost' in update_data or 'registration_fee' in update_data:
+    if 'loan_amount' in update_data or 'cash_investment' in update_data or 'total_cost' in update_data or 'registration_fee' in update_data or 'additional_expenses' in update_data:
         cash_investment = update_data.get('cash_investment', truck.cash_investment)
         loan_amount = update_data.get('loan_amount', truck.loan_amount)
         total_cost = update_data.get('total_cost', truck.total_cost)
@@ -147,31 +165,31 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
                     status_code=400,
                     detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
                 )
-            # For trailers, total_cost should equal cash_investment + registration_fee (if provided)
+            # For trailers, total_cost should equal cash_investment + registration_fee + additional_expenses (if provided)
             if cash_investment is not None and total_cost is not None:
                 cash = float(cash_investment)
                 total = float(total_cost)
                 registration = float(registration_fee) if registration_fee else 0.0
-                expected_total = cash + registration
+                expected_total = cash + registration + additional_expenses_total
                 
                 if abs(total - expected_total) > 0.01:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration})"
+                        detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
                     )
         elif vehicle_type in ['truck', 'suv']:
-            # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee (if all provided)
+            # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee + additional_expenses (if all provided)
             if cash_investment is not None and total_cost is not None:
                 cash = float(cash_investment)
                 total = float(total_cost)
                 loan = float(loan_amount) if loan_amount else 0.0
                 registration = float(registration_fee) if registration_fee else 0.0
                 
-                expected_total = cash + loan + registration
+                expected_total = cash + loan + registration + additional_expenses_total
                 if abs(total - expected_total) > 0.01:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan}) + registration_fee ({registration})"
+                        detail=f"total_cost ({total}) must equal cash_investment ({cash}) + loan_amount ({loan}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
                     )
     
     # Update current_loan_balance if loan_amount is being updated
