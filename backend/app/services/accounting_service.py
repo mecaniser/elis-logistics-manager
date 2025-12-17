@@ -517,10 +517,10 @@ def calculate_account_balance(db: Session, account_id: int, start_date: Optional
         return credits - debits
 
 
-def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[date] = None, truck_id: Optional[int] = None) -> Dict:
+def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[date] = None) -> Dict:
     """
     Generate balance sheet as of a specific date for a specific tenant.
-    For LS Logistics, truck_id is required for per-asset accounting.
+    Always aggregates all assets (trucks, trailers, SUV) for the business.
     """
     if not as_of_date:
         as_of_date = date.today()
@@ -530,100 +530,96 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
         raise ValueError(f"Tenant {tenant_id} not found")
     
     per_asset = uses_per_asset_accounting(tenant)
-    # For LS Logistics (per-asset), truck_id is required
-    # For other logistics businesses, truck_id is optional (if provided, shows per-vehicle; if not, shows total)
-    if per_asset and truck_id is None:
-        raise ValueError("truck_id is required for LS Logistics balance sheet")
     
-    # Determine the truck_id to use for account creation/querying
-    # For per-asset accounting, we MUST use truck_id
-    # For non-per-asset logistics with truck_id, we use shared accounts (truck_id=None) but filter data by truck_id
-    account_truck_id = truck_id if per_asset else None
-    
-    ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
-    
-    # Build account query filter
-    account_filter = [ChartOfAccount.tenant_id == tenant_id]
+    # Ensure accounts exist - for per-asset, ensure all vehicles have accounts
     if per_asset:
-        # Per-asset accounting: must filter by truck_id
-        account_filter.append(ChartOfAccount.truck_id == truck_id)
+        ensure_standard_accounts_exist(db, tenant_id, None)  # Creates accounts for all vehicles
     else:
-        # Non-per-asset: always use shared accounts (truck_id is NULL)
-        account_filter.append(ChartOfAccount.truck_id.is_(None))
+        ensure_standard_accounts_exist(db, tenant_id, None)  # Creates shared accounts
     
-    # Assets
-    cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
-    ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
-    fixed_assets_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1500").first()
-    acc_dep_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1501").first()
+    # Assets - Cash and AR
+    if per_asset:
+        # Aggregate across all vehicle accounts
+        cash_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_cash_account_code(),
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        ar_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_accounts_receivable_code(),
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        cash_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in cash_accounts)
+        ar_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in ar_accounts)
+    else:
+        # Use shared accounts
+        cash_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_cash_account_code(),
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        ar_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_accounts_receivable_code(),
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        cash_balance = calculate_account_balance(db, cash_account.id, end_date=as_of_date) if cash_account else Decimal(0)
+        ar_balance = calculate_account_balance(db, ar_account.id, end_date=as_of_date) if ar_account else Decimal(0)
     
-    # If accounts don't exist, try to create them
-    if not cash_account or not ar_account or (tenant.business_type == 'logistics' and (not fixed_assets_account or not acc_dep_account)):
-        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
-        db.commit()  # Ensure accounts are committed before querying
-        cash_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_cash_account_code()).first()
-        ar_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_accounts_receivable_code()).first()
-        if tenant.business_type == 'logistics':
-            fixed_assets_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1500").first()
-            acc_dep_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "1501").first()
-    
-    cash_balance = calculate_account_balance(db, cash_account.id, end_date=as_of_date) if cash_account else Decimal(0)
-    ar_balance = calculate_account_balance(db, ar_account.id, end_date=as_of_date) if ar_account else Decimal(0)
-    
-    # Fixed assets: for per-asset accounting or logistics with truck_id, use specific truck's total_cost; 
-    # for logistics without truck_id, sum all trucks; otherwise use account balance
+    # Fixed assets: always sum all vehicles for logistics businesses
     fixed_assets_balance = Decimal(0)
-    if (per_asset and truck_id) or (tenant.business_type == 'logistics' and truck_id):
-        # Per-vehicle view: use specific truck's cost
-        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-        if truck and truck.total_cost:
-            fixed_assets_balance = Decimal(str(truck.total_cost))
-    elif tenant.business_type == 'logistics':
-        # Logistics total view: sum all trucks
+    if tenant.business_type == 'logistics':
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
         for truck in trucks:
             if truck.total_cost:
                 fixed_assets_balance += Decimal(str(truck.total_cost))
     else:
         # Non-logistics: use account balance
+        fixed_assets_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "1500",
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
         fixed_assets_balance = calculate_account_balance(db, fixed_assets_account.id, end_date=as_of_date) if fixed_assets_account else Decimal(0)
     
-    # Calculate accumulated depreciation
-    # First try to get from journal entries (if depreciation entries exist)
-    acc_dep_balance = calculate_account_balance(db, acc_dep_account.id, end_date=as_of_date) if acc_dep_account else Decimal(0)
+    # Accumulated depreciation
+    acc_dep_balance = Decimal(0)
+    if per_asset:
+        # Aggregate depreciation accounts across all vehicles
+        acc_dep_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "1501",
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        acc_dep_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in acc_dep_accounts)
+    else:
+        acc_dep_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "1501",
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        acc_dep_balance = calculate_account_balance(db, acc_dep_account.id, end_date=as_of_date) if acc_dep_account else Decimal(0)
     
-    # If no journal entries exist and we have truck data, calculate from depreciation service
+    # If no journal entries exist, calculate from depreciation service
     if acc_dep_balance == 0 and tenant.business_type == 'logistics':
         try:
             from app.services.depreciation_service import calculate_depreciation_for_truck
-            
-            if per_asset and truck_id:
-                # Per-vehicle view: calculate depreciation for specific truck
-                truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-                if truck:
+            trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+            total_depreciation = Decimal(0)
+            for truck in trucks:
+                if truck.purchase_date and truck.total_cost:
                     calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
                     if calculated_dep:
-                        acc_dep_balance = calculated_dep
-            elif tenant.business_type == 'logistics':
-                # Total view: sum depreciation for all trucks
-                trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
-                total_depreciation = Decimal(0)
-                for truck in trucks:
-                    if truck.purchase_date and truck.total_cost:
-                        calculated_dep = calculate_depreciation_for_truck(truck, as_of_date)
-                        if calculated_dep:
-                            total_depreciation += calculated_dep
-                if total_depreciation > 0:
-                    acc_dep_balance = total_depreciation
+                        total_depreciation += calculated_dep
+            if total_depreciation > 0:
+                acc_dep_balance = total_depreciation
         except Exception as e:
-            # If depreciation calculation fails, log error but continue with 0 depreciation
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to calculate depreciation: {str(e)}")
-            # Continue with acc_dep_balance = 0 (already set above)
-    net_fixed_assets = fixed_assets_balance - acc_dep_balance
     
-    # Ensure all values are valid Decimals before converting to float
+    net_fixed_assets = fixed_assets_balance - acc_dep_balance
     fixed_assets_balance = fixed_assets_balance or Decimal(0)
     acc_dep_balance = acc_dep_balance or Decimal(0)
     net_fixed_assets = net_fixed_assets or Decimal(0)
@@ -631,86 +627,93 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
     total_assets = cash_balance + ar_balance + net_fixed_assets
     
     # Liabilities
-    ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
-    loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
+    if per_asset:
+        # Aggregate across all vehicle accounts
+        ap_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "2000",
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        loans_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_loans_payable_code(),
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        ap_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in ap_accounts)
+        loans_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in loans_accounts)
+    else:
+        ap_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "2000",
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        loans_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_loans_payable_code(),
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        ap_balance = calculate_account_balance(db, ap_account.id, end_date=as_of_date) if ap_account else Decimal(0)
+        loans_balance = calculate_account_balance(db, loans_account.id, end_date=as_of_date) if loans_account else Decimal(0)
     
-    # If liability accounts don't exist, try to create them
-    if not ap_account or not loans_account:
-        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
-        db.commit()  # Ensure accounts are committed before querying
-        ap_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "2000").first()
-        loans_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_loans_payable_code()).first()
-    
-    ap_balance = calculate_account_balance(db, ap_account.id, end_date=as_of_date) if ap_account else Decimal(0)
-    
-    # Loans: for per-asset accounting or logistics with truck_id, use specific truck's loan balance;
-    # for logistics without truck_id, sum all trucks; otherwise use account balance
-    loans_balance = Decimal(0)
-    if (per_asset and truck_id) or (tenant.business_type == 'logistics' and truck_id):
-        # Per-vehicle view: use specific truck's loan balance
-        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-        if truck:
-            if truck.current_loan_balance:
-                loans_balance = Decimal(str(truck.current_loan_balance))
-            elif truck.loan_amount and truck.vehicle_type == 'truck':
-                loans_balance = Decimal(str(truck.loan_amount))
-    elif tenant.business_type == 'logistics':
-        # Logistics total view: sum all trucks
+    # For logistics businesses, also sum loans from truck records
+    if tenant.business_type == 'logistics':
         trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
+        truck_loans = Decimal(0)
         for truck in trucks:
             if truck.current_loan_balance:
-                loans_balance += Decimal(str(truck.current_loan_balance))
+                truck_loans += Decimal(str(truck.current_loan_balance))
             elif truck.loan_amount and truck.vehicle_type == 'truck':
-                loans_balance += Decimal(str(truck.loan_amount))
-    else:
-        # Non-logistics: use account balance
-        loans_balance = calculate_account_balance(db, loans_account.id, end_date=as_of_date) if loans_account else Decimal(0)
+                truck_loans += Decimal(str(truck.loan_amount))
+        if truck_loans > 0:
+            loans_balance = truck_loans
     
     total_liabilities = ap_balance + loans_balance
     
     # Equity
-    owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
-    retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
-    
-    # If equity accounts don't exist, try to create them
-    if not owner_equity_account or not retained_earnings_account:
-        ensure_standard_accounts_exist(db, tenant_id, account_truck_id)
-        db.commit()  # Ensure accounts are committed before querying
-        owner_equity_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == "3000").first()
-        retained_earnings_account = db.query(ChartOfAccount).filter(*account_filter, ChartOfAccount.code == get_retained_earnings_code()).first()
-    
-    owner_equity_balance = calculate_account_balance(db, owner_equity_account.id, end_date=as_of_date) if owner_equity_account else Decimal(0)
-    
-    # Retained earnings: for per-asset accounting, calculate from journal entries for this truck; otherwise from all trucks or account balance
-    retained_earnings = Decimal(0)
-    if per_asset and truck_id:
-        # Calculate from journal entries for this specific truck
+    if per_asset:
+        # Aggregate across all vehicle accounts
+        owner_equity_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "3000",
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        retained_earnings_accounts = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_retained_earnings_code(),
+            ChartOfAccount.truck_id.isnot(None)
+        ).all()
+        owner_equity_balance = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in owner_equity_accounts)
+        retained_earnings = sum(calculate_account_balance(db, acc.id, end_date=as_of_date) for acc in retained_earnings_accounts)
+    else:
+        owner_equity_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == "3000",
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        retained_earnings_account = db.query(ChartOfAccount).filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.code == get_retained_earnings_code(),
+            ChartOfAccount.truck_id.is_(None)
+        ).first()
+        owner_equity_balance = calculate_account_balance(db, owner_equity_account.id, end_date=as_of_date) if owner_equity_account else Decimal(0)
         retained_earnings = calculate_account_balance(db, retained_earnings_account.id, end_date=as_of_date) if retained_earnings_account else Decimal(0)
-    elif tenant.business_type == 'logistics':
-        # Calculate from settlements/repairs (filtered by truck_id if provided)
-        settlement_query = db.query(Settlement).join(Truck).filter(
+    
+    # For logistics businesses, calculate retained earnings from settlements/repairs
+    if tenant.business_type == 'logistics':
+        settlements = db.query(Settlement).join(Truck).filter(
             Truck.tenant_id == tenant_id,
             Settlement.settlement_date <= as_of_date
-        )
-        repair_query = db.query(Repair).join(Truck).filter(
+        ).all()
+        repairs = db.query(Repair).join(Truck).filter(
             Truck.tenant_id == tenant_id,
             Repair.repair_date <= as_of_date
-        )
-        if truck_id:
-            settlement_query = settlement_query.filter(Settlement.truck_id == truck_id)
-            repair_query = repair_query.filter(Repair.truck_id == truck_id)
-        
-        settlements = settlement_query.all()
-        repairs = repair_query.all()
+        ).all()
         
         total_revenue = sum(float(s.gross_revenue) if s.gross_revenue else 0 for s in settlements)
         total_expenses = sum(float(s.expenses) if s.expenses else 0 for s in settlements)
         total_repairs = sum(float(r.cost) if r.cost else 0 for r in repairs)
         
         retained_earnings = Decimal(str(total_revenue - total_expenses - total_repairs))
-    else:
-        # For non-logistics, calculate from retained earnings account
-        retained_earnings = calculate_account_balance(db, retained_earnings_account.id, end_date=as_of_date) if retained_earnings_account else Decimal(0)
     
     total_equity = owner_equity_balance + retained_earnings
     total_liabilities_and_equity = total_liabilities + total_equity

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { accountingApi, BalanceSheet as BalanceSheetType, trucksApi, Truck } from '../services/api'
+import { accountingApi, BalanceSheet as BalanceSheetType } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
@@ -10,40 +10,18 @@ export default function BalanceSheet() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
-  const [trucks, setTrucks] = useState<Truck[]>([])
-  const [selectedTruckId, setSelectedTruckId] = useState<number | null>(null)
-  
-  // Load trucks for logistics businesses
-  useEffect(() => {
-    if (currentTenant?.business_type === 'logistics') {
-      loadTrucks()
-    } else {
-      setTrucks([])
-      setSelectedTruckId(null)
-    }
-  }, [currentTenant?.id, currentTenant?.business_type])
-  
-  const loadTrucks = async () => {
-    try {
-      const response = await trucksApi.getAll()
-      setTrucks(response.data)
-    } catch (err) {
-      console.error('Failed to load trucks:', err)
-    }
-  }
 
   useEffect(() => {
     setBalanceSheet(null)
     loadBalanceSheet()
-  }, [asOfDate, selectedTruckId, currentTenant?.id])
+  }, [asOfDate, currentTenant?.id])
 
   const loadBalanceSheet = async () => {
     try {
       setLoading(true)
       setError(null)
-      // For logistics businesses, truck_id is optional - if provided, shows per-vehicle; if not, shows total
-      const truckId = currentTenant?.business_type === 'logistics' ? (selectedTruckId ?? undefined) : undefined
-      const response = await accountingApi.getBalanceSheet(asOfDate, truckId)
+      // Always shows total for all business assets
+      const response = await accountingApi.getBalanceSheet(asOfDate)
       setBalanceSheet(response.data)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load balance sheet')
@@ -91,44 +69,11 @@ export default function BalanceSheet() {
     )
   }
 
-  const isLogistics = currentTenant?.business_type === 'logistics'
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-          <span className="block sm:inline">Balance Sheet</span>
-          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) ? (
-            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
-              - {trucks.find(t => t.id === selectedTruckId)?.name}
-            </span>
-          ) : isLogistics && trucks.length > 0 ? (
-            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
-              - All Vehicles (Total)
-            </span>
-          ) : null}
-        </h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Balance Sheet</h1>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          {/* Vehicle Selector (Logistics businesses) */}
-          {isLogistics && trucks.length > 0 && (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Vehicle:
-              </label>
-              <select
-                value={selectedTruckId || ''}
-                onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
-                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
-              >
-                <option value="">All Vehicles (Total)</option>
-                {trucks.map((truck) => (
-                  <option key={truck.id} value={truck.id}>
-                    {truck.name} ({truck.vehicle_type})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
             <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
               As of Date:
@@ -175,11 +120,6 @@ export default function BalanceSheet() {
             <p>
               <strong>Why it matters:</strong> The balance sheet helps you understand your business's financial health, see if you can pay your debts, and track how your equity changes over time. Investors and lenders use it to assess your business's value and creditworthiness.
             </p>
-            {isLogistics && (
-              <p className="mt-2 pt-2 border-t border-blue-300">
-                <strong>Note:</strong> For logistics businesses, you can view balance sheets per vehicle or for all vehicles combined. Select a specific vehicle above to see its individual financial position, or leave it as "All Vehicles" to see the total balance sheet.
-              </p>
-            )}
           </div>
         }
       />

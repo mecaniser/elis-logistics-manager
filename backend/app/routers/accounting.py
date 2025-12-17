@@ -323,31 +323,15 @@ def get_general_ledger(
 @router.get("/balance-sheet", response_model=BalanceSheetResponse)
 def get_balance_sheet(
     as_of_date: Optional[date] = Query(None),
-    truck_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
-    """Get balance sheet as of a specific date. For LS Logistics, truck_id is required."""
-    from app.models.tenant import Tenant
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    from app.services.accounting_service import uses_per_asset_accounting
-    
+    """Get balance sheet as of a specific date. Always shows total for all business assets."""
     if not as_of_date:
         as_of_date = date.today()
     
-    per_asset = uses_per_asset_accounting(tenant)
-    if per_asset and not truck_id:
-        raise HTTPException(status_code=400, detail="truck_id is required for LS Logistics balance sheet")
-    
-    # If truck_id provided, verify it belongs to the tenant
-    if truck_id:
-        from app.models.truck import Truck
-        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-        if not truck:
-            raise HTTPException(status_code=404, detail="Truck not found or does not belong to this tenant")
-    
     try:
-        balance_sheet = generate_balance_sheet(db, tenant_id, as_of_date, truck_id)
+        balance_sheet = generate_balance_sheet(db, tenant_id, as_of_date)
         return BalanceSheetResponse(**balance_sheet)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
