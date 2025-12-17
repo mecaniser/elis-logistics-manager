@@ -122,10 +122,22 @@ export default function Trucks() {
       if (formData.cash_investment) {
         investmentData.cash_investment = parseFloat(formData.cash_investment)
       }
-      if ((formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && formData.loan_amount) {
-        investmentData.loan_amount = parseFloat(formData.loan_amount)
-      } else if (formData.vehicle_type === 'trailer') {
+      if (formData.vehicle_type === 'trailer') {
         investmentData.loan_amount = null
+        investmentData.interest_rate = undefined
+      } else if (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') {
+        if (formData.loan_amount) {
+          const loanAmount = parseFloat(formData.loan_amount)
+          if (loanAmount > 0) {
+            investmentData.loan_amount = loanAmount
+          } else {
+            investmentData.loan_amount = null
+            investmentData.interest_rate = undefined
+          }
+        } else {
+          investmentData.loan_amount = null
+          investmentData.interest_rate = undefined
+        }
       }
       if (formData.total_cost) {
         investmentData.total_cost = parseFloat(formData.total_cost)
@@ -133,12 +145,7 @@ export default function Trucks() {
       if (formData.registration_fee) {
         investmentData.registration_fee = parseFloat(formData.registration_fee)
       }
-      // Interest rate - can be cleared (empty string) or set to a value
-      if (formData.interest_rate === '') {
-        investmentData.interest_rate = undefined
-      } else if (formData.interest_rate) {
-        investmentData.interest_rate = parseFloat(formData.interest_rate)
-      }
+      // Interest rate is handled above with loan_amount logic
       
       // Depreciation fields
       if (formData.purchase_date) {
@@ -444,46 +451,56 @@ export default function Trucks() {
                         type="number"
                         step="0.01"
                         value={formData.loan_amount}
-                        onChange={(e) => setFormData({ ...formData, loan_amount: e.target.value })}
+                        onChange={(e) => {
+                          const loanValue = e.target.value
+                          // If loan amount is cleared/zero, clear interest rate as well
+                          if (!loanValue || parseFloat(loanValue) === 0) {
+                            setFormData({ ...formData, loan_amount: loanValue, interest_rate: '' })
+                          } else {
+                            setFormData({ ...formData, loan_amount: loanValue })
+                          }
+                        }}
                         placeholder="0.00"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                    <div className="md:col-span-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-sm font-medium text-gray-700">Interest Rate (%)</label>
-                        {formData.interest_rate && formData.interest_rate !== '' && (
-                          <button
-                            type="button"
-                            onClick={() => setFormData({ ...formData, interest_rate: '' })}
-                            className="text-xs text-red-600 hover:text-red-800"
-                            title="Delete interest rate"
-                          >
-                            Delete
-                          </button>
-                        )}
+                    {formData.loan_amount && parseFloat(formData.loan_amount) > 0 && (
+                      <div className="md:col-span-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm font-medium text-gray-700">Interest Rate (%)</label>
+                          {formData.interest_rate && formData.interest_rate !== '' && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, interest_rate: '' })}
+                              className="text-xs text-red-600 hover:text-red-800"
+                              title="Delete interest rate"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={formData.interest_rate ? (parseFloat(formData.interest_rate) * 100).toFixed(2) : ''}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            if (value === '') {
+                              setFormData({ ...formData, interest_rate: '' })
+                            } else {
+                              const percentValue = parseFloat(value) || 0
+                              const decimalValue = (percentValue / 100).toFixed(4)
+                              setFormData({ ...formData, interest_rate: decimalValue })
+                            }
+                          }}
+                          placeholder="7.00"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Annual interest rate (e.g., 7.00 for 7%). Leave empty to remove.</p>
                       </div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        value={formData.interest_rate ? (parseFloat(formData.interest_rate) * 100).toFixed(2) : ''}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          if (value === '') {
-                            setFormData({ ...formData, interest_rate: '' })
-                          } else {
-                            const percentValue = parseFloat(value) || 0
-                            const decimalValue = (percentValue / 100).toFixed(4)
-                            setFormData({ ...formData, interest_rate: decimalValue })
-                          }
-                        }}
-                        placeholder="7.00"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Annual interest rate (e.g., 7.00 for 7%). Leave empty to remove.</p>
-                    </div>
+                    )}
                   </>
                 )}
                 <div className={formData.vehicle_type === 'truck' ? 'md:col-span-3' : 'md:col-span-6'}>
