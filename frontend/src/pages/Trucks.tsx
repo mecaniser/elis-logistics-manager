@@ -6,6 +6,54 @@ import ConfirmModal from '../components/ConfirmModal'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
 
+// Label with tooltip icon next to it
+function LabelWithTooltip({ 
+  label, 
+  tooltip 
+}: { 
+  label: string
+  tooltip: string 
+}) {
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  return (
+    <div className="flex items-center mb-1">
+      <label className="block text-sm font-medium text-gray-700">{label}</label>
+      <div className="relative ml-1.5 flex-shrink-0">
+        <button
+          type="button"
+          className="text-gray-400 hover:text-gray-600 focus:outline-none"
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+          onClick={() => setShowTooltip(!showTooltip)}
+          aria-label="Show help"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </button>
+        {showTooltip && (
+          <div className="absolute z-50 w-64 p-3 text-xs text-gray-700 bg-gray-900 text-white rounded-lg shadow-xl left-1/2 -translate-x-1/2 bottom-full mb-2">
+            <div>{tooltip}</div>
+            {/* Arrow */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Trucks() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -1039,17 +1087,22 @@ export default function Trucks() {
                 <div className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                  <LabelWithTooltip 
+                    label="Purchase Date" 
+                    tooltip="Date vehicle was purchased/placed in service"
+                  />
                   <input
                     type="date"
                     value={formData.purchase_date}
                     onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Date vehicle was purchased/placed in service</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Depreciation Method</label>
+                  <LabelWithTooltip 
+                    label="Depreciation Method" 
+                    tooltip="Method for calculating depreciation"
+                  />
                   <select
                     value={formData.depreciation_method}
                     onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as 'MACRS_5' | 'straight_line' | 'none' })}
@@ -1059,10 +1112,12 @@ export default function Trucks() {
                     <option value="straight_line">Straight-Line</option>
                     <option value="none">None</option>
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">Method for calculating depreciation</p>
               </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Basis ($)</label>
+                  <LabelWithTooltip 
+                    label="Cost Basis ($)" 
+                    tooltip="Depreciable amount (total cost - Section 179 - bonus depreciation)"
+                  />
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1094,10 +1149,12 @@ export default function Trucks() {
                     placeholder="Auto-calculated from total cost"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Depreciable amount (total cost - Section 179 - bonus depreciation)</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Section 179 Deduction ($)</label>
+                  <LabelWithTooltip 
+                    label="Section 179 Deduction ($)" 
+                    tooltip="First-year Section 179 deduction (if applicable)"
+                  />
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1129,10 +1186,12 @@ export default function Trucks() {
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">First-year Section 179 deduction (if applicable)</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bonus Depreciation (%)</label>
+                  <LabelWithTooltip 
+                    label="Bonus Depreciation (%)" 
+                    tooltip="Bonus depreciation percentage (e.g., 100 for 100%)"
+                  />
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1164,7 +1223,6 @@ export default function Trucks() {
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Bonus depreciation percentage (e.g., 100 for 100%)</p>
                 </div>
               </div>
                 </div>
