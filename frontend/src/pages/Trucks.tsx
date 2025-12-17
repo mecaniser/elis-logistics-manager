@@ -923,93 +923,84 @@ export default function Trucks() {
                           </button>
                           
                           {/* Description and Amount inline */}
-                          <div className="flex gap-2 pr-6 items-start">
-                            {/* Description input */}
-                            <div className="flex-1 min-w-0">
-                              <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-                              <input
-                                type="text"
-                                value={expense.description}
-                                onChange={(e) => {
-                                  const value = e.target.value
-                                  const width = measureTextWidth(value || e.target.placeholder || '', false)
-                                  setInputWidths(prev => ({ ...prev, [`desc_${index}`]: width }))
-                                  setFormData(prev => {
-                                    const updated = [...prev.additional_expenses]
-                                    updated[index] = { ...updated[index], description: value }
-                                    return { ...prev, additional_expenses: updated }
-                                  })
-                                }}
-                                onFocus={(e) => {
-                                  const width = measureTextWidth(e.target.value || e.target.placeholder || '', false)
-                                  setInputWidths(prev => ({ ...prev, [`desc_${index}`]: width }))
-                                }}
-                                placeholder="e.g., Documentation fee"
-                                style={{ 
-                                  width: `${inputWidths[`desc_${index}`] || measureTextWidth(expense.description || 'e.g., Documentation fee', false)}px`,
-                                  minWidth: '150px',
-                                  maxWidth: '100%'
-                                }}
-                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              />
-                            </div>
-                            
-                            {/* Amount input */}
-                            <div className="flex-shrink-0">
-                              <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={focusedFields.has(`additional_expense_${index}`) ? expense.amount : formatCurrencyDisplay(expense.amount)}
-                                onChange={(e) => {
-                                  const inputValue = e.target.value
-                                  if (isValidNumericInput(inputValue)) {
-                                    const newAmount = parseCurrency(inputValue)
-                                    // Prevent negative values
-                                    if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
-                                      const displayValue = focusedFields.has(`additional_expense_${index}`) ? newAmount : formatCurrencyDisplay(newAmount)
-                                      const width = measureTextWidth(displayValue || '0.00', true)
+                          <div className="pr-6 min-w-0">
+                            <div className="flex items-start min-w-0">
+                              {/* Description input */}
+                              <div className="flex-1 min-w-0">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                                <input
+                                  type="text"
+                                  value={expense.description}
+                                  onChange={(e) => {
+                                    const value = e.target.value
+                                    setFormData(prev => {
+                                      const updated = [...prev.additional_expenses]
+                                      updated[index] = { ...updated[index], description: value }
+                                      return { ...prev, additional_expenses: updated }
+                                    })
+                                  }}
+                                  placeholder="e.g., Documentation fee"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-l-md rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-r-2 border-r-red-500"
+                                />
+                              </div>
+                              
+                              {/* Amount input */}
+                              <div className="flex-shrink-0 -ml-[2px]">
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={focusedFields.has(`additional_expense_${index}`) ? expense.amount : formatCurrencyDisplay(expense.amount)}
+                                  onChange={(e) => {
+                                    const inputValue = e.target.value
+                                    if (isValidNumericInput(inputValue)) {
+                                      const newAmount = parseCurrency(inputValue)
+                                      // Prevent negative values
+                                      if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
+                                        const displayValue = focusedFields.has(`additional_expense_${index}`) ? newAmount : formatCurrencyDisplay(newAmount)
+                                        const width = measureTextWidth(displayValue || '0.00', true)
+                                        setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
+                                        setFormData(prev => {
+                                          const updated = [...prev.additional_expenses]
+                                          updated[index] = { ...updated[index], amount: newAmount }
+                                          return { ...prev, additional_expenses: updated }
+                                        })
+                                      }
+                                    }
+                                  }}
+                                  onFocus={(e) => {
+                                    setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))
+                                    const width = measureTextWidth(e.target.value || '0.00', true)
+                                    setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
+                                  }}
+                                  onBlur={(e) => {
+                                    // Format to 2 decimal places on blur
+                                    const value = parseCurrency(e.target.value)
+                                    if (value && !isNaN(parseFloat(value))) {
+                                      const formatted = parseFloat(value).toFixed(2)
+                                      const displayValue = formatCurrencyDisplay(formatted)
+                                      const width = measureTextWidth(displayValue, true)
                                       setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
                                       setFormData(prev => {
                                         const updated = [...prev.additional_expenses]
-                                        updated[index] = { ...updated[index], amount: newAmount }
+                                        updated[index] = { ...updated[index], amount: formatted }
                                         return { ...prev, additional_expenses: updated }
                                       })
                                     }
-                                  }
-                                }}
-                                onFocus={(e) => {
-                                  setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))
-                                  const width = measureTextWidth(e.target.value || '0.00', true)
-                                  setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
-                                }}
-                                onBlur={(e) => {
-                                  // Format to 2 decimal places on blur
-                                  const value = parseCurrency(e.target.value)
-                                  if (value && !isNaN(parseFloat(value))) {
-                                    const formatted = parseFloat(value).toFixed(2)
-                                    const displayValue = formatCurrencyDisplay(formatted)
-                                    const width = measureTextWidth(displayValue, true)
-                                    setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
-                                    setFormData(prev => {
-                                      const updated = [...prev.additional_expenses]
-                                      updated[index] = { ...updated[index], amount: formatted }
-                                      return { ...prev, additional_expenses: updated }
+                                    setFocusedFields(prev => {
+                                      const next = new Set(prev)
+                                      next.delete(`additional_expense_${index}`)
+                                      return next
                                     })
-                                  }
-                                  setFocusedFields(prev => {
-                                    const next = new Set(prev)
-                                    next.delete(`additional_expense_${index}`)
-                                    return next
-                                  })
-                                }}
-                                placeholder="0.00"
-                                style={{ 
-                                  width: `${inputWidths[`amt_${index}`] || measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)}px`,
-                                  minWidth: '80px'
-                                }}
-                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                              />
+                                  }}
+                                  placeholder="0.00"
+                                  style={{ 
+                                    width: `${inputWidths[`amt_${index}`] || measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)}px`,
+                                    minWidth: '80px'
+                                  }}
+                                  className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
