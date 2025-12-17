@@ -217,6 +217,17 @@ export default function Trucks() {
     })
   }, [formData.additional_expenses.length, showForm])
 
+  // Initialize input widths for depreciation fields
+  useEffect(() => {
+    if (!showForm) return
+    setInputWidths(prev => ({
+      ...prev,
+      cost_basis: measureTextWidth(formatCurrencyDisplay(formData.cost_basis) || 'Auto-calculated from total cost', true),
+      section_179_deduction: measureTextWidth(formatCurrencyDisplay(formData.section_179_deduction) || '0.00', true),
+      bonus_depreciation: measureTextWidth(formatCurrencyDisplay(formData.bonus_depreciation) || '0.00', true)
+    }))
+  }, [showForm, formData.cost_basis, formData.section_179_deduction, formData.bonus_depreciation])
+
   const loadPMStatus = async () => {
     try {
       const response = await analyticsApi.getPMStatus()
@@ -1130,16 +1141,26 @@ export default function Trucks() {
                         const value = parseCurrency(inputValue)
                         // Prevent negative values
                         if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          const displayValue = focusedFields.has('cost_basis') ? value : formatCurrencyDisplay(value)
+                          const width = measureTextWidth(displayValue || e.target.placeholder || '0.00', true)
+                          setInputWidths(prev => ({ ...prev, cost_basis: width }))
                           setFormData({ ...formData, cost_basis: value })
                         }
                       }
                     }}
-                    onFocus={() => setFocusedFields(prev => new Set(prev).add('cost_basis'))}
+                    onFocus={(e) => {
+                      setFocusedFields(prev => new Set(prev).add('cost_basis'))
+                      const width = measureTextWidth(e.target.value || e.target.placeholder || '0.00', true)
+                      setInputWidths(prev => ({ ...prev, cost_basis: width }))
+                    }}
                     onBlur={(e) => {
                       // Format to 2 decimal places on blur
                       const value = parseCurrency(e.target.value)
                       if (value && !isNaN(parseFloat(value))) {
                         const formatted = parseFloat(value).toFixed(2)
+                        const displayValue = formatCurrencyDisplay(formatted)
+                        const width = measureTextWidth(displayValue, true)
+                        setInputWidths(prev => ({ ...prev, cost_basis: width }))
                         setFormData({ ...formData, cost_basis: formatted })
                       }
                       setFocusedFields(prev => {
@@ -1149,7 +1170,12 @@ export default function Trucks() {
                       })
                     }}
                     placeholder="Auto-calculated from total cost"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ 
+                      width: `${inputWidths.cost_basis || measureTextWidth(formatCurrencyDisplay(formData.cost_basis) || 'Auto-calculated from total cost', true)}px`,
+                      minWidth: '120px',
+                      maxWidth: '100%'
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -1167,16 +1193,26 @@ export default function Trucks() {
                         const value = parseCurrency(inputValue)
                         // Prevent negative values
                         if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          const displayValue = focusedFields.has('section_179_deduction') ? value : formatCurrencyDisplay(value)
+                          const width = measureTextWidth(displayValue || '0.00', true)
+                          setInputWidths(prev => ({ ...prev, section_179_deduction: width }))
                           setFormData({ ...formData, section_179_deduction: value })
                         }
                       }
                     }}
-                    onFocus={() => setFocusedFields(prev => new Set(prev).add('section_179_deduction'))}
+                    onFocus={(e) => {
+                      setFocusedFields(prev => new Set(prev).add('section_179_deduction'))
+                      const width = measureTextWidth(e.target.value || '0.00', true)
+                      setInputWidths(prev => ({ ...prev, section_179_deduction: width }))
+                    }}
                     onBlur={(e) => {
                       // Format to 2 decimal places on blur
                       const value = parseCurrency(e.target.value)
                       if (value && !isNaN(parseFloat(value))) {
                         const formatted = parseFloat(value).toFixed(2)
+                        const displayValue = formatCurrencyDisplay(formatted)
+                        const width = measureTextWidth(displayValue, true)
+                        setInputWidths(prev => ({ ...prev, section_179_deduction: width }))
                         setFormData({ ...formData, section_179_deduction: formatted })
                       }
                       setFocusedFields(prev => {
@@ -1186,7 +1222,12 @@ export default function Trucks() {
                       })
                     }}
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ 
+                      width: `${inputWidths.section_179_deduction || measureTextWidth(formatCurrencyDisplay(formData.section_179_deduction) || '0.00', true)}px`,
+                      minWidth: '80px',
+                      maxWidth: '100%'
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -1204,16 +1245,26 @@ export default function Trucks() {
                         const value = parseCurrency(inputValue)
                         // Prevent negative values
                         if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          const displayValue = focusedFields.has('bonus_depreciation') ? value : formatCurrencyDisplay(value)
+                          const width = measureTextWidth(displayValue || '0.00', true)
+                          setInputWidths(prev => ({ ...prev, bonus_depreciation: width }))
                           setFormData({ ...formData, bonus_depreciation: value })
                         }
                       }
                     }}
-                    onFocus={() => setFocusedFields(prev => new Set(prev).add('bonus_depreciation'))}
+                    onFocus={(e) => {
+                      setFocusedFields(prev => new Set(prev).add('bonus_depreciation'))
+                      const width = measureTextWidth(e.target.value || '0.00', true)
+                      setInputWidths(prev => ({ ...prev, bonus_depreciation: width }))
+                    }}
                     onBlur={(e) => {
                       // Format to 2 decimal places on blur
                       const value = parseCurrency(e.target.value)
                       if (value && !isNaN(parseFloat(value))) {
                         const formatted = parseFloat(value).toFixed(2)
+                        const displayValue = formatCurrencyDisplay(formatted)
+                        const width = measureTextWidth(displayValue, true)
+                        setInputWidths(prev => ({ ...prev, bonus_depreciation: width }))
                         setFormData({ ...formData, bonus_depreciation: formatted })
                       }
                       setFocusedFields(prev => {
@@ -1223,7 +1274,12 @@ export default function Trucks() {
                       })
                     }}
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ 
+                      width: `${inputWidths.bonus_depreciation || measureTextWidth(formatCurrencyDisplay(formData.bonus_depreciation) || '0.00', true)}px`,
+                      minWidth: '80px',
+                      maxWidth: '100%'
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
