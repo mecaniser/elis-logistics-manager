@@ -472,10 +472,10 @@ export default function Trucks() {
                             <button
                               type="button"
                               onClick={() => setFormData({ ...formData, interest_rate: '' })}
-                              className="text-xs text-red-600 hover:text-red-800"
-                              title="Delete interest rate"
+                              className="text-xs text-gray-600 hover:text-gray-800"
+                              title="Clear interest rate"
                             >
-                              Delete
+                              Clear
                             </button>
                           )}
                         </div>
