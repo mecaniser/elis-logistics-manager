@@ -54,7 +54,7 @@ python3 backend/migrate_add_current_loan_balance.py
 ```
 - Adds `current_loan_balance` column
 
-### 8. Chart of Accounts Constraint Fix
+### 9. Chart of Accounts Constraint Fix
 ```bash
 python3 backend/migrate_recreate_chart_of_accounts_table.py
 ```
