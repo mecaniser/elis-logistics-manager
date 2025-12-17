@@ -940,12 +940,18 @@ export default function Trucks() {
                                     })
                                   }}
                                   placeholder="e.g., Documentation fee"
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-l-md rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-r-2 border-r-red-500"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-l-md rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-r-0"
                                 />
                               </div>
                               
+                              {/* Red divider - aligned with inputs */}
+                              <div className="flex-shrink-0 flex flex-col" style={{ width: '6px', marginLeft: '-3px', marginRight: '-3px' }}>
+                                <div className="text-xs font-medium mb-1" style={{ height: '16px' }}></div>
+                                <div className="w-1.5 h-[38px] bg-red-600"></div>
+                              </div>
+                              
                               {/* Amount input */}
-                              <div className="flex-shrink-0 -ml-[2px]">
+                              <div className="flex-shrink-0">
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
                                 <input
                                   type="text"
