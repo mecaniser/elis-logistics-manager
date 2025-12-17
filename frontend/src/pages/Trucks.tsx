@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
@@ -9,16 +9,18 @@ import { useTenant } from '../contexts/TenantContext'
 // Label with tooltip icon next to it
 function LabelWithTooltip({ 
   label, 
-  tooltip 
+  tooltip,
+  containerRef
 }: { 
   label: string
-  tooltip: string 
+  tooltip: string
+  containerRef?: (el: HTMLDivElement | null) => void
 }) {
   const [showTooltip, setShowTooltip] = useState(false)
 
   return (
-    <div className="flex items-center mb-1">
-      <label className="block text-sm font-medium text-gray-700">{label}</label>
+    <div ref={containerRef} className="flex items-center">
+      <label className="text-xs font-medium text-gray-500">{label}</label>
       <div className="relative ml-1.5 flex-shrink-0">
         <button
           type="button"
@@ -98,6 +100,9 @@ export default function Trucks() {
   const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set())
   // Track input widths for auto-resizing
   const [inputWidths, setInputWidths] = useState<Record<string, number>>({})
+  // Track label container widths (label + tooltip) to match input widths
+  const [labelWidths, setLabelWidths] = useState<Record<string, number>>({})
+  const labelContainerRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
   const [loading, setLoading] = useState(true)
@@ -155,6 +160,38 @@ export default function Trucks() {
     loadTrucks()
     loadPMStatus()
   }, [vehicleTypeFilter, currentTenant?.id])
+
+  // Helper to measure a single label container width
+  const measureLabelContainerWidth = (key: string) => {
+    const container = labelContainerRefs.current[key]
+    if (container) {
+      setLabelWidths(prev => ({
+        ...prev,
+        [key]: container.offsetWidth
+      }))
+    }
+  }
+
+  // Measure label container widths (label + tooltip) and apply to inputs
+  useEffect(() => {
+    if (!showForm || !expandedFormSections.has('depreciation')) return
+    
+    // Use setTimeout to ensure DOM is fully rendered
+    const timer = setTimeout(() => {
+      const widths: Record<string, number> = {}
+      Object.keys(labelContainerRefs.current).forEach(key => {
+        const container = labelContainerRefs.current[key]
+        if (container) {
+          widths[key] = container.offsetWidth
+        }
+      })
+      if (Object.keys(widths).length > 0) {
+        setLabelWidths(widths)
+      }
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [showForm, expandedFormSections, formData])
 
   // Calculate total_cost including additional expenses - use useMemo for reactive calculation
   const calculatedTotalCost = useMemo(() => {
@@ -631,9 +668,12 @@ export default function Trucks() {
                 <div className="p-4">
               <div className="space-y-3">
                 {/* Vehicle Type, Name, VIN, and License Plate/Tag Number - 2 columns on medium, inline on large */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:flex lg:flex-row gap-3">
-                  <div className="w-full lg:w-32">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle Type *</label>
+                <div className="flex items-start gap-4 flex-wrap">
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <label className="text-xs font-medium text-gray-500">Vehicle Type *</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
               <select
                 value={formData.vehicle_type}
                 onChange={(e) => {
@@ -646,15 +686,19 @@ export default function Trucks() {
                   })
                 }}
                 required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                      style={{ minWidth: '120px' }}
               >
                 <option value="truck">Truck</option>
                       <option value="suv">SUV</option>
                 <option value="trailer">Trailer</option>
               </select>
             </div>
-                  <div className="w-full lg:w-[15%]">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Name *</label>
+                  <div className="flex items-center min-w-0 relative">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <label className="text-xs font-medium text-gray-500">Name *</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
               <input
                 type="text"
                 value={formData.name}
@@ -669,46 +713,59 @@ export default function Trucks() {
                         }
                       }}
                 required
-                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 text-sm ${
+                      className={`px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 text-sm text-right border-l-0 ${
                         formErrors.name 
                           ? 'border-red-500 focus:ring-red-500' 
-                          : 'border-gray-300 focus:ring-blue-500'
+                          : 'focus:ring-blue-500'
                       }`}
+                      style={{ minWidth: '150px' }}
                     />
                     {formErrors.name && (
-                      <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
+                      <p className="absolute top-full mt-1 text-xs text-red-600 whitespace-nowrap">{formErrors.name}</p>
                     )}
             </div>
-                  <div className="w-full lg:w-[18%]">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">VIN</label>
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <label className="text-xs font-medium text-gray-500">VIN</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                     <input
                       type="text"
                       value={formData.vin}
                       onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
                       placeholder="Enter 17-character VIN"
                       maxLength={17}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                      style={{ minWidth: '180px' }}
                     />
                   </div>
                   {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
-                    <div className="w-full lg:w-40">
-                      <label className="block text-xs font-medium text-gray-500 mb-1">License Plate</label>
+                    <div className="flex items-center min-w-0">
+                      <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                        <label className="text-xs font-medium text-gray-500">License Plate</label>
+                      </div>
+                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                 <input
                   type="text"
                   value={formData.license_plate}
                   onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                        style={{ minWidth: '120px' }}
                 />
               </div>
             )}
             {formData.vehicle_type === 'trailer' && (
-                    <div className="w-full lg:w-40">
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Tag Number</label>
+                    <div className="flex items-center min-w-0">
+                      <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                        <label className="text-xs font-medium text-gray-500">Tag Number</label>
+                      </div>
+                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                 <input
                   type="text"
                   value={formData.tag_number}
                   onChange={(e) => setFormData({ ...formData, tag_number: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                        style={{ minWidth: '120px' }}
                 />
               </div>
             )}
@@ -739,9 +796,12 @@ export default function Trucks() {
                 <div className="p-4">
               <div className="space-y-3">
                 {/* Cash Investment, Loan Amount, Interest Rate, Total Cost, Registration Fee - 2 columns on medium, inline on large */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:flex lg:flex-row gap-3">
-                  <div className="w-full lg:w-[18%]">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Cash Investment ($) *</label>
+                <div className="flex items-start gap-4 flex-wrap">
+                  <div className="flex items-center min-w-0 relative">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <label className="text-xs font-medium text-gray-500">Cash Investment ($) *</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                   <input
                       type="text"
                     inputMode="decimal"
@@ -779,20 +839,24 @@ export default function Trucks() {
                       })
                     }}
                     placeholder="0.00"
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 text-sm ${
+                    className={`px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 text-sm text-right border-l-0 ${
                       formErrors.cash_investment 
                         ? 'border-red-500 focus:ring-red-500' 
-                        : 'border-gray-300 focus:ring-blue-500'
+                        : 'focus:ring-blue-500'
                     }`}
+                    style={{ minWidth: '120px' }}
                   />
                   {formErrors.cash_investment && (
-                    <p className="mt-1 text-xs text-red-600">{formErrors.cash_investment}</p>
+                    <p className="absolute top-full mt-1 text-xs text-red-600 whitespace-nowrap">{formErrors.cash_investment}</p>
                   )}
                 </div>
                   {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
                   <>
-                      <div className="w-full lg:w-[18%]">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Loan Amount ($)</label>
+                      <div className="flex items-center min-w-0">
+                        <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                          <label className="text-xs font-medium text-gray-500">Loan Amount ($)</label>
+                        </div>
+                        <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                       <input
                           type="text"
                         inputMode="decimal"
@@ -827,24 +891,17 @@ export default function Trucks() {
                           })
                         }}
                         placeholder="0.00"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                        style={{ minWidth: '120px' }}
                       />
                     </div>
                       {formData.loan_amount && parseFloat(formData.loan_amount) > 0 && (
-                        <div className="w-full lg:w-[12%]">
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="block text-xs font-medium text-gray-500">Interest Rate (%)</label>
-                          {formData.interest_rate && formData.interest_rate !== '' && (
-                            <button
-                              type="button"
-                              onClick={() => setFormData({ ...formData, interest_rate: '' })}
-                              className="text-xs text-gray-600 hover:text-gray-800"
-                              title="Clear interest rate"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
+                        <div className="flex items-center min-w-0">
+                          <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                            <label className="text-xs font-medium text-gray-500">Interest Rate (%)</label>
+                          </div>
+                          <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                          <div className="relative">
                       <input
                           type="text"
                           inputMode="decimal"
@@ -865,14 +922,29 @@ export default function Trucks() {
                             }
                         }}
                         placeholder="7.00"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0 pr-12"
+                          style={{ minWidth: '100px' }}
                       />
+                            {formData.interest_rate && formData.interest_rate !== '' && (
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, interest_rate: '' })}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-gray-800"
+                                title="Clear interest rate"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
                     </div>
                       )}
                   </>
                 )}
-                  <div className="w-full lg:w-[18%]">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Registration Fee ($)</label>
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <label className="text-xs font-medium text-gray-500">Registration Fee ($)</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                     <input
                       type="text"
                     inputMode="decimal"
@@ -902,17 +974,22 @@ export default function Trucks() {
                       })
                     }}
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                    style={{ minWidth: '120px' }}
                   />
                   </div>
-                  <div className="w-full lg:w-[18%]">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Total Cost ($)</label>
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0 bg-gray-50">
+                      <label className="text-xs font-medium text-gray-500">Total Cost ($)</label>
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                   <input
                     type="text"
                     value={calculatedTotalCost ? parseFloat(calculatedTotalCost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
                     readOnly
                     placeholder="Auto-calculated"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed text-sm"
+                    className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none bg-gray-50 text-gray-700 cursor-not-allowed text-sm text-right border-l-0"
+                    style={{ minWidth: '150px' }}
                   />
                   </div>
                 </div>
@@ -1006,7 +1083,7 @@ export default function Trucks() {
                               {/* Red divider - aligned with inputs */}
                               <div className="flex-shrink-0 flex flex-col" style={{ width: '6px', marginLeft: '-3px', marginRight: '-3px' }}>
                                 <div className="text-xs font-medium mb-1" style={{ height: '16px' }}></div>
-                                <div className="w-1.5 h-[38px] bg-red-600"></div>
+                                <div className="w-0.5 h-[38px] bg-red-600"></div>
                               </div>
                               
                               {/* Amount input */}
@@ -1063,7 +1140,7 @@ export default function Trucks() {
                                     width: `${inputWidths[`amt_${index}`] || measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)}px`,
                                     minWidth: '80px'
                                   }}
-                                  className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                                  className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0 text-right"
                                 />
                               </div>
                             </div>
@@ -1096,41 +1173,68 @@ export default function Trucks() {
               </button>
               {expandedFormSections.has('depreciation') && (
                 <div className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <LabelWithTooltip 
-                    label="Purchase Date" 
-                    tooltip="Date vehicle was purchased/placed in service"
-                  />
-                  <input
-                    type="date"
-                    value={formData.purchase_date}
-                    onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ width: '180px' }}
-                  />
+              <div className="space-y-4">
+                {/* Row 1: Purchase Date and Depreciation Method */}
+                <div className="flex items-start gap-4 flex-wrap">
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <LabelWithTooltip 
+                        label="Purchase Date" 
+                        tooltip="Date vehicle was purchased/placed in service"
+                        containerRef={(el) => { 
+                          labelContainerRefs.current['purchase_date'] = el
+                          if (el) setTimeout(() => measureLabelContainerWidth('purchase_date'), 0)
+                        }}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                    <input
+                      type="date"
+                      value={formData.purchase_date}
+                      onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                      style={{ width: labelWidths.purchase_date ? `${labelWidths.purchase_date}px` : '180px' }}
+                    />
+                  </div>
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <LabelWithTooltip 
+                        label="Depreciation Method" 
+                        tooltip="Method for calculating depreciation"
+                        containerRef={(el) => { 
+                          labelContainerRefs.current['depreciation_method'] = el
+                          if (el) setTimeout(() => measureLabelContainerWidth('depreciation_method'), 0)
+                        }}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                    <select
+                      value={formData.depreciation_method}
+                      onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as 'MACRS_5' | 'straight_line' | 'none' })}
+                      className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                      style={{ width: labelWidths.depreciation_method ? `${labelWidths.depreciation_method}px` : '240px' }}
+                    >
+                      <option value="MACRS_5">MACRS 5-Year (IRS Standard)</option>
+                      <option value="straight_line">Straight-Line</option>
+                      <option value="none">None</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <LabelWithTooltip 
-                    label="Depreciation Method" 
-                    tooltip="Method for calculating depreciation"
-                  />
-                  <select
-                    value={formData.depreciation_method}
-                    onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as 'MACRS_5' | 'straight_line' | 'none' })}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    style={{ width: '240px' }}
-                  >
-                    <option value="MACRS_5">MACRS 5-Year (IRS Standard)</option>
-                    <option value="straight_line">Straight-Line</option>
-                    <option value="none">None</option>
-                  </select>
-              </div>
-                <div>
-                  <LabelWithTooltip 
-                    label="Cost Basis ($)" 
-                    tooltip="Depreciable amount (total cost - Section 179 - bonus depreciation)"
-                  />
+                
+                {/* Row 2: Cost Basis, Section 179 Deduction, Bonus Depreciation */}
+                <div className="flex items-start gap-4 flex-wrap">
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <LabelWithTooltip 
+                        label="Cost Basis ($)" 
+                        tooltip="Depreciable amount (total cost - Section 179 - bonus depreciation)"
+                        containerRef={(el) => { 
+                          labelContainerRefs.current['cost_basis'] = el
+                          if (el) setTimeout(() => measureLabelContainerWidth('cost_basis'), 0)
+                        }}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1171,18 +1275,25 @@ export default function Trucks() {
                     }}
                     placeholder="Auto-calculated from total cost"
                     style={{ 
-                      width: `${inputWidths.cost_basis || measureTextWidth(formatCurrencyDisplay(formData.cost_basis) || 'Auto-calculated from total cost', true)}px`,
+                      width: labelWidths.cost_basis ? `${labelWidths.cost_basis}px` : '120px',
                       minWidth: '120px',
                       maxWidth: '100%'
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
                   />
                 </div>
-                <div>
-                  <LabelWithTooltip 
-                    label="Section 179 Deduction ($)" 
-                    tooltip="First-year Section 179 deduction (if applicable)"
-                  />
+                <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <LabelWithTooltip 
+                        label="Section 179 Deduction ($)" 
+                        tooltip="First-year Section 179 deduction (if applicable)"
+                        containerRef={(el) => { 
+                          labelContainerRefs.current['section_179_deduction'] = el
+                          if (el) setTimeout(() => measureLabelContainerWidth('section_179_deduction'), 0)
+                        }}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1223,18 +1334,25 @@ export default function Trucks() {
                     }}
                     placeholder="0.00"
                     style={{ 
-                      width: `${inputWidths.section_179_deduction || measureTextWidth(formatCurrencyDisplay(formData.section_179_deduction) || '0.00', true)}px`,
+                      width: labelWidths.section_179_deduction ? `${labelWidths.section_179_deduction}px` : '80px',
                       minWidth: '80px',
                       maxWidth: '100%'
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
                   />
                 </div>
-                <div>
-                  <LabelWithTooltip 
-                    label="Bonus Depreciation (%)" 
-                    tooltip="Bonus depreciation percentage (e.g., 100 for 100%)"
-                  />
+                <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                      <LabelWithTooltip 
+                        label="Bonus Depreciation (%)" 
+                        tooltip="Bonus depreciation percentage (e.g., 100 for 100%)"
+                        containerRef={(el) => { 
+                          labelContainerRefs.current['bonus_depreciation'] = el
+                          if (el) setTimeout(() => measureLabelContainerWidth('bonus_depreciation'), 0)
+                        }}
+                      />
+                    </div>
+                    <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1275,12 +1393,13 @@ export default function Trucks() {
                     }}
                     placeholder="0.00"
                     style={{ 
-                      width: `${inputWidths.bonus_depreciation || measureTextWidth(formatCurrencyDisplay(formData.bonus_depreciation) || '0.00', true)}px`,
+                      width: labelWidths.bonus_depreciation ? `${labelWidths.bonus_depreciation}px` : '80px',
                       minWidth: '80px',
                       maxWidth: '100%'
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
                   />
+                  </div>
                 </div>
               </div>
                 </div>
