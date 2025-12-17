@@ -56,21 +56,34 @@ export default function Trucks() {
   useEffect(() => {
     if (!showForm) return // Don't calculate when form is not shown
     
-    let total = 0
-    const cash = parseFloat(formData.cash_investment) || 0
-    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (parseFloat(formData.loan_amount) || 0) : 0
-    const registration = parseFloat(formData.registration_fee) || 0
-    const additionalTotal = formData.additional_expenses.reduce((sum, exp) => {
-      return sum + (parseFloat(exp.amount) || 0)
+    // Helper to safely parse numeric values (handles empty strings, null, undefined)
+    const parseNumeric = (value: string | undefined | null): number => {
+      if (value === undefined || value === null || value === '') return 0
+      const trimmed = String(value).trim()
+      if (trimmed === '') return 0
+      const parsed = parseFloat(trimmed)
+      return isNaN(parsed) ? 0 : parsed
+    }
+    
+    // Always recalculate from current formData values
+    const cash = parseNumeric(formData.cash_investment)
+    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
+    const registration = parseNumeric(formData.registration_fee)
+    
+    // Calculate additional expenses total - ensure we iterate through all expenses
+    const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
+      if (!exp || !exp.amount) return sum
+      return sum + parseNumeric(exp.amount)
     }, 0)
     
-    total = cash + loan + registration + additionalTotal
-    
-    // Always update total_cost if any field has a value or if total > 0
+    const total = cash + loan + registration + additionalTotal
     const newTotalCost = total > 0 ? total.toFixed(2) : ''
+    
+    // Always update - use functional update to get latest state
     setFormData(prev => {
-      // Only update if the value actually changed to avoid infinite loops
-      if (prev.total_cost !== newTotalCost) {
+      // Force update if total_cost differs (handles empty string vs undefined)
+      const currentTotal = prev.total_cost || ''
+      if (currentTotal !== newTotalCost) {
         return { ...prev, total_cost: newTotalCost }
       }
       return prev
@@ -567,7 +580,10 @@ export default function Trucks() {
                     type="number"
                     step="0.01"
                     value={formData.registration_fee}
-                    onChange={(e) => setFormData({ ...formData, registration_fee: e.target.value })}
+                    onChange={(e) => {
+                      const newValue = e.target.value
+                      setFormData(prev => ({ ...prev, registration_fee: newValue }))
+                    }}
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -580,10 +596,10 @@ export default function Trucks() {
                     <button
                       type="button"
                       onClick={() => {
-                        setFormData({
-                          ...formData,
-                          additional_expenses: [...formData.additional_expenses, { description: '', amount: '' }]
-                        })
+                        setFormData(prev => ({
+                          ...prev,
+                          additional_expenses: [...prev.additional_expenses, { description: '', amount: '' }]
+                        }))
                       }}
                       className="text-sm text-blue-600 hover:text-blue-800"
                     >
@@ -599,9 +615,11 @@ export default function Trucks() {
                               type="text"
                               value={expense.description}
                               onChange={(e) => {
-                                const updated = [...formData.additional_expenses]
-                                updated[index] = { ...updated[index], description: e.target.value }
-                                setFormData({ ...formData, additional_expenses: updated })
+                                setFormData(prev => {
+                                  const updated = [...prev.additional_expenses]
+                                  updated[index] = { ...updated[index], description: e.target.value }
+                                  return { ...prev, additional_expenses: updated }
+                                })
                               }}
                               placeholder="Description (e.g., Documentation fee)"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -613,9 +631,11 @@ export default function Trucks() {
                               step="0.01"
                               value={expense.amount}
                               onChange={(e) => {
-                                const updated = [...formData.additional_expenses]
-                                updated[index] = { ...updated[index], amount: e.target.value }
-                                setFormData({ ...formData, additional_expenses: updated })
+                                setFormData(prev => {
+                                  const updated = [...prev.additional_expenses]
+                                  updated[index] = { ...updated[index], amount: e.target.value }
+                                  return { ...prev, additional_expenses: updated }
+                                })
                               }}
                               placeholder="0.00"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -625,8 +645,10 @@ export default function Trucks() {
                             <button
                               type="button"
                               onClick={() => {
-                                const updated = formData.additional_expenses.filter((_, i) => i !== index)
-                                setFormData({ ...formData, additional_expenses: updated })
+                                setFormData(prev => {
+                                  const updated = prev.additional_expenses.filter((_, i) => i !== index)
+                                  return { ...prev, additional_expenses: updated }
+                                })
                               }}
                               className="w-full px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-md hover:bg-red-50"
                             >
