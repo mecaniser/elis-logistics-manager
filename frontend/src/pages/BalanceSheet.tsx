@@ -145,7 +145,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Cash</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">{formatCurrency(balanceSheet.assets.cash)}</span>
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">{formatCurrency(balanceSheet.assets.cash)}</span>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b gap-2">
                   <span className="text-gray-700 flex items-center min-w-0 flex-1">
@@ -156,7 +156,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Accounts Receivable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.accounts_receivable)}
                   </span>
                 </div>
@@ -169,7 +169,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.vehicles)}
                   </span>
                 </div>
@@ -195,7 +195,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Net Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.net_vehicles)}
                   </span>
                 </div>
@@ -221,7 +221,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Accounts Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.accounts_payable)}
                   </span>
                 </div>
@@ -234,7 +234,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Loans Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.loans_payable)}
                   </span>
                 </div>
@@ -257,7 +257,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Owner Equity</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.owner_equity)}
                   </span>
                 </div>
@@ -270,7 +270,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Retained Earnings</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.retained_earnings)}
                   </span>
                 </div>
