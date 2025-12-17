@@ -1095,7 +1095,8 @@ export default function Trucks() {
                     type="date"
                     value={formData.purchase_date}
                     onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ width: '180px' }}
                   />
                 </div>
                 <div>
@@ -1106,7 +1107,8 @@ export default function Trucks() {
                   <select
                     value={formData.depreciation_method}
                     onChange={(e) => setFormData({ ...formData, depreciation_method: e.target.value as 'MACRS_5' | 'straight_line' | 'none' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ width: '240px' }}
                   >
                     <option value="MACRS_5">MACRS 5-Year (IRS Standard)</option>
                     <option value="straight_line">Straight-Line</option>
