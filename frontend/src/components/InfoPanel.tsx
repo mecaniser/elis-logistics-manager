@@ -49,3 +49,7 @@ export default function InfoPanel({ title, content, defaultExpanded = false }: I
   )
 }
 
+
+
+
+

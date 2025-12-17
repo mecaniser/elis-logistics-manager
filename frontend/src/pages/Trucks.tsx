@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
@@ -10,6 +10,46 @@ export default function Trucks() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const navigate = useNavigate()
+
+  // Helper to format currency value for display (always 2 decimal places with comma separators when not focused)
+  const formatCurrencyDisplay = (value: string | undefined | null): string => {
+    if (!value || value === '') return ''
+    const num = parseFloat(value)
+    if (isNaN(num)) return value
+    return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  // Helper to parse currency input (remove $, commas, etc.)
+  const parseCurrency = (value: string): string => {
+    return value.replace(/[$,]/g, '').trim()
+  }
+
+  // Helper to validate numeric input (allows numbers, decimal point, empty string)
+  const isValidNumericInput = (value: string): boolean => {
+    return value === '' || /^\d*\.?\d*$/.test(value)
+  }
+
+  // Helper to measure text width for auto-resizing inputs
+  const measureTextWidth = (text: string, isAmount: boolean = false): number => {
+    // Create a temporary span element to measure actual rendered width
+    const span = document.createElement('span')
+    span.style.visibility = 'hidden'
+    span.style.position = 'absolute'
+    span.style.whiteSpace = 'pre'
+    span.style.fontSize = '14px'
+    span.style.fontFamily = window.getComputedStyle(document.body).fontFamily
+    span.style.padding = '0 12px' // Match input padding (px-3 = 12px)
+    span.textContent = text || (isAmount ? '0.00' : '')
+    document.body.appendChild(span)
+    const width = Math.ceil(span.offsetWidth)
+    document.body.removeChild(span)
+    return Math.max(isAmount ? 80 : 150, width + 10) // Add small buffer, min widths
+  }
+  
+  // Track which fields are focused to avoid formatting while typing
+  const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set())
+  // Track input widths for auto-resizing
+  const [inputWidths, setInputWidths] = useState<Record<string, number>>({})
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,11 +78,27 @@ export default function Trucks() {
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
   const [expandedPMStatus, setExpandedPMStatus] = useState<Set<number>>(new Set())
+  const [expandedFormSections, setExpandedFormSections] = useState<Set<string>>(new Set(['vehicle_info', 'investment']))
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
     message: '',
     type: 'info',
     isVisible: false
   })
+
+  // Toggle accordion section
+  const toggleSection = (section: string) => {
+    setExpandedFormSections(prev => {
+      const next = new Set(prev)
+      if (next.has(section)) {
+        next.delete(section)
+      } else {
+        next.add(section)
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     // Reset state when tenant changes
@@ -52,11 +108,11 @@ export default function Trucks() {
     loadPMStatus()
   }, [vehicleTypeFilter, currentTenant?.id])
 
-  // Calculate total_cost including additional expenses
-  useEffect(() => {
-    if (!showForm) return // Don't calculate when form is not shown
+  // Calculate total_cost including additional expenses - use useMemo for reactive calculation
+  const calculatedTotalCost = useMemo(() => {
+    if (!showForm) return ''
     
-    // Helper to safely parse numeric values (handles empty strings, null, undefined)
+    // Helper to safely parse numeric values
     const parseNumeric = (value: string | undefined | null): number => {
       if (value === undefined || value === null || value === '') return 0
       const trimmed = String(value).trim()
@@ -65,30 +121,53 @@ export default function Trucks() {
       return isNaN(parsed) ? 0 : parsed
     }
     
-    // Always recalculate from current formData values
     const cash = parseNumeric(formData.cash_investment)
     const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
     const registration = parseNumeric(formData.registration_fee)
-    
-    // Calculate additional expenses total - ensure we iterate through all expenses
     const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
       if (!exp || !exp.amount) return sum
       return sum + parseNumeric(exp.amount)
     }, 0)
     
     const total = cash + loan + registration + additionalTotal
-    const newTotalCost = total > 0 ? total.toFixed(2) : ''
-    
-    // Always update - use functional update to get latest state
-    setFormData(prev => {
-      // Force update if total_cost differs (handles empty string vs undefined)
-      const currentTotal = prev.total_cost || ''
-      if (currentTotal !== newTotalCost) {
-        return { ...prev, total_cost: newTotalCost }
-      }
-      return prev
+    return total > 0 ? total.toFixed(2) : ''
+  }, [showForm, formData.cash_investment, formData.loan_amount, formData.registration_fee, JSON.stringify(formData.additional_expenses), formData.vehicle_type])
+
+  // Sync calculatedTotalCost to formData.total_cost
+  useEffect(() => {
+    if (!showForm) return
+    if (calculatedTotalCost !== formData.total_cost) {
+      setFormData(prev => ({ ...prev, total_cost: calculatedTotalCost }))
+    }
+  }, [calculatedTotalCost, showForm])
+
+  // Initialize input widths when additional expenses are added/removed
+  useEffect(() => {
+    if (!showForm) return
+    const widths: Record<string, number> = {}
+    formData.additional_expenses.forEach((expense, index) => {
+      widths[`desc_${index}`] = measureTextWidth(expense.description || 'e.g., Documentation fee', false)
+      widths[`amt_${index}`] = measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)
     })
-  }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, JSON.stringify(formData.additional_expenses), formData.vehicle_type, showForm])
+    setInputWidths(prev => {
+      const updated = { ...prev }
+      formData.additional_expenses.forEach((_, index) => {
+        updated[`desc_${index}`] = widths[`desc_${index}`]
+        updated[`amt_${index}`] = widths[`amt_${index}`]
+      })
+      // Clean up widths for removed expenses
+      Object.keys(updated).forEach(key => {
+        const match = key.match(/^(desc|amt)_(\d+)$/)
+        if (match) {
+          const idx = parseInt(match[2])
+          if (idx >= formData.additional_expenses.length) {
+            delete updated[key]
+          }
+        }
+      })
+      return updated
+    })
+  }, [formData.additional_expenses.length, showForm])
 
   const loadPMStatus = async () => {
     try {
@@ -154,6 +233,27 @@ export default function Trucks() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsSubmitting(true)
+    setFormErrors({})
+    
+    // Validate required fields
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) {
+      errors.name = 'Vehicle name is required'
+      setExpandedFormSections(prev => new Set(prev).add('vehicle_info'))
+    }
+    if (!formData.cash_investment || parseFloat(formData.cash_investment) <= 0) {
+      errors.cash_investment = 'Cash investment must be greater than 0'
+      setExpandedFormSections(prev => new Set(prev).add('investment'))
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      setIsSubmitting(false)
+      showToast('Please fix the errors in the form', 'error')
+      return
+    }
+    
     try {
       const vehicleLabel = formData.vehicle_type === 'truck' ? 'Truck' : formData.vehicle_type === 'suv' ? 'SUV' : 'Trailer'
       
@@ -197,9 +297,8 @@ export default function Trucks() {
       if (calculatedTotal > 0) {
         investmentData.total_cost = calculatedTotal
       }
-      if (registration > 0) {
-        investmentData.registration_fee = registration
-      }
+      // Always send registration_fee explicitly (even if 0) so backend doesn't use stale value
+      investmentData.registration_fee = registration > 0 ? registration : null
       // Additional expenses
       if (formData.additional_expenses.length > 0) {
         const validExpenses = formData.additional_expenses
@@ -216,6 +315,7 @@ export default function Trucks() {
       } else {
         investmentData.additional_expenses = undefined
       }
+      
       // Interest rate is handled above with loan_amount logic
       
       // Depreciation fields
@@ -259,10 +359,24 @@ export default function Trucks() {
       setShowForm(false)
       setEditingTruck(null)
       resetForm()
+      setExpandedFormSections(new Set(['vehicle_info', 'investment']))
       loadTrucks()
     } catch (err: any) {
-      const vehicleLabel = formData.vehicle_type === 'truck' ? 'truck' : 'trailer'
-      showToast(err.response?.data?.detail || err.message || `Failed to save ${vehicleLabel}`, 'error')
+      const vehicleLabel = formData.vehicle_type === 'truck' ? 'truck' : formData.vehicle_type === 'suv' ? 'SUV' : 'trailer'
+      const errorMessage = err.response?.data?.detail || err.message || `Failed to save ${vehicleLabel}`
+      showToast(errorMessage, 'error')
+      
+      // Expand relevant sections if there are field-specific errors
+      if (err.response?.data?.detail) {
+        if (err.response.data.detail.includes('name')) {
+          setExpandedFormSections(prev => new Set(prev).add('vehicle_info'))
+        }
+        if (err.response.data.detail.includes('investment') || err.response.data.detail.includes('cost')) {
+          setExpandedFormSections(prev => new Set(prev).add('investment'))
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -285,6 +399,8 @@ export default function Trucks() {
       bonus_depreciation: '',
       additional_expenses: []
     })
+    setFormErrors({})
+    setExpandedFormSections(new Set(['vehicle_info', 'investment']))
   }
 
   const handleDelete = async () => {
@@ -323,7 +439,7 @@ export default function Trucks() {
       ((suv.cash_investment || 0) + (suv.loan_amount || 0) + (suv.registration_fee || 0))
     return sum + total
   }, 0)
-  
+
   const totalTrailersInvestment = trailersList.reduce((sum, trailer) => {
     const total = trailer.total_cost || 
       ((trailer.cash_investment || 0) + (trailer.registration_fee || 0))
@@ -435,111 +551,230 @@ export default function Trucks() {
             {editingTruck ? `Edit ${editingTruck.vehicle_type === 'truck' ? 'Truck' : editingTruck.vehicle_type === 'suv' ? 'SUV' : 'Trailer'}` : 'Add Vehicle'}
           </h2>
           <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type *</label>
+            {/* Vehicle Information Accordion */}
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('vehicle_info')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">Vehicle Information</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedFormSections.has('vehicle_info') ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedFormSections.has('vehicle_info') && (
+                <div className="p-4">
+              <div className="space-y-3">
+                {/* Vehicle Type, Name, VIN, and License Plate/Tag Number - 2 columns on medium, inline on large */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:flex lg:flex-row gap-3">
+                  <div className="w-full lg:w-32">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle Type *</label>
               <select
                 value={formData.vehicle_type}
                 onChange={(e) => {
-                  const newType = e.target.value as 'truck' | 'trailer' | 'suv'
+                        const newType = e.target.value as 'truck' | 'trailer' | 'suv'
                   setFormData({ 
                     ...formData, 
                     vehicle_type: newType,
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
-                    tag_number: (newType === 'truck' || newType === 'suv') ? '' : formData.tag_number
+                          tag_number: (newType === 'truck' || newType === 'suv') ? '' : formData.tag_number
                   })
                 }}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
                 <option value="truck">Truck</option>
-                <option value="suv">SUV</option>
+                      <option value="suv">SUV</option>
                 <option value="trailer">Trailer</option>
               </select>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <div className="w-full lg:w-[15%]">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Name *</label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, name: e.target.value })
+                        if (formErrors.name) {
+                          setFormErrors(prev => {
+                            const next = { ...prev }
+                            delete next.name
+                            return next
+                          })
+                        }
+                      }}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 text-sm ${
+                        formErrors.name 
+                          ? 'border-red-500 focus:ring-red-500' 
+                          : 'border-gray-300 focus:ring-blue-500'
+                      }`}
+                    />
+                    {formErrors.name && (
+                      <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
+                    )}
             </div>
-            {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
+                  <div className="w-full lg:w-[18%]">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">VIN</label>
+                    <input
+                      type="text"
+                      value={formData.vin}
+                      onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
+                      placeholder="Enter 17-character VIN"
+                      maxLength={17}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                  {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
+                    <div className="w-full lg:w-40">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">License Plate</label>
                 <input
                   type="text"
                   value={formData.license_plate}
                   onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
             )}
             {formData.vehicle_type === 'trailer' && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tag Number</label>
+                    <div className="w-full lg:w-40">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Tag Number</label>
                 <input
                   type="text"
                   value={formData.tag_number}
                   onChange={(e) => setFormData({ ...formData, tag_number: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
             )}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
-              <input
-                type="text"
-                value={formData.vin}
-                onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
-                placeholder="Enter 17-character VIN"
-                maxLength={17}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+                </div>
+              </div>
+                </div>
+              )}
             </div>
             
-            {/* Investment Fields */}
-            <div className="mb-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Investment Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                <div className="md:col-span-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cash Investment ($)</label>
+            {/* Investment Information Accordion */}
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('investment')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">Investment Information</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedFormSections.has('investment') ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedFormSections.has('investment') && (
+                <div className="p-4">
+              <div className="space-y-3">
+                {/* Cash Investment, Loan Amount, Interest Rate, Total Cost, Registration Fee - 2 columns on medium, inline on large */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:flex lg:flex-row gap-3">
+                  <div className="w-full lg:w-[18%]">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Cash Investment ($) *</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    value={formData.cash_investment}
-                    onChange={(e) => setFormData({ ...formData, cash_investment: e.target.value })}
+                      type="text"
+                    inputMode="decimal"
+                    value={focusedFields.has('cash_investment') ? formData.cash_investment : formatCurrencyDisplay(formData.cash_investment)}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      // Allow only numbers, decimal point, and empty string
+                      if (inputValue === '' || /^\d*\.?\d*$/.test(inputValue)) {
+                        const value = parseCurrency(inputValue)
+                        // Prevent negative values
+                        if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          setFormData({ ...formData, cash_investment: value })
+                          if (formErrors.cash_investment) {
+                            setFormErrors(prev => {
+                              const next = { ...prev }
+                              delete next.cash_investment
+                              return next
+                            })
+                          }
+                        }
+                      }
+                    }}
+                    onFocus={() => setFocusedFields(prev => new Set(prev).add('cash_investment'))}
+                    onBlur={(e) => {
+                      // Format to 2 decimal places on blur
+                      const value = parseCurrency(e.target.value)
+                      if (value && !isNaN(parseFloat(value))) {
+                        const formatted = parseFloat(value).toFixed(2)
+                        setFormData({ ...formData, cash_investment: formatted })
+                      }
+                      setFocusedFields(prev => {
+                        const next = new Set(prev)
+                        next.delete('cash_investment')
+                        return next
+                      })
+                    }}
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 text-sm ${
+                      formErrors.cash_investment 
+                        ? 'border-red-500 focus:ring-red-500' 
+                        : 'border-gray-300 focus:ring-blue-500'
+                    }`}
                   />
+                  {formErrors.cash_investment && (
+                    <p className="mt-1 text-xs text-red-600">{formErrors.cash_investment}</p>
+                  )}
                 </div>
-                {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
+                  {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
                   <>
-                    <div className="md:col-span-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount ($)</label>
+                      <div className="w-full lg:w-[18%]">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Loan Amount ($)</label>
                       <input
-                        type="number"
-                        step="0.01"
-                        value={formData.loan_amount}
+                          type="text"
+                        inputMode="decimal"
+                        value={focusedFields.has('loan_amount') ? formData.loan_amount : formatCurrencyDisplay(formData.loan_amount)}
                         onChange={(e) => {
-                          const loanValue = e.target.value
-                          // If loan amount is cleared/zero, clear interest rate as well
-                          if (!loanValue || parseFloat(loanValue) === 0) {
-                            setFormData({ ...formData, loan_amount: loanValue, interest_rate: '' })
-                          } else {
-                            setFormData({ ...formData, loan_amount: loanValue })
+                          const inputValue = e.target.value
+                          if (isValidNumericInput(inputValue)) {
+                            const loanValue = parseCurrency(inputValue)
+                            // Prevent negative values
+                            if (loanValue === '' || parseFloat(loanValue) >= 0 || isNaN(parseFloat(loanValue))) {
+                              // If loan amount is cleared/zero, clear interest rate as well
+                              if (!loanValue || parseFloat(loanValue) === 0) {
+                                setFormData({ ...formData, loan_amount: loanValue, interest_rate: '' })
+                              } else {
+                                setFormData({ ...formData, loan_amount: loanValue })
+                              }
+                            }
                           }
                         }}
+                        onFocus={() => setFocusedFields(prev => new Set(prev).add('loan_amount'))}
+                        onBlur={(e) => {
+                          // Format to 2 decimal places on blur
+                          const value = parseCurrency(e.target.value)
+                          if (value && !isNaN(parseFloat(value))) {
+                            const formatted = parseFloat(value).toFixed(2)
+                            setFormData({ ...formData, loan_amount: formatted })
+                          }
+                          setFocusedFields(prev => {
+                            const next = new Set(prev)
+                            next.delete('loan_amount')
+                            return next
+                          })
+                        }}
                         placeholder="0.00"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                       />
                     </div>
-                    {formData.loan_amount && parseFloat(formData.loan_amount) > 0 && (
-                      <div className="md:col-span-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-sm font-medium text-gray-700">Interest Rate (%)</label>
+                      {formData.loan_amount && parseFloat(formData.loan_amount) > 0 && (
+                        <div className="w-full lg:w-[12%]">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-medium text-gray-500">Interest Rate (%)</label>
                           {formData.interest_rate && formData.interest_rate !== '' && (
                             <button
                               type="button"
@@ -551,62 +786,106 @@ export default function Trucks() {
                             </button>
                           )}
                         </div>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="100"
+                      <input
+                          type="text"
+                          inputMode="decimal"
                           value={formData.interest_rate ? (parseFloat(formData.interest_rate) * 100).toFixed(2) : ''}
-                          onChange={(e) => {
-                            const value = e.target.value
-                            if (value === '') {
-                              setFormData({ ...formData, interest_rate: '' })
-                            } else {
-                              const percentValue = parseFloat(value) || 0
-                              const decimalValue = (percentValue / 100).toFixed(4)
-                              setFormData({ ...formData, interest_rate: decimalValue })
+                        onChange={(e) => {
+                            const inputValue = e.target.value
+                            if (isValidNumericInput(inputValue)) {
+                              const value = parseCurrency(inputValue)
+                              if (value === '') {
+                                setFormData({ ...formData, interest_rate: '' })
+                              } else {
+                                const percentValue = parseFloat(value) || 0
+                                if (percentValue >= 0 && percentValue <= 100) {
+                          const decimalValue = (percentValue / 100).toFixed(4)
+                          setFormData({ ...formData, interest_rate: decimalValue })
+                                }
+                              }
                             }
-                          }}
-                          placeholder="7.00"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Annual interest rate (e.g., 7.00 for 7%). Leave empty to remove.</p>
-                      </div>
-                    )}
+                        }}
+                        placeholder="7.00"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                      />
+                    </div>
+                      )}
                   </>
                 )}
-                <div className={formData.vehicle_type === 'truck' ? 'md:col-span-3' : 'md:col-span-6'}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Cost ($)</label>
-                  <input
-                    type="text"
-                    value={formData.total_cost}
-                    readOnly
-                    placeholder="Auto-calculated"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv'
-                      ? 'Cash + Loan + Registration + Additional Expenses'
-                      : 'Cash + Registration + Additional Expenses'}
-                  </p>
-                </div>
-                <div className={formData.vehicle_type === 'truck' ? 'md:col-span-3' : 'md:col-span-6'}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Registration Fee ($)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.registration_fee}
+                  <div className="w-full lg:w-[18%]">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Registration Fee ($)</label>
+                    <input
+                      type="text"
+                    inputMode="decimal"
+                    value={focusedFields.has('registration_fee') ? formData.registration_fee : formatCurrencyDisplay(formData.registration_fee)}
                     onChange={(e) => {
-                      const newValue = e.target.value
-                      setFormData(prev => ({ ...prev, registration_fee: newValue }))
+                      const inputValue = e.target.value
+                      if (isValidNumericInput(inputValue)) {
+                        const newValue = parseCurrency(inputValue)
+                        // Prevent negative values
+                        if (newValue === '' || parseFloat(newValue) >= 0 || isNaN(parseFloat(newValue))) {
+                          setFormData(prev => ({ ...prev, registration_fee: newValue }))
+                        }
+                      }
+                    }}
+                    onFocus={() => setFocusedFields(prev => new Set(prev).add('registration_fee'))}
+                    onBlur={(e) => {
+                      // Format to 2 decimal places on blur
+                      const value = parseCurrency(e.target.value)
+                      if (value && !isNaN(parseFloat(value))) {
+                        const formatted = parseFloat(value).toFixed(2)
+                        setFormData(prev => ({ ...prev, registration_fee: formatted }))
+                      }
+                      setFocusedFields(prev => {
+                        const next = new Set(prev)
+                        next.delete('registration_fee')
+                        return next
+                      })
                     }}
                     placeholder="0.00"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
+                  </div>
+                  <div className="w-full lg:w-[18%]">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Total Cost ($)</label>
+                  <input
+                    type="text"
+                    value={calculatedTotalCost ? parseFloat(calculatedTotalCost).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
+                    readOnly
+                    placeholder="Auto-calculated"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed text-sm"
+                  />
+                  </div>
                 </div>
-                
-                {/* Additional Expenses Section */}
-                <div className="md:col-span-12 border-t pt-4">
+                <p className="text-xs text-gray-500">
+                  {formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv'
+                    ? 'Total Cost = Cash + Loan + Registration + Additional Expenses'
+                    : 'Total Cost = Cash + Registration + Additional Expenses'}
+                  </p>
+                </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Additional Expenses Accordion */}
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('additional_expenses')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">Additional Investment Expenses</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedFormSections.has('additional_expenses') ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedFormSections.has('additional_expenses') && (
+                <div className="p-4">
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-medium text-gray-700">Additional Investment Expenses</label>
                     <button
@@ -623,53 +902,115 @@ export default function Trucks() {
                     </button>
                   </div>
                   {formData.additional_expenses.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {formData.additional_expenses.map((expense, index) => (
-                        <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
-                          <div className="md:col-span-5">
-                            <input
-                              type="text"
-                              value={expense.description}
-                              onChange={(e) => {
-                                setFormData(prev => {
-                                  const updated = [...prev.additional_expenses]
-                                  updated[index] = { ...updated[index], description: e.target.value }
-                                  return { ...prev, additional_expenses: updated }
-                                })
-                              }}
-                              placeholder="Description (e.g., Documentation fee)"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
-                          <div className="md:col-span-4">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={expense.amount}
-                              onChange={(e) => {
-                                setFormData(prev => {
-                                  const updated = [...prev.additional_expenses]
-                                  updated[index] = { ...updated[index], amount: e.target.value }
-                                  return { ...prev, additional_expenses: updated }
-                                })
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                          </div>
-                          <div className="md:col-span-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFormData(prev => {
-                                  const updated = prev.additional_expenses.filter((_, i) => i !== index)
-                                  return { ...prev, additional_expenses: updated }
-                                })
-                              }}
-                              className="w-full px-3 py-2 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-md hover:bg-red-50"
-                            >
-                              Remove
-                            </button>
+                        <div key={index} className="relative bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                          {/* X button in top-right corner */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => {
+                                const updated = prev.additional_expenses.filter((_, i) => i !== index)
+                                return { ...prev, additional_expenses: updated }
+                              })
+                            }}
+                            className="absolute top-2 right-2 text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                            title="Remove expense"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                          
+                          {/* Description and Amount inline */}
+                          <div className="flex gap-2 pr-6 items-start">
+                            {/* Description input */}
+                            <div className="flex-1 min-w-0">
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                              <input
+                                type="text"
+                                value={expense.description}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  const width = measureTextWidth(value || e.target.placeholder || '', false)
+                                  setInputWidths(prev => ({ ...prev, [`desc_${index}`]: width }))
+                                  setFormData(prev => {
+                                    const updated = [...prev.additional_expenses]
+                                    updated[index] = { ...updated[index], description: value }
+                                    return { ...prev, additional_expenses: updated }
+                                  })
+                                }}
+                                onFocus={(e) => {
+                                  const width = measureTextWidth(e.target.value || e.target.placeholder || '', false)
+                                  setInputWidths(prev => ({ ...prev, [`desc_${index}`]: width }))
+                                }}
+                                placeholder="e.g., Documentation fee"
+                                style={{ 
+                                  width: `${inputWidths[`desc_${index}`] || measureTextWidth(expense.description || 'e.g., Documentation fee', false)}px`,
+                                  minWidth: '150px',
+                                  maxWidth: '100%'
+                                }}
+                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                            </div>
+                            
+                            {/* Amount input */}
+                            <div className="flex-shrink-0">
+                              <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={focusedFields.has(`additional_expense_${index}`) ? expense.amount : formatCurrencyDisplay(expense.amount)}
+                                onChange={(e) => {
+                                  const inputValue = e.target.value
+                                  if (isValidNumericInput(inputValue)) {
+                                    const newAmount = parseCurrency(inputValue)
+                                    // Prevent negative values
+                                    if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
+                                      const displayValue = focusedFields.has(`additional_expense_${index}`) ? newAmount : formatCurrencyDisplay(newAmount)
+                                      const width = measureTextWidth(displayValue || '0.00', true)
+                                      setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
+                                      setFormData(prev => {
+                                        const updated = [...prev.additional_expenses]
+                                        updated[index] = { ...updated[index], amount: newAmount }
+                                        return { ...prev, additional_expenses: updated }
+                                      })
+                                    }
+                                  }
+                                }}
+                                onFocus={(e) => {
+                                  setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))
+                                  const width = measureTextWidth(e.target.value || '0.00', true)
+                                  setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
+                                }}
+                                onBlur={(e) => {
+                                  // Format to 2 decimal places on blur
+                                  const value = parseCurrency(e.target.value)
+                                  if (value && !isNaN(parseFloat(value))) {
+                                    const formatted = parseFloat(value).toFixed(2)
+                                    const displayValue = formatCurrencyDisplay(formatted)
+                                    const width = measureTextWidth(displayValue, true)
+                                    setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
+                                    setFormData(prev => {
+                                      const updated = [...prev.additional_expenses]
+                                      updated[index] = { ...updated[index], amount: formatted }
+                                      return { ...prev, additional_expenses: updated }
+                                    })
+                                  }
+                                  setFocusedFields(prev => {
+                                    const next = new Set(prev)
+                                    next.delete(`additional_expense_${index}`)
+                                    return next
+                                  })
+                                }}
+                                placeholder="0.00"
+                                style={{ 
+                                  width: `${inputWidths[`amt_${index}`] || measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)}px`,
+                                  minWidth: '80px'
+                                }}
+                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                              />
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -677,12 +1018,28 @@ export default function Trucks() {
                   )}
                   <p className="text-xs text-gray-500 mt-2">Add any additional fees or expenses paid when purchasing the vehicle (e.g., documentation fees, inspection fees, etc.)</p>
                 </div>
-              </div>
+              )}
             </div>
             
-            {/* Depreciation Fields */}
-            <div className="mb-4 border-t pt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Depreciation Settings</h3>
+            {/* Depreciation Settings Accordion */}
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('depreciation')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">Depreciation Settings</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedFormSections.has('depreciation') ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedFormSections.has('depreciation') && (
+                <div className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
@@ -706,14 +1063,37 @@ export default function Trucks() {
                     <option value="none">None</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">Method for calculating depreciation</p>
-                </div>
+              </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cost Basis ($)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    value={formData.cost_basis}
-                    onChange={(e) => setFormData({ ...formData, cost_basis: e.target.value })}
+                    type="text"
+                    inputMode="decimal"
+                    value={focusedFields.has('cost_basis') ? formData.cost_basis : formatCurrencyDisplay(formData.cost_basis)}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      if (isValidNumericInput(inputValue)) {
+                        const value = parseCurrency(inputValue)
+                        // Prevent negative values
+                        if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          setFormData({ ...formData, cost_basis: value })
+                        }
+                      }
+                    }}
+                    onFocus={() => setFocusedFields(prev => new Set(prev).add('cost_basis'))}
+                    onBlur={(e) => {
+                      // Format to 2 decimal places on blur
+                      const value = parseCurrency(e.target.value)
+                      if (value && !isNaN(parseFloat(value))) {
+                        const formatted = parseFloat(value).toFixed(2)
+                        setFormData({ ...formData, cost_basis: formatted })
+                      }
+                      setFocusedFields(prev => {
+                        const next = new Set(prev)
+                        next.delete('cost_basis')
+                        return next
+                      })
+                    }}
                     placeholder="Auto-calculated from total cost"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -722,10 +1102,33 @@ export default function Trucks() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Section 179 Deduction ($)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    value={formData.section_179_deduction}
-                    onChange={(e) => setFormData({ ...formData, section_179_deduction: e.target.value })}
+                    type="text"
+                    inputMode="decimal"
+                    value={focusedFields.has('section_179_deduction') ? formData.section_179_deduction : formatCurrencyDisplay(formData.section_179_deduction)}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      if (isValidNumericInput(inputValue)) {
+                        const value = parseCurrency(inputValue)
+                        // Prevent negative values
+                        if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          setFormData({ ...formData, section_179_deduction: value })
+                        }
+                      }
+                    }}
+                    onFocus={() => setFocusedFields(prev => new Set(prev).add('section_179_deduction'))}
+                    onBlur={(e) => {
+                      // Format to 2 decimal places on blur
+                      const value = parseCurrency(e.target.value)
+                      if (value && !isNaN(parseFloat(value))) {
+                        const formatted = parseFloat(value).toFixed(2)
+                        setFormData({ ...formData, section_179_deduction: formatted })
+                      }
+                      setFocusedFields(prev => {
+                        const next = new Set(prev)
+                        next.delete('section_179_deduction')
+                        return next
+                      })
+                    }}
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -734,23 +1137,55 @@ export default function Trucks() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Bonus Depreciation (%)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    value={formData.bonus_depreciation}
-                    onChange={(e) => setFormData({ ...formData, bonus_depreciation: e.target.value })}
+                    type="text"
+                    inputMode="decimal"
+                    value={focusedFields.has('bonus_depreciation') ? formData.bonus_depreciation : formatCurrencyDisplay(formData.bonus_depreciation)}
+                    onChange={(e) => {
+                      const inputValue = e.target.value
+                      if (isValidNumericInput(inputValue)) {
+                        const value = parseCurrency(inputValue)
+                        // Prevent negative values
+                        if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                          setFormData({ ...formData, bonus_depreciation: value })
+                        }
+                      }
+                    }}
+                    onFocus={() => setFocusedFields(prev => new Set(prev).add('bonus_depreciation'))}
+                    onBlur={(e) => {
+                      // Format to 2 decimal places on blur
+                      const value = parseCurrency(e.target.value)
+                      if (value && !isNaN(parseFloat(value))) {
+                        const formatted = parseFloat(value).toFixed(2)
+                        setFormData({ ...formData, bonus_depreciation: formatted })
+                      }
+                      setFocusedFields(prev => {
+                        const next = new Set(prev)
+                        next.delete('bonus_depreciation')
+                        return next
+                      })
+                    }}
                     placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <p className="text-xs text-gray-500 mt-1">Bonus depreciation percentage (e.g., 100 for 100%)</p>
                 </div>
               </div>
+                </div>
+              )}
             </div>
             
             <div className="flex gap-3">
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                {isSubmitting && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
                 {editingTruck ? 'Update' : 'Create'}
               </button>
               <button
@@ -979,7 +1414,7 @@ export default function Trucks() {
                         )
                       })()}
                     </div>
-                    <div className="flex gap-2">
+                    <div className={`flex ${isMobile ? 'flex-col' : ''} gap-2 ml-4`}>
                       <button
                         onClick={() => navigate(`/vehicles/${truck.id}`)}
                         className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition-colors flex items-center justify-center`}
@@ -1019,6 +1454,7 @@ export default function Trucks() {
                             })) || []
                           })
                           setShowForm(true)
+                          setExpandedFormSections(new Set(['vehicle_info', 'investment']))
                         }}
                         className={`${isMobile ? 'p-2' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
                         title="Edit"
@@ -1057,7 +1493,7 @@ export default function Trucks() {
       )}
 
       {/* SUVs Section */}
-      {vehicleTypeFilter !== 'truck' && vehicleTypeFilter !== 'trailer' && suvsList.length > 0 && (
+      {(vehicleTypeFilter === 'all' || vehicleTypeFilter === 'suv') && suvsList.length > 0 && (
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-3 text-gray-900">SUVs</h2>
           <div className="bg-white shadow overflow-hidden sm:rounded-md">
