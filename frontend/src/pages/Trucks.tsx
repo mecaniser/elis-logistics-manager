@@ -157,32 +157,48 @@ export default function Trucks() {
     try {
       const vehicleLabel = formData.vehicle_type === 'truck' ? 'Truck' : formData.vehicle_type === 'suv' ? 'SUV' : 'Trailer'
       
+      // Helper to safely parse numeric values
+      const parseNumeric = (value: string | undefined | null): number => {
+        if (value === undefined || value === null || value === '') return 0
+        const trimmed = String(value).trim()
+        if (trimmed === '') return 0
+        const parsed = parseFloat(trimmed)
+        return isNaN(parsed) ? 0 : parsed
+      }
+      
       const investmentData: any = {}
-      if (formData.cash_investment) {
-        investmentData.cash_investment = parseFloat(formData.cash_investment)
+      const cash = parseNumeric(formData.cash_investment)
+      const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
+      const registration = parseNumeric(formData.registration_fee)
+      
+      // Calculate additional expenses total
+      const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
+        if (!exp || !exp.amount) return sum
+        return sum + parseNumeric(exp.amount)
+      }, 0)
+      
+      // Calculate total_cost on the fly to ensure it's always correct
+      const calculatedTotal = cash + loan + registration + additionalTotal
+      
+      if (cash > 0) {
+        investmentData.cash_investment = cash
       }
       if (formData.vehicle_type === 'trailer') {
         investmentData.loan_amount = null
         investmentData.interest_rate = undefined
       } else if (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') {
-        if (formData.loan_amount) {
-          const loanAmount = parseFloat(formData.loan_amount)
-          if (loanAmount > 0) {
-            investmentData.loan_amount = loanAmount
-          } else {
-            investmentData.loan_amount = null
-            investmentData.interest_rate = undefined
-          }
+        if (loan > 0) {
+          investmentData.loan_amount = loan
         } else {
           investmentData.loan_amount = null
           investmentData.interest_rate = undefined
         }
       }
-      if (formData.total_cost) {
-        investmentData.total_cost = parseFloat(formData.total_cost)
+      if (calculatedTotal > 0) {
+        investmentData.total_cost = calculatedTotal
       }
-      if (formData.registration_fee) {
-        investmentData.registration_fee = parseFloat(formData.registration_fee)
+      if (registration > 0) {
+        investmentData.registration_fee = registration
       }
       // Additional expenses
       if (formData.additional_expenses.length > 0) {
@@ -190,7 +206,7 @@ export default function Trucks() {
           .filter(exp => exp.description.trim() && exp.amount)
           .map(exp => ({
             description: exp.description.trim(),
-            amount: parseFloat(exp.amount)
+            amount: parseNumeric(exp.amount)
           }))
         if (validExpenses.length > 0) {
           investmentData.additional_expenses = validExpenses
