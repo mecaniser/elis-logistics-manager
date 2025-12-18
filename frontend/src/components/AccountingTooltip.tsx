@@ -35,7 +35,7 @@ export default function AccountingTooltip({ term, description, children }: Accou
         </svg>
       </button>
       {showTooltip && (
-        <div className="absolute z-50 w-64 p-3 mt-2 text-xs text-gray-700 bg-white border border-gray-200 rounded-lg shadow-lg left-0 top-full">
+        <div className="absolute z-50 w-64 p-3 mb-2 text-xs text-gray-700 bg-white border border-gray-200 rounded-lg shadow-lg left-0 bottom-full">
           <div className="font-semibold text-gray-900 mb-1">{term}</div>
           <div className="text-gray-600">{description}</div>
         </div>

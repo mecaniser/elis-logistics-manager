@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { accountingApi, IncomeStatement as IncomeStatementType, trucksApi, Truck } from '../services/api'
+import { accountingApi, IncomeStatement as IncomeStatementType } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
@@ -29,8 +29,6 @@ export default function IncomeStatement() {
   const [incomeStatement, setIncomeStatement] = useState<IncomeStatementType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [trucks, setTrucks] = useState<Truck[]>([])
-  const [selectedTruckId, setSelectedTruckId] = useState<number | null>(null)
   
   // Default to current month
   const today = new Date()
@@ -39,34 +37,13 @@ export default function IncomeStatement() {
   
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(lastDay.toISOString().split('T')[0])
-  
-  const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
-  
-  // Load trucks for logistics businesses
-  useEffect(() => {
-    if (currentTenant?.business_type === 'logistics') {
-      loadTrucks()
-    } else {
-      setTrucks([])
-      setSelectedTruckId(null)
-    }
-  }, [currentTenant?.id, currentTenant?.business_type])
-  
-  const loadTrucks = async () => {
-    try {
-      const response = await trucksApi.getAll()
-      setTrucks(response.data)
-    } catch (err) {
-      console.error('Failed to load trucks:', err)
-    }
-  }
 
   useEffect(() => {
     if (startDate && endDate) {
       setIncomeStatement(null)
       loadIncomeStatement()
     }
-  }, [startDate, endDate, selectedTruckId, currentTenant?.id])
+  }, [startDate, endDate, currentTenant?.id])
 
   const loadIncomeStatement = async () => {
     if (!startDate || !endDate) return
@@ -74,18 +51,9 @@ export default function IncomeStatement() {
     try {
       setLoading(true)
       setError(null)
-      // For LS Logistics, truck_id is required
-      const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
-      if (isLSLogistics && !selectedTruckId) {
-        setError('Please select a vehicle to view the income statement')
-        setLoading(false)
-        return
-      }
-      const truckId = isLSLogistics ? (selectedTruckId ?? undefined) : (selectedTruckId ?? undefined)
       const response = await accountingApi.getIncomeStatement(
         startDate, 
-        endDate, 
-        truckId
+        endDate
       )
       setIncomeStatement(response.data)
     } catch (err: any) {
@@ -157,63 +125,85 @@ export default function IncomeStatement() {
     )
   }
 
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    if (!startDate || !endDate) {
+      alert('Please select start and end dates')
+      return
+    }
+    try {
+      const response = await accountingApi.exportIncomeStatement(format, startDate, endDate)
+      const blob = new Blob([response.data], { 
+        type: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf' 
+      })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `income_statement_${startDate}_${endDate}.${format === 'excel' ? 'xlsx' : 'pdf'}`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (err: any) {
+      console.error('Export failed:', err)
+      alert('Failed to export income statement')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-          <span className="block sm:inline">Income Statement</span>
-          {selectedTruckId && trucks.find(t => t.id === selectedTruckId) && (
-            <span className="block sm:inline sm:ml-2 text-base sm:text-lg font-normal text-gray-600">
-              - {trucks.find(t => t.id === selectedTruckId)?.name}
-            </span>
-          )}
-        </h1>
-        <div className="flex flex-col gap-3">
-          {/* Vehicle Selector */}
-          {currentTenant?.business_type === 'logistics' && trucks.length > 0 && (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Vehicle:
-              </label>
-              <select
-                value={selectedTruckId || ''}
-                onChange={(e) => setSelectedTruckId(e.target.value ? parseInt(e.target.value) : null)}
-                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-md text-sm min-w-0"
-                required={isLSLogistics}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Income Statement
+          </h1>
+          {incomeStatement && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleExport('pdf')}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm flex items-center gap-2"
               >
-                {!isLSLogistics && <option value="">All Vehicles</option>}
-                {isLSLogistics && <option value="">Select Vehicle</option>}
-                {trucks.map((truck) => (
-                  <option key={truck.id} value={truck.id}>
-                    {truck.name} ({truck.vehicle_type})
-                  </option>
-                ))}
-              </select>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export PDF
+              </button>
+              <button
+                onClick={() => handleExport('excel')}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export Excel
+              </button>
             </div>
           )}
-          {/* Quick Date Selection Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setDateRange('1month')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
-            >
-              1 Month
-            </button>
-            <button
-              onClick={() => setDateRange('3months')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
-            >
-              3 Months
-            </button>
-            <button
-              onClick={() => setDateRange('1year')}
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
-            >
-              1 Year
-            </button>
-          </div>
-          {/* Custom Date Inputs */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+        </div>
+        <div className="flex flex-col gap-3">
+          {/* Quick Date Selection Buttons and Custom Date Inputs */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+            {/* Quick Date Selection Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setDateRange('1month')}
+                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
+              >
+                1 Month
+              </button>
+              <button
+                onClick={() => setDateRange('3months')}
+                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
+              >
+                3 Months
+              </button>
+              <button
+                onClick={() => setDateRange('1year')}
+                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors whitespace-nowrap"
+              >
+                1 Year
+              </button>
+            </div>
+            {/* Custom Date Inputs */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
               <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Start:
@@ -277,15 +267,6 @@ export default function IncomeStatement() {
             <p>
               <strong>Why it matters:</strong> The income statement helps you track profitability over time, identify which expenses are highest, and make informed decisions about pricing, cost-cutting, or expansion. It's essential for tax preparation and showing investors how your business performs.
             </p>
-            {currentTenant?.business_type === 'logistics' && (
-              <p className="mt-2 pt-2 border-t border-blue-300">
-                {isLSLogistics ? (
-                  <span><strong>Note:</strong> For LS Logistics, each vehicle has its own separate income statement. Select a vehicle above to view its financial performance.</span>
-                ) : (
-                  <span><strong>Tip:</strong> You can filter by individual vehicle to see which vehicles are most profitable!</span>
-                )}
-              </p>
-            )}
           </div>
         }
       />
@@ -307,7 +288,7 @@ export default function IncomeStatement() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue</h3>
               <div className="space-y-2">
                 <div className="flex justify-between items-center py-2 border-b gap-2">
-                  <span className="text-gray-700 flex items-center min-w-0 flex-1">
+                  <span className="text-gray-900 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
                       term="Operating Revenue"
                       description="Total money earned from your business operations (e.g., settlements from completed loads). This is your 'top line' - all income before expenses."
@@ -319,8 +300,8 @@ export default function IncomeStatement() {
                       </span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium whitespace-nowrap flex-shrink-0">
-                    {formatCurrency(incomeStatement.revenue.total)}
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
+                    {formatCurrency(Object.values(incomeStatement.revenue).reduce((sum, val) => sum + (val || 0), 0))}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 mt-4 border-t-2 border-gray-400">
@@ -333,7 +314,7 @@ export default function IncomeStatement() {
                     </AccountingTooltip>
                   </span>
                   <span className="text-lg font-semibold text-gray-900">
-                    {formatCurrency(incomeStatement.revenue.total)}
+                    {formatCurrency(incomeStatement.total_revenue)}
                   </span>
                 </div>
               </div>
@@ -350,7 +331,7 @@ export default function IncomeStatement() {
                     const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
                     return (
                       <div key={name} className="flex justify-between items-center py-2 border-b gap-2">
-                        <span className="text-gray-700 flex items-center min-w-0 flex-1">
+                        <span className="text-gray-900 flex items-center min-w-0 flex-1">
                           <AccountingTooltip
                             term={displayName}
                             description={getExpenseDescription(name)}
@@ -358,12 +339,17 @@ export default function IncomeStatement() {
                             <span className="truncate">{displayName}</span>
                           </AccountingTooltip>
                         </span>
-                        <span className="font-medium text-red-600 whitespace-nowrap flex-shrink-0">
+                        <span className="font-medium text-sm text-red-600 whitespace-nowrap flex-shrink-0">
                           {formatCurrency(amount)}
                         </span>
                       </div>
                     )
                   })}
+                {Object.entries(incomeStatement.expenses).filter(([, amount]) => amount > 0).length === 0 && (
+                  <div className="py-2 text-gray-500 text-sm">
+                    No expenses recorded for this period.
+                  </div>
+                )}
                 <div className="flex justify-between items-center py-2 mt-4 border-t-2 border-gray-400 gap-2">
                   <span className="text-lg font-semibold text-gray-900 flex items-center min-w-0 flex-1">
                     <AccountingTooltip
