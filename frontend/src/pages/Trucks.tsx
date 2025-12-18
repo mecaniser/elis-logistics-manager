@@ -1430,24 +1430,6 @@ export default function Trucks() {
                           History: {truck.license_plate_history.join(', ')}
                         </p>
                       )}
-                      {/* Hide investment details on mobile */}
-                      {!isMobile && (truck.cash_investment || truck.total_cost || truck.registration_fee) && (
-                        <div className="mt-2 text-xs text-gray-600">
-                          <span className="font-medium">Investment: </span>
-                          {truck.cash_investment && (
-                            <span>Cash: ${truck.cash_investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                          {truck.loan_amount && truck.loan_amount > 0 && (
-                            <span className="ml-2">Loan: ${truck.loan_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                          {truck.registration_fee && (
-                            <span className="ml-2">Registration: ${truck.registration_fee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                          {truck.total_cost && (
-                            <span className="ml-2">Total: ${truck.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                        </div>
-                      )}
                       {/* PM Status - Expandable on mobile */}
                       {(() => {
                         const truckPM = pmStatus.find(pm => pm.truck_id === truck.id)
@@ -1717,18 +1699,11 @@ export default function Trucks() {
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 flex items-center text-sm text-gray-500">
-                        {suv.total_cost && (
-                          <span className="mr-4">
-                            Total Cost: ${parseFloat(suv.total_cost.toString()).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                        {suv.purchase_date && (
-                          <span>
-                            Purchased: {new Date(suv.purchase_date).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
+                      {suv.purchase_date && (
+                        <p className="mt-1 text-sm text-gray-500">
+                          Purchased: {new Date(suv.purchase_date).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                     <div className={`flex ${isMobile ? 'flex-col gap-1' : 'gap-2'} ml-4 flex-shrink-0`}>
                       <button
@@ -1821,21 +1796,6 @@ export default function Trucks() {
                       {trailer.vin && <p className="text-sm text-gray-500">VIN: {trailer.vin}</p>}
                       {trailer.tag_number && (
                         <p className="text-sm text-gray-500">Tag Number: {trailer.tag_number}</p>
-                      )}
-                      {/* Hide investment details on mobile */}
-                      {!isMobile && (trailer.cash_investment || trailer.total_cost || trailer.registration_fee) && (
-                        <div className="mt-2 text-xs text-gray-600">
-                          <span className="font-medium">Investment: </span>
-                          {trailer.cash_investment && (
-                            <span>Cash: ${trailer.cash_investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                          {trailer.registration_fee && (
-                            <span className="ml-2">Registration: ${trailer.registration_fee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                          {trailer.total_cost && (
-                            <span className="ml-2">Total: ${trailer.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          )}
-                        </div>
                       )}
                     </div>
                     <div className={`flex ${isMobile ? 'flex-col gap-1' : 'gap-2'} flex-shrink-0`}>
