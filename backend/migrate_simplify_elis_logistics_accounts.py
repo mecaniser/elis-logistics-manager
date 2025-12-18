@@ -23,8 +23,7 @@ from app.models.tenant import Tenant
 from app.models.chart_of_accounts import ChartOfAccount
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
-from app.services.accounting_service import uses_per_asset_accounting
-from app.services.accounting_service_minimal import get_or_create_account_minimal
+from app.services.accounting_service import uses_per_asset_accounting, get_or_create_account
 
 def migrate():
     """Simplify accounts for Elis Logistics LLC"""
@@ -93,7 +92,7 @@ def migrate():
         
         created_count = 0
         for code, name, account_type in minimal_accounts:
-            account = get_or_create_account_minimal(db, code, name, account_type, elis_tenant.id, truck_id=None)
+            account = get_or_create_account(db, code, name, account_type, elis_tenant.id, parent_id=None, truck_id=None)
             if account.truck_id is None:  # Only count if it's correctly set
                 created_count += 1
         

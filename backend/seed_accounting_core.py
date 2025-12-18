@@ -15,7 +15,7 @@ from app.models.tenant import Tenant
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
 from app.models.chart_of_accounts import ChartOfAccount
-from app.services.accounting_service_minimal import initialize_minimal_logistics_accounts
+from app.services.accounting_service import initialize_minimal_logistics_accounts
 
 def seed():
     """Create test tenant and journal entry"""

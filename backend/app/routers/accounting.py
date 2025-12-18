@@ -54,7 +54,7 @@ def initialize_chart_of_accounts(db: Session = Depends(get_db), tenant_id: int =
     Returns 409 if accounts already exist.
     """
     from app.models.tenant import Tenant
-    from app.services.accounting_service_minimal import initialize_minimal_logistics_accounts
+    from app.services.accounting_service import initialize_minimal_logistics_accounts
     
     # Verify tenant exists and is LOGISTICS type
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()

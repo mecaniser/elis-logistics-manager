@@ -117,6 +117,58 @@ def ensure_standard_accounts_exist(db: Session, tenant_id: int, truck_id: Option
     get_or_create_account(db, "2000", "Accounts Payable", "Liability", tenant_id, truck_id=truck_id)
     get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=truck_id)
     get_or_create_account(db, "2200", "Accrued Expenses", "Liability", tenant_id, truck_id=truck_id)
+
+
+def initialize_minimal_logistics_accounts(db: Session, tenant_id: int) -> list[ChartOfAccount]:
+    """
+    Initialize minimal Logistics Chart of Accounts for Elis Logistics.
+    Simplified to only include accounts actually needed:
+    - Settlement income (net profit from truck leases)
+    - Trailer rental income
+    - Maintenance & repairs (truck repairs you pay)
+    - Trailer expenses (parking, repairs)
+    - Interest expense (loan interest)
+    - Depreciation and Section 179
+    
+    All accounts are shared (truck_id = NULL) - no per-asset accounting.
+    Returns list of created accounts.
+    Raises ValueError if accounts already exist.
+    """
+    # Check if accounts already exist (only check for accounts without truck_id)
+    existing_count = db.query(ChartOfAccount).filter(
+        ChartOfAccount.tenant_id == tenant_id,
+        ChartOfAccount.truck_id.is_(None)
+    ).count()
+    if existing_count > 0:
+        raise ValueError("Chart already initialized. Use reset if needed.")
+    
+    accounts = []
+    
+    # ASSET accounts
+    accounts.append(get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "1500", "Vehicles & Equipment", "Asset", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "1600", "Accumulated Depreciation - Vehicles", "Asset", tenant_id, parent_id=None, truck_id=None))
+    
+    # LIABILITY accounts
+    accounts.append(get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "2200", "Taxes Payable", "Liability", tenant_id, parent_id=None, truck_id=None))
+    
+    # EQUITY accounts
+    accounts.append(get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "3100", "Retained Earnings", "Equity", tenant_id, parent_id=None, truck_id=None))
+    
+    # REVENUE accounts
+    accounts.append(get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "4100", "Trailer Rental Income", "Revenue", tenant_id, parent_id=None, truck_id=None))
+    
+    # EXPENSE accounts
+    accounts.append(get_or_create_account(db, "5100", "Maintenance & Repairs", "Expense", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "5200", "Trailer Expenses", "Expense", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "5300", "Interest Expense", "Expense", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "5400", "Depreciation Expense", "Expense", tenant_id, parent_id=None, truck_id=None))
+    accounts.append(get_or_create_account(db, "5500", "Section 179 Deduction", "Expense", tenant_id, parent_id=None, truck_id=None))
+    
+    return accounts
     
     # Equity
     get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id, truck_id=truck_id)
