@@ -142,13 +142,14 @@ def migrate():
                         print("   ✓ Cleaned up")
             else:
                 # PostgreSQL: Check and update constraint using ALTER TABLE
-                # Check if constraint already exists
+                # Check if constraint already exists (by name or by checking columns)
                 result = connection.execute(text("""
                     SELECT constraint_name 
                     FROM information_schema.table_constraints 
                     WHERE table_name = 'chart_of_accounts' 
                     AND constraint_type = 'UNIQUE'
-                    AND constraint_name LIKE '%tenant_id%code%truck_id%'
+                    AND (constraint_name = 'unique_code_per_tenant_truck'
+                         OR constraint_name LIKE '%tenant_id%code%truck%')
                 """))
                 constraint_exists = result.fetchone() is not None
                 
@@ -162,22 +163,33 @@ def migrate():
                         WHERE table_name = 'chart_of_accounts' 
                         AND constraint_type = 'UNIQUE'
                         AND constraint_name LIKE '%tenant_id%code%'
+                        AND constraint_name NOT LIKE '%truck%'
                     """))
                     old_constraint = result.fetchone()
                     if old_constraint:
                         print(f"   Dropping old constraint: {old_constraint[0]}")
-                        connection.execute(text(f"ALTER TABLE chart_of_accounts DROP CONSTRAINT {old_constraint[0]}"))
+                        connection.execute(text(f"ALTER TABLE chart_of_accounts DROP CONSTRAINT IF EXISTS {old_constraint[0]}"))
                         connection.commit()
                     
-                    # Add new constraint
-                    print("   Adding new unique constraint (tenant_id, code, truck_id)...")
-                    connection.execute(text("""
-                        ALTER TABLE chart_of_accounts 
-                        ADD CONSTRAINT unique_code_per_tenant_truck 
-                        UNIQUE (tenant_id, code, truck_id)
+                    # Check if constraint already exists before adding
+                    result = connection.execute(text("""
+                        SELECT constraint_name 
+                        FROM information_schema.table_constraints 
+                        WHERE table_name = 'chart_of_accounts' 
+                        AND constraint_name = 'unique_code_per_tenant_truck'
                     """))
-                    connection.commit()
-                    print("   ✓ Added new unique constraint")
+                    if result.fetchone() is None:
+                        # Add new constraint
+                        print("   Adding new unique constraint (tenant_id, code, truck_id)...")
+                        connection.execute(text("""
+                            ALTER TABLE chart_of_accounts 
+                            ADD CONSTRAINT unique_code_per_tenant_truck 
+                            UNIQUE (tenant_id, code, truck_id)
+                        """))
+                        connection.commit()
+                        print("   ✓ Added new unique constraint")
+                    else:
+                        print("   ✓ Constraint unique_code_per_tenant_truck already exists")
         
         print("\n" + "=" * 80)
         print("MIGRATION COMPLETE")
