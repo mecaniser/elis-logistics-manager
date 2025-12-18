@@ -590,10 +590,8 @@ export interface IncomeStatement {
   start_date: string
   end_date: string
   truck_id?: number | null
-  revenue: {
-    operating_revenue: number
-    total: number
-  }
+  revenue: { [key: string]: number }
+  total_revenue: number
   expenses: { [key: string]: number }
   total_expenses: number
   net_income: number
@@ -705,5 +703,47 @@ export const accountingApi = {
     const params: Record<string, any> = {}
     if (entryDate) params.entry_date = entryDate
     return api.post('/accounting/depreciation/record-all', null, { params })
+  },
+  // Export methods
+  exportJournalEntries: (format: 'csv' | 'excel', startDate?: string, endDate?: string, referenceType?: string, truckId?: number) => {
+    const params: Record<string, any> = { format }
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    if (referenceType) params.reference_type = referenceType
+    if (truckId) params.truck_id = truckId
+    return api.get('/accounting/export/journal-entries', { params, responseType: 'blob' })
+  },
+  exportGeneralLedger: (accountId: number, format: 'csv' | 'excel', startDate?: string, endDate?: string) => {
+    const params: Record<string, any> = { account_id: accountId, format }
+    if (startDate) params.start_date = startDate
+    if (endDate) params.end_date = endDate
+    return api.get('/accounting/export/general-ledger', { params, responseType: 'blob' })
+  },
+  exportBalanceSheet: (format: 'pdf' | 'excel', asOfDate?: string) => {
+    const params: Record<string, any> = { format }
+    if (asOfDate) params.as_of_date = asOfDate
+    return api.get('/accounting/export/balance-sheet', { params, responseType: 'blob' })
+  },
+  exportIncomeStatement: (format: 'pdf' | 'excel', startDate: string, endDate: string, truckId?: number) => {
+    const params: Record<string, any> = { format, start_date: startDate, end_date: endDate }
+    if (truckId) params.truck_id = truckId
+    return api.get('/accounting/export/income-statement', { params, responseType: 'blob' })
+  },
+  exportTrialBalance: (format: 'csv' | 'excel' | 'pdf', asOfDate?: string, truckId?: number) => {
+    const params: Record<string, any> = { format }
+    if (asOfDate) params.as_of_date = asOfDate
+    if (truckId) params.truck_id = truckId
+    return api.get('/accounting/export/trial-balance', { params, responseType: 'blob' })
+  },
+  // Tax report methods
+  getTaxYearSummary: (year: number, truckId?: number) => {
+    const params: Record<string, any> = { year }
+    if (truckId) params.truck_id = truckId
+    return api.get('/accounting/tax-year-summary', { params })
+  },
+  getScheduleC: (year: number, truckId?: number) => {
+    const params: Record<string, any> = { year }
+    if (truckId) params.truck_id = truckId
+    return api.get('/accounting/schedule-c', { params })
   },
 }

@@ -69,10 +69,54 @@ export default function BalanceSheet() {
     )
   }
 
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    try {
+      const response = await accountingApi.exportBalanceSheet(format, asOfDate)
+      const blob = new Blob([response.data], { 
+        type: format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf' 
+      })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `balance_sheet_${asOfDate}.${format === 'excel' ? 'xlsx' : 'pdf'}`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (err: any) {
+      console.error('Export failed:', err)
+      alert('Failed to export balance sheet')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Balance Sheet</h1>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Balance Sheet</h1>
+          {balanceSheet && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleExport('pdf')}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export PDF
+              </button>
+              <button
+                onClick={() => handleExport('excel')}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export Excel
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
             <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
@@ -145,7 +189,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Cash</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">{formatCurrency(balanceSheet.assets.cash)}</span>
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">{formatCurrency(balanceSheet.assets.cash)}</span>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b gap-2">
                   <span className="text-gray-700 flex items-center min-w-0 flex-1">
@@ -156,7 +200,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Accounts Receivable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.accounts_receivable)}
                   </span>
                 </div>
@@ -169,7 +213,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.vehicles)}
                   </span>
                 </div>
@@ -182,7 +226,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Less: Accumulated Depreciation</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-red-600 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-red-600 whitespace-nowrap flex-shrink-0">
                     ({formatCurrency(balanceSheet.assets.accumulated_depreciation)})
                   </span>
                 </div>
@@ -195,7 +239,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Net Vehicles</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.assets.net_vehicles)}
                   </span>
                 </div>
@@ -221,7 +265,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Accounts Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.accounts_payable)}
                   </span>
                 </div>
@@ -234,7 +278,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Loans Payable</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.liabilities.loans_payable)}
                   </span>
                 </div>
@@ -257,7 +301,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Owner Equity</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.owner_equity)}
                   </span>
                 </div>
@@ -270,7 +314,7 @@ export default function BalanceSheet() {
                       <span className="truncate">Retained Earnings</span>
                     </AccountingTooltip>
                   </span>
-                  <span className="font-medium text-gray-900 whitespace-nowrap flex-shrink-0">
+                  <span className="font-medium text-sm text-gray-900 whitespace-nowrap flex-shrink-0">
                     {formatCurrency(balanceSheet.equity.retained_earnings)}
                   </span>
                 </div>
