@@ -257,8 +257,8 @@ export default function ChartOfAccounts() {
         <div className="space-y-6">
           {Object.entries(groupedAccounts).map(([type, typeAccounts]) => (
             <div key={type} className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-6 py-4 bg-gray-50 border-b">
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+              <div className="px-4 sm:px-6 py-3 sm:py-4 bg-gray-50 border-b">
+                <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
                   <AccountingTooltip
                     term={`${type}s`}
                     description={
@@ -275,51 +275,53 @@ export default function ChartOfAccounts() {
                 </h2>
               </div>
               <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Code
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {typeAccounts.map((account) => (
-                      <tr key={account.id} className="hover:bg-gray-50">
-                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                          {account.code}
-                        </td>
-                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
-                          <span className="flex items-center min-w-0">
-                            <AccountingTooltip
-                              term={account.name}
-                              description={getAccountDescription(account.name, account.account_type)}
-                            >
-                              <span className="truncate">{account.name}</span>
-                            </AccountingTooltip>
-                          </span>
-                        </td>
-                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm">
-                          {account.is_active ? (
-                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                              Active
-                            </span>
-                          ) : (
-                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                              Inactive
-                            </span>
-                          )}
-                        </td>
+                <div className="inline-block min-w-full align-middle">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Code
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Name
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {typeAccounts.map((account) => (
+                        <tr key={account.id} className="hover:bg-gray-50">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-mono text-gray-900">
+                            {account.code}
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-900">
+                            <span className="flex items-center min-w-0">
+                              <AccountingTooltip
+                                term={account.name}
+                                description={getAccountDescription(account.name, account.account_type)}
+                              >
+                                <span className="truncate">{account.name}</span>
+                              </AccountingTooltip>
+                            </span>
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm">
+                            {account.is_active ? (
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                Active
+                              </span>
+                            ) : (
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                Inactive
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           ))}
