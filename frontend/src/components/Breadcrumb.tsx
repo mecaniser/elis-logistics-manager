@@ -1,4 +1,5 @@
 import { Link, useLocation, useParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 
 interface BreadcrumbItem {
   label: string
@@ -18,10 +19,39 @@ const routeLabels: Record<string, string> = {
   '/businesses': 'Businesses',
 }
 
+const accountingLinks = [
+  { path: '/accounting/income-statement', label: 'Income Statement' },
+  { path: '/accounting/balance-sheet', label: 'Balance Sheet' },
+  { path: '/accounting/journal-entries', label: 'Journal Entries' },
+  { path: '/accounting/general-ledger', label: 'General Ledger' },
+  { path: '/accounting/tax-year-summary', label: 'Tax Year Summary' },
+  { path: '/accounting/schedule-c', label: 'Schedule C Report' },
+  { path: '/accounting/chart-of-accounts', label: 'Chart of Accounts' },
+]
+
 export default function Breadcrumb() {
   const location = useLocation()
   const params = useParams()
   const pathnames = location.pathname.split('/').filter((x) => x)
+  const [showAccountingMenu, setShowAccountingMenu] = useState(false)
+  const accountingMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close accounting menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (accountingMenuRef.current && !accountingMenuRef.current.contains(event.target as Node)) {
+        setShowAccountingMenu(false)
+      }
+    }
+
+    if (showAccountingMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAccountingMenu])
 
   const breadcrumbs: BreadcrumbItem[] = [
     { label: 'Dashboard', path: '/' },
@@ -81,6 +111,56 @@ export default function Breadcrumb() {
               )}
               {isLast ? (
                 <span className="text-gray-900 font-medium">{crumb.label}</span>
+              ) : crumb.path === '/accounting' ? (
+                <div 
+                  className="relative"
+                  ref={accountingMenuRef}
+                  onMouseEnter={() => setShowAccountingMenu(true)}
+                  onMouseLeave={() => setShowAccountingMenu(false)}
+                >
+                  <Link
+                    to={crumb.path}
+                    className="text-gray-500 hover:text-gray-700 transition-colors inline-flex items-center"
+                  >
+                    {crumb.label}
+                    <svg className="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </Link>
+                  {showAccountingMenu && (
+                    <div className="absolute left-0 top-full pt-1 w-56 z-50">
+                      <div className="rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                        <div className="py-1">
+                          <Link
+                            to="/accounting"
+                            onClick={() => setShowAccountingMenu(false)}
+                            className={`block px-4 py-2 text-sm ${
+                              location.pathname === '/accounting'
+                                ? 'bg-blue-50 text-blue-700 font-medium'
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            Overview
+                          </Link>
+                          {accountingLinks.map((link) => (
+                            <Link
+                              key={link.path}
+                              to={link.path}
+                              onClick={() => setShowAccountingMenu(false)}
+                              className={`block px-4 py-2 text-sm ${
+                                location.pathname === link.path
+                                  ? 'bg-blue-50 text-blue-700 font-medium'
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                            >
+                              {link.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Link
                   to={crumb.path}

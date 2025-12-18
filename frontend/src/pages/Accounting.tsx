@@ -2,24 +2,13 @@ import { Link } from 'react-router-dom'
 
 const accountingLinks = [
   { 
-    path: '/accounting/chart-of-accounts', 
-    label: 'Chart of Accounts',
-    description: 'View and manage your chart of accounts',
-    info: 'A complete list of all accounts (Assets, Liabilities, Equity, Revenue, Expenses) used to categorize financial transactions. Think of it as a filing system for your money.',
+    path: '/accounting/income-statement', 
+    label: 'Income Statement',
+    description: 'View your income statement',
+    info: 'Shows your business\'s financial performance over a period (month, quarter, or year). Displays Revenue (money in), Expenses (money out), and Net Income (profit or loss). Essential for tracking profitability.',
     icon: (
       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    )
-  },
-  { 
-    path: '/accounting/journal-entries', 
-    label: 'Journal Entries',
-    description: 'Create and manage journal entries',
-    info: 'Records of every financial transaction using double-entry bookkeeping. Each entry has debits and credits that must balance. Automatically created from settlements and repairs, or manually entered.',
-    icon: (
-      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
       </svg>
     )
   },
@@ -35,13 +24,57 @@ const accountingLinks = [
     )
   },
   { 
-    path: '/accounting/income-statement', 
-    label: 'Income Statement',
-    description: 'View your income statement',
-    info: 'Shows your business\'s financial performance over a period (month, quarter, or year). Displays Revenue (money in), Expenses (money out), and Net Income (profit or loss). Essential for tracking profitability.',
+    path: '/accounting/journal-entries', 
+    label: 'Journal Entries',
+    description: 'Create and manage journal entries',
+    info: 'Records of every financial transaction using double-entry bookkeeping. Each entry has debits and credits that must balance. Automatically created from settlements and repairs, or manually entered.',
     icon: (
       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    )
+  },
+  { 
+    path: '/accounting/general-ledger', 
+    label: 'General Ledger',
+    description: 'View account transaction history',
+    info: 'Complete record of all transactions for a specific account, showing chronological history with running balances. Essential for account reconciliation and auditing.',
+    icon: (
+      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    )
+  },
+  { 
+    path: '/accounting/tax-year-summary', 
+    label: 'Tax Year Summary',
+    description: 'Annual financial summary for tax filing',
+    info: 'Comprehensive overview of your business\'s financial activity for a specific tax year (January 1 - December 31). Includes revenue, expenses, and account balances needed for tax preparation.',
+    icon: (
+      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    )
+  },
+  { 
+    path: '/accounting/schedule-c', 
+    label: 'Schedule C Report',
+    description: 'Schedule C format for tax filing',
+    info: 'Maps your accounting data to Schedule C line items for sole proprietorship tax returns. Shows gross receipts, total expenses, and net profit/loss in IRS Schedule C format.',
+    icon: (
+      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    )
+  },
+  { 
+    path: '/accounting/chart-of-accounts', 
+    label: 'Chart of Accounts',
+    description: 'View and manage your chart of accounts',
+    info: 'A complete list of all accounts (Assets, Liabilities, Equity, Revenue, Expenses) used to categorize financial transactions. Think of it as a filing system for your money.',
+    icon: (
+      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     )
   },

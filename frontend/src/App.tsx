@@ -11,6 +11,9 @@ import ChartOfAccounts from './pages/ChartOfAccounts'
 import JournalEntries from './pages/JournalEntries'
 import BalanceSheet from './pages/BalanceSheet'
 import IncomeStatement from './pages/IncomeStatement'
+import GeneralLedger from './pages/GeneralLedger'
+import TaxYearSummary from './pages/TaxYearSummary'
+import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
 
 function App() {
@@ -28,8 +31,11 @@ function App() {
             <Route path="/accounting" element={<Accounting />} />
             <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
             <Route path="/accounting/journal-entries" element={<JournalEntries />} />
+            <Route path="/accounting/general-ledger" element={<GeneralLedger />} />
             <Route path="/accounting/balance-sheet" element={<BalanceSheet />} />
             <Route path="/accounting/income-statement" element={<IncomeStatement />} />
+            <Route path="/accounting/tax-year-summary" element={<TaxYearSummary />} />
+            <Route path="/accounting/schedule-c" element={<ScheduleC />} />
           </Routes>
         </Layout>
       </Router>
