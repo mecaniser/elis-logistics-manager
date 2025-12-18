@@ -45,20 +45,85 @@ def migrate():
                 table_sql = table_row[0]
                 print(f"\nCurrent table definition includes: UNIQUE (code)")
                 
-                if "UNIQUE (tenant_id, code)" in table_sql or "UNIQUE(tenant_id,code)" in table_sql.replace(" ", ""):
-                    print("✓ Table already has correct constraint")
+                # Check if constraint includes tenant_id, code, and truck_id
+                table_sql_normalized = table_sql.replace(" ", "").lower()
+                if ("unique(tenant_id,code,truck_id)" in table_sql_normalized or 
+                    "unique(tenant_id,code,truck_id)" in table_sql_normalized):
+                    print("✓ Table already has correct constraint (tenant_id, code, truck_id)")
                     return
+                elif "unique(tenant_id,code)" in table_sql_normalized:
+                    print("⚠ Table has old constraint (tenant_id, code) - needs update to include truck_id")
+                    # Continue to recreate table
+                else:
+                    print("⚠ Table has old constraint - needs update")
 
+                # Check if truck_id column exists
+                result = connection.execute(text("PRAGMA table_info(chart_of_accounts)"))
+                columns = [row[1] for row in result.fetchall()]
+                has_truck_id = 'truck_id' in columns
+                
                 # Backup data
                 print("\n1. Backing up existing data...")
-                connection.execute(text("""
-                    CREATE TABLE chart_of_accounts_backup AS 
-                    SELECT * FROM chart_of_accounts
-                """))
+                if has_truck_id:
+                    connection.execute(text("""
+                        CREATE TABLE chart_of_accounts_backup AS 
+                        SELECT * FROM chart_of_accounts
+                    """))
+                else:
+                    # If truck_id doesn't exist, add it as NULL
+                    connection.execute(text("""
+                        CREATE TABLE chart_of_accounts_backup AS 
+                        SELECT id, tenant_id, code, name, account_type, parent_id, is_active, created_at, NULL as truck_id
+                        FROM chart_of_accounts
+                    """))
                 connection.commit()
                 result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts_backup"))
                 backup_count = result.fetchone()[0]
                 print(f"   ✓ Backed up {backup_count} records")
+
+                # Check for duplicates that would violate new constraint
+                print("\n1a. Checking for duplicate accounts...")
+                if has_truck_id:
+                    duplicate_check = text("""
+                        SELECT tenant_id, code, truck_id, COUNT(*) as cnt
+                        FROM chart_of_accounts_backup
+                        GROUP BY tenant_id, code, truck_id
+                        HAVING COUNT(*) > 1
+                    """)
+                else:
+                    duplicate_check = text("""
+                        SELECT tenant_id, code, COUNT(*) as cnt
+                        FROM chart_of_accounts_backup
+                        GROUP BY tenant_id, code
+                        HAVING COUNT(*) > 1
+                    """)
+                duplicates = connection.execute(duplicate_check).fetchall()
+                if duplicates:
+                    print(f"   ⚠ Found {len(duplicates)} duplicate account groups")
+                    print("   Removing duplicates (keeping first occurrence)...")
+                    if has_truck_id:
+                        # Delete duplicates, keeping the one with the lowest id
+                        connection.execute(text("""
+                            DELETE FROM chart_of_accounts_backup
+                            WHERE id NOT IN (
+                                SELECT MIN(id)
+                                FROM chart_of_accounts_backup
+                                GROUP BY tenant_id, code, truck_id
+                            )
+                        """))
+                    else:
+                        connection.execute(text("""
+                            DELETE FROM chart_of_accounts_backup
+                            WHERE id NOT IN (
+                                SELECT MIN(id)
+                                FROM chart_of_accounts_backup
+                                GROUP BY tenant_id, code
+                            )
+                        """))
+                    connection.commit()
+                    result = connection.execute(text("SELECT COUNT(*) FROM chart_of_accounts_backup"))
+                    deduped_count = result.fetchone()[0]
+                    print(f"   ✓ Deduplicated: {backup_count} -> {deduped_count} records")
 
                 # Drop old table
                 print("\n2. Dropping old table...")
@@ -66,12 +131,13 @@ def migrate():
                 connection.commit()
                 print("   ✓ Dropped old table")
 
-                # Create new table with correct constraint
+                # Create new table with correct constraint (tenant_id, code, truck_id)
                 print("\n3. Creating new table with correct constraint...")
                 connection.execute(text("""
                     CREATE TABLE chart_of_accounts (
                         id INTEGER NOT NULL PRIMARY KEY,
                         tenant_id INTEGER NOT NULL,
+                        truck_id INTEGER,
                         code VARCHAR(20) NOT NULL,
                         name VARCHAR(200) NOT NULL,
                         account_type VARCHAR(20) NOT NULL,
@@ -80,15 +146,17 @@ def migrate():
                         created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
                         FOREIGN KEY(parent_id) REFERENCES chart_of_accounts (id),
                         FOREIGN KEY(tenant_id) REFERENCES tenants (id),
-                        UNIQUE (tenant_id, code)
+                        FOREIGN KEY(truck_id) REFERENCES trucks (id),
+                        UNIQUE (tenant_id, code, truck_id)
                     )
                 """))
                 connection.commit()
-                print("   ✓ Created new table")
+                print("   ✓ Created new table with constraint (tenant_id, code, truck_id)")
 
                 # Create indexes
                 print("\n4. Creating indexes...")
                 connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chart_of_accounts_tenant_id ON chart_of_accounts (tenant_id)"))
+                connection.execute(text("CREATE INDEX IF NOT EXISTS idx_tenant_account_type_active ON chart_of_accounts (tenant_id, account_type, is_active)"))
                 connection.commit()
                 print("   ✓ Created indexes")
 
@@ -96,8 +164,8 @@ def migrate():
                 print("\n5. Restoring data...")
                 connection.execute(text("""
                     INSERT INTO chart_of_accounts 
-                    (id, tenant_id, code, name, account_type, parent_id, is_active, created_at)
-                    SELECT id, tenant_id, code, name, account_type, parent_id, is_active, created_at
+                    (id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at)
+                    SELECT id, tenant_id, truck_id, code, name, account_type, parent_id, is_active, created_at
                     FROM chart_of_accounts_backup
                 """))
                 connection.commit()
@@ -125,27 +193,46 @@ def migrate():
                     print("✓ Table created")
                     return
 
+                # Check if truck_id column exists
+                result = connection.execute(text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'chart_of_accounts' 
+                    AND column_name = 'truck_id'
+                """))
+                has_truck_id = result.fetchone() is not None
+                
+                if not has_truck_id:
+                    print("Adding truck_id column...")
+                    connection.execute(text("ALTER TABLE chart_of_accounts ADD COLUMN truck_id INTEGER"))
+                    connection.execute(text("ALTER TABLE chart_of_accounts ADD CONSTRAINT fk_truck FOREIGN KEY (truck_id) REFERENCES trucks(id)"))
+                    connection.commit()
+                    print("   ✓ Added truck_id column")
+
                 # Check current constraint
                 result = connection.execute(text("""
-                    SELECT constraint_name 
-                    FROM information_schema.table_constraints 
+                    SELECT constraint_name, 
+                           (SELECT string_agg(column_name, ', ' ORDER BY ordinal_position)
+                            FROM information_schema.constraint_column_usage
+                            WHERE constraint_name = tc.constraint_name) as columns
+                    FROM information_schema.table_constraints tc
                     WHERE table_name = 'chart_of_accounts' 
                     AND constraint_type = 'UNIQUE'
                     AND constraint_name LIKE '%tenant_id%code%'
                 """))
                 constraint = result.fetchone()
                 
-                if constraint and 'tenant_id' in constraint[0] and 'code' in constraint[0]:
-                    print("✓ Table already has correct constraint")
+                if constraint and constraint[1] and 'tenant_id' in constraint[1] and 'code' in constraint[1] and 'truck_id' in constraint[1]:
+                    print("✓ Table already has correct constraint (tenant_id, code, truck_id)")
                     return
 
-                # Drop old constraint if it exists (e.g., unique on code only)
+                # Drop old constraint if it exists
                 result = connection.execute(text("""
                     SELECT constraint_name 
                     FROM information_schema.table_constraints 
                     WHERE table_name = 'chart_of_accounts' 
                     AND constraint_type = 'UNIQUE'
-                    AND constraint_name NOT LIKE '%tenant_id%'
+                    AND (constraint_name LIKE '%code%' OR constraint_name LIKE '%tenant%')
                 """))
                 old_constraints = result.fetchall()
                 for old_constraint in old_constraints:
@@ -153,24 +240,28 @@ def migrate():
                     connection.execute(text(f"ALTER TABLE chart_of_accounts DROP CONSTRAINT IF EXISTS {old_constraint[0]}"))
                     connection.commit()
 
-                # Add new constraint
-                print("\n1. Adding new unique constraint (tenant_id, code)...")
+                # Add new constraint (tenant_id, code, truck_id)
+                print("\n1. Adding new unique constraint (tenant_id, code, truck_id)...")
                 connection.execute(text("""
                     ALTER TABLE chart_of_accounts 
-                    ADD CONSTRAINT unique_code_per_tenant 
-                    UNIQUE (tenant_id, code)
+                    ADD CONSTRAINT unique_code_per_tenant_truck 
+                    UNIQUE (tenant_id, code, truck_id)
                 """))
                 connection.commit()
                 print("   ✓ Added new unique constraint")
 
-                # Ensure index exists
-                print("\n2. Ensuring index exists...")
+                # Ensure indexes exist
+                print("\n2. Ensuring indexes exist...")
                 connection.execute(text("""
                     CREATE INDEX IF NOT EXISTS ix_chart_of_accounts_tenant_id 
                     ON chart_of_accounts (tenant_id)
                 """))
+                connection.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_tenant_account_type_active 
+                    ON chart_of_accounts (tenant_id, account_type, is_active)
+                """))
                 connection.commit()
-                print("   ✓ Index created")
+                print("   ✓ Indexes created")
 
         print("\n" + "=" * 80)
         print("MIGRATION COMPLETE")

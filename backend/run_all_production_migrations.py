@@ -72,6 +72,8 @@ def main():
         ("migrate_add_image_paths.py", "Add image_paths to repairs"),
         ("migrate_add_depreciation_fields.py", "Add depreciation fields to trucks (purchase_date, depreciation_method, cost_basis, etc.)"),
         ("migrate_create_accounting_entries.py", "Create accounting entries for existing data"),
+        ("migrate_add_tenant_id_to_journal_entry_lines.py", "Add tenant_id to journal_entry_lines for explicit tenant isolation"),
+        ("migrate_simplify_elis_logistics_accounts.py", "Simplify chart of accounts for Elis Logistics LLC (remove per-asset complexity)"),
     ]
     
     print("\n" + "="*60)

@@ -13,4 +13,6 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 httpx==0.25.2
 cloudinary==1.38.0
+openpyxl==3.1.2
+reportlab==4.0.7
 
