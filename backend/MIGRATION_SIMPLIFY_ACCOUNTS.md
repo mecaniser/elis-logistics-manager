@@ -13,7 +13,7 @@ This migration script (`migrate_simplify_elis_logistics_accounts.py`) simplifies
 
 Run this migration **after** implementing the simplified accounting system changes:
 
-- ✅ After updating `accounting_service_minimal.py` with new minimal accounts
+- ✅ After updating `accounting_service.py` with new minimal accounts (initialize_minimal_logistics_accounts function)
 - ✅ After updating `accounting_service.py` to exclude Elis Logistics from per-asset accounting
 - ✅ Before or after creating new journal entries (migration is idempotent)
 
