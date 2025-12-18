@@ -56,6 +56,25 @@ function LabelWithTooltip({
   )
 }
 
+// Expense categories with deductibility
+const EXPENSE_CATEGORIES = [
+  { value: 'fuel', label: 'Fuel/Gas', deductible: true },
+  { value: 'insurance', label: 'Insurance', deductible: true },
+  { value: 'registration', label: 'Registration/License', deductible: true },
+  { value: 'repairs', label: 'Repairs/Maintenance', deductible: true },
+  { value: 'parking', label: 'Parking/Tolls', deductible: true },
+  { value: 'car_wash', label: 'Car Wash/Detailing', deductible: true },
+  { value: 'oil_change', label: 'Oil Change', deductible: true },
+  { value: 'tires', label: 'Tires', deductible: true },
+  { value: 'documentation', label: 'Documentation Fees', deductible: true },
+  { value: 'other_deductible', label: 'Other (Deductible)', deductible: true },
+  { value: 'tickets', label: 'Traffic Tickets/Fines', deductible: false },
+  { value: 'personal', label: 'Personal Expenses', deductible: false },
+  { value: 'other_non_deductible', label: 'Other (Non-Deductible)', deductible: false },
+] as const
+
+type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]['value']
+
 export default function Trucks() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -126,7 +145,7 @@ export default function Trucks() {
     cost_basis: '',
     section_179_deduction: '',
     bonus_depreciation: '',
-    additional_expenses: [] as Array<{description: string, amount: string}>
+    additional_expenses: [] as Array<{category: ExpenseCategory, description: string, amount: string}>
   })
   const [truckToDelete, setTruckToDelete] = useState<number | null>(null)
   const [truckToDeleteName, setTruckToDeleteName] = useState<string>('')
@@ -185,6 +204,7 @@ export default function Trucks() {
           section_179_deduction: vehicleToEdit.section_179_deduction?.toString() || '',
           bonus_depreciation: vehicleToEdit.bonus_depreciation?.toString() || '',
           additional_expenses: vehicleToEdit.additional_expenses?.map(exp => ({
+            category: (exp.category || 'other_deductible') as ExpenseCategory,
             description: exp.description || '',
             amount: exp.amount?.toString() || ''
           })) || []
@@ -1059,7 +1079,7 @@ export default function Trucks() {
                       onClick={() => {
                         setFormData(prev => ({
                           ...prev,
-                          additional_expenses: [...prev.additional_expenses, { description: '', amount: '' }]
+                          additional_expenses: [...prev.additional_expenses, { category: 'other_deductible' as ExpenseCategory, description: '', amount: '' }]
                         }))
                       }}
                       className="text-sm text-blue-600 hover:text-blue-800"
@@ -1068,9 +1088,17 @@ export default function Trucks() {
                     </button>
                   </div>
                   {formData.additional_expenses.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {formData.additional_expenses.map((expense, index) => (
-                        <div key={index} className="relative bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {formData.additional_expenses.map((expense, index) => {
+                        const categoryInfo = EXPENSE_CATEGORIES.find(c => c.value === expense.category)
+                        const isDeductible = categoryInfo?.deductible ?? true
+                        return (
+                        <div key={index} className={`relative border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow ${isDeductible ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                          {/* Deductibility badge */}
+                          <span className={`absolute top-2 left-2 text-xs font-medium px-2 py-0.5 rounded ${isDeductible ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {isDeductible ? '✓ Deductible' : '✗ Non-Deductible'}
+                          </span>
+                          
                           {/* X button in top-right corner */}
                           <button
                             type="button"
@@ -1088,12 +1116,40 @@ export default function Trucks() {
                             </svg>
                           </button>
                           
-                          {/* Description and Amount inline */}
-                          <div className="pr-6 min-w-0">
-                            <div className="flex items-start min-w-0">
+                          <div className="mt-6 space-y-3">
+                            {/* Category dropdown */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                              <select
+                                value={expense.category || 'other_deductible'}
+                                onChange={(e) => {
+                                  const value = e.target.value as ExpenseCategory
+                                  setFormData(prev => {
+                                    const updated = [...prev.additional_expenses]
+                                    updated[index] = { ...updated[index], category: value }
+                                    return { ...prev, additional_expenses: updated }
+                                  })
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                              >
+                                <optgroup label="Deductible">
+                                  {EXPENSE_CATEGORIES.filter(c => c.deductible).map(cat => (
+                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Non-Deductible">
+                                  {EXPENSE_CATEGORIES.filter(c => !c.deductible).map(cat => (
+                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                            </div>
+                            
+                            {/* Description and Amount inline */}
+                            <div className="flex items-end gap-2">
                               {/* Description input */}
                               <div className="flex-1 min-w-0">
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
                                 <input
                                   type="text"
                                   value={expense.description}
@@ -1105,20 +1161,14 @@ export default function Trucks() {
                                       return { ...prev, additional_expenses: updated }
                                     })
                                   }}
-                                  placeholder="e.g., Documentation fee"
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-l-md rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-r-0"
+                                  placeholder="Additional details..."
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                 />
                               </div>
                               
-                              {/* Red divider - aligned with inputs */}
-                              <div className="flex-shrink-0 flex flex-col" style={{ width: '6px', marginLeft: '-3px', marginRight: '-3px' }}>
-                                <div className="text-xs font-medium mb-1" style={{ height: '16px' }}></div>
-                                <div className="w-0.5 h-[38px] bg-red-600"></div>
-                              </div>
-                              
                               {/* Amount input */}
-                              <div className="flex-shrink-0">
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
+                              <div className="flex-shrink-0 w-28">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Amount ($)</label>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1127,11 +1177,7 @@ export default function Trucks() {
                                     const inputValue = e.target.value
                                     if (isValidNumericInput(inputValue)) {
                                       const newAmount = parseCurrency(inputValue)
-                                      // Prevent negative values
                                       if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
-                                        const displayValue = focusedFields.has(`additional_expense_${index}`) ? newAmount : formatCurrencyDisplay(newAmount)
-                                        const width = measureTextWidth(displayValue || '0.00', true)
-                                        setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
                                         setFormData(prev => {
                                           const updated = [...prev.additional_expenses]
                                           updated[index] = { ...updated[index], amount: newAmount }
@@ -1140,19 +1186,11 @@ export default function Trucks() {
                                       }
                                     }
                                   }}
-                                  onFocus={(e) => {
-                                    setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))
-                                    const width = measureTextWidth(e.target.value || '0.00', true)
-                                    setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
-                                  }}
+                                  onFocus={() => setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))}
                                   onBlur={(e) => {
-                                    // Format to 2 decimal places on blur
                                     const value = parseCurrency(e.target.value)
                                     if (value && !isNaN(parseFloat(value))) {
                                       const formatted = parseFloat(value).toFixed(2)
-                                      const displayValue = formatCurrencyDisplay(formatted)
-                                      const width = measureTextWidth(displayValue, true)
-                                      setInputWidths(prev => ({ ...prev, [`amt_${index}`]: width }))
                                       setFormData(prev => {
                                         const updated = [...prev.additional_expenses]
                                         updated[index] = { ...updated[index], amount: formatted }
@@ -1166,18 +1204,14 @@ export default function Trucks() {
                                     })
                                   }}
                                   placeholder="0.00"
-                                  style={{ 
-                                    width: `${inputWidths[`amt_${index}`] || measureTextWidth(formatCurrencyDisplay(expense.amount) || '0.00', true)}px`,
-                                    minWidth: '80px',
-                                    maxWidth: '110px'
-                                  }}
-                                  className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0 text-right"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right"
                                 />
                               </div>
                             </div>
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                   <p className="text-xs text-gray-500 mt-2">Add any additional fees or expenses paid when purchasing the vehicle (e.g., documentation fees, inspection fees, etc.)</p>
@@ -1673,6 +1707,7 @@ export default function Trucks() {
                             section_179_deduction: truck.section_179_deduction?.toString() || '',
                             bonus_depreciation: truck.bonus_depreciation?.toString() || '',
                             additional_expenses: truck.additional_expenses?.map(exp => ({
+                              category: (exp.category || 'other_deductible') as ExpenseCategory,
                               description: exp.description || '',
                               amount: exp.amount?.toString() || ''
                             })) || []
@@ -1777,6 +1812,7 @@ export default function Trucks() {
                             section_179_deduction: suv.section_179_deduction?.toString() || '',
                             bonus_depreciation: suv.bonus_depreciation?.toString() || '',
                             additional_expenses: suv.additional_expenses?.map(exp => ({
+                              category: (exp.category || 'other_deductible') as ExpenseCategory,
                               description: exp.description || '',
                               amount: exp.amount?.toString() || ''
                             })) || []
@@ -1870,6 +1906,7 @@ export default function Trucks() {
                             section_179_deduction: trailer.section_179_deduction?.toString() || '',
                             bonus_depreciation: trailer.bonus_depreciation?.toString() || '',
                             additional_expenses: trailer.additional_expenses?.map(exp => ({
+                              category: (exp.category || 'other_deductible') as ExpenseCategory,
                               description: exp.description || '',
                               amount: exp.amount?.toString() || ''
                             })) || []

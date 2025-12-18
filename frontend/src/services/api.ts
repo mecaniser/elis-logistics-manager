@@ -67,7 +67,7 @@ export interface Truck {
   cost_basis?: number  // Depreciable cost basis
   section_179_deduction?: number  // Section 179 deduction taken in first year
   bonus_depreciation?: number  // Bonus depreciation percentage (e.g., 100 for 100%)
-  additional_expenses?: Array<{description: string, amount: number}>  // Additional expenses/fees
+  additional_expenses?: Array<{category?: string, description: string, amount: number}>  // Additional expenses/fees with category
   // PM (Preventive Maintenance) Schedule fields (trucks only)
   last_pm_date?: string  // Date of last D13 full PM (ISO date string)
   last_pm_repair_id?: number  // Reference to the repair record
