@@ -211,14 +211,16 @@ def migrate():
 
                 # Check current constraint
                 result = connection.execute(text("""
-                    SELECT constraint_name, 
-                           (SELECT string_agg(column_name, ', ' ORDER BY ordinal_position)
-                            FROM information_schema.constraint_column_usage
-                            WHERE constraint_name = tc.constraint_name) as columns
+                    SELECT tc.constraint_name,
+                           string_agg(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) as columns
                     FROM information_schema.table_constraints tc
-                    WHERE table_name = 'chart_of_accounts' 
-                    AND constraint_type = 'UNIQUE'
-                    AND constraint_name LIKE '%tenant_id%code%'
+                    JOIN information_schema.key_column_usage kcu
+                        ON tc.constraint_name = kcu.constraint_name
+                        AND tc.table_schema = kcu.table_schema
+                    WHERE tc.table_name = 'chart_of_accounts'
+                    AND tc.constraint_type = 'UNIQUE'
+                    AND tc.constraint_name LIKE '%tenant_id%code%'
+                    GROUP BY tc.constraint_name
                 """))
                 constraint = result.fetchone()
                 
