@@ -101,7 +101,6 @@ export default function Trucks() {
   // Track input widths for auto-resizing
   const [inputWidths, setInputWidths] = useState<Record<string, number>>({})
   // Track label container widths (label + tooltip) to match input widths
-  const [labelWidths, setLabelWidths] = useState<Record<string, number>>({})
   const labelContainerRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
@@ -161,37 +160,10 @@ export default function Trucks() {
     loadPMStatus()
   }, [vehicleTypeFilter, currentTenant?.id])
 
-  // Helper to measure a single label container width
-  const measureLabelContainerWidth = (key: string) => {
-    const container = labelContainerRefs.current[key]
-    if (container) {
-      setLabelWidths(prev => ({
-        ...prev,
-        [key]: container.offsetWidth
-      }))
-    }
+  // Helper to measure a single label container width (placeholder for future use)
+  const measureLabelContainerWidth = (_key: string) => {
+    // Width measurement available via labelContainerRefs if needed
   }
-
-  // Measure label container widths (label + tooltip) and apply to inputs
-  useEffect(() => {
-    if (!showForm || !expandedFormSections.has('depreciation')) return
-    
-    // Use setTimeout to ensure DOM is fully rendered
-    const timer = setTimeout(() => {
-      const widths: Record<string, number> = {}
-      Object.keys(labelContainerRefs.current).forEach(key => {
-        const container = labelContainerRefs.current[key]
-        if (container) {
-          widths[key] = container.offsetWidth
-        }
-      })
-      if (Object.keys(widths).length > 0) {
-        setLabelWidths(widths)
-      }
-    }, 100)
-    
-    return () => clearTimeout(timer)
-  }, [showForm, expandedFormSections, formData])
 
   // Calculate total_cost including additional expenses - use useMemo for reactive calculation
   const calculatedTotalCost = useMemo(() => {
