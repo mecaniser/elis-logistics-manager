@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
@@ -60,6 +60,7 @@ export default function Trucks() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Helper to format currency value for display (always 2 decimal places with comma separators when not focused)
   const formatCurrencyDisplay = (value: string | undefined | null): string => {
@@ -159,6 +160,42 @@ export default function Trucks() {
     loadTrucks()
     loadPMStatus()
   }, [vehicleTypeFilter, currentTenant?.id])
+
+  // Handle edit query param from VehicleDetail page
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (editId && trucks.length > 0) {
+      const vehicleToEdit = trucks.find(t => t.id === parseInt(editId))
+      if (vehicleToEdit) {
+        setEditingTruck(vehicleToEdit)
+        setFormData({
+          name: vehicleToEdit.name,
+          vehicle_type: vehicleToEdit.vehicle_type,
+          vin: vehicleToEdit.vin || '',
+          license_plate: vehicleToEdit.license_plate || '',
+          tag_number: vehicleToEdit.tag_number || '',
+          cash_investment: vehicleToEdit.cash_investment?.toString() || '',
+          loan_amount: vehicleToEdit.loan_amount?.toString() || '',
+          interest_rate: vehicleToEdit.interest_rate?.toString() || '0.07',
+          total_cost: vehicleToEdit.total_cost?.toString() || '',
+          registration_fee: vehicleToEdit.registration_fee?.toString() || '',
+          purchase_date: vehicleToEdit.purchase_date ? new Date(vehicleToEdit.purchase_date).toISOString().split('T')[0] : '',
+          depreciation_method: (vehicleToEdit.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
+          cost_basis: vehicleToEdit.cost_basis?.toString() || '',
+          section_179_deduction: vehicleToEdit.section_179_deduction?.toString() || '',
+          bonus_depreciation: vehicleToEdit.bonus_depreciation?.toString() || '',
+          additional_expenses: vehicleToEdit.additional_expenses?.map(exp => ({
+            description: exp.description || '',
+            amount: exp.amount?.toString() || ''
+          })) || []
+        })
+        setShowForm(true)
+        setExpandedFormSections(new Set(['vehicle_info', 'investment']))
+        // Clear the edit param from URL
+        setSearchParams({})
+      }
+    }
+  }, [searchParams, trucks])
 
   // Helper to measure a single label container width (placeholder for future use)
   const measureLabelContainerWidth = (_key: string) => {

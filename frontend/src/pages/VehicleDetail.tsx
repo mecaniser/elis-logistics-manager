@@ -88,19 +88,30 @@ export default function VehicleDetail() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
-        <button
-          onClick={() => navigate('/trucks')}
-          className={`${isMobile ? 'px-3 py-2' : 'px-4 py-2'} border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors flex items-center gap-2 flex-shrink-0`}
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          {isMobile ? (
-            <span className="text-sm">Back</span>
-          ) : (
-            <span>Back to Vehicles</span>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/trucks')}
+            className={`${isMobile ? 'px-3 py-2' : 'px-4 py-2'} border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors flex items-center gap-2 flex-shrink-0`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            {isMobile ? (
+              <span className="text-sm">Back</span>
+            ) : (
+              <span>Back to Vehicles</span>
+            )}
+          </button>
+          <button
+            onClick={() => navigate(`/trucks?edit=${vehicle.id}`)}
+            className={`${isMobile ? 'px-3 py-2' : 'px-4 py-2'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center gap-2 flex-shrink-0`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            {!isMobile && <span>Edit</span>}
+          </button>
+        </div>
         <button
           onClick={() => setVehicleInfoExpanded(!vehicleInfoExpanded)}
           className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-center gap-2 cursor-pointer"
