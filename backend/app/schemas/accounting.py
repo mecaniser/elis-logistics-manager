@@ -103,6 +103,7 @@ class IncomeStatementResponse(BaseModel):
     end_date: str
     truck_id: Optional[int] = None
     revenue: dict
+    total_revenue: float
     expenses: dict
     total_expenses: float
     net_income: float

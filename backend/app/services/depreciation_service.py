@@ -190,7 +190,7 @@ def calculate_depreciation_for_truck(
 ) -> Optional[Decimal]:
     """
     Calculate depreciation for a truck based on its depreciation method.
-    Returns accumulated depreciation amount.
+    Returns accumulated depreciation amount including Section 179 and bonus depreciation.
     """
     if not as_of_date:
         as_of_date = date.today()
@@ -201,14 +201,31 @@ def calculate_depreciation_for_truck(
     if truck.depreciation_method == 'none' or not truck.depreciation_method:
         return Decimal(0)
     
+    # Section 179 is an immediate deduction and should be included in accumulated depreciation
+    section_179 = Decimal(str(truck.section_179_deduction or 0))
+    
+    # Calculate bonus depreciation amount
+    total_cost = Decimal(str(truck.total_cost))
+    bonus_pct = Decimal(str(truck.bonus_depreciation or 0)) / Decimal('100')
+    remaining_after_s179 = total_cost - section_179
+    bonus_amount = remaining_after_s179 * bonus_pct
+    
+    # Cost basis for MACRS calculation (after Section 179 and bonus depreciation)
     cost_basis = calculate_cost_basis(truck)
     
+    # Calculate MACRS depreciation on the remaining cost basis
+    macrs_depreciation = Decimal(0)
     if truck.depreciation_method == 'MACRS_5':
-        return calculate_accumulated_depreciation(cost_basis, truck.purchase_date, as_of_date)
+        macrs_depreciation = calculate_accumulated_depreciation(cost_basis, truck.purchase_date, as_of_date)
     elif truck.depreciation_method == 'straight_line':
-        return calculate_straight_line_depreciation(cost_basis, truck.purchase_date, as_of_date)
-    else:
-        return Decimal(0)
+        macrs_depreciation = calculate_straight_line_depreciation(cost_basis, truck.purchase_date, as_of_date)
+    
+    # Total accumulated depreciation = Section 179 + Bonus Depreciation + MACRS Depreciation
+    # Note: Section 179 and bonus depreciation are taken immediately in the purchase year
+    total_accumulated = section_179 + bonus_amount + macrs_depreciation
+    
+    # Cap at total_cost
+    return min(total_accumulated, Decimal(str(truck.total_cost)))
 
 
 def create_depreciation_journal_entry(
