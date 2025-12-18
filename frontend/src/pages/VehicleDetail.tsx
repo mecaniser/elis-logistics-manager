@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { analyticsApi, trucksApi, Truck, VehicleROI } from '../services/api'
+import { analyticsApi, trucksApi, repairsApi, Truck, VehicleROI, Repair } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
@@ -18,9 +18,12 @@ export default function VehicleDetail() {
   const navigate = useNavigate()
   const [vehicle, setVehicle] = useState<Truck | null>(null)
   const [roiData, setRoiData] = useState<VehicleROI | null>(null)
+  const [repairs, setRepairs] = useState<Repair[]>([])
   const [loading, setLoading] = useState(true)
   const [investmentExpanded, setInvestmentExpanded] = useState(!isMobile)
   const [vehicleInfoExpanded, setVehicleInfoExpanded] = useState(!isMobile)
+  const [depreciationExpanded, setDepreciationExpanded] = useState(true)
+  const [repairsExpanded, setRepairsExpanded] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
     message: '',
@@ -41,12 +44,14 @@ export default function VehicleDetail() {
     
     try {
       setLoading(true)
-      const [vehicleResponse, roiResponse] = await Promise.all([
+      const [vehicleResponse, roiResponse, repairsResponse] = await Promise.all([
         trucksApi.getById(parseInt(id)),
-        analyticsApi.getVehicleROI(parseInt(id))
+        analyticsApi.getVehicleROI(parseInt(id)),
+        repairsApi.getAll(parseInt(id))
       ])
       setVehicle(vehicleResponse.data)
       setRoiData(roiResponse.data)
+      setRepairs(repairsResponse.data || [])
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
       showToast('Failed to load vehicle data', 'error')
@@ -101,7 +106,7 @@ export default function VehicleDetail() {
           className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-center gap-2 cursor-pointer"
           title="Click to view vehicle details"
         >
-          {vehicle.name} - {vehicle.vehicle_type === 'truck' ? 'Truck' : 'Trailer'}
+          {vehicle.name} - {vehicle.vehicle_type === 'truck' ? 'Truck' : vehicle.vehicle_type === 'suv' ? 'SUV' : 'Trailer'}
           <svg
             className="w-4 h-4 text-gray-500"
             fill="none"
@@ -130,7 +135,7 @@ export default function VehicleDetail() {
             <span className="text-xs text-gray-900 font-medium break-words">{vehicle.vin}</span>
           </div>
         )}
-        {vehicle.vehicle_type === 'truck' && vehicle.license_plate && (
+        {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'suv') && vehicle.license_plate && (
           <div className="bg-white shadow rounded-lg p-3 sm:p-4 flex-1 min-w-[120px] flex items-center gap-2">
             <span className="text-xs font-medium text-gray-600">Plate:</span>
             <span className="text-xs text-gray-900 font-medium break-words">{vehicle.license_plate}</span>
@@ -145,8 +150,8 @@ export default function VehicleDetail() {
         </div>
       )}
 
-      {/* ROI Metrics - Always visible */}
-      {roiData.cash_investment && roiData.cash_investment > 0 && (
+      {/* ROI Metrics - Only for trucks and trailers (revenue-generating vehicles) */}
+      {vehicle.vehicle_type !== 'suv' && roiData.cash_investment && roiData.cash_investment > 0 && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-900">ROI Metrics</h2>
           
@@ -284,6 +289,181 @@ export default function VehicleDetail() {
             </div>
           )}
         </div>
+      )}
+
+      {/* SUV Expense Tracking - Only for SUVs */}
+      {vehicle.vehicle_type === 'suv' && (
+        <>
+          {/* Depreciation Summary */}
+          <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-6">
+            <button
+              onClick={() => setDepreciationExpanded(!depreciationExpanded)}
+              className="w-full flex items-center justify-between mb-2"
+            >
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Depreciation & Tax Write-off</h2>
+              <svg
+                className={`w-5 h-5 text-gray-600 transition-transform ${depreciationExpanded ? 'transform rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {depreciationExpanded && (
+              <div className="space-y-4">
+                {/* Method & Purchase Info */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <span className="text-xs font-medium text-gray-600">Method</span>
+                    <p className="text-sm font-semibold text-gray-900 mt-1">
+                      {vehicle.depreciation_method === 'MACRS_5' ? 'MACRS 5-Year' : 
+                       vehicle.depreciation_method === 'straight_line' ? 'Straight-Line' : 'None'}
+                    </p>
+                  </div>
+                  {vehicle.purchase_date && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <span className="text-xs font-medium text-gray-600">Purchase Date</span>
+                      <p className="text-sm font-semibold text-gray-900 mt-1">
+                        {new Date(vehicle.purchase_date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  )}
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <span className="text-xs font-medium text-gray-600">Total Cost</span>
+                    <p className="text-sm font-semibold text-gray-900 mt-1">
+                      ${safeToLocaleString(vehicle.total_cost)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Deductions */}
+                <div className="border-t pt-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">First-Year Deductions</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {vehicle.section_179_deduction && parseFloat(vehicle.section_179_deduction.toString()) > 0 && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <span className="text-xs font-medium text-green-700">Section 179</span>
+                        <p className="text-lg font-bold text-green-700 mt-1">
+                          ${safeToLocaleString(vehicle.section_179_deduction)}
+                        </p>
+                      </div>
+                    )}
+                    {vehicle.bonus_depreciation && parseFloat(vehicle.bonus_depreciation.toString()) > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <span className="text-xs font-medium text-blue-700">Bonus Depreciation</span>
+                        <p className="text-lg font-bold text-blue-700 mt-1">
+                          {vehicle.bonus_depreciation}%
+                        </p>
+                      </div>
+                    )}
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <span className="text-xs font-medium text-gray-600">Cost Basis</span>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        ${safeToLocaleString(vehicle.cost_basis)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Remaining depreciable amount</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Deduction Summary */}
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Total Tax Deduction (First Year)</span>
+                    <span className="text-xl font-bold text-green-700">
+                      ${safeToLocaleString(
+                        (vehicle.section_179_deduction ? parseFloat(vehicle.section_179_deduction.toString()) : 0) +
+                        (vehicle.bonus_depreciation && vehicle.cost_basis 
+                          ? (parseFloat(vehicle.bonus_depreciation.toString()) / 100) * parseFloat(vehicle.cost_basis.toString())
+                          : 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Repairs & Maintenance */}
+          <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-6">
+            <button
+              onClick={() => setRepairsExpanded(!repairsExpanded)}
+              className="w-full flex items-center justify-between mb-2"
+            >
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+                Operating Expenses
+                {repairs.length > 0 && (
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    ({repairs.length} repair{repairs.length !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </h2>
+              <svg
+                className={`w-5 h-5 text-gray-600 transition-transform ${repairsExpanded ? 'transform rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {repairsExpanded && (
+              <div className="space-y-4">
+                {/* Summary */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <span className="text-xs font-medium text-red-700">Total Repair Costs</span>
+                    <p className="text-2xl font-bold text-red-700 mt-1">
+                      ${safeToLocaleString(repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0))}
+                    </p>
+                    <p className="text-xs text-red-600 mt-1">Deductible business expense</p>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <span className="text-xs font-medium text-orange-700">Registration Fee</span>
+                    <p className="text-2xl font-bold text-orange-700 mt-1">
+                      ${safeToLocaleString(vehicle.registration_fee)}
+                    </p>
+                    <p className="text-xs text-orange-600 mt-1">Annual deductible expense</p>
+                  </div>
+                </div>
+
+                {/* Repair List */}
+                {repairs.length > 0 ? (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Repair History</h3>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {repairs.map((repair) => (
+                        <div key={repair.id} className="flex justify-between items-center bg-gray-50 rounded-lg p-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{repair.description}</p>
+                            <p className="text-xs text-gray-500">
+                              {repair.repair_date ? new Date(repair.repair_date).toLocaleDateString() : 'No date'}
+                              {repair.vendor && ` • ${repair.vendor}`}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-red-600">
+                            ${safeToLocaleString(repair.total_cost)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500">
+                    <p>No repairs recorded yet</p>
+                    <button
+                      onClick={() => navigate('/repairs')}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Add a repair →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Investment Information */}
