@@ -190,6 +190,10 @@ def migrate_recalculate_loan_interest():
     finally:
         db.close()
 
+def migrate():
+    """Wrapper function for master migration script"""
+    migrate_recalculate_loan_interest()
+
 if __name__ == "__main__":
     migrate_recalculate_loan_interest()
     print("\n✓ Migration completed successfully!")

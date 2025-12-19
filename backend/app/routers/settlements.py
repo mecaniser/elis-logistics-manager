@@ -31,6 +31,9 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     """
     Update current_loan_balance after a settlement is created.
     Principal payments only apply after cash investment is 100% recovered.
+    
+    Recalculates balance chronologically to ensure correct principal tracking
+    even if settlements are created out of order.
     """
     truck = db.query(Truck).filter(Truck.id == truck_id).first()
     if not truck or truck.vehicle_type != 'truck':
@@ -40,32 +43,72 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     if not cash_investment or cash_investment <= 0:
         return
     
-    # Get current loan balance (use loan_amount if current_loan_balance is None)
-    current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
-    if not current_balance or current_balance <= 0:
+    loan_amount = float(truck.loan_amount) if truck.loan_amount else None
+    if not loan_amount or loan_amount <= 0:
         return
     
-    # Calculate cumulative net profit
-    settlements = db.query(Settlement).filter(Settlement.truck_id == truck_id)
-    repairs = db.query(Repair).filter(Repair.truck_id == truck_id)
+    # Initialize current_loan_balance if not set
+    if truck.current_loan_balance is None:
+        truck.current_loan_balance = loan_amount
     
-    revenue = settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
-    settlement_expenses = settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
-    repair_costs = repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+    # Get all settlements chronologically to recalculate balance correctly
+    settlements = db.query(Settlement).filter(
+        Settlement.truck_id == truck_id
+    ).order_by(
+        Settlement.week_start.asc().nullslast(),
+        Settlement.settlement_date.asc().nullslast(),
+        Settlement.created_at.asc()
+    ).all()
     
-    cumulative_net_profit = float(revenue) - float(settlement_expenses) - float(repair_costs)
+    # Get all repairs ordered by date
+    repairs = db.query(Repair).filter(
+        Repair.truck_id == truck_id
+    ).order_by(Repair.date.asc()).all()
     
-    # Calculate principal payment
-    principal_payment, new_loan_balance = calculate_principal_payment(
-        cumulative_net_profit,
-        cash_investment,
-        current_balance
-    )
+    # Track balance chronologically
+    current_loan_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else loan_amount
+    cumulative_revenue = 0.0
+    cumulative_settlement_expenses = 0.0
+    cumulative_repair_costs = 0.0
     
-    # Update truck's current_loan_balance
-    if principal_payment > 0:
-        truck.current_loan_balance = new_loan_balance
-        db.commit()
+    # Process repairs up to each settlement date
+    repair_index = 0
+    
+    for settlement in settlements:
+        # Add settlement revenue and expenses
+        revenue = float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+        expenses = float(settlement.expenses) if settlement.expenses else 0.0
+        
+        cumulative_revenue += revenue
+        cumulative_settlement_expenses += expenses
+        
+        # Add repairs up to this settlement's date
+        settlement_date = settlement.week_start or settlement.settlement_date or settlement.created_at
+        while repair_index < len(repairs):
+            repair = repairs[repair_index]
+            repair_date = repair.date or repair.created_at
+            if settlement_date and repair_date and repair_date <= settlement_date:
+                cumulative_repair_costs += float(repair.cost) if repair.cost else 0.0
+                repair_index += 1
+            else:
+                break
+        
+        # Calculate cumulative net profit up to this point
+        cumulative_net_profit = cumulative_revenue - cumulative_settlement_expenses - cumulative_repair_costs
+        
+        # Calculate principal payment and update balance
+        principal_payment, new_loan_balance = calculate_principal_payment(
+            cumulative_net_profit,
+            cash_investment,
+            current_loan_balance
+        )
+        
+        if principal_payment > 0:
+            current_loan_balance = new_loan_balance
+    
+    # Update truck's current_loan_balance with final calculated balance
+    truck.current_loan_balance = current_loan_balance
+    db.commit()
 
 @router.get("/duplicate-block-ids")
 def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
