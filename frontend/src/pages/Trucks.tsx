@@ -1161,37 +1161,38 @@ export default function Trucks() {
                           
                           {/* Expandable edit section */}
                           {isEditing && (
-                            <div className="p-3 bg-white border-t border-gray-200 space-y-3">
-                              {/* Category dropdown */}
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
-                                <select
-                                  value={expense.category || 'other_deductible'}
-                                  onChange={(e) => {
-                                    const value = e.target.value as ExpenseCategory
-                                    setFormData(prev => {
-                                      const updated = [...prev.additional_expenses]
-                                      updated[index] = { ...updated[index], category: value }
-                                      return { ...prev, additional_expenses: updated }
-                                    })
-                                  }}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900 bg-white"
-                                >
-                                  <optgroup label="Deductible">
-                                    {EXPENSE_CATEGORIES.filter(c => c.deductible).map(cat => (
-                                      <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
-                                    ))}
-                                  </optgroup>
-                                  <optgroup label="Non-Deductible">
-                                    {EXPENSE_CATEGORIES.filter(c => !c.deductible).map(cat => (
-                                      <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
-                                    ))}
-                                  </optgroup>
-                                </select>
-                              </div>
-                              
-                              {/* Description and Amount */}
-                              <div className="flex items-end gap-2">
+                            <div className="p-3 bg-white border-t border-gray-200">
+                              {/* All fields in one row on md+ screens */}
+                              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                                {/* Category dropdown */}
+                                <div className="sm:w-48 flex-shrink-0">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                                  <select
+                                    value={expense.category || 'other_deductible'}
+                                    onChange={(e) => {
+                                      const value = e.target.value as ExpenseCategory
+                                      setFormData(prev => {
+                                        const updated = [...prev.additional_expenses]
+                                        updated[index] = { ...updated[index], category: value }
+                                        return { ...prev, additional_expenses: updated }
+                                      })
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900 bg-white"
+                                  >
+                                    <optgroup label="Deductible">
+                                      {EXPENSE_CATEGORIES.filter(c => c.deductible).map(cat => (
+                                        <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
+                                      ))}
+                                    </optgroup>
+                                    <optgroup label="Non-Deductible">
+                                      {EXPENSE_CATEGORIES.filter(c => !c.deductible).map(cat => (
+                                        <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
+                                      ))}
+                                    </optgroup>
+                                  </select>
+                                </div>
+                                
+                                {/* Description */}
                                 <div className="flex-1 min-w-0">
                                   <label className="block text-xs font-medium text-gray-700 mb-1">Description (optional)</label>
                                   <input
@@ -1209,7 +1210,9 @@ export default function Trucks() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900"
                                   />
                                 </div>
-                                <div className="flex-shrink-0 w-28">
+                                
+                                {/* Amount */}
+                                <div className="w-28 flex-shrink-0">
                                   <label className="block text-xs font-medium text-gray-700 mb-1">Amount ($)</label>
                                   <input
                                     type="text"
