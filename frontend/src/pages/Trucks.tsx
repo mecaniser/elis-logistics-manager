@@ -1088,127 +1088,170 @@ export default function Trucks() {
                     </button>
                   </div>
                   {formData.additional_expenses.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2">
                       {formData.additional_expenses.map((expense, index) => {
                         const categoryInfo = EXPENSE_CATEGORIES.find(c => c.value === expense.category)
                         const isDeductible = categoryInfo?.deductible ?? true
+                        const isEditing = focusedFields.has(`editing_expense_${index}`)
+                        
                         return (
-                        <div key={index} className={`relative border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow ${isDeductible ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                          {/* Deductibility badge */}
-                          <span className={`absolute top-2 left-2 text-xs font-medium px-2 py-0.5 rounded ${isDeductible ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {isDeductible ? '✓ Deductible' : '✗ Non-Deductible'}
-                          </span>
-                          
-                          {/* X button in top-right corner */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFormData(prev => {
-                                const updated = prev.additional_expenses.filter((_, i) => i !== index)
-                                return { ...prev, additional_expenses: updated }
-                              })
-                            }}
-                            className="absolute top-2 right-2 text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
-                            title="Remove expense"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                          
-                          <div className="mt-6 space-y-3">
-                            {/* Description and Amount inline */}
-                            <div className="flex items-end gap-2">
-                              {/* Description input */}
-                              <div className="flex-1 min-w-0">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
-                                <input
-                                  type="text"
-                                  value={expense.description}
-                                  onChange={(e) => {
-                                    const value = e.target.value
-                                    setFormData(prev => {
-                                      const updated = [...prev.additional_expenses]
-                                      updated[index] = { ...updated[index], description: value }
-                                      return { ...prev, additional_expenses: updated }
-                                    })
-                                  }}
-                                  placeholder="Additional details..."
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                />
-                              </div>
-                              
-                              {/* Amount input */}
-                              <div className="flex-shrink-0 w-28">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Amount ($)</label>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={focusedFields.has(`additional_expense_${index}`) ? expense.amount : formatCurrencyDisplay(expense.amount)}
-                                  onChange={(e) => {
-                                    const inputValue = e.target.value
-                                    if (isValidNumericInput(inputValue)) {
-                                      const newAmount = parseCurrency(inputValue)
-                                      if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
-                                        setFormData(prev => {
-                                          const updated = [...prev.additional_expenses]
-                                          updated[index] = { ...updated[index], amount: newAmount }
-                                          return { ...prev, additional_expenses: updated }
-                                        })
-                                      }
-                                    }
-                                  }}
-                                  onFocus={() => setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))}
-                                  onBlur={(e) => {
-                                    const value = parseCurrency(e.target.value)
-                                    if (value && !isNaN(parseFloat(value))) {
-                                      const formatted = parseFloat(value).toFixed(2)
-                                      setFormData(prev => {
-                                        const updated = [...prev.additional_expenses]
-                                        updated[index] = { ...updated[index], amount: formatted }
-                                        return { ...prev, additional_expenses: updated }
-                                      })
-                                    }
+                        <div key={index} className={`border rounded-lg overflow-hidden ${isDeductible ? 'border-green-300' : 'border-red-300'}`}>
+                          {/* Compact summary row */}
+                          <div className={`flex items-center justify-between px-3 py-2 ${isDeductible ? 'bg-green-50' : 'bg-red-50'}`}>
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${isDeductible ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                                {isDeductible ? '✓' : '✗'}
+                              </span>
+                              <span className="text-sm font-medium text-gray-900 truncate">
+                                {categoryInfo?.label || 'Other'}
+                              </span>
+                              {expense.description && (
+                                <span className="text-sm text-gray-500 truncate hidden sm:inline">
+                                  — {expense.description}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className={`text-sm font-bold ${isDeductible ? 'text-green-700' : 'text-red-700'}`}>
+                                ${formatCurrencyDisplay(expense.amount) || '0.00'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isEditing) {
                                     setFocusedFields(prev => {
                                       const next = new Set(prev)
-                                      next.delete(`additional_expense_${index}`)
+                                      next.delete(`editing_expense_${index}`)
                                       return next
                                     })
-                                  }}
-                                  placeholder="0.00"
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right"
-                                />
-                              </div>
-                            </div>
-                            
-                            {/* Category dropdown */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
-                              <select
-                                value={expense.category || 'other_deductible'}
-                                onChange={(e) => {
-                                  const value = e.target.value as ExpenseCategory
+                                  } else {
+                                    setFocusedFields(prev => new Set(prev).add(`editing_expense_${index}`))
+                                  }
+                                }}
+                                className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                title={isEditing ? 'Done' : 'Edit'}
+                              >
+                                {isEditing ? (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setFormData(prev => {
-                                    const updated = [...prev.additional_expenses]
-                                    updated[index] = { ...updated[index], category: value }
+                                    const updated = prev.additional_expenses.filter((_, i) => i !== index)
                                     return { ...prev, additional_expenses: updated }
                                   })
                                 }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                title="Remove"
                               >
-                                <optgroup label="Deductible">
-                                  {EXPENSE_CATEGORIES.filter(c => c.deductible).map(cat => (
-                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="Non-Deductible">
-                                  {EXPENSE_CATEGORIES.filter(c => !c.deductible).map(cat => (
-                                    <option key={cat.value} value={cat.value}>{cat.label}</option>
-                                  ))}
-                                </optgroup>
-                              </select>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
+                          
+                          {/* Expandable edit section */}
+                          {isEditing && (
+                            <div className="p-3 bg-white border-t border-gray-200 space-y-3">
+                              {/* Category dropdown */}
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                                <select
+                                  value={expense.category || 'other_deductible'}
+                                  onChange={(e) => {
+                                    const value = e.target.value as ExpenseCategory
+                                    setFormData(prev => {
+                                      const updated = [...prev.additional_expenses]
+                                      updated[index] = { ...updated[index], category: value }
+                                      return { ...prev, additional_expenses: updated }
+                                    })
+                                  }}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900 bg-white"
+                                >
+                                  <optgroup label="Deductible">
+                                    {EXPENSE_CATEGORIES.filter(c => c.deductible).map(cat => (
+                                      <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
+                                    ))}
+                                  </optgroup>
+                                  <optgroup label="Non-Deductible">
+                                    {EXPENSE_CATEGORIES.filter(c => !c.deductible).map(cat => (
+                                      <option key={cat.value} value={cat.value} className="text-gray-900">{cat.label}</option>
+                                    ))}
+                                  </optgroup>
+                                </select>
+                              </div>
+                              
+                              {/* Description and Amount */}
+                              <div className="flex items-end gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Description (optional)</label>
+                                  <input
+                                    type="text"
+                                    value={expense.description}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      setFormData(prev => {
+                                        const updated = [...prev.additional_expenses]
+                                        updated[index] = { ...updated[index], description: value }
+                                        return { ...prev, additional_expenses: updated }
+                                      })
+                                    }}
+                                    placeholder="Additional details..."
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-gray-900"
+                                  />
+                                </div>
+                                <div className="flex-shrink-0 w-28">
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Amount ($)</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={focusedFields.has(`additional_expense_${index}`) ? expense.amount : formatCurrencyDisplay(expense.amount)}
+                                    onChange={(e) => {
+                                      const inputValue = e.target.value
+                                      if (isValidNumericInput(inputValue)) {
+                                        const newAmount = parseCurrency(inputValue)
+                                        if (newAmount === '' || parseFloat(newAmount) >= 0 || isNaN(parseFloat(newAmount))) {
+                                          setFormData(prev => {
+                                            const updated = [...prev.additional_expenses]
+                                            updated[index] = { ...updated[index], amount: newAmount }
+                                            return { ...prev, additional_expenses: updated }
+                                          })
+                                        }
+                                      }
+                                    }}
+                                    onFocus={() => setFocusedFields(prev => new Set(prev).add(`additional_expense_${index}`))}
+                                    onBlur={(e) => {
+                                      const value = parseCurrency(e.target.value)
+                                      if (value && !isNaN(parseFloat(value))) {
+                                        const formatted = parseFloat(value).toFixed(2)
+                                        setFormData(prev => {
+                                          const updated = [...prev.additional_expenses]
+                                          updated[index] = { ...updated[index], amount: formatted }
+                                          return { ...prev, additional_expenses: updated }
+                                        })
+                                      }
+                                      setFocusedFields(prev => {
+                                        const next = new Set(prev)
+                                        next.delete(`additional_expense_${index}`)
+                                        return next
+                                      })
+                                    }}
+                                    placeholder="0.00"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right text-gray-900"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         )
                       })}
