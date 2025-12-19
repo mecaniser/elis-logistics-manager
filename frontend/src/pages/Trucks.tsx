@@ -58,6 +58,9 @@ function LabelWithTooltip({
 
 // Expense categories with deductibility
 const EXPENSE_CATEGORIES = [
+  // Capitalize to cost basis (added to depreciable basis)
+  { value: 'acquisition', label: 'Acquisition Cost (Capitalize)', deductible: true, capitalize: true },
+  // Direct deductible expenses
   { value: 'fuel', label: 'Fuel/Gas', deductible: true },
   { value: 'insurance', label: 'Insurance', deductible: true },
   { value: 'registration', label: 'Registration/License', deductible: true },
@@ -68,6 +71,7 @@ const EXPENSE_CATEGORIES = [
   { value: 'tires', label: 'Tires', deductible: true },
   { value: 'documentation', label: 'Documentation Fees', deductible: true },
   { value: 'other_deductible', label: 'Other (Deductible)', deductible: true },
+  // Non-deductible
   { value: 'tickets', label: 'Traffic Tickets/Fines', deductible: false },
   { value: 'personal', label: 'Personal Expenses', deductible: false },
   { value: 'other_non_deductible', label: 'Other (Non-Deductible)', deductible: false },

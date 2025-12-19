@@ -13,24 +13,28 @@ const safeToLocaleString = (value: number | null | undefined, options?: Intl.Num
 
 // Expense categories - same as in Trucks.tsx
 const DEDUCTIBLE_CATEGORIES = ['fuel', 'insurance', 'registration', 'repairs', 'parking', 'car_wash', 'oil_change', 'tires', 'documentation', 'other_deductible']
+const CAPITALIZE_CATEGORIES = ['acquisition'] // Added to cost basis, not expensed directly
 
 // Helper to calculate additional expenses totals
 const calculateExpenseTotals = (expenses: Array<{category?: string, description: string, amount: number}> | undefined) => {
-  if (!expenses || expenses.length === 0) return { deductible: 0, nonDeductible: 0, total: 0 }
+  if (!expenses || expenses.length === 0) return { deductible: 0, nonDeductible: 0, capitalized: 0, total: 0 }
   
   let deductible = 0
   let nonDeductible = 0
+  let capitalized = 0
   
   for (const exp of expenses) {
     const category = exp.category || 'other_deductible' // default to deductible if no category
-    if (DEDUCTIBLE_CATEGORIES.includes(category)) {
+    if (CAPITALIZE_CATEGORIES.includes(category)) {
+      capitalized += exp.amount || 0
+    } else if (DEDUCTIBLE_CATEGORIES.includes(category)) {
       deductible += exp.amount || 0
     } else {
       nonDeductible += exp.amount || 0
     }
   }
   
-  return { deductible, nonDeductible, total: deductible + nonDeductible }
+  return { deductible, nonDeductible, capitalized, total: deductible + nonDeductible + capitalized }
 }
 
 export default function VehicleDetail() {
@@ -409,6 +413,7 @@ export default function VehicleDetail() {
                     : 0
                   const repairsCost = repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0)
                   const registrationFee = vehicle.registration_fee ? parseFloat(vehicle.registration_fee.toString()) : 0
+                  // Capitalized costs are included in cost basis, so they're deducted via Section 179/depreciation, not separately
                   const totalDeduction = section179 + bonusDepreciation + expenseTotals.deductible + repairsCost + registrationFee
                   
                   return (
@@ -422,6 +427,7 @@ export default function VehicleDetail() {
                       <div className="text-xs text-gray-500 space-y-1">
                         {section179 > 0 && <div className="flex justify-between"><span>Section 179:</span><span>${safeToLocaleString(section179)}</span></div>}
                         {bonusDepreciation > 0 && <div className="flex justify-between"><span>Bonus Depreciation:</span><span>${safeToLocaleString(bonusDepreciation)}</span></div>}
+                        {expenseTotals.capitalized > 0 && <div className="flex justify-between text-blue-600"><span>Acquisition Costs (in cost basis):</span><span>${safeToLocaleString(expenseTotals.capitalized)}</span></div>}
                         {expenseTotals.deductible > 0 && <div className="flex justify-between"><span>Deductible Expenses:</span><span>${safeToLocaleString(expenseTotals.deductible)}</span></div>}
                         {repairsCost > 0 && <div className="flex justify-between"><span>Repairs:</span><span>${safeToLocaleString(repairsCost)}</span></div>}
                         {registrationFee > 0 && <div className="flex justify-between"><span>Registration:</span><span>${safeToLocaleString(registrationFee)}</span></div>}
@@ -477,13 +483,22 @@ export default function VehicleDetail() {
                         </p>
                         <p className="text-xs text-orange-600 mt-1">Deductible</p>
                       </div>
+                      {expenseTotals.capitalized > 0 && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <span className="text-xs font-medium text-blue-700">Acquisition Costs</span>
+                          <p className="text-xl font-bold text-blue-700 mt-1">
+                            ${safeToLocaleString(expenseTotals.capitalized)}
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">Added to cost basis</p>
+                        </div>
+                      )}
                       {expenseTotals.deductible > 0 && (
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                           <span className="text-xs font-medium text-green-700">Deductible Expenses</span>
                           <p className="text-xl font-bold text-green-700 mt-1">
                             ${safeToLocaleString(expenseTotals.deductible)}
                           </p>
-                          <p className="text-xs text-green-600 mt-1">Tax write-off</p>
+                          <p className="text-xs text-green-600 mt-1">Direct write-off</p>
                         </div>
                       )}
                       {expenseTotals.nonDeductible > 0 && (
@@ -538,18 +553,35 @@ export default function VehicleDetail() {
                     <h3 className="text-sm font-medium text-gray-700 mb-3">Additional Expenses</h3>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                       {vehicle.additional_expenses.map((expense, index) => {
-                        const isDeductible = DEDUCTIBLE_CATEGORIES.includes(expense.category || 'other_deductible')
+                        const category = expense.category || 'other_deductible'
+                        const isCapitalized = CAPITALIZE_CATEGORIES.includes(category)
+                        const isDeductible = DEDUCTIBLE_CATEGORIES.includes(category)
+                        
+                        let bgColor = 'bg-gray-50'
+                        let textColor = 'text-gray-600'
+                        let label = '✗ Non-Deductible'
+                        
+                        if (isCapitalized) {
+                          bgColor = 'bg-blue-50'
+                          textColor = 'text-blue-700'
+                          label = '📦 Capitalized (in cost basis)'
+                        } else if (isDeductible) {
+                          bgColor = 'bg-green-50'
+                          textColor = 'text-green-700'
+                          label = '✓ Tax Deductible'
+                        }
+                        
                         return (
-                          <div key={index} className={`flex justify-between items-center rounded-lg p-3 ${isDeductible ? 'bg-green-50' : 'bg-gray-50'}`}>
+                          <div key={index} className={`flex justify-between items-center rounded-lg p-3 ${bgColor}`}>
                             <div>
                               <p className="text-sm font-medium text-gray-900">
                                 {expense.description || expense.category?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Expense'}
                               </p>
-                              <p className={`text-xs ${isDeductible ? 'text-green-600' : 'text-gray-500'}`}>
-                                {isDeductible ? '✓ Tax Deductible' : '✗ Non-Deductible'}
+                              <p className={`text-xs ${isCapitalized ? 'text-blue-600' : isDeductible ? 'text-green-600' : 'text-gray-500'}`}>
+                                {label}
                               </p>
                             </div>
-                            <span className={`text-sm font-semibold ${isDeductible ? 'text-green-700' : 'text-gray-600'}`}>
+                            <span className={`text-sm font-semibold ${textColor}`}>
                               ${safeToLocaleString(expense.amount)}
                             </span>
                           </div>
