@@ -119,7 +119,7 @@ export default function Trucks() {
   // Track which fields are focused to avoid formatting while typing
   const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set())
   // Track input widths for auto-resizing
-  const [inputWidths, setInputWidths] = useState<Record<string, number>>({})
+  const [, setInputWidths] = useState<Record<string, number>>({})
   // Track label container widths (label + tooltip) to match input widths
   const labelContainerRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const [trucks, setTrucks] = useState<Truck[]>([])
