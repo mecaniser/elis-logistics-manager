@@ -427,9 +427,10 @@ export default function Trucks() {
       // Additional expenses
       if (formData.additional_expenses.length > 0) {
         const validExpenses = formData.additional_expenses
-          .filter(exp => exp.description.trim() && exp.amount)
+          .filter(exp => exp.amount && parseNumeric(exp.amount) > 0)
           .map(exp => ({
-            description: exp.description.trim(),
+            category: exp.category || 'other_deductible',
+            description: exp.description?.trim() || '',
             amount: parseNumeric(exp.amount)
           }))
         if (validExpenses.length > 0) {
