@@ -411,7 +411,7 @@ export default function VehicleDetail() {
                   const bonusDepreciation = vehicle.bonus_depreciation && vehicle.cost_basis 
                     ? (parseFloat(vehicle.bonus_depreciation.toString()) / 100) * parseFloat(vehicle.cost_basis.toString())
                     : 0
-                  const repairsCost = repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0)
+                  const repairsCost = repairs.reduce((sum, r) => sum + (r.cost || 0), 0)
                   const registrationFee = vehicle.registration_fee ? parseFloat(vehicle.registration_fee.toString()) : 0
                   // Capitalized costs are included in cost basis, so they're deducted via Section 179/depreciation, not separately
                   const totalDeduction = section179 + bonusDepreciation + expenseTotals.deductible + repairsCost + registrationFee
@@ -472,7 +472,7 @@ export default function VehicleDetail() {
                       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                         <span className="text-xs font-medium text-red-700">Total Repair Costs</span>
                         <p className="text-xl font-bold text-red-700 mt-1">
-                          ${safeToLocaleString(repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0))}
+                          ${safeToLocaleString(repairs.reduce((sum, r) => sum + (r.cost || 0), 0))}
                         </p>
                         <p className="text-xs text-red-600 mt-1">Deductible</p>
                       </div>
@@ -525,11 +525,10 @@ export default function VehicleDetail() {
                             <p className="text-sm font-medium text-gray-900">{repair.description}</p>
                             <p className="text-xs text-gray-500">
                               {repair.repair_date ? new Date(repair.repair_date).toLocaleDateString() : 'No date'}
-                              {repair.vendor && ` • ${repair.vendor}`}
                             </p>
                           </div>
                           <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(repair.total_cost)}
+                            ${safeToLocaleString(repair.cost || 0)}
                           </span>
                         </div>
                       ))}
