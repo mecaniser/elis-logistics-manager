@@ -11,6 +11,28 @@ const safeToLocaleString = (value: number | null | undefined, options?: Intl.Num
   return value.toLocaleString(undefined, options || { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// Expense categories - same as in Trucks.tsx
+const DEDUCTIBLE_CATEGORIES = ['fuel', 'insurance', 'registration', 'repairs', 'parking', 'car_wash', 'oil_change', 'tires', 'documentation', 'other_deductible']
+
+// Helper to calculate additional expenses totals
+const calculateExpenseTotals = (expenses: Array<{category?: string, description: string, amount: number}> | undefined) => {
+  if (!expenses || expenses.length === 0) return { deductible: 0, nonDeductible: 0, total: 0 }
+  
+  let deductible = 0
+  let nonDeductible = 0
+  
+  for (const exp of expenses) {
+    const category = exp.category || 'other_deductible' // default to deductible if no category
+    if (DEDUCTIBLE_CATEGORIES.includes(category)) {
+      deductible += exp.amount || 0
+    } else {
+      nonDeductible += exp.amount || 0
+    }
+  }
+  
+  return { deductible, nonDeductible, total: deductible + nonDeductible }
+}
+
 export default function VehicleDetail() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -379,19 +401,34 @@ export default function VehicleDetail() {
                 </div>
 
                 {/* Total Deduction Summary */}
-                <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-700">Total Tax Deduction (First Year)</span>
-                    <span className="text-xl font-bold text-green-700">
-                      ${safeToLocaleString(
-                        (vehicle.section_179_deduction ? parseFloat(vehicle.section_179_deduction.toString()) : 0) +
-                        (vehicle.bonus_depreciation && vehicle.cost_basis 
-                          ? (parseFloat(vehicle.bonus_depreciation.toString()) / 100) * parseFloat(vehicle.cost_basis.toString())
-                          : 0)
-                      )}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const expenseTotals = calculateExpenseTotals(vehicle.additional_expenses)
+                  const section179 = vehicle.section_179_deduction ? parseFloat(vehicle.section_179_deduction.toString()) : 0
+                  const bonusDepreciation = vehicle.bonus_depreciation && vehicle.cost_basis 
+                    ? (parseFloat(vehicle.bonus_depreciation.toString()) / 100) * parseFloat(vehicle.cost_basis.toString())
+                    : 0
+                  const repairsCost = repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0)
+                  const registrationFee = vehicle.registration_fee ? parseFloat(vehicle.registration_fee.toString()) : 0
+                  const totalDeduction = section179 + bonusDepreciation + expenseTotals.deductible + repairsCost + registrationFee
+                  
+                  return (
+                    <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-700">Total Tax Deduction (First Year)</span>
+                        <span className="text-xl font-bold text-green-700">
+                          ${safeToLocaleString(totalDeduction)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 space-y-1">
+                        {section179 > 0 && <div className="flex justify-between"><span>Section 179:</span><span>${safeToLocaleString(section179)}</span></div>}
+                        {bonusDepreciation > 0 && <div className="flex justify-between"><span>Bonus Depreciation:</span><span>${safeToLocaleString(bonusDepreciation)}</span></div>}
+                        {expenseTotals.deductible > 0 && <div className="flex justify-between"><span>Deductible Expenses:</span><span>${safeToLocaleString(expenseTotals.deductible)}</span></div>}
+                        {repairsCost > 0 && <div className="flex justify-between"><span>Repairs:</span><span>${safeToLocaleString(repairsCost)}</span></div>}
+                        {registrationFee > 0 && <div className="flex justify-between"><span>Registration:</span><span>${safeToLocaleString(registrationFee)}</span></div>}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>
@@ -422,22 +459,45 @@ export default function VehicleDetail() {
             {repairsExpanded && (
               <div className="space-y-4">
                 {/* Summary */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <span className="text-xs font-medium text-red-700">Total Repair Costs</span>
-                    <p className="text-2xl font-bold text-red-700 mt-1">
-                      ${safeToLocaleString(repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0))}
-                    </p>
-                    <p className="text-xs text-red-600 mt-1">Deductible business expense</p>
-                  </div>
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                    <span className="text-xs font-medium text-orange-700">Registration Fee</span>
-                    <p className="text-2xl font-bold text-orange-700 mt-1">
-                      ${safeToLocaleString(vehicle.registration_fee)}
-                    </p>
-                    <p className="text-xs text-orange-600 mt-1">Annual deductible expense</p>
-                  </div>
-                </div>
+                {(() => {
+                  const expenseTotals = calculateExpenseTotals(vehicle.additional_expenses)
+                  return (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <span className="text-xs font-medium text-red-700">Total Repair Costs</span>
+                        <p className="text-xl font-bold text-red-700 mt-1">
+                          ${safeToLocaleString(repairs.reduce((sum, r) => sum + (r.total_cost || 0), 0))}
+                        </p>
+                        <p className="text-xs text-red-600 mt-1">Deductible</p>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                        <span className="text-xs font-medium text-orange-700">Registration Fee</span>
+                        <p className="text-xl font-bold text-orange-700 mt-1">
+                          ${safeToLocaleString(vehicle.registration_fee)}
+                        </p>
+                        <p className="text-xs text-orange-600 mt-1">Deductible</p>
+                      </div>
+                      {expenseTotals.deductible > 0 && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <span className="text-xs font-medium text-green-700">Deductible Expenses</span>
+                          <p className="text-xl font-bold text-green-700 mt-1">
+                            ${safeToLocaleString(expenseTotals.deductible)}
+                          </p>
+                          <p className="text-xs text-green-600 mt-1">Tax write-off</p>
+                        </div>
+                      )}
+                      {expenseTotals.nonDeductible > 0 && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <span className="text-xs font-medium text-gray-700">Non-Deductible</span>
+                          <p className="text-xl font-bold text-gray-700 mt-1">
+                            ${safeToLocaleString(expenseTotals.nonDeductible)}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">Not tax deductible</p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* Repair List */}
                 {repairs.length > 0 ? (
@@ -469,6 +529,33 @@ export default function VehicleDetail() {
                     >
                       Add a repair →
                     </button>
+                  </div>
+                )}
+
+                {/* Additional Expenses List */}
+                {vehicle.additional_expenses && vehicle.additional_expenses.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Additional Expenses</h3>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {vehicle.additional_expenses.map((expense, index) => {
+                        const isDeductible = DEDUCTIBLE_CATEGORIES.includes(expense.category || 'other_deductible')
+                        return (
+                          <div key={index} className={`flex justify-between items-center rounded-lg p-3 ${isDeductible ? 'bg-green-50' : 'bg-gray-50'}`}>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {expense.description || expense.category?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Expense'}
+                              </p>
+                              <p className={`text-xs ${isDeductible ? 'text-green-600' : 'text-gray-500'}`}>
+                                {isDeductible ? '✓ Tax Deductible' : '✗ Non-Deductible'}
+                              </p>
+                            </div>
+                            <span className={`text-sm font-semibold ${isDeductible ? 'text-green-700' : 'text-gray-600'}`}>
+                              ${safeToLocaleString(expense.amount)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
