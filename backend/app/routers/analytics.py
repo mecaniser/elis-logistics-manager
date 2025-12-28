@@ -141,6 +141,17 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         remaining_to_break_even = max(0.0, total_cost - cumulative_net_profit)
         break_even_achieved = cumulative_net_profit >= total_cost
     
+    # Calculate clean cash return (profit after cash + loan fully recovered)
+    # This is the "overflow" profit after all investments are recovered
+    clean_cash_return = None
+    loan_fully_paid = calculated_loan_balance is not None and calculated_loan_balance == 0.0
+    
+    if cash_recovery_achieved and loan_fully_paid:
+        # Clean cash = cumulative profit - cash investment - loan amount
+        # This represents pure profit after all debts and investments are recovered
+        total_recovered = (cash_investment or 0.0) + (loan_amount or 0.0)
+        clean_cash_return = max(0.0, cumulative_net_profit - total_recovered)
+    
     return {
         "vehicle_id": truck_id,
         "vehicle_name": vehicle.name,
@@ -161,6 +172,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "cash_recovery_amount": round(cash_recovery_amount, 2) if cash_recovery_amount is not None else None,
         "cash_recovery_achieved": cash_recovery_achieved,
         "remaining_to_cash_recovery": round(remaining_to_cash_recovery, 2) if remaining_to_cash_recovery is not None else None,
+        "clean_cash_return": round(clean_cash_return, 2) if clean_cash_return is not None else None,
         "investment_recovery_percentage": round(investment_recovery_percentage, 2) if investment_recovery_percentage is not None else None,
         "remaining_to_break_even": round(remaining_to_break_even, 2) if remaining_to_break_even is not None else None,
         "break_even_achieved": break_even_achieved

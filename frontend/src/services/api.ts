@@ -97,6 +97,7 @@ export interface VehicleROI {
   investment_recovery_percentage: number | null
   remaining_to_break_even: number | null
   break_even_achieved: boolean
+  clean_cash_return: number | null
 }
 
 export interface Settlement {
