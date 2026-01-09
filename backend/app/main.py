@@ -1,15 +1,17 @@
 """
 FastAPI application for Logistics Management System
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 from pathlib import Path
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine, Base
-from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants
+from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants, auth
+from app.auth_utils import verify_session_token, SESSION_COOKIE_NAME
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -19,6 +21,66 @@ app = FastAPI(
     description="Management system for Amazon Relay truck operations",
     version="1.0.0"
 )
+
+# Session-based auth middleware to keep the app private while allowing a custom login page.
+APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME")
+APP_AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD")
+
+
+class SessionAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, allow_prefixes=None, allow_exact=None):
+        super().__init__(app)
+        self.allow_prefixes = allow_prefixes or []
+        self.allow_exact = set(allow_exact or [])
+
+    def _is_allowed_path(self, path: str) -> bool:
+        return path in self.allow_exact or any(path.startswith(prefix) for prefix in self.allow_prefixes)
+
+    async def dispatch(self, request: Request, call_next):
+        # If credentials are not configured, skip auth (useful for local/dev).
+        if not (APP_AUTH_USERNAME and APP_AUTH_PASSWORD):
+            return await call_next(request)
+
+        path = request.url.path
+        # Allow all non-API routes so the frontend (login page) can load;
+        # API calls remain protected.
+        if not path.startswith("/api"):
+            return await call_next(request)
+
+        if self._is_allowed_path(path):
+            return await call_next(request)
+
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+        valid, username = verify_session_token(token) if token else (False, None)
+
+        if not (valid and username == APP_AUTH_USERNAME):
+            return Response(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content="Not authenticated",
+            )
+
+        return await call_next(request)
+
+
+if APP_AUTH_USERNAME and APP_AUTH_PASSWORD:
+    app.add_middleware(
+        SessionAuthMiddleware,
+        allow_prefixes=[
+            "/api/auth/login",
+            "/api/auth/logout",
+            "/api/auth/me",
+            "/api/health",
+            "/docs",
+            "/openapi.json",
+            "/assets",
+            "/uploads",
+            "/favicon.ico",
+        ],
+        allow_exact=["/", "/index.html"],
+    )
+    print("✓ Session authentication enabled for all API routes.")
+else:
+    print("⚠ APP_AUTH_USERNAME / APP_AUTH_PASSWORD not set - authentication is disabled.")
 
 # Get frontend URL from environment or use default
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -44,6 +106,7 @@ app.include_router(repairs.router, prefix="/api/repairs", tags=["repairs"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"])
 app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 # Serve uploaded files
 # Determine uploads directory - backend runs from backend/ directory
@@ -109,4 +172,3 @@ if frontend_dist.exists():
 else:
     print(f"⚠ Frontend dist directory not found at: {frontend_dist}")
     print(f"  Frontend will not be served. Build frontend with: cd frontend && npm run build")
-

@@ -1,7 +1,8 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ReactNode, useState, useEffect, useRef } from 'react'
 import { useTenant } from '../contexts/TenantContext'
 import Breadcrumb from './Breadcrumb'
+import { useAuth } from '../contexts/AuthContext'
 
 interface LayoutProps {
   children: ReactNode
@@ -9,10 +10,12 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showBusinessMenu, setShowBusinessMenu] = useState(false)
   const { currentTenant, tenants, setCurrentTenant, loading } = useTenant()
   const businessMenuRef = useRef<HTMLDivElement>(null)
+  const { logout } = useAuth()
 
   // Close business menu when clicking outside
   useEffect(() => {
@@ -131,6 +134,15 @@ export default function Layout({ children }: LayoutProps) {
                 )}
               </div>
             )}
+            <button
+              onClick={async () => {
+                await logout()
+                navigate('/login')
+              }}
+              className="ml-4 inline-flex items-center px-3 py-2 border border-gray-600 rounded-md text-sm font-medium text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </div>
@@ -252,4 +264,3 @@ export default function Layout({ children }: LayoutProps) {
     </div>
   )
 }
-

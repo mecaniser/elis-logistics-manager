@@ -5,6 +5,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // include auth cookies
 })
 
 // Add tenant ID interceptor to include X-Tenant-ID header in all requests
@@ -28,10 +29,19 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error)
 })
 
+// Redirect to login on auth failures
+api.interceptors.response.use((response) => response, (error) => {
+  if (error.response?.status === 401) {
+    window.location.href = '/login'
+  }
+  return Promise.reject(error)
+})
+
 // Separate axios instance for FormData requests (no default Content-Type header)
 // This allows the browser to automatically set multipart/form-data with boundary
 const formDataApi = axios.create({
   baseURL: '/api',
+  withCredentials: true,
 })
 
 // Add tenant ID interceptor for FormData requests
@@ -43,6 +53,13 @@ formDataApi.interceptors.request.use((config) => {
   // Don't set Content-Type - let browser set it automatically with boundary for FormData
   return config
 }, (error) => {
+  return Promise.reject(error)
+})
+
+formDataApi.interceptors.response.use((response) => response, (error) => {
+  if (error.response?.status === 401) {
+    window.location.href = '/login'
+  }
   return Promise.reject(error)
 })
 
@@ -218,6 +235,14 @@ export interface PMStatus {
 
 export interface PMStatusResponse {
   pm_status: PMStatus[]
+}
+
+// Auth API (no tenant header)
+export const authApi = {
+  login: (username: string, password: string) =>
+    axios.post('/api/auth/login', { username, password }, { withCredentials: true }),
+  logout: () => axios.post('/api/auth/logout', {}, { withCredentials: true }),
+  me: () => axios.get<{ username: string }>('/api/auth/me', { withCredentials: true }),
 }
 
 // Truck API (also handles trailers and SUVs)

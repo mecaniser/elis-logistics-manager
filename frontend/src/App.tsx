@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { TenantProvider } from './contexts/TenantContext'
+import { AuthProvider } from './contexts/AuthContext'
+import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Trucks from './pages/Trucks'
@@ -15,33 +17,45 @@ import GeneralLedger from './pages/GeneralLedger'
 import TaxYearSummary from './pages/TaxYearSummary'
 import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
+import Login from './pages/Login'
 
 function App() {
   return (
-    <TenantProvider>
+    <AuthProvider>
       <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/businesses" element={<Businesses />} />
-            <Route path="/trucks" element={<Trucks />} />
-            <Route path="/settlements" element={<Settlements />} />
-            <Route path="/repairs" element={<Repairs />} />
-            <Route path="/vehicles/:id" element={<VehicleDetail />} />
-            <Route path="/accounting" element={<Accounting />} />
-            <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
-            <Route path="/accounting/journal-entries" element={<JournalEntries />} />
-            <Route path="/accounting/general-ledger" element={<GeneralLedger />} />
-            <Route path="/accounting/balance-sheet" element={<BalanceSheet />} />
-            <Route path="/accounting/income-statement" element={<IncomeStatement />} />
-            <Route path="/accounting/tax-year-summary" element={<TaxYearSummary />} />
-            <Route path="/accounting/schedule-c" element={<ScheduleC />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/*"
+            element={
+              <RequireAuth>
+                <TenantProvider>
+                  <Layout>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/businesses" element={<Businesses />} />
+                      <Route path="/trucks" element={<Trucks />} />
+                      <Route path="/settlements" element={<Settlements />} />
+                      <Route path="/repairs" element={<Repairs />} />
+                      <Route path="/vehicles/:id" element={<VehicleDetail />} />
+                      <Route path="/accounting" element={<Accounting />} />
+                      <Route path="/accounting/chart-of-accounts" element={<ChartOfAccounts />} />
+                      <Route path="/accounting/journal-entries" element={<JournalEntries />} />
+                      <Route path="/accounting/general-ledger" element={<GeneralLedger />} />
+                      <Route path="/accounting/balance-sheet" element={<BalanceSheet />} />
+                      <Route path="/accounting/income-statement" element={<IncomeStatement />} />
+                      <Route path="/accounting/tax-year-summary" element={<TaxYearSummary />} />
+                      <Route path="/accounting/schedule-c" element={<ScheduleC />} />
+                    </Routes>
+                  </Layout>
+                </TenantProvider>
+              </RequireAuth>
+            }
+          />
+        </Routes>
       </Router>
-    </TenantProvider>
+    </AuthProvider>
   )
 }
 
 export default App
-
