@@ -72,8 +72,6 @@ export default function Layout({ children }: LayoutProps) {
               <div 
                 className="relative" 
                 ref={businessMenuRef}
-                onMouseEnter={() => setShowBusinessMenu(true)}
-                onMouseLeave={() => setShowBusinessMenu(false)}
               >
                 <button
                   onClick={() => setShowBusinessMenu(!showBusinessMenu)}
@@ -129,20 +127,24 @@ export default function Layout({ children }: LayoutProps) {
                         </svg>
                         Manage Businesses
                       </Link>
+                      <button
+                        onClick={async () => {
+                          setShowBusinessMenu(false)
+                          await logout()
+                          navigate('/login')
+                        }}
+                        className="w-full text-left block px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                      >
+                        <svg className="inline-block mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 11-4 0v-1m0-8V7a2 2 0 114 0v1" />
+                        </svg>
+                        Logout
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
             )}
-            <button
-              onClick={async () => {
-                await logout()
-                navigate('/login')
-              }}
-              className="ml-4 inline-flex items-center px-3 py-2 border border-gray-600 rounded-md text-sm font-medium text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-            >
-              Logout
-            </button>
           </div>
         </div>
       </div>
