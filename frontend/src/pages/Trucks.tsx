@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { trucksApi, analyticsApi, Truck, PMStatus } from '../services/api'
+import { trucksApi, analyticsApi, Truck, PMStatus, VehicleDocument } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import { useMobile } from '../utils/useMobile'
@@ -79,6 +79,57 @@ const EXPENSE_CATEGORIES = [
 
 type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]['value']
 
+const VEHICLE_DOCUMENT_TYPES = [
+  { value: 'title', label: 'Title' },
+  { value: 'inspection', label: 'Inspection' },
+  { value: 'registration', label: 'Registration' },
+  { value: 'insurance', label: 'Insurance' },
+  { value: 'permit', label: 'Permit' },
+  { value: 'other', label: 'Other' },
+] as const
+
+type VehicleDocumentType = typeof VEHICLE_DOCUMENT_TYPES[number]['value']
+
+const buildVehicleFormData = (vehicle: Truck) => ({
+  name: vehicle.name,
+  vehicle_type: vehicle.vehicle_type,
+  vin: vehicle.vin || '',
+  license_plate: vehicle.license_plate || '',
+  tag_number: vehicle.tag_number || '',
+  cash_investment: vehicle.cash_investment?.toString() || '',
+  loan_amount: vehicle.loan_amount?.toString() || '',
+  interest_rate: vehicle.interest_rate?.toString() || '0.07',
+  total_cost: vehicle.total_cost?.toString() || '',
+  registration_fee: vehicle.registration_fee?.toString() || '',
+  purchase_date: vehicle.purchase_date ? new Date(vehicle.purchase_date).toISOString().split('T')[0] : '',
+  depreciation_method: (vehicle.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
+  cost_basis: vehicle.cost_basis?.toString() || '',
+  section_179_deduction: vehicle.section_179_deduction?.toString() || '',
+  bonus_depreciation: vehicle.bonus_depreciation?.toString() || '',
+  additional_expenses: vehicle.additional_expenses?.map(exp => ({
+    category: (exp.category || 'other_deductible') as ExpenseCategory,
+    description: exp.description || '',
+    amount: exp.amount?.toString() || ''
+  })) || []
+})
+
+const getVehicleDocumentUrl = (filePath: string) => (
+  filePath.startsWith('http://') || filePath.startsWith('https://')
+    ? filePath
+    : `/uploads/${filePath}`
+)
+
+const formatFileSize = (fileSize?: number | null) => {
+  if (!fileSize || fileSize <= 0) return ''
+  if (fileSize >= 1024 * 1024) {
+    return `${(fileSize / (1024 * 1024)).toFixed(1)} MB`
+  }
+  if (fileSize >= 1024) {
+    return `${Math.round(fileSize / 1024)} KB`
+  }
+  return `${fileSize} B`
+}
+
 export default function Trucks() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -126,6 +177,7 @@ export default function Trucks() {
   const [, setInputWidths] = useState<Record<string, number>>({})
   // Track label container widths (label + tooltip) to match input widths
   const labelContainerRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const documentFileInputRef = useRef<HTMLInputElement | null>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [pmStatus, setPmStatus] = useState<PMStatus[]>([])
   const [loading, setLoading] = useState(true)
@@ -157,6 +209,21 @@ export default function Trucks() {
   const [expandedFormSections, setExpandedFormSections] = useState<Set<string>>(new Set(['vehicle_info', 'investment']))
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [vehicleDocuments, setVehicleDocuments] = useState<VehicleDocument[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [uploadingDocument, setUploadingDocument] = useState(false)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null)
+  const [documentForm, setDocumentForm] = useState<{
+    document_type: VehicleDocumentType
+    title: string
+    notes: string
+    file: File | null
+  }>({
+    document_type: 'title',
+    title: '',
+    notes: '',
+    file: null
+  })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
     message: '',
     type: 'info',
@@ -191,30 +258,9 @@ export default function Trucks() {
       const vehicleToEdit = trucks.find(t => t.id === parseInt(editId))
       if (vehicleToEdit) {
         setEditingTruck(vehicleToEdit)
-        setFormData({
-          name: vehicleToEdit.name,
-          vehicle_type: vehicleToEdit.vehicle_type,
-          vin: vehicleToEdit.vin || '',
-          license_plate: vehicleToEdit.license_plate || '',
-          tag_number: vehicleToEdit.tag_number || '',
-          cash_investment: vehicleToEdit.cash_investment?.toString() || '',
-          loan_amount: vehicleToEdit.loan_amount?.toString() || '',
-          interest_rate: vehicleToEdit.interest_rate?.toString() || '0.07',
-          total_cost: vehicleToEdit.total_cost?.toString() || '',
-          registration_fee: vehicleToEdit.registration_fee?.toString() || '',
-          purchase_date: vehicleToEdit.purchase_date ? new Date(vehicleToEdit.purchase_date).toISOString().split('T')[0] : '',
-          depreciation_method: (vehicleToEdit.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
-          cost_basis: vehicleToEdit.cost_basis?.toString() || '',
-          section_179_deduction: vehicleToEdit.section_179_deduction?.toString() || '',
-          bonus_depreciation: vehicleToEdit.bonus_depreciation?.toString() || '',
-          additional_expenses: vehicleToEdit.additional_expenses?.map(exp => ({
-            category: (exp.category || 'other_deductible') as ExpenseCategory,
-            description: exp.description || '',
-            amount: exp.amount?.toString() || ''
-          })) || []
-        })
+        setFormData(buildVehicleFormData(vehicleToEdit))
         setShowForm(true)
-        setExpandedFormSections(new Set(['vehicle_info', 'investment']))
+        setExpandedFormSections(new Set(['vehicle_info', 'investment', 'documents']))
         // Clear the edit param from URL
         setSearchParams({})
       }
@@ -258,6 +304,26 @@ export default function Trucks() {
       setFormData(prev => ({ ...prev, total_cost: calculatedTotalCost }))
     }
   }, [calculatedTotalCost, showForm])
+
+  useEffect(() => {
+    if (!showForm || !editingTruck) {
+      setVehicleDocuments([])
+      setDocumentsLoading(false)
+      setDeletingDocumentId(null)
+      setDocumentForm({
+        document_type: 'title',
+        title: '',
+        notes: '',
+        file: null
+      })
+      if (documentFileInputRef.current) {
+        documentFileInputRef.current.value = ''
+      }
+      return
+    }
+
+    loadVehicleDocuments(editingTruck.id)
+  }, [showForm, editingTruck?.id])
 
   // Initialize input widths when additional expenses are added/removed
   useEffect(() => {
@@ -358,6 +424,70 @@ export default function Trucks() {
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
+  }
+
+  const loadVehicleDocuments = async (truckId: number) => {
+    try {
+      setDocumentsLoading(true)
+      const response = await trucksApi.getDocuments(truckId)
+      setVehicleDocuments(response.data || [])
+    } catch (err: any) {
+      setVehicleDocuments([])
+      showToast(err.response?.data?.detail || err.message || 'Failed to load vehicle documents', 'error')
+    } finally {
+      setDocumentsLoading(false)
+    }
+  }
+
+  const handleDocumentUpload = async () => {
+    if (!editingTruck) {
+      showToast('Save the vehicle first, then add documents from Edit.', 'warning')
+      return
+    }
+    if (!documentForm.file) {
+      showToast('Select a file to upload.', 'warning')
+      return
+    }
+
+    try {
+      setUploadingDocument(true)
+      await trucksApi.uploadDocument(editingTruck.id, {
+        file: documentForm.file,
+        document_type: documentForm.document_type,
+        title: documentForm.title.trim() || undefined,
+        notes: documentForm.notes.trim() || undefined,
+      })
+      showToast('Vehicle document uploaded successfully!', 'success')
+      setDocumentForm({
+        document_type: 'title',
+        title: '',
+        notes: '',
+        file: null
+      })
+      if (documentFileInputRef.current) {
+        documentFileInputRef.current.value = ''
+      }
+      loadVehicleDocuments(editingTruck.id)
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || err.message || 'Failed to upload document', 'error')
+    } finally {
+      setUploadingDocument(false)
+    }
+  }
+
+  const handleDocumentDelete = async (documentId: number) => {
+    if (!editingTruck) return
+
+    try {
+      setDeletingDocumentId(documentId)
+      await trucksApi.deleteDocument(editingTruck.id, documentId)
+      setVehicleDocuments(prev => prev.filter(document => document.id !== documentId))
+      showToast('Vehicle document deleted successfully!', 'success')
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || err.message || 'Failed to delete document', 'error')
+    } finally {
+      setDeletingDocumentId(null)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -529,6 +659,19 @@ export default function Trucks() {
       bonus_depreciation: '',
       additional_expenses: []
     })
+    setVehicleDocuments([])
+    setDocumentsLoading(false)
+    setUploadingDocument(false)
+    setDeletingDocumentId(null)
+    setDocumentForm({
+      document_type: 'title',
+      title: '',
+      notes: '',
+      file: null
+    })
+    if (documentFileInputRef.current) {
+      documentFileInputRef.current.value = ''
+    }
     setFormErrors({})
     setExpandedFormSections(new Set(['vehicle_info', 'investment']))
   }
@@ -1500,6 +1643,165 @@ export default function Trucks() {
                 </div>
               )}
             </div>
+
+            {/* Vehicle Documents Accordion */}
+            <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('documents')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">Vehicle Documents</h3>
+                <svg
+                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedFormSections.has('documents') ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {expandedFormSections.has('documents') && (
+                <div className="p-4 space-y-4">
+                  {editingTruck ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Document Type</label>
+                          <select
+                            value={documentForm.document_type}
+                            onChange={(e) => setDocumentForm(prev => ({
+                              ...prev,
+                              document_type: e.target.value as VehicleDocumentType
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          >
+                            {VEHICLE_DOCUMENT_TYPES.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Label (optional)</label>
+                          <input
+                            type="text"
+                            value={documentForm.title}
+                            onChange={(e) => setDocumentForm(prev => ({ ...prev, title: e.target.value }))}
+                            placeholder="2024 title copy"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Notes (optional)</label>
+                        <textarea
+                          value={documentForm.notes}
+                          onChange={(e) => setDocumentForm(prev => ({ ...prev, notes: e.target.value }))}
+                          rows={2}
+                          placeholder="Inspection received from DMV, renewal due next quarter, etc."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <input
+                          ref={documentFileInputRef}
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+                          onChange={(e) => setDocumentForm(prev => ({
+                            ...prev,
+                            file: e.target.files?.[0] || null
+                          }))}
+                          className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-3 file:border-0 file:rounded-md file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleDocumentUpload}
+                          disabled={uploadingDocument || !documentForm.file}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                          {uploadingDocument ? 'Uploading...' : 'Upload Document'}
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-gray-500">
+                        Add titles, inspections, registrations, insurance cards, permits, or other unit-specific paperwork.
+                      </p>
+
+                      <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-gray-900">Paper Trail</h4>
+                          <span className="text-xs text-gray-500">
+                            {vehicleDocuments.length} file{vehicleDocuments.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+
+                        {documentsLoading ? (
+                          <div className="text-sm text-gray-500">Loading documents...</div>
+                        ) : vehicleDocuments.length === 0 ? (
+                          <div className="text-sm text-gray-500">No documents uploaded for this vehicle yet.</div>
+                        ) : (
+                          <div className="space-y-3">
+                            {vehicleDocuments.map((document) => {
+                              const documentTypeLabel = VEHICLE_DOCUMENT_TYPES.find(option => option.value === document.document_type)?.label || 'Other'
+                              return (
+                                <div key={document.id} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                          {documentTypeLabel}
+                                        </span>
+                                        <span className="text-sm font-semibold text-gray-900 break-words">
+                                          {document.title || document.original_filename}
+                                        </span>
+                                      </div>
+                                      <div className="text-xs text-gray-500 break-words">
+                                        {document.original_filename}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        Uploaded {new Date(document.uploaded_at).toLocaleDateString()}
+                                        {document.file_size ? ` • ${formatFileSize(document.file_size)}` : ''}
+                                      </div>
+                                      {document.notes && (
+                                        <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{document.notes}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2 flex-shrink-0">
+                                      <a
+                                        href={getVehicleDocumentUrl(document.file_path)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-3 py-1.5 border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition-colors text-sm"
+                                      >
+                                        Open
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDocumentDelete(document.id)}
+                                        disabled={deletingDocumentId === document.id}
+                                        className="px-3 py-1.5 border border-red-600 text-red-600 rounded-md hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                                      >
+                                        {deletingDocumentId === document.id ? 'Deleting...' : 'Delete'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">
+                      Save the vehicle first, then reopen Edit to upload titles, inspections, and other unit paperwork.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             
             <div className="flex gap-3">
               <button
@@ -1741,30 +2043,9 @@ export default function Trucks() {
                       <button
                         onClick={() => {
                           setEditingTruck(truck)
-                          setFormData({ 
-                            name: truck.name, 
-                            vehicle_type: truck.vehicle_type,
-                            vin: truck.vin || '', 
-                            license_plate: truck.license_plate || '',
-                            tag_number: truck.tag_number || '',
-                            cash_investment: truck.cash_investment?.toString() || '',
-                            loan_amount: truck.loan_amount?.toString() || '',
-                            interest_rate: truck.interest_rate?.toString() || '0.07',
-                            total_cost: truck.total_cost?.toString() || '',
-                            registration_fee: truck.registration_fee?.toString() || '',
-                            purchase_date: truck.purchase_date ? new Date(truck.purchase_date).toISOString().split('T')[0] : '',
-                            depreciation_method: (truck.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
-                            cost_basis: truck.cost_basis?.toString() || '',
-                            section_179_deduction: truck.section_179_deduction?.toString() || '',
-                            bonus_depreciation: truck.bonus_depreciation?.toString() || '',
-                            additional_expenses: truck.additional_expenses?.map(exp => ({
-                              category: (exp.category || 'other_deductible') as ExpenseCategory,
-                              description: exp.description || '',
-                              amount: exp.amount?.toString() || ''
-                            })) || []
-                          })
+                          setFormData(buildVehicleFormData(truck))
                           setShowForm(true)
-                          setExpandedFormSections(new Set(['vehicle_info', 'investment']))
+                          setExpandedFormSections(new Set(['vehicle_info', 'investment', 'documents']))
                         }}
                         className={`${isMobile ? 'p-1.5' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
                         title="Edit"
@@ -1846,29 +2127,9 @@ export default function Trucks() {
                       <button
                         onClick={() => {
                           setEditingTruck(suv)
-                          setFormData({ 
-                            name: suv.name,
-                            vehicle_type: suv.vehicle_type,
-                            vin: suv.vin || '',
-                            license_plate: suv.license_plate || '',
-                            tag_number: '',
-                            cash_investment: suv.cash_investment?.toString() || '',
-                            loan_amount: suv.loan_amount?.toString() || '',
-                            interest_rate: suv.interest_rate?.toString() || '0.07',
-                            total_cost: suv.total_cost?.toString() || '',
-                            registration_fee: suv.registration_fee?.toString() || '',
-                            purchase_date: suv.purchase_date || '',
-                            depreciation_method: (suv.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
-                            cost_basis: suv.cost_basis?.toString() || '',
-                            section_179_deduction: suv.section_179_deduction?.toString() || '',
-                            bonus_depreciation: suv.bonus_depreciation?.toString() || '',
-                            additional_expenses: suv.additional_expenses?.map(exp => ({
-                              category: (exp.category || 'other_deductible') as ExpenseCategory,
-                              description: exp.description || '',
-                              amount: exp.amount?.toString() || ''
-                            })) || []
-                          })
+                          setFormData(buildVehicleFormData(suv))
                           setShowForm(true)
+                          setExpandedFormSections(new Set(['vehicle_info', 'investment', 'documents']))
                         }}
                         className={`${isMobile ? 'p-1.5' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
                         title="Edit"
@@ -1940,29 +2201,9 @@ export default function Trucks() {
                       <button
                         onClick={() => {
                           setEditingTruck(trailer)
-                          setFormData({ 
-                            name: trailer.name, 
-                            vehicle_type: trailer.vehicle_type,
-                            vin: trailer.vin || '', 
-                            license_plate: trailer.license_plate || '',
-                            tag_number: trailer.tag_number || '',
-                            cash_investment: trailer.cash_investment?.toString() || '',
-                            loan_amount: trailer.loan_amount?.toString() || '',
-                            interest_rate: trailer.interest_rate?.toString() || '0.07',
-                            total_cost: trailer.total_cost?.toString() || '',
-                            registration_fee: trailer.registration_fee?.toString() || '',
-                            purchase_date: trailer.purchase_date ? new Date(trailer.purchase_date).toISOString().split('T')[0] : '',
-                            depreciation_method: (trailer.depreciation_method || 'MACRS_5') as 'MACRS_5' | 'straight_line' | 'none',
-                            cost_basis: trailer.cost_basis?.toString() || '',
-                            section_179_deduction: trailer.section_179_deduction?.toString() || '',
-                            bonus_depreciation: trailer.bonus_depreciation?.toString() || '',
-                            additional_expenses: trailer.additional_expenses?.map(exp => ({
-                              category: (exp.category || 'other_deductible') as ExpenseCategory,
-                              description: exp.description || '',
-                              amount: exp.amount?.toString() || ''
-                            })) || []
-                          })
+                          setFormData(buildVehicleFormData(trailer))
                           setShowForm(true)
+                          setExpandedFormSections(new Set(['vehicle_info', 'investment', 'documents']))
                         }}
                         className={`${isMobile ? 'p-1.5' : 'px-3 py-1.5'} border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors flex items-center justify-center`}
                         title="Edit"

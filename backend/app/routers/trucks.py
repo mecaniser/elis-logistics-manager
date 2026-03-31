@@ -1,15 +1,83 @@
 """
 Trucks router
 """
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+import mimetypes
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
+
 from app.database import get_db
 from app.dependencies import get_tenant_id
 from app.models.truck import Truck
+from app.models.vehicle_document import VehicleDocument
 from app.schemas.truck import TruckCreate, TruckResponse, TruckUpdate
+from app.schemas.vehicle_document import VehicleDocumentResponse
+from app.utils.cloudinary import delete_uploaded_file, upload_image, upload_pdf
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+ALLOWED_VEHICLE_DOCUMENT_TYPES = {"title", "inspection", "registration", "insurance", "permit", "other"}
+ALLOWED_VEHICLE_DOCUMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+MAX_VEHICLE_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
+
+
+def get_tenant_truck_or_404(db: Session, truck_id: int, tenant_id: int) -> Truck:
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+    if not truck:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    return truck
+
+
+def normalize_vehicle_document_type(document_type: str) -> str:
+    normalized = (document_type or "other").strip().lower()
+    if normalized not in ALLOWED_VEHICLE_DOCUMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"document_type must be one of: {', '.join(sorted(ALLOWED_VEHICLE_DOCUMENT_TYPES))}",
+        )
+    return normalized
+
+
+def store_vehicle_document(file_content: bytes, original_filename: str, content_type: Optional[str]) -> tuple[str, Optional[str]]:
+    extension = Path(original_filename).suffix.lower()
+    unique_name = f"vehicle_document_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}{extension}"
+    mime_type = content_type or mimetypes.guess_type(original_filename)[0]
+
+    if extension == ".pdf":
+        uploaded_path = upload_pdf(file_content, unique_name, folder="vehicle_documents")
+    else:
+        uploaded_path = upload_image(file_content, unique_name, folder="vehicle_documents")
+
+    if uploaded_path:
+        return uploaded_path, mime_type
+
+    local_path = UPLOAD_DIR / unique_name
+    with open(local_path, "wb") as buffer:
+        buffer.write(file_content)
+    return unique_name, mime_type
+
+
+def cleanup_vehicle_document_file(file_path: Optional[str]) -> None:
+    if not file_path:
+        return
+
+    if file_path.startswith("http://") or file_path.startswith("https://"):
+        delete_uploaded_file(file_path)
+        return
+
+    local_path = UPLOAD_DIR / file_path
+    if local_path.exists():
+        local_path.unlink()
 
 @router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
@@ -116,20 +184,115 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     db.refresh(db_truck)
     return db_truck
 
+
+@router.get("/{truck_id}/documents", response_model=List[VehicleDocumentResponse])
+def get_vehicle_documents(
+    truck_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
+    """Get all documents for a specific vehicle."""
+    get_tenant_truck_or_404(db, truck_id, tenant_id)
+    return (
+        db.query(VehicleDocument)
+        .filter(VehicleDocument.truck_id == truck_id)
+        .order_by(VehicleDocument.uploaded_at.desc(), VehicleDocument.id.desc())
+        .all()
+    )
+
+
+@router.post("/{truck_id}/documents", response_model=VehicleDocumentResponse)
+async def upload_vehicle_document(
+    truck_id: int,
+    file: UploadFile = File(...),
+    document_type: str = Form("other"),
+    title: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
+    """Upload a document for a specific vehicle."""
+    get_tenant_truck_or_404(db, truck_id, tenant_id)
+
+    normalized_document_type = normalize_vehicle_document_type(document_type)
+    original_filename = (file.filename or "").strip()
+    if not original_filename:
+        raise HTTPException(status_code=400, detail="A file name is required")
+
+    extension = Path(original_filename).suffix.lower()
+    if extension not in ALLOWED_VEHICLE_DOCUMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF, PNG, JPG, JPEG, and WEBP files are supported",
+        )
+
+    file_content = await file.read()
+    if not file_content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(file_content) > MAX_VEHICLE_DOCUMENT_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="File must be 10 MB or smaller")
+
+    stored_path = None
+    try:
+        stored_path, mime_type = store_vehicle_document(file_content, original_filename, file.content_type)
+        document = VehicleDocument(
+            truck_id=truck_id,
+            document_type=normalized_document_type,
+            title=title.strip() if title and title.strip() else None,
+            notes=notes.strip() if notes and notes.strip() else None,
+            original_filename=original_filename,
+            file_path=stored_path,
+            mime_type=mime_type,
+            file_size=len(file_content),
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        return document
+    except HTTPException:
+        if stored_path:
+            cleanup_vehicle_document_file(stored_path)
+        raise
+    except Exception as exc:
+        db.rollback()
+        if stored_path:
+            cleanup_vehicle_document_file(stored_path)
+        logger.exception("Failed to upload vehicle document")
+        raise HTTPException(status_code=400, detail=f"Failed to upload vehicle document: {str(exc)}")
+
 @router.get("/{truck_id}", response_model=TruckResponse)
 def get_truck(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Get a specific truck"""
-    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
-    return truck
+    return get_tenant_truck_or_404(db, truck_id, tenant_id)
+
+
+@router.delete("/{truck_id}/documents/{document_id}")
+def delete_vehicle_document(
+    truck_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
+    """Delete a document from a specific vehicle."""
+    get_tenant_truck_or_404(db, truck_id, tenant_id)
+    document = (
+        db.query(VehicleDocument)
+        .filter(VehicleDocument.id == document_id, VehicleDocument.truck_id == truck_id)
+        .first()
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Vehicle document not found")
+
+    stored_path = document.file_path
+    db.delete(document)
+    db.commit()
+    cleanup_vehicle_document_file(stored_path)
+    return {"message": "Vehicle document deleted successfully"}
 
 @router.put("/{truck_id}", response_model=TruckResponse)
 def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Update a truck or trailer"""
-    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
+    truck = get_tenant_truck_or_404(db, truck_id, tenant_id)
     
     # Update only provided fields
     update_data = truck_update.model_dump(exclude_unset=True)
@@ -214,11 +377,13 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
 @router.delete("/{truck_id}")
 def delete_truck(truck_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a truck or trailer"""
-    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
-    
+    truck = get_tenant_truck_or_404(db, truck_id, tenant_id)
+
+    document_paths = [document.file_path for document in truck.vehicle_documents]
     db.delete(truck)
     db.commit()
-    return {"message": "Vehicle deleted successfully"}
 
+    for file_path in document_paths:
+        cleanup_vehicle_document_file(file_path)
+
+    return {"message": "Vehicle deleted successfully"}

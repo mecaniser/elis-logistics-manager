@@ -36,6 +36,7 @@ class Truck(Base):
     tenant = relationship("Tenant", back_populates="trucks")
     settlements = relationship("Settlement", back_populates="truck")
     repairs = relationship("Repair", back_populates="truck")
+    vehicle_documents = relationship("VehicleDocument", back_populates="truck", cascade="all, delete-orphan")
 
     # Unique constraint: name must be unique per tenant and vehicle type
     # Check constraint: vehicle_type must be 'truck' or 'trailer'
@@ -44,4 +45,3 @@ class Truck(Base):
         CheckConstraint("vehicle_type IN ('truck', 'trailer', 'suv')", name='check_vehicle_type'),
         CheckConstraint("depreciation_method IN ('MACRS_5', 'straight_line', 'none') OR depreciation_method IS NULL", name='check_depreciation_method'),
     )
-

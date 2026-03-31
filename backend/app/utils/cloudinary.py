@@ -1,7 +1,8 @@
 """
-Cloudinary utility functions for image and PDF uploads
+Cloudinary utility functions for uploaded assets
 """
 import os
+import re
 import cloudinary
 import cloudinary.uploader
 from typing import Optional, BinaryIO
@@ -159,12 +160,12 @@ def get_cloudinary_url(image_path: str) -> str:
     return image_path
 
 
-def delete_image(image_url: str) -> bool:
+def delete_uploaded_file(file_url: str) -> bool:
     """
-    Delete an image from Cloudinary.
+    Delete an uploaded asset from Cloudinary.
     
     Args:
-        image_url: Cloudinary URL of the image to delete
+        file_url: Cloudinary URL of the file to delete
     
     Returns:
         True if deletion was successful or Cloudinary not configured, False on error
@@ -174,42 +175,37 @@ def delete_image(image_url: str) -> bool:
         return True  # Return True to allow local file deletion to proceed
     
     # Check if this is a Cloudinary URL (contains res.cloudinary.com)
-    if "res.cloudinary.com" not in image_url:
+    if "res.cloudinary.com" not in file_url:
         # Not a Cloudinary URL, might be local file
         return True
     
     try:
-        # Extract public_id from Cloudinary URL
-        # Cloudinary URLs format: https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{version}/{public_id}.{format}
-        # or: https://res.cloudinary.com/{cloud_name}/image/upload/{folder}/{public_id}.{format}
-        import re
-        
-        # Try to extract public_id from URL
-        # Pattern: res.cloudinary.com/{cloud_name}/image/upload/{path}
-        match = re.search(r'/image/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', image_url)
+        resource_type = "image"
+        match = re.search(r"/image/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$", file_url)
         if not match:
-            # Try raw file pattern
-            match = re.search(r'/raw/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$', image_url)
-        
-        if match:
-            public_id = match.group(1)
-            # public_id might be like "repairs/filename" or "repairs/receipts/filename"
-            # Keep the full path including folder for Cloudinary
-            
-            # Delete from Cloudinary
-            result = cloudinary.uploader.destroy(public_id, resource_type="image", invalidate=True)
-            
-            if result.get("result") == "ok":
-                logger.info(f"Successfully deleted image from Cloudinary: {public_id}")
-                return True
-            else:
-                logger.warning(f"Cloudinary deletion returned: {result.get('result')} for {public_id}")
-                return False
-        else:
-            logger.warning(f"Could not extract public_id from Cloudinary URL: {image_url}")
+            match = re.search(r"/raw/upload/(?:v\d+/)?(.+?)(?:\.[^.]+)?$", file_url)
+            if match:
+                resource_type = "raw"
+
+        if not match:
+            logger.warning(f"Could not extract public_id from Cloudinary URL: {file_url}")
             return False
+
+        public_id = match.group(1)
+        result = cloudinary.uploader.destroy(public_id, resource_type=resource_type, invalidate=True)
+
+        if result.get("result") == "ok":
+            logger.info(f"Successfully deleted file from Cloudinary: {public_id}")
+            return True
+
+        logger.warning(f"Cloudinary deletion returned: {result.get('result')} for {public_id}")
+        return False
             
     except Exception as e:
-        logger.error(f"Failed to delete image from Cloudinary: {str(e)}")
+        logger.error(f"Failed to delete file from Cloudinary: {str(e)}")
         return False
 
+
+def delete_image(image_url: str) -> bool:
+    """Backward-compatible wrapper for image deletion."""
+    return delete_uploaded_file(image_url)

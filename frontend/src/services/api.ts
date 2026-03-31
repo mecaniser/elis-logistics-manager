@@ -91,6 +91,19 @@ export interface Truck {
   pm_threshold_months?: number  // PM due every N months (default 3)
 }
 
+export interface VehicleDocument {
+  id: number
+  truck_id: number
+  document_type: 'title' | 'inspection' | 'registration' | 'insurance' | 'permit' | 'other'
+  title?: string | null
+  notes?: string | null
+  original_filename: string
+  file_path: string
+  mime_type?: string | null
+  file_size?: number | null
+  uploaded_at: string
+}
+
 export interface VehicleROI {
   vehicle_id: number
   vehicle_name: string
@@ -252,6 +265,26 @@ export const trucksApi = {
     return api.get<Truck[]>('/trucks', { params })
   },
   getById: (id: number) => api.get<Truck>(`/trucks/${id}`),
+  getDocuments: (id: number) => api.get<VehicleDocument[]>(`/trucks/${id}/documents`),
+  uploadDocument: (id: number, payload: {
+    file: File
+    document_type: VehicleDocument['document_type']
+    title?: string
+    notes?: string
+  }) => {
+    const formData = new FormData()
+    formData.append('file', payload.file)
+    formData.append('document_type', payload.document_type)
+    if (payload.title) {
+      formData.append('title', payload.title)
+    }
+    if (payload.notes) {
+      formData.append('notes', payload.notes)
+    }
+    return formDataApi.post<VehicleDocument>(`/trucks/${id}/documents`, formData)
+  },
+  deleteDocument: (truckId: number, documentId: number) =>
+    api.delete(`/trucks/${truckId}/documents/${documentId}`),
   create: (data: Partial<Truck>) =>
     api.post<Truck>('/trucks', data),
   update: (id: number, data: Partial<Truck>) =>
