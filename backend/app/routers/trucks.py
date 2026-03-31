@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import List, Optional
 
 from app.database import get_db
@@ -32,7 +32,12 @@ MAX_VEHICLE_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def get_tenant_truck_or_404(db: Session, truck_id: int, tenant_id: int) -> Truck:
-    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+    truck = (
+        db.query(Truck)
+        .options(selectinload(Truck.vehicle_documents))
+        .filter(Truck.id == truck_id, Truck.tenant_id == tenant_id)
+        .first()
+    )
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     return truck
@@ -87,7 +92,7 @@ def get_trucks(
     tenant_id: int = Depends(get_tenant_id)
 ):
     """Get all trucks, trailers, and SUVs for the current tenant, optionally filtered by vehicle_type"""
-    query = db.query(Truck).filter(Truck.tenant_id == tenant_id)
+    query = db.query(Truck).options(selectinload(Truck.vehicle_documents)).filter(Truck.tenant_id == tenant_id)
     if vehicle_type:
         vehicle_type_lower = vehicle_type.lower()
         if vehicle_type_lower in ['truck', 'trailer', 'suv']:

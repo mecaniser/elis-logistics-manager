@@ -48,6 +48,19 @@ def test_upload_list_and_delete_vehicle_document(client: TestClient, tenant_head
     assert len(listed_documents) == 1
     assert listed_documents[0]["id"] == document["id"]
 
+    truck_response = client.get(f"/api/trucks/{truck_id}", headers=tenant_headers)
+    assert truck_response.status_code == 200
+    truck_payload = truck_response.json()
+    assert len(truck_payload["vehicle_documents"]) == 1
+    assert truck_payload["vehicle_documents"][0]["id"] == document["id"]
+
+    trucks_response = client.get("/api/trucks", headers=tenant_headers)
+    assert trucks_response.status_code == 200
+    trucks_payload = trucks_response.json()
+    assert len(trucks_payload) == 1
+    assert len(trucks_payload[0]["vehicle_documents"]) == 1
+    assert trucks_payload[0]["vehicle_documents"][0]["id"] == document["id"]
+
     delete_response = client.delete(
         f"/api/trucks/{truck_id}/documents/{document['id']}",
         headers=tenant_headers,

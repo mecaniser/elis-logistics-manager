@@ -89,6 +89,7 @@ export interface Truck {
   last_pm_date?: string  // Date of last D13 full PM (ISO date string)
   last_pm_repair_id?: number  // Reference to the repair record
   pm_threshold_months?: number  // PM due every N months (default 3)
+  vehicle_documents?: VehicleDocument[]
 }
 
 export interface VehicleDocument {

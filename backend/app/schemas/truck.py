@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from datetime import datetime, date
 from typing import Optional, List, Literal, Dict, Any
 
+from app.schemas.vehicle_document import VehicleDocumentResponse
+
 class TruckBase(BaseModel):
     name: str
     vehicle_type: Literal["truck", "trailer", "suv"] = "truck"
@@ -52,7 +54,7 @@ class TruckUpdate(BaseModel):
 class TruckResponse(TruckBase):
     id: int
     created_at: datetime
+    vehicle_documents: Optional[List[VehicleDocumentResponse]] = None
 
     class Config:
         from_attributes = True
-

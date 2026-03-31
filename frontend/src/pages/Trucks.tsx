@@ -119,6 +119,10 @@ const getVehicleDocumentUrl = (filePath: string) => (
     : `/uploads/${filePath}`
 )
 
+const getVehicleDocumentTypeLabel = (documentType: VehicleDocument['document_type']) => (
+  VEHICLE_DOCUMENT_TYPES.find(option => option.value === documentType)?.label || 'Other'
+)
+
 const formatFileSize = (fileSize?: number | null) => {
   if (!fileSize || fileSize <= 0) return ''
   if (fileSize >= 1024 * 1024) {
@@ -424,6 +428,36 @@ export default function Trucks() {
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
+  }
+
+  const renderInlineVehicleDocuments = (documents?: VehicleDocument[]) => {
+    if (!documents || documents.length === 0) return null
+
+    return (
+      <div className="mt-2">
+        <div className="text-xs font-medium text-gray-500 mb-1">
+          Documents ({documents.length})
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {documents.map((document) => (
+            <a
+              key={document.id}
+              href={getVehicleDocumentUrl(document.file_path)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
+              className="inline-flex max-w-full items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-800 hover:bg-blue-100 transition-colors"
+              title={document.original_filename}
+            >
+              <span className="font-medium">{getVehicleDocumentTypeLabel(document.document_type)}:</span>
+              <span className={`${isMobile ? 'max-w-[140px]' : 'max-w-[220px]'} truncate`}>
+                {document.title || document.original_filename}
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   const loadVehicleDocuments = async (truckId: number) => {
@@ -2024,6 +2058,7 @@ export default function Trucks() {
                           </div>
                         )
                       })()}
+                      {renderInlineVehicleDocuments(truck.vehicle_documents)}
                     </div>
                     <div className={`flex ${isMobile ? 'flex-col gap-1' : 'gap-2'} ml-4 flex-shrink-0`}>
                       <button
@@ -2108,6 +2143,7 @@ export default function Trucks() {
                           Purchased: {new Date(suv.purchase_date).toLocaleDateString()}
                         </p>
                       )}
+                      {renderInlineVehicleDocuments(suv.vehicle_documents)}
                     </div>
                     <div className={`flex ${isMobile ? 'flex-col gap-1' : 'gap-2'} ml-4 flex-shrink-0`}>
                       <button
@@ -2182,6 +2218,7 @@ export default function Trucks() {
                       {trailer.tag_number && (
                         <p className="text-sm text-gray-500">Tag Number: {trailer.tag_number}</p>
                       )}
+                      {renderInlineVehicleDocuments(trailer.vehicle_documents)}
                     </div>
                     <div className={`flex ${isMobile ? 'flex-col gap-1' : 'gap-2'} flex-shrink-0`}>
                       <button
