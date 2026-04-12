@@ -162,7 +162,19 @@ if frontend_dist.exists():
             # If we reach here, the API route wasn't found - let FastAPI handle 404
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not Found")
-        
+
+        # Serve files emitted at the dist root (favicon, manifest, root images, etc.)
+        # before falling back to index.html for SPA routes.
+        requested_file = (frontend_dist / full_path).resolve()
+        try:
+            requested_file.relative_to(frontend_dist.resolve())
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        if requested_file.is_file():
+            return FileResponse(str(requested_file))
+
         index_file = frontend_dist / "index.html"
         if index_file.exists():
             return FileResponse(str(index_file))
