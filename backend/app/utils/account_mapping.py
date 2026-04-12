@@ -8,6 +8,7 @@ from typing import Dict, Optional
 EXPENSE_CATEGORY_TO_ACCOUNT_CODE: Dict[str, str] = {
     "fuel": "6001",  # Fuel Expense
     "dispatch_fee": "6002",  # Dispatch Fee Expense
+    "tolls": "6013",  # Tolls Expense
     "insurance": "6003",  # Insurance Expense
     "safety": "6004",  # Safety Expense
     "prepass": "6005",  # Prepass Expense
@@ -71,4 +72,3 @@ def get_loans_payable_code() -> str:
 def get_retained_earnings_code() -> str:
     """Get the account code for retained earnings."""
     return RETAINED_EARNINGS_CODE
-

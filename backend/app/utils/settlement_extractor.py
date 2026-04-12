@@ -21,7 +21,8 @@ class SettlementExtractor:
         self.settlement_types = [
             "Owner Operator Income Sheet",
             "277 Logistics",
-            "NBM Transport LLC"
+            "NBM Transport LLC",
+            "77 Cargo LLC",
         ]
     
     def extract_from_pdf(self, pdf_path: str, settlement_type: Optional[str] = None, 
@@ -137,6 +138,12 @@ class SettlementExtractor:
                 
                 if "NBM TRANSPORT" in text.upper() or "NBM TRANSPORT LLC" in text.upper():
                     return "NBM Transport LLC"
+                elif (
+                    "77 CARGO LLC" in text.upper()
+                    and "SETTLEMENT #" in text.upper()
+                    and "PAY RATE:" in text.upper()
+                ):
+                    return "77 Cargo LLC"
                 elif "277 LOGISTICS" in text.upper():
                     return "277 Logistics"
                 elif "OWNER OPERATOR INCOME SHEET" in text.upper() or "INCOME SHEET" in text.upper():
@@ -468,4 +475,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

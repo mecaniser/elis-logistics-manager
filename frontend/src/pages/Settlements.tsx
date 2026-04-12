@@ -111,6 +111,7 @@ export default function Settlements() {
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
     'fuel',
+    'tolls',
     'driver_pay',
     'payroll_fee',
     'dispatch_fee',
@@ -129,7 +130,7 @@ export default function Settlements() {
     trip: {
       label: 'Trip Expenses',
       icon: '🚚',
-      categories: ['fuel', 'driver_pay'],
+      categories: ['fuel', 'tolls', 'driver_pay'],
       subcategories: {
         fees: {
           label: 'Fees',
@@ -153,6 +154,7 @@ export default function Settlements() {
   const getCategoryDisplayName = (category: string): string => {
     const displayNameMap: { [key: string]: string } = {
       fuel: 'Fuel',
+      tolls: 'Tolls',
       dispatch_fee: 'Dispatch Fee',
       insurance: 'Insurance',
       safety: 'Safety',
@@ -2894,4 +2896,3 @@ export default function Settlements() {
     </div>
   )
 }
-

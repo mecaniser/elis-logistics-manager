@@ -16,6 +16,232 @@ VALID_LICENSE_PLATES = {
 }
 
 
+def _extract_pdf_text(pdf) -> str:
+    """Return page text joined with stable newlines."""
+    page_text = []
+    for page in pdf.pages:
+        page_text.append(page.extract_text() or "")
+    return "\n".join(page_text)
+
+
+def _is_77_cargo_settlement(text: str, settlement_type: str = None) -> bool:
+    """Detect the 77 Cargo single-settlement layout."""
+    if settlement_type and settlement_type.upper() == "77 CARGO LLC":
+        return True
+
+    markers = (
+        "77 Cargo LLC",
+        "Settlement #",
+        "Pay rate:",
+        "Load# Pickup Delivery Description Empty Loaded",
+        "% Rate Amount",
+    )
+    return all(marker in text for marker in markers)
+
+
+def _parse_short_date(date_str: str):
+    return datetime.strptime(date_str, "%m/%d/%y").date()
+
+
+def _parse_currency(amount_str: str) -> float:
+    cleaned = amount_str.replace("$", "").replace(",", "").replace("-", "").strip()
+    return float(cleaned)
+
+
+def _normalize_77_cargo_description(description: str) -> str:
+    cleaned = re.sub(r"^Other:\s*", "", description, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\s*-\s*Unit\s+\d+\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+Unit\s+\d+\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r":\s*Unit\s+\d+\s*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip(" :-")
+    if cleaned.lower().startswith("truck registration"):
+        return "Truck Registration"
+    return cleaned
+
+
+def _parse_77_cargo_pdf(text: str) -> Dict:
+    """Parse the 77 Cargo LLC single-settlement layout."""
+    settlement_data = {
+        "settlement_date": None,
+        "week_start": None,
+        "week_end": None,
+        "miles_driven": None,
+        "blocks_delivered": None,
+        "block_ids": None,
+        "gross_revenue": None,
+        "expenses": None,
+        "net_profit": None,
+        "driver_id": None,
+        "driver_name": None,
+        "license_plate": None,
+        "settlement_type": "77 Cargo LLC",
+        "expense_categories": {},
+        "deduction_details": None,
+    }
+
+    settlement_date_match = re.search(r"Date:\s*(\d{2}/\d{2}/\d{2})", text)
+    if not settlement_date_match:
+        raise ValueError("77 Cargo settlement date not found")
+
+    settlement_date = _parse_short_date(settlement_date_match.group(1))
+    settlement_data["settlement_date"] = settlement_date
+    settlement_data["week_end"] = settlement_date
+
+    driver_name_match = re.search(
+        r"(?m)^([A-Z][A-Za-z' -]+(?:\s+[A-Z][A-Za-z' -]+)+)\s+\[Drv\](?:\s+#\d+)?$",
+        text,
+    )
+    if driver_name_match:
+        settlement_data["driver_name"] = driver_name_match.group(1).strip()
+
+    load_rows = re.findall(
+        r"(?m)^(\d{4})\s+(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(\d+)\s+(\d+)\s+(\d+)%\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})$",
+        text,
+    )
+    if not load_rows:
+        raise ValueError("77 Cargo load rows not found")
+
+    block_ids = []
+    pickup_dates = []
+    rate_total = 0.0
+    gross_total = 0.0
+    for load_id, pickup, delivery, empty_miles, loaded_miles, _, rate_amount, gross_amount in load_rows:
+        pickup_date = _parse_short_date(pickup)
+        delivery_date = _parse_short_date(delivery)
+        pickup_dates.append(pickup_date)
+        block_ids.append({
+            "block_id": load_id,
+            "delivery_date": delivery_date.strftime("%Y-%m-%d"),
+        })
+        rate_total += _parse_currency(rate_amount)
+        gross_total += _parse_currency(gross_amount)
+
+    settlement_data["week_start"] = min(pickup_dates)
+    settlement_data["blocks_delivered"] = len(block_ids)
+    settlement_data["block_ids"] = block_ids
+
+    miles_subtotal_match = re.search(
+        r"Subtotal:\s+(\d+)\s+(\d+)\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})",
+        text,
+    )
+    if miles_subtotal_match:
+        settlement_data["miles_driven"] = float(int(miles_subtotal_match.group(1)) + int(miles_subtotal_match.group(2)))
+        rate_subtotal = _parse_currency(miles_subtotal_match.group(3))
+        gross_subtotal = _parse_currency(miles_subtotal_match.group(4))
+    else:
+        settlement_data["miles_driven"] = None
+        rate_subtotal = round(rate_total, 2)
+        gross_subtotal = round(gross_total, 2)
+
+    if abs(rate_subtotal - round(rate_total, 2)) > 0.01:
+        raise ValueError("77 Cargo load rate subtotal mismatch")
+    if abs(gross_subtotal - round(gross_total, 2)) > 0.01:
+        raise ValueError("77 Cargo gross subtotal mismatch")
+
+    fuel_match = re.search(r"Fuel .*?Subtotal:\s*-\$([\d,]+\.\d{2})", text, re.DOTALL)
+    tolls_match = re.search(r"Tolls .*?Subtotal\s*:?\s*-\$([\d,]+\.\d{2})", text, re.DOTALL)
+    deductions_match = re.search(
+        r"Deductions\s*\n# Date Description Amount\s*\n(.*?)\nSubtotal:\s*-\$([\d,]+\.\d{2})",
+        text,
+        re.DOTALL,
+    )
+    settlement_total_match = re.search(r"Settlement total:\s*\$([\d,]+\.\d{2})", text)
+    balance_due_match = re.search(r"Balance due:\s*\$([\d,]+\.\d{2})", text)
+
+    expense_categories = {}
+    if fuel_match:
+        expense_categories["fuel"] = _parse_currency(fuel_match.group(1))
+    if tolls_match:
+        expense_categories["tolls"] = _parse_currency(tolls_match.group(1))
+
+    deduction_details = []
+    insurance_total = 0.0
+    driver_pay_total = 0.0
+    prepass_total = 0.0
+    deduct_total = 0.0
+    deductions_categorized_total = 0.0
+
+    if deductions_match:
+        deductions_block = deductions_match.group(1)
+        deductions_subtotal = _parse_currency(deductions_match.group(2))
+
+        driver_rows = re.findall(
+            r"(?m)^(\d{4})\s+\d{2}/\d{2}/\d{2}\s+.*?\[Drv\].*?(-\$[\d,]+\.\d{2})$",
+            deductions_block,
+        )
+        for _, amount_str in driver_rows:
+            amount = _parse_currency(amount_str)
+            driver_pay_total += amount
+            deductions_categorized_total += amount
+
+        other_rows = re.findall(
+            r"(?m)^-\s+(\d{2}/\d{2}/\d{2})\s+(.*?)\s+(-\$[\d,]+\.\d{2})$",
+            deductions_block,
+        )
+        for _, description, amount_str in other_rows:
+            amount = _parse_currency(amount_str)
+            normalized_description = _normalize_77_cargo_description(description)
+            lower_description = normalized_description.lower()
+
+            if "cargo and liability insurance" in lower_description:
+                insurance_total += amount
+            elif "logbook and pre-pass subscription" in lower_description:
+                prepass_total += amount
+            elif (
+                "form 2290" in lower_description
+                or "title fee" in lower_description
+                or "truck registration" in lower_description
+            ):
+                deduct_total += amount
+                deduction_details.append({
+                    "description": normalized_description,
+                    "amount": round(amount, 2),
+                })
+            else:
+                deduct_total += amount
+                deduction_details.append({
+                    "description": normalized_description,
+                    "amount": round(amount, 2),
+                })
+
+            deductions_categorized_total += amount
+
+        if abs(deductions_categorized_total - deductions_subtotal) > 0.01:
+            raise ValueError("77 Cargo deductions subtotal mismatch")
+
+    if insurance_total:
+        expense_categories["insurance"] = round(insurance_total, 2)
+    if prepass_total:
+        expense_categories["prepass"] = round(prepass_total, 2)
+    if driver_pay_total:
+        expense_categories["driver_pay"] = round(driver_pay_total, 2)
+    if deduct_total:
+        expense_categories["deduct"] = round(deduct_total, 2)
+    if deduction_details:
+        settlement_data["deduction_details"] = deduction_details
+
+    gross_revenue = round(gross_subtotal, 2)
+    total_expenses = round(sum(expense_categories.values()), 2)
+    reported_net = None
+    if settlement_total_match:
+        reported_net = _parse_currency(settlement_total_match.group(1))
+    elif balance_due_match:
+        reported_net = _parse_currency(balance_due_match.group(1))
+
+    calculated_net = round(gross_revenue - total_expenses, 2)
+    if reported_net is not None and abs(calculated_net - reported_net) > 0.01:
+        raise ValueError(
+            f"77 Cargo net mismatch: calculated {calculated_net:.2f} vs reported {reported_net:.2f}"
+        )
+
+    settlement_data["gross_revenue"] = gross_revenue
+    settlement_data["expenses"] = total_expenses
+    settlement_data["net_profit"] = reported_net if reported_net is not None else calculated_net
+    settlement_data["expense_categories"] = expense_categories
+
+    return settlement_data
+
+
 def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
     """
     Parse Amazon Relay settlement PDF and extract structured data.
@@ -52,9 +278,10 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
     try:
         with pdfplumber.open(file_path) as pdf:
             # Extract text from all pages
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text() or ""
+            text = _extract_pdf_text(pdf)
+
+            if _is_77_cargo_settlement(text, settlement_type):
+                return _parse_77_cargo_pdf(text)
             
             # Detect PDF format
             is_income_sheet_format = "OWNER OPERATOR INCOME SHEET" in text or "INCOME SHEET" in text
@@ -1657,4 +1884,3 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                 }
             }
         raise Exception(f"Error parsing multi-truck PDF: {str(e)}")
-

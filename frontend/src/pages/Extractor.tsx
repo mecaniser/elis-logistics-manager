@@ -57,7 +57,8 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
   const SETTLEMENT_TYPES = [
     'Owner Operator Income Sheet',
     '277 Logistics',
-    'NBM Transport LLC'
+    'NBM Transport LLC',
+    '77 Cargo LLC'
   ]
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
@@ -1122,4 +1123,3 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
     </div>
   )
 }
-

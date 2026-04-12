@@ -985,6 +985,7 @@ def upload_consolidated_settlements(
             cat_map = {
                 "driver_pay": totals.get("total_driver_pay", 0) or 0,
                 "fuel": totals.get("fuel", totals.get("total_fuel", 0)) or 0,
+                "tolls": totals.get("tolls", 0) or 0,
                 "dispatch_fee": totals.get("dispatch_fee_total", 0) or 0,
                 "payroll_fee": totals.get("driver_payroll_fee", 0) or 0,
                 "ifta": totals.get("ifta", 0) or 0,
@@ -1517,4 +1518,3 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
     db.delete(settlement)
     db.commit()
     return {"message": "Settlement deleted successfully"}
-

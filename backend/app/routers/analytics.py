@@ -254,7 +254,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     
     # Standard expense categories
     STANDARD_CATEGORIES = [
-        "fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
+        "fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
         "driver_pay", "payroll_fee", "loan_interest", "truck_parking", "service_on_truck"
     ]
     
@@ -263,6 +263,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         """Calculate expense categories from settlements and repairs"""
         expense_cats = {
             "fuel": 0.0,
+            "tolls": 0.0,
             "dispatch_fee": 0.0,
             "insurance": 0.0,
             "safety": 0.0,
@@ -351,6 +352,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     # Combined expense categories (for backward compatibility)
     expense_categories = {
         "fuel": truck_expense_categories["fuel"] + trailer_expense_categories["fuel"],
+        "tolls": truck_expense_categories["tolls"] + trailer_expense_categories["tolls"],
         "dispatch_fee": truck_expense_categories["dispatch_fee"] + trailer_expense_categories["dispatch_fee"],
         "insurance": truck_expense_categories["insurance"] + trailer_expense_categories["insurance"],
         "safety": truck_expense_categories["safety"] + trailer_expense_categories["safety"],
@@ -1068,7 +1070,7 @@ def _get_time_series_impl(
         return "Custom"
     
     # Standard expense categories
-    STANDARD_CATEGORIES = ["fuel", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee", "loan_interest"]
+    STANDARD_CATEGORIES = ["fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee", "loan_interest"]
     
     # Initialize data structures
     weekly_data = defaultdict(lambda: {
@@ -1078,6 +1080,7 @@ def _get_time_series_impl(
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
+        "tolls": 0.0,
         "dispatch_fee": 0.0,
         "insurance": 0.0,
         "safety": 0.0,
@@ -1100,6 +1103,7 @@ def _get_time_series_impl(
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
+        "tolls": 0.0,
         "dispatch_fee": 0.0,
         "insurance": 0.0,
         "safety": 0.0,
@@ -1120,6 +1124,7 @@ def _get_time_series_impl(
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
+        "tolls": 0.0,
         "dispatch_fee": 0.0,
         "insurance": 0.0,
         "safety": 0.0,
@@ -1322,6 +1327,7 @@ def _get_time_series_impl(
             "driver_pay": round(week_data["driver_pay"], 2),
             "payroll_fee": round(week_data["payroll_fee"], 2),
             "fuel": round(week_data["fuel"], 2),
+            "tolls": round(week_data["tolls"], 2),
             "dispatch_fee": round(week_data["dispatch_fee"], 2),
             "insurance": round(week_data["insurance"], 2),
             "safety": round(week_data["safety"], 2),
@@ -1409,6 +1415,7 @@ def _get_time_series_impl(
             "driver_pay": round(month_data["driver_pay"], 2),
             "payroll_fee": round(month_data["payroll_fee"], 2),
             "fuel": round(month_data["fuel"], 2),
+            "tolls": round(month_data["tolls"], 2),
             "dispatch_fee": round(month_data["dispatch_fee"], 2),
             "insurance": round(month_data["insurance"], 2),
             "safety": round(month_data["safety"], 2),
@@ -1489,6 +1496,7 @@ def _get_time_series_impl(
             "driver_pay": round(year_data["driver_pay"], 2),
             "payroll_fee": round(year_data["payroll_fee"], 2),
             "fuel": round(year_data["fuel"], 2),
+            "tolls": round(year_data["tolls"], 2),
             "dispatch_fee": round(year_data["dispatch_fee"], 2),
             "insurance": round(year_data["insurance"], 2),
             "safety": round(year_data["safety"], 2),
