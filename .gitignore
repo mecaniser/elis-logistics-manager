@@ -71,6 +71,7 @@ backend/settlements_extracted/
 *.webp
 *.ico
 !frontend/public/elisd-logo.png
+!frontend/public/favicon.png
 !frontend/public/apple-touch-icon.png
 !frontend/public/icon-192.png
 !frontend/public/icon-512.png
