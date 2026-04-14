@@ -59,6 +59,44 @@ def _normalize_77_cargo_description(description: str) -> str:
     return cleaned
 
 
+def _extract_77_cargo_load_rows(text: str) -> List[Dict[str, str]]:
+    """Extract 77 Cargo load rows from the load table block."""
+    load_section_match = re.search(
+        r"Load# Pickup Delivery Description Empty Loaded % Rate Amount\s*\n(.*?)\nSubtotal:\s+\d+\s+\d+\s+\$[\d,]+\.\d{2}\s+\$[\d,]+\.\d{2}",
+        text,
+        re.DOTALL,
+    )
+    if not load_section_match:
+        raise ValueError("77 Cargo load section not found")
+
+    load_row_pattern = re.compile(
+        r"^(?P<load_id>\d{4})\s+"
+        r"(?P<pickup>\d{2}/\d{2}/\d{2})\s+"
+        r"(?P<delivery>\d{2}/\d{2}/\d{2})"
+        r"(?:\s+.*?)?\s+"
+        r"(?P<empty_miles>\d+)\s+"
+        r"(?P<loaded_miles>\d+)\s+"
+        r"(?P<pay_percent>\d+)%\s+"
+        r"\$(?P<rate_amount>[\d,]+\.\d{2})\s+"
+        r"\$(?P<gross_amount>[\d,]+\.\d{2})$"
+    )
+
+    load_rows = []
+    for raw_line in load_section_match.group(1).splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        row_match = load_row_pattern.match(line)
+        if row_match:
+            load_rows.append(row_match.groupdict())
+
+    if not load_rows:
+        raise ValueError("77 Cargo load rows not found")
+
+    return load_rows
+
+
 def _parse_77_cargo_pdf(text: str) -> Dict:
     """Parse the 77 Cargo LLC single-settlement layout."""
     settlement_data = {
@@ -94,27 +132,24 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
     if driver_name_match:
         settlement_data["driver_name"] = driver_name_match.group(1).strip()
 
-    load_rows = re.findall(
-        r"(?m)^(\d{4})\s+(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(\d+)\s+(\d+)\s+(\d+)%\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})$",
-        text,
-    )
-    if not load_rows:
-        raise ValueError("77 Cargo load rows not found")
+    load_rows = _extract_77_cargo_load_rows(text)
 
     block_ids = []
     pickup_dates = []
+    miles_total = 0
     rate_total = 0.0
     gross_total = 0.0
-    for load_id, pickup, delivery, empty_miles, loaded_miles, _, rate_amount, gross_amount in load_rows:
-        pickup_date = _parse_short_date(pickup)
-        delivery_date = _parse_short_date(delivery)
+    for row in load_rows:
+        pickup_date = _parse_short_date(row["pickup"])
+        delivery_date = _parse_short_date(row["delivery"])
         pickup_dates.append(pickup_date)
         block_ids.append({
-            "block_id": load_id,
+            "block_id": row["load_id"],
             "delivery_date": delivery_date.strftime("%Y-%m-%d"),
         })
-        rate_total += _parse_currency(rate_amount)
-        gross_total += _parse_currency(gross_amount)
+        miles_total += int(row["empty_miles"]) + int(row["loaded_miles"])
+        rate_total += _parse_currency(row["rate_amount"])
+        gross_total += _parse_currency(row["gross_amount"])
 
     settlement_data["week_start"] = min(pickup_dates)
     settlement_data["blocks_delivered"] = len(block_ids)
@@ -129,7 +164,7 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
         rate_subtotal = _parse_currency(miles_subtotal_match.group(3))
         gross_subtotal = _parse_currency(miles_subtotal_match.group(4))
     else:
-        settlement_data["miles_driven"] = None
+        settlement_data["miles_driven"] = float(miles_total)
         rate_subtotal = round(rate_total, 2)
         gross_subtotal = round(gross_total, 2)
 

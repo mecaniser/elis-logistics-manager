@@ -100,6 +100,70 @@ ezLoads TMS and Driver App
 ezloads.net
 """
 
+PAGE_2280_1 = """77 Cargo LLC
+1115 Ansley Park Dr
+Fort Mill, SC 29707
+Email: safety@77cargo.com
+Phone: (704) 835-2433
+Settlement #1857
+Date: 04/14/26
+Driver:
+Truck:
+Pay to: ELIS LOGISTICS LLC
+1002 Yearden Ln
+Monroe, NC 28110
+Email: Elislogistics86@gmail.com
+Phone: (704) 705-0486
+Pay rate: 88%
+Load# Pickup Delivery Description Empty Loaded % Rate Amount
+Oleksandr Moskaliuk [Drv] #3585
+3585 04/07/26 04/08/26 258 448 88% $3,200.00 $2,816.00
+Castlewood, VA - Kokomo, IN
+Oleksandr Moskaliuk [Drv] #3604
+3604 04/08/26 04/09/26 LAFAYETTE, IN - GEORGETOWN, 44 812 88% $3,100.00 $2,728.00
+SC
+Oleksandr Moskaliuk [Drv] #3621
+3621 04/09/26 04/10/26 49 691 88% $3,150.00 $2,772.00
+Huger, SC - Cresson, PA
+Oleksandr Moskaliuk [Drv] #3622
+3622 04/10/26 04/11/26 125 350 88% $2,000.00 $1,760.00
+Kingwood, WV - Kernersville, NC
+Subtotal: 476 2301 $11,450.00 $10,076.00
+Fuel ...8248
+Date Description Amount
+04/07/26 Oleksandr Moskaliuk [Drv] Lambsburg, VA/ Gallons- 7.74 -$37.05
+04/07/26 Oleksandr Moskaliuk [Drv] Lambsburg, VA/ Gallons- 168.51/ Disc- $109.11 -$900.11
+04/08/26 Oleksandr Moskaliuk [Drv] Newport, TN/ Gallons- 8.62 -$41.29
+04/08/26 Oleksandr Moskaliuk [Drv] Newport, TN/ Gallons- 195.86/ Disc- $104.71 -$1,001.68
+04/10/26 Oleksandr Moskaliuk [Drv] Staunton, VA/ Gallons- 150.22/ Disc- $201.11 -$737.60
+04/10/26 Oleksandr Moskaliuk [Drv] Staunton, VA/ Gallons- 7 -$33.54
+Subtotal: -$2,751.27
+Tolls ...4799
+Date Description Amount
+ezLoads TMS and Driver App
+ezloads.net
+"""
+
+PAGE_2280_2 = """04/12/26 Oleksandr Moskaliuk [Drv] Exit date: 04/10/26 / Exit plaza: NB -$3.06
+04/12/26 Oleksandr Moskaliuk [Drv] Exit date: 04/10/26 / Exit plaza: AS -$13.00
+04/12/26 Oleksandr Moskaliuk [Drv] Exit date: 04/10/26 / Exit plaza: BED - Bedford - 146 -$8.92
+04/09/26 Oleksandr Moskaliuk [Drv] Exit date: 04/07/26 / Exit plaza: ECN -$13.33
+04/09/26 Oleksandr Moskaliuk [Drv] Exit date: 04/08/26 / Exit plaza: ECS -$13.33
+Subtotal -$51.64
+Deductions
+# Date Description Amount
+3585 04/07/26 Oleksandr Moskaliuk [Drv] #3585 Castlewood, VA - Kokomo, IN -$960.00
+3604 04/08/26 Oleksandr Moskaliuk [Drv] #3604 LAFAYETTE, IN - GEORGETOWN, SC -$930.00
+3621 04/09/26 Oleksandr Moskaliuk [Drv] #3621 Huger, SC - Cresson, PA -$945.00
+3622 04/10/26 Oleksandr Moskaliuk [Drv] #3622 Kingwood, WV - Kernersville, NC -$600.00
+- 04/13/26 Cargo and Liability Insurance Unit 603 -$300.00
+Subtotal: -$3,735.00
+Settlement total: $3,538.09
+Balance due: $3,538.09
+ezLoads TMS and Driver App
+ezloads.net
+"""
+
 
 class FakePage:
     def __init__(self, text: str):
@@ -124,6 +188,15 @@ class FakePDF:
 def patch_77_cargo_pdf(monkeypatch):
     def fake_open(*_args, **_kwargs):
         return FakePDF([PAGE_1, PAGE_2, PAGE_3])
+
+    monkeypatch.setattr(pdf_parser_module.pdfplumber, "open", fake_open)
+    monkeypatch.setattr(settlement_extractor_module.pdfplumber, "open", fake_open)
+
+
+@pytest.fixture
+def patch_77_cargo_pdf_2280(monkeypatch):
+    def fake_open(*_args, **_kwargs):
+        return FakePDF([PAGE_2280_1, PAGE_2280_2])
 
     monkeypatch.setattr(pdf_parser_module.pdfplumber, "open", fake_open)
     monkeypatch.setattr(settlement_extractor_module.pdfplumber, "open", fake_open)
@@ -161,6 +234,34 @@ def test_parse_77_cargo_pdf_extracts_expected_fields(patch_77_cargo_pdf):
         {"description": "Title Fee", "amount": 16.26},
         {"description": "Truck Registration", "amount": 709.91},
     ]
+
+
+def test_parse_77_cargo_pdf_handles_inline_route_text_in_load_rows(patch_77_cargo_pdf_2280):
+    parsed = parse_amazon_relay_pdf("dummy.pdf")
+
+    assert parsed["settlement_type"] == "77 Cargo LLC"
+    assert parsed["settlement_date"] == date(2026, 4, 14)
+    assert parsed["week_start"] == date(2026, 4, 7)
+    assert parsed["week_end"] == date(2026, 4, 14)
+    assert parsed["miles_driven"] == pytest.approx(2777.0)
+    assert parsed["blocks_delivered"] == 4
+    assert parsed["block_ids"] == [
+        {"block_id": "3585", "delivery_date": "2026-04-08"},
+        {"block_id": "3604", "delivery_date": "2026-04-09"},
+        {"block_id": "3621", "delivery_date": "2026-04-10"},
+        {"block_id": "3622", "delivery_date": "2026-04-11"},
+    ]
+    assert parsed["gross_revenue"] == pytest.approx(10076.00)
+    assert parsed["expenses"] == pytest.approx(6537.91)
+    assert parsed["net_profit"] == pytest.approx(3538.09)
+    assert parsed["driver_name"] == "Oleksandr Moskaliuk"
+    assert parsed["expense_categories"] == {
+        "fuel": 2751.27,
+        "tolls": 51.64,
+        "insurance": 300.00,
+        "driver_pay": 3435.00,
+    }
+    assert parsed["deduction_details"] is None
 
 
 def test_77_cargo_detection_flows_through_extractor(patch_77_cargo_pdf):
