@@ -9,6 +9,7 @@ from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.truck import Truck
 from app.dependencies import get_tenant_id
+from app.services.loan_balance_service import calculate_loan_metrics_for_truck
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, date
 from collections import defaultdict
@@ -83,6 +84,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
     interest_rate = float(vehicle.interest_rate) if vehicle.interest_rate else 0.07  # Default 7%
     total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
     registration_fee = float(vehicle.registration_fee) if vehicle.registration_fee else None
+    loan_metrics = calculate_loan_metrics_for_truck(db, vehicle)
     
     # Calculate cumulative loan interest from stored settlement data
     # Interest is stored in expense_categories["loan_interest"] for each settlement
@@ -117,19 +119,10 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
     calculated_loan_balance = None
     
     if vehicle.vehicle_type == 'truck' and loan_amount and loan_amount > 0:
-        if cash_investment and cash_investment > 0 and cumulative_net_profit >= cash_investment:
-            # Cash is recovered, excess profit goes to loan principal
-            excess_profit = cumulative_net_profit - cash_investment
-            principal_paid_from_excess = min(excess_profit, loan_amount)
-            calculated_loan_balance = max(0.0, loan_amount - principal_paid_from_excess)
-        else:
-            # Cash not yet recovered, no principal payments
+        calculated_loan_balance = loan_metrics["current_loan_balance"]
+        if calculated_loan_balance is None:
             calculated_loan_balance = loan_amount
-            principal_paid_from_excess = 0.0
-    elif vehicle.vehicle_type == 'truck' and loan_amount:
-        # No cash investment, but has loan (edge case)
-        calculated_loan_balance = loan_amount
-        principal_paid_from_excess = 0.0
+        principal_paid_from_excess = loan_metrics["principal_paid_total"]
     
     # Calculate ROI metrics based on total_cost (which includes cash, loan, and registration)
     investment_recovery_percentage = None
@@ -158,6 +151,11 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "vehicle_type": vehicle.vehicle_type,
         "cash_investment": cash_investment,
         "loan_amount": loan_amount,
+        "loan_payoff_date": loan_metrics["loan_payoff_date"],
+        "projected_payoff_date": loan_metrics["projected_payoff_date"],
+        "estimated_settlements_to_payoff": loan_metrics["estimated_settlements_to_payoff"],
+        "average_principal_payment": loan_metrics["average_principal_payment"],
+        "latest_settlement_date": loan_metrics["latest_settlement_date"],
         "current_loan_balance": round(calculated_loan_balance, 2) if calculated_loan_balance is not None else None,
         "principal_paid_from_excess": round(principal_paid_from_excess, 2),
         "interest_rate": interest_rate,

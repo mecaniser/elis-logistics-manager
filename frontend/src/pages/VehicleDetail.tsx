@@ -313,7 +313,7 @@ export default function VehicleDetail() {
                       <span className="font-medium">${safeToLocaleString((roiData.loan_amount || 0) - (roiData.current_loan_balance || 0))}</span>
                     ) : null}
                     {roiData.current_loan_balance < roiData.loan_amount && (
-                      <span> paid of ${safeToLocaleString(roiData.loan_amount)} total</span>
+                      <span> paid off ${safeToLocaleString(roiData.loan_amount)} total</span>
                     )}
                   </div>
                 </>
@@ -321,6 +321,28 @@ export default function VehicleDetail() {
               {roiData.current_loan_balance === 0 && (
                 <div className="text-xs text-green-600 font-medium">
                   ✓ Loan fully paid off
+                </div>
+              )}
+              {roiData.loan_payoff_date && (
+                <div className="text-xs text-gray-600 mt-2">
+                  Paid off date: <span className="font-medium">{new Date(roiData.loan_payoff_date).toLocaleDateString()}</span>
+                </div>
+              )}
+              {roiData.current_loan_balance > 0 && roiData.projected_payoff_date && (
+                <div className="mt-3 text-xs text-gray-600 space-y-1">
+                  <div>
+                    Projected payoff date: <span className="font-medium">{new Date(roiData.projected_payoff_date).toLocaleDateString()}</span>
+                  </div>
+                  {roiData.estimated_settlements_to_payoff !== null && roiData.estimated_settlements_to_payoff !== undefined && (
+                    <div>
+                      Estimated settlements remaining: <span className="font-medium">{roiData.estimated_settlements_to_payoff}</span>
+                    </div>
+                  )}
+                  {roiData.average_principal_payment !== null && roiData.average_principal_payment !== undefined && (
+                    <div>
+                      Avg principal per settlement: <span className="font-medium">${safeToLocaleString(roiData.average_principal_payment)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -674,6 +696,16 @@ export default function VehicleDetail() {
                       )}
                       {roiData.current_loan_balance === 0 && (
                         <p className="text-xs text-green-600 font-medium mt-1">✓ Loan fully paid off!</p>
+                      )}
+                      {roiData.loan_payoff_date && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Paid off on {new Date(roiData.loan_payoff_date).toLocaleDateString()}
+                        </p>
+                      )}
+                      {roiData.current_loan_balance > 0 && roiData.projected_payoff_date && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Forecast payoff: {new Date(roiData.projected_payoff_date).toLocaleDateString()}
+                        </p>
                       )}
                     </div>
                   )}

@@ -74,6 +74,7 @@ def main():
         ("migrate_add_registration_fee.py", "Add registration_fee column"),
         ("migrate_add_interest_rate.py", "Add interest_rate column"),
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
+        ("migrate_add_loan_paid_off_date.py", "Add loan_paid_off_date column"),
         ("migrate_recalculate_loan_interest_with_principal.py", "Recalculate loan interest with principal payments"),
     ]
     
@@ -107,4 +108,3 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
-

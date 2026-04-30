@@ -170,3 +170,107 @@ def test_create_settlement_skips_interest_when_history_already_paid_off(client: 
     assert float(data["expenses"]) == 100.0
     assert float(data["net_profit"]) == 600.0
     assert not data.get("expense_categories") or data["expense_categories"].get("loan_interest", 0) == 0
+
+
+def test_vehicle_roi_derives_payoff_date_from_settlement_replay(client: TestClient, db, tenant_headers):
+    """ROI should derive the payoff date from the settlement that clears the final principal balance."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck ROI Payoff",
+        vehicle_type="truck",
+        license_plate="ROI-004",
+        cash_investment=100.0,
+        loan_amount=500.0,
+        current_loan_balance=500.0,
+        interest_rate=0.52,
+        total_cost=600.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    db.add_all([
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 7),
+            gross_revenue=150.0,
+            expenses=0.0,
+            net_profit=150.0,
+        ),
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 14),
+            gross_revenue=200.0,
+            expenses=0.0,
+            net_profit=200.0,
+        ),
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 21),
+            gross_revenue=350.0,
+            expenses=0.0,
+            net_profit=350.0,
+        ),
+    ])
+    db.commit()
+
+    response = client.get(f"/api/analytics/vehicle/{truck.id}/roi", headers=tenant_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["loan_payoff_date"] == "2024-01-21"
+    assert data["current_loan_balance"] == 0.0
+    assert data["principal_paid_from_excess"] == 500.0
+    assert data["projected_payoff_date"] is None
+
+
+def test_vehicle_roi_forecasts_remaining_balance_from_replay(client: TestClient, db, tenant_headers):
+    """ROI should preserve a positive remaining balance and forecast payoff from replay history."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck ROI Forecast",
+        vehicle_type="truck",
+        license_plate="ROI-005",
+        cash_investment=100.0,
+        loan_amount=500.0,
+        current_loan_balance=500.0,
+        interest_rate=0.52,
+        total_cost=600.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    db.add_all([
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 7),
+            gross_revenue=150.0,
+            expenses=0.0,
+            net_profit=150.0,
+        ),
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 14),
+            gross_revenue=100.0,
+            expenses=0.0,
+            net_profit=100.0,
+        ),
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2024, 1, 21),
+            gross_revenue=100.0,
+            expenses=0.0,
+            net_profit=100.0,
+        ),
+    ])
+    db.commit()
+
+    response = client.get(f"/api/analytics/vehicle/{truck.id}/roi", headers=tenant_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["loan_payoff_date"] is None
+    assert data["current_loan_balance"] == 250.0
+    assert data["principal_paid_from_excess"] == 250.0
+    assert data["average_principal_payment"] == 83.33
+    assert data["estimated_settlements_to_payoff"] == 4
+    assert data["projected_payoff_date"] == "2024-02-18"

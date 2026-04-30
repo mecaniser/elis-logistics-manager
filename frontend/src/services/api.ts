@@ -112,6 +112,11 @@ export interface VehicleROI {
   cash_investment: number | null
   loan_amount: number | null
   current_loan_balance: number | null
+  loan_payoff_date: string | null
+  projected_payoff_date: string | null
+  estimated_settlements_to_payoff: number | null
+  average_principal_payment: number | null
+  latest_settlement_date: string | null
   principal_paid_from_excess: number
   interest_rate: number
   total_cost: number | null

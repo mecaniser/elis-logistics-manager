@@ -25,5 +25,10 @@ def main():
         db.close()
 
 
+def migrate():
+    """Wrapper for master migration runners."""
+    main()
+
+
 if __name__ == "__main__":
     main()

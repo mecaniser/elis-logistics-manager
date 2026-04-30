@@ -24,7 +24,7 @@ from app.database import engine, DATABASE_URL, get_db
 from app.models.settlement import Settlement
 from app.models.truck import Truck
 from app.models.repair import Repair
-from app.utils.loan_interest import calculate_weekly_loan_interest, calculate_principal_payment
+from app.utils.loan_interest import calculate_cumulative_principal_paid, calculate_weekly_loan_interest
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -94,6 +94,7 @@ def migrate_recalculate_loan_interest():
             truck_updated_count = 0
             cumulative_repair_costs = 0.0
             repair_index = 0  # Track which repairs we've processed
+            prior_cumulative_principal_paid = 0.0
             
             for settlement in settlements:
                 settlement_date = get_settlement_date(settlement)
@@ -152,11 +153,14 @@ def migrate_recalculate_loan_interest():
                 
                 # Calculate principal payment and update loan balance
                 if cash_investment and cash_investment > 0:
-                    principal_payment, new_loan_balance = calculate_principal_payment(
+                    cumulative_principal_paid = calculate_cumulative_principal_paid(
                         cumulative_net_profit,
                         cash_investment,
-                        current_loan_balance
+                        loan_amount,
                     )
+                    principal_payment = round(max(0.0, cumulative_principal_paid - prior_cumulative_principal_paid), 2)
+                    new_loan_balance = round(max(0.0, loan_amount - cumulative_principal_paid), 2)
+                    prior_cumulative_principal_paid = cumulative_principal_paid
                     
                     if principal_payment > 0:
                         current_loan_balance = new_loan_balance
@@ -197,4 +201,3 @@ def migrate():
 if __name__ == "__main__":
     migrate_recalculate_loan_interest()
     print("\n✓ Migration completed successfully!")
-

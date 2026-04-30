@@ -16,10 +16,10 @@ from app.utils.cloudinary import upload_pdf
 from app.utils.loan_interest import calculate_weekly_loan_interest
 from app.utils.block_id_validator import validate_block_ids
 from app.services.accounting_service import create_settlement_journal_entry, delete_settlement_journal_entry
-from app.services.loan_balance_service import sync_current_loan_balance
+from app.services.loan_balance_service import calculate_current_loan_balance_for_truck, sync_current_loan_balance
 import os
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 router = APIRouter()
 
@@ -43,13 +43,21 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     db.commit()
 
 
-def get_effective_loan_balance(truck: Truck, db: Session) -> Optional[float]:
+def get_effective_loan_balance(
+    truck: Truck,
+    db: Session,
+    settlement_date: Optional[date] = None,
+) -> Optional[float]:
     """
     Return the recalculated balance to use for interest accrual.
     """
     if truck.vehicle_type != 'truck':
         return None
-    return sync_current_loan_balance(db, truck)
+    current_balance = calculate_current_loan_balance_for_truck(db, truck, settlement_date)
+    if settlement_date is None:
+        truck.current_loan_balance = current_balance
+        db.add(truck)
+    return current_balance
 
 @router.get("/duplicate-block-ids")
 def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
@@ -231,7 +239,7 @@ async def upload_settlement_pdf(
             # Calculate and add loan interest to expense_categories
             truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
             if truck and truck.vehicle_type == 'truck':
-                current_balance = get_effective_loan_balance(truck, db)
+                current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:
@@ -460,7 +468,7 @@ async def upload_settlement_pdf_bulk(
                     # Calculate and add loan interest to expense_categories
                     truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
                     if truck and truck.vehicle_type == 'truck':
-                        current_balance = get_effective_loan_balance(truck, db)
+                        current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                         interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                         
                         if current_balance and current_balance > 0:
@@ -659,7 +667,7 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         
         # Calculate and add loan interest to expense_categories
         if truck.vehicle_type == 'truck':
-            current_balance = get_effective_loan_balance(truck, db)
+            current_balance = get_effective_loan_balance(truck, db, settlement.settlement_date)
             interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
             
             if current_balance and current_balance > 0:
@@ -968,7 +976,7 @@ def upload_consolidated_settlements(
             weekly_interest = 0.0
             truck = db.query(Truck).filter(Truck.id == truck_id).first()
             if truck and truck.vehicle_type == 'truck':
-                current_balance = get_effective_loan_balance(truck, db)
+                current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:
@@ -1331,7 +1339,7 @@ def upload_settlement_json(
             # Calculate and add loan interest
             truck = db.query(Truck).filter(Truck.id == truck_id).first()
             if truck and truck.vehicle_type == 'truck':
-                current_balance = get_effective_loan_balance(truck, db)
+                current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:

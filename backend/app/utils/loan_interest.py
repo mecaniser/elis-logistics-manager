@@ -69,3 +69,23 @@ def calculate_principal_payment(
     
     return (round(principal_payment, 2), round(new_loan_balance, 2))
 
+
+def calculate_cumulative_principal_paid(
+    cumulative_net_profit: float,
+    cash_investment: Optional[float],
+    loan_amount: Optional[float],
+) -> float:
+    """
+    Calculate total principal that should be paid as of a cumulative profit point.
+
+    Cash investment is recovered first. Only the remaining cumulative excess profit
+    can reduce principal, capped at the original loan amount.
+    """
+    if not cash_investment or cash_investment <= 0:
+        return 0.0
+
+    if not loan_amount or loan_amount <= 0:
+        return 0.0
+
+    excess_profit = max(0.0, cumulative_net_profit - cash_investment)
+    return round(min(excess_profit, float(loan_amount)), 2)
