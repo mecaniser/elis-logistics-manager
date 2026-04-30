@@ -15,6 +15,7 @@ from app.database import get_db
 from app.dependencies import get_tenant_id
 from app.models.truck import Truck
 from app.models.vehicle_document import VehicleDocument
+from app.services.loan_balance_service import sync_current_loan_balance
 from app.schemas.truck import TruckCreate, TruckResponse, TruckUpdate
 from app.schemas.vehicle_document import VehicleDocumentResponse
 from app.utils.cloudinary import delete_uploaded_file, upload_image, upload_pdf
@@ -374,6 +375,14 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     
     for field, value in update_data.items():
         setattr(truck, field, value)
+
+    should_resync_loan_balance = (
+        vehicle_type == 'truck'
+        and 'current_loan_balance' not in update_data
+        and any(field in update_data for field in ['loan_amount', 'cash_investment', 'total_cost', 'registration_fee', 'additional_expenses'])
+    )
+    if should_resync_loan_balance:
+        sync_current_loan_balance(db, truck)
     
     db.commit()
     db.refresh(truck)

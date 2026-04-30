@@ -9,14 +9,14 @@ from app.database import get_db
 from app.dependencies import get_tenant_id
 from app.models.settlement import Settlement
 from app.models.truck import Truck
-from app.models.repair import Repair
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
 from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_multi_truck
 from app.utils.settlement_extractor import SettlementExtractor
 from app.utils.cloudinary import upload_pdf
-from app.utils.loan_interest import calculate_weekly_loan_interest, calculate_principal_payment
+from app.utils.loan_interest import calculate_weekly_loan_interest
 from app.utils.block_id_validator import validate_block_ids
 from app.services.accounting_service import create_settlement_journal_entry, delete_settlement_journal_entry
+from app.services.loan_balance_service import sync_current_loan_balance
 import os
 import json
 from datetime import datetime
@@ -39,76 +39,17 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     if not truck or truck.vehicle_type != 'truck':
         return
     
-    cash_investment = float(truck.cash_investment) if truck.cash_investment else None
-    if not cash_investment or cash_investment <= 0:
-        return
-    
-    loan_amount = float(truck.loan_amount) if truck.loan_amount else None
-    if not loan_amount or loan_amount <= 0:
-        return
-    
-    # Initialize current_loan_balance if not set
-    if truck.current_loan_balance is None:
-        truck.current_loan_balance = loan_amount
-    
-    # Get all settlements chronologically to recalculate balance correctly
-    settlements = db.query(Settlement).filter(
-        Settlement.truck_id == truck_id
-    ).order_by(
-        Settlement.week_start.asc().nullslast(),
-        Settlement.settlement_date.asc().nullslast(),
-        Settlement.created_at.asc()
-    ).all()
-    
-    # Get all repairs ordered by date
-    repairs = db.query(Repair).filter(
-        Repair.truck_id == truck_id
-    ).order_by(Repair.date.asc()).all()
-    
-    # Track balance chronologically
-    current_loan_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else loan_amount
-    cumulative_revenue = 0.0
-    cumulative_settlement_expenses = 0.0
-    cumulative_repair_costs = 0.0
-    
-    # Process repairs up to each settlement date
-    repair_index = 0
-    
-    for settlement in settlements:
-        # Add settlement revenue and expenses
-        revenue = float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
-        expenses = float(settlement.expenses) if settlement.expenses else 0.0
-        
-        cumulative_revenue += revenue
-        cumulative_settlement_expenses += expenses
-        
-        # Add repairs up to this settlement's date
-        settlement_date = settlement.week_start or settlement.settlement_date or settlement.created_at
-        while repair_index < len(repairs):
-            repair = repairs[repair_index]
-            repair_date = repair.date or repair.created_at
-            if settlement_date and repair_date and repair_date <= settlement_date:
-                cumulative_repair_costs += float(repair.cost) if repair.cost else 0.0
-                repair_index += 1
-            else:
-                break
-        
-        # Calculate cumulative net profit up to this point
-        cumulative_net_profit = cumulative_revenue - cumulative_settlement_expenses - cumulative_repair_costs
-        
-        # Calculate principal payment and update balance
-        principal_payment, new_loan_balance = calculate_principal_payment(
-            cumulative_net_profit,
-            cash_investment,
-            current_loan_balance
-        )
-        
-        if principal_payment > 0:
-            current_loan_balance = new_loan_balance
-    
-    # Update truck's current_loan_balance with final calculated balance
-    truck.current_loan_balance = current_loan_balance
+    sync_current_loan_balance(db, truck)
     db.commit()
+
+
+def get_effective_loan_balance(truck: Truck, db: Session) -> Optional[float]:
+    """
+    Return the recalculated balance to use for interest accrual.
+    """
+    if truck.vehicle_type != 'truck':
+        return None
+    return sync_current_loan_balance(db, truck)
 
 @router.get("/duplicate-block-ids")
 def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
@@ -290,8 +231,7 @@ async def upload_settlement_pdf(
             # Calculate and add loan interest to expense_categories
             truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
             if truck and truck.vehicle_type == 'truck':
-                # Use current_loan_balance if available, otherwise use loan_amount
-                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                current_balance = get_effective_loan_balance(truck, db)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:
@@ -520,8 +460,7 @@ async def upload_settlement_pdf_bulk(
                     # Calculate and add loan interest to expense_categories
                     truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
                     if truck and truck.vehicle_type == 'truck':
-                        # Use current_loan_balance if available, otherwise use loan_amount
-                        current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                        current_balance = get_effective_loan_balance(truck, db)
                         interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                         
                         if current_balance and current_balance > 0:
@@ -720,8 +659,7 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         
         # Calculate and add loan interest to expense_categories
         if truck.vehicle_type == 'truck':
-            # Use current_loan_balance if available, otherwise use loan_amount
-            current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+            current_balance = get_effective_loan_balance(truck, db)
             interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
             
             if current_balance and current_balance > 0:
@@ -1030,7 +968,7 @@ def upload_consolidated_settlements(
             weekly_interest = 0.0
             truck = db.query(Truck).filter(Truck.id == truck_id).first()
             if truck and truck.vehicle_type == 'truck':
-                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                current_balance = get_effective_loan_balance(truck, db)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:
@@ -1393,8 +1331,7 @@ def upload_settlement_json(
             # Calculate and add loan interest
             truck = db.query(Truck).filter(Truck.id == truck_id).first()
             if truck and truck.vehicle_type == 'truck':
-                # Use current_loan_balance if available, otherwise use loan_amount
-                current_balance = float(truck.current_loan_balance) if truck.current_loan_balance is not None else (float(truck.loan_amount) if truck.loan_amount else None)
+                current_balance = get_effective_loan_balance(truck, db)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
                 if current_balance and current_balance > 0:

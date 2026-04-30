@@ -213,12 +213,12 @@ export default function VehicleDetail() {
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm text-gray-600">Total Expenses</span>
                   <span className="text-sm font-semibold text-red-600">
-                    ${safeToLocaleString((roiData.cumulative_settlement_expenses || 0) + (roiData.cumulative_repair_costs || 0) + (roiData.cumulative_loan_interest || 0))}
+                    ${safeToLocaleString((roiData.cumulative_settlement_expenses || 0) + (roiData.cumulative_repair_costs || 0))}
                   </span>
                 </div>
                 <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-2 mt-2 pl-2 border-l-2 border-gray-200`}>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-500">Settlement</span>
+                    <span className="text-xs text-gray-500">Settlement (incl. interest)</span>
                     <span className="text-xs font-medium text-gray-700">
                       ${safeToLocaleString(roiData.cumulative_settlement_expenses)}
                     </span>
@@ -716,4 +716,3 @@ export default function VehicleDetail() {
     </div>
   )
 }
-
