@@ -58,14 +58,14 @@ def migrate():
         else:
             print("\n✓ All columns already exist")
         
-        return True
+        return 0
         
     except Exception as e:
         db.rollback()
         print(f"✗ Error adding columns: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return 1
     finally:
         db.close()
 
@@ -75,10 +75,9 @@ if __name__ == "__main__":
     
     success = migrate()
     
-    if success:
+    if success == 0:
         print("\n✓ Migration completed successfully!")
         sys.exit(0)
     else:
         print("\n✗ Migration failed!")
         sys.exit(1)
-

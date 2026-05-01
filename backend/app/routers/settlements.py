@@ -59,6 +59,153 @@ def get_effective_loan_balance(
         db.add(truck)
     return current_balance
 
+
+def get_trailer_income_split_child(db: Session, source_settlement_id: int) -> Optional[Settlement]:
+    """Return the managed trailer-allocation settlement linked to a truck settlement."""
+    return (
+        db.query(Settlement)
+        .filter(Settlement.source_settlement_id == source_settlement_id)
+        .first()
+    )
+
+
+def validate_trailer_income_split(
+    db: Session,
+    tenant_id: int,
+    source_vehicle: Truck,
+    trailer_id: Optional[int],
+    split_amount: Optional[float],
+) -> tuple[Optional[Truck], float]:
+    """Validate the optional trailer-income allocation for a truck settlement."""
+    normalized_amount = round(float(split_amount or 0), 2)
+    normalized_trailer_id = int(trailer_id) if trailer_id else None
+
+    if normalized_amount < 0:
+        raise HTTPException(status_code=400, detail="Trailer income split amount cannot be negative.")
+
+    if normalized_amount == 0 and not normalized_trailer_id:
+        return None, 0.0
+
+    if source_vehicle.vehicle_type != "truck":
+        raise HTTPException(status_code=400, detail="Only truck settlements can allocate income to a trailer.")
+
+    if normalized_amount <= 0 or not normalized_trailer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Trailer income split requires both a trailer and a positive split amount.",
+        )
+
+    trailer = (
+        db.query(Truck)
+        .filter(
+            Truck.id == normalized_trailer_id,
+            Truck.tenant_id == tenant_id,
+            Truck.vehicle_type == "trailer",
+        )
+        .first()
+    )
+    if not trailer:
+        raise HTTPException(status_code=400, detail=f"Trailer with ID {normalized_trailer_id} not found.")
+
+    return trailer, normalized_amount
+
+
+def apply_trailer_income_split_to_source(
+    settlement_data: dict,
+    split_amount: float,
+    existing_split_amount: float = 0.0,
+) -> None:
+    """Reduce the source truck settlement by the trailer's allocated share."""
+    displayed_gross = float(settlement_data.get("gross_revenue") or 0.0)
+    displayed_expenses = float(settlement_data.get("expenses") or 0.0)
+    displayed_net = settlement_data.get("net_profit")
+    if displayed_net is None:
+        displayed_net = displayed_gross - displayed_expenses
+    displayed_net = float(displayed_net or 0.0)
+
+    raw_gross_total = round(displayed_gross + existing_split_amount, 2)
+    raw_net_total = round(displayed_net + existing_split_amount, 2)
+
+    if split_amount > raw_gross_total:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Trailer income split ${split_amount:.2f} cannot exceed "
+                f"the settlement gross revenue ${raw_gross_total:.2f}."
+            ),
+        )
+
+    settlement_data["gross_revenue"] = round(raw_gross_total - split_amount, 2)
+    settlement_data["net_profit"] = round(raw_net_total - split_amount, 2)
+
+
+def sync_trailer_income_split_settlement(
+    db: Session,
+    source_settlement: Settlement,
+    trailer: Optional[Truck],
+    split_amount: float,
+) -> Optional[Settlement]:
+    """Create, update, or remove the managed trailer-allocation settlement."""
+    linked_settlement = get_trailer_income_split_child(db, source_settlement.id)
+
+    if not trailer or split_amount <= 0:
+        if linked_settlement:
+            db.delete(linked_settlement)
+        source_settlement.trailer_income_split_trailer_id = None
+        source_settlement.trailer_income_split_amount = None
+        db.add(source_settlement)
+        return None
+
+    conflicting_settlement = (
+        db.query(Settlement)
+        .filter(
+            Settlement.truck_id == trailer.id,
+            Settlement.settlement_date == source_settlement.settlement_date,
+        )
+        .first()
+    )
+    if conflicting_settlement and (not linked_settlement or conflicting_settlement.id != linked_settlement.id):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Trailer '{trailer.name}' already has a settlement on "
+                f"{source_settlement.settlement_date}. Remove that settlement or use a different trailer/date."
+            ),
+        )
+
+    if not linked_settlement:
+        linked_settlement = Settlement(
+            truck_id=trailer.id,
+            settlement_date=source_settlement.settlement_date,
+            week_start=source_settlement.week_start,
+            week_end=source_settlement.week_end,
+            gross_revenue=split_amount,
+            expenses=0,
+            net_profit=split_amount,
+            pdf_file_path=source_settlement.pdf_file_path,
+            settlement_type="Trailer Income Split",
+            trailer_income_split_trailer_id=None,
+            trailer_income_split_amount=None,
+            source_settlement_id=source_settlement.id,
+        )
+        db.add(linked_settlement)
+    else:
+        linked_settlement.truck_id = trailer.id
+        linked_settlement.settlement_date = source_settlement.settlement_date
+        linked_settlement.week_start = source_settlement.week_start
+        linked_settlement.week_end = source_settlement.week_end
+        linked_settlement.gross_revenue = split_amount
+        linked_settlement.expenses = 0
+        linked_settlement.net_profit = split_amount
+        linked_settlement.pdf_file_path = source_settlement.pdf_file_path
+        linked_settlement.settlement_type = "Trailer Income Split"
+        db.add(linked_settlement)
+
+    source_settlement.trailer_income_split_trailer_id = trailer.id
+    source_settlement.trailer_income_split_amount = split_amount
+    db.add(source_settlement)
+    return linked_settlement
+
 @router.get("/duplicate-block-ids")
 def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """
@@ -137,6 +284,8 @@ async def upload_settlement_pdf(
     file: UploadFile = File(...),
     truck_id: Optional[int] = Form(None),
     settlement_type: Optional[str] = Form(None),
+    trailer_income_split_trailer_id: Optional[int] = Form(None),
+    trailer_income_split_amount: Optional[float] = Form(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
@@ -160,8 +309,15 @@ async def upload_settlement_pdf(
         else:
             # Single-truck parser for all other settlement types (277 Logistics, etc.)
             settlements_data = [parse_amazon_relay_pdf(file_path, settlement_type)]
+
+        if (trailer_income_split_trailer_id or trailer_income_split_amount) and len(settlements_data) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Trailer income split is only supported for single-settlement uploads.",
+            )
         
         created_settlements = []
+        managed_child_settlements = []
         
         for settlement_data in settlements_data:
             # Determine truck_id - use provided, or auto-detect from license plate
@@ -263,6 +419,17 @@ async def upload_settlement_pdf(
                     # Recalculate net profit
                     revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                     settlement_data["net_profit"] = revenue - settlement_data["expenses"]
+
+            trailer, split_amount = validate_trailer_income_split(
+                db,
+                tenant_id,
+                truck,
+                trailer_income_split_trailer_id,
+                trailer_income_split_amount,
+            ) if truck else (None, 0.0)
+
+            if trailer and split_amount > 0:
+                apply_trailer_income_split_to_source(settlement_data, split_amount)
             
             # Check for duplicate settlement (same truck + date)
             existing = db.query(Settlement).filter(
@@ -303,7 +470,16 @@ async def upload_settlement_pdf(
             # Create settlement
             db_settlement = Settlement(**settlement_data)
             db.add(db_settlement)
+            db.flush()
+            linked_trailer_settlement = sync_trailer_income_split_settlement(
+                db,
+                db_settlement,
+                trailer,
+                split_amount,
+            )
             created_settlements.append(db_settlement)
+            if linked_trailer_settlement:
+                managed_child_settlements.append(linked_trailer_settlement)
         
         if not created_settlements:
             raise HTTPException(
@@ -316,9 +492,11 @@ async def upload_settlement_pdf(
         # Refresh all created settlements
         for settlement in created_settlements:
             db.refresh(settlement)
+        for settlement in managed_child_settlements:
+            db.refresh(settlement)
         
         # Create accounting journal entries for settlements
-        for settlement in created_settlements:
+        for settlement in created_settlements + managed_child_settlements:
             try:
                 create_settlement_journal_entry(db, settlement)
             except Exception as e:
@@ -691,9 +869,27 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
                 # Recalculate net profit
                 revenue = float(settlement_dict.get("gross_revenue", 0) or 0)
                 settlement_dict["net_profit"] = revenue - settlement_dict["expenses"]
+
+        trailer, split_amount = validate_trailer_income_split(
+            db,
+            tenant_id,
+            truck,
+            settlement_dict.get("trailer_income_split_trailer_id"),
+            settlement_dict.get("trailer_income_split_amount"),
+        )
+
+        if trailer and split_amount > 0:
+            apply_trailer_income_split_to_source(settlement_dict, split_amount)
         
         db_settlement = Settlement(**settlement_dict)
         db.add(db_settlement)
+        db.flush()
+        linked_trailer_settlement = sync_trailer_income_split_settlement(
+            db,
+            db_settlement,
+            trailer,
+            split_amount,
+        )
         db.commit()
         
         # Update loan balance if cash investment is recovered
@@ -707,6 +903,14 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to create journal entry for settlement {db_settlement.id}: {str(e)}")
+
+        if linked_trailer_settlement:
+            try:
+                create_settlement_journal_entry(db, linked_trailer_settlement)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to create journal entry for trailer split settlement {linked_trailer_settlement.id}: {str(e)}")
         
         db.refresh(db_settlement)
         return db_settlement
@@ -726,6 +930,12 @@ def get_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_id:
     ).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
+
+    if settlement.source_settlement_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Trailer income split settlements are managed automatically. Edit the source truck settlement instead.",
+        )
     return settlement
 
 @router.put("/{settlement_id}", response_model=SettlementResponse)
@@ -794,6 +1004,47 @@ async def update_settlement(
         # Update pdf_file_path in settlement
         if pdf_path:
             update_data["pdf_file_path"] = pdf_path
+
+    existing_linked_settlement = get_trailer_income_split_child(db, settlement.id)
+    existing_linked_amount = float(existing_linked_settlement.gross_revenue or 0) if existing_linked_settlement else 0.0
+
+    if "gross_revenue" in update_data or "expenses" in update_data or "net_profit" in update_data or "trailer_income_split_amount" in update_data or "trailer_income_split_trailer_id" in update_data:
+        source_vehicle_id = update_data.get("truck_id", settlement.truck_id)
+        source_vehicle = db.query(Truck).filter(Truck.id == source_vehicle_id, Truck.tenant_id == tenant_id).first()
+        if not source_vehicle:
+            raise HTTPException(status_code=400, detail=f"Truck with ID {source_vehicle_id} not found")
+
+        trailer, split_amount = validate_trailer_income_split(
+            db,
+            tenant_id,
+            source_vehicle,
+            update_data.get("trailer_income_split_trailer_id", settlement.trailer_income_split_trailer_id),
+            update_data.get("trailer_income_split_amount", settlement.trailer_income_split_amount),
+        )
+
+        source_preview = {
+            "gross_revenue": update_data.get("gross_revenue", settlement.gross_revenue),
+            "expenses": update_data.get("expenses", settlement.expenses),
+            "net_profit": update_data.get("net_profit", settlement.net_profit),
+        }
+        apply_trailer_income_split_to_source(source_preview, split_amount, existing_linked_amount)
+        update_data["gross_revenue"] = source_preview["gross_revenue"]
+        update_data["net_profit"] = source_preview["net_profit"]
+        update_data["trailer_income_split_trailer_id"] = trailer.id if trailer else None
+        update_data["trailer_income_split_amount"] = split_amount or None
+    else:
+        split_amount = float(settlement.trailer_income_split_amount or 0.0)
+        trailer = None
+        if settlement.trailer_income_split_trailer_id:
+            trailer = (
+                db.query(Truck)
+                .filter(
+                    Truck.id == settlement.trailer_income_split_trailer_id,
+                    Truck.tenant_id == tenant_id,
+                    Truck.vehicle_type == "trailer",
+                )
+                .first()
+            )
     
     # Check for duplicate block IDs if block_ids are being updated (flag but don't reject)
     if "block_ids" in update_data:
@@ -818,6 +1069,13 @@ async def update_settlement(
     # Update settlement fields
     for field, value in update_data.items():
         setattr(settlement, field, value)
+
+    linked_trailer_settlement = sync_trailer_income_split_settlement(
+        db,
+        settlement,
+        trailer if update_data.get("trailer_income_split_trailer_id", settlement.trailer_income_split_trailer_id) else None,
+        split_amount,
+    )
     
     db.commit()
     db.refresh(settlement)
@@ -831,6 +1089,25 @@ async def update_settlement(
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to update journal entry for settlement {settlement.id}: {str(e)}")
+
+    if existing_linked_settlement and not linked_trailer_settlement:
+        try:
+            delete_settlement_journal_entry(db, existing_linked_settlement.id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to delete journal entry for trailer split settlement {existing_linked_settlement.id}: {str(e)}")
+    elif linked_trailer_settlement:
+        try:
+            delete_settlement_journal_entry(db, linked_trailer_settlement.id)
+        except Exception:
+            pass
+        try:
+            create_settlement_journal_entry(db, linked_trailer_settlement)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to update trailer split journal entry for settlement {linked_trailer_settlement.id}: {str(e)}")
     
     return settlement
 
@@ -1443,6 +1720,14 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
     ).first()
     if not settlement:
         raise HTTPException(status_code=404, detail="Settlement not found")
+
+    if settlement.source_settlement_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Trailer income split settlements are managed automatically. Delete the source truck settlement instead.",
+        )
+
+    linked_trailer_settlement = get_trailer_income_split_child(db, settlement.id)
     
     # Delete accounting journal entry
     try:
@@ -1452,6 +1737,14 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to delete journal entry for settlement {settlement_id}: {str(e)}")
+
+    if linked_trailer_settlement:
+        try:
+            delete_settlement_journal_entry(db, linked_trailer_settlement.id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to delete journal entry for trailer split settlement {linked_trailer_settlement.id}: {str(e)}")
     
     # Delete PDF file if it exists
     if settlement.pdf_file_path and os.path.exists(settlement.pdf_file_path):
@@ -1460,6 +1753,8 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
         except Exception:
             pass  # Don't fail if file deletion fails
     
+    if linked_trailer_settlement:
+        db.delete(linked_trailer_settlement)
     db.delete(settlement)
     db.commit()
     return {"message": "Settlement deleted successfully"}

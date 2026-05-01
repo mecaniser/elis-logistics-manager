@@ -71,6 +71,7 @@ def main():
         ("migrate_add_custom_expense_validation.py", "Add custom_expense_validation to settlements"),
         ("migrate_add_reimbursement_deduction_details.py", "Add reimbursement/deduction details to settlements"),
         ("migrate_add_missing_settlement_columns.py", "Add missing settlement columns"),
+        ("migrate_add_settlement_income_split_fields.py", "Add trailer-income split tracking to settlements"),
         ("migrate_add_duplicate_block_ids_warning.py", "Add duplicate_block_ids_warning to settlements"),
         ("migrate_add_repair_title_details.py", "Add title and details to repairs"),
         ("migrate_add_repair_miles.py", "Add miles to repairs"),

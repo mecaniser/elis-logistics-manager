@@ -274,3 +274,100 @@ def test_vehicle_roi_forecasts_remaining_balance_from_replay(client: TestClient,
     assert data["average_principal_payment"] == 83.33
     assert data["estimated_settlements_to_payoff"] == 4
     assert data["projected_payoff_date"] == "2024-02-18"
+
+
+def test_create_settlement_with_trailer_income_split_creates_managed_trailer_settlement(client: TestClient, db, tenant_headers):
+    """Creating a truck settlement with trailer split should reduce truck revenue and create trailer income."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck 0024",
+        vehicle_type="truck",
+        license_plate="VW9328",
+    )
+    trailer = Truck(
+        tenant_id=1,
+        name="Trailer A",
+        vehicle_type="trailer",
+        tag_number="TRL-400",
+    )
+    db.add_all([truck, trailer])
+    db.commit()
+    db.refresh(truck)
+    db.refresh(trailer)
+
+    response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2024-01-21",
+            "gross_revenue": 1000.0,
+            "expenses": 100.0,
+            "net_profit": 900.0,
+            "trailer_income_split_trailer_id": trailer.id,
+            "trailer_income_split_amount": 400.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["gross_revenue"]) == 600.0
+    assert float(data["net_profit"]) == 500.0
+    assert data["trailer_income_split_trailer_id"] == trailer.id
+    assert float(data["trailer_income_split_amount"]) == 400.0
+
+    trailer_settlement = db.query(Settlement).filter(Settlement.source_settlement_id == data["id"]).first()
+    assert trailer_settlement is not None
+    assert trailer_settlement.truck_id == trailer.id
+    assert float(trailer_settlement.gross_revenue) == 400.0
+    assert float(trailer_settlement.expenses or 0) == 0.0
+    assert float(trailer_settlement.net_profit) == 400.0
+
+    truck_roi = client.get(f"/api/analytics/vehicle/{truck.id}/roi", headers=tenant_headers)
+    trailer_roi = client.get(f"/api/analytics/vehicle/{trailer.id}/roi", headers=tenant_headers)
+    assert truck_roi.status_code == 200
+    assert trailer_roi.status_code == 200
+    assert truck_roi.json()["cumulative_revenue"] == 600.0
+    assert trailer_roi.json()["cumulative_revenue"] == 400.0
+
+
+def test_delete_source_settlement_removes_managed_trailer_income_split(client: TestClient, db, tenant_headers):
+    """Deleting the source truck settlement should also delete the managed trailer income settlement."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck 417",
+        vehicle_type="truck",
+        license_plate="VW417",
+    )
+    trailer = Truck(
+        tenant_id=1,
+        name="Trailer B",
+        vehicle_type="trailer",
+        tag_number="TRL-401",
+    )
+    db.add_all([truck, trailer])
+    db.commit()
+    db.refresh(truck)
+    db.refresh(trailer)
+
+    create_response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2024-01-28",
+            "gross_revenue": 900.0,
+            "expenses": 100.0,
+            "net_profit": 800.0,
+            "trailer_income_split_trailer_id": trailer.id,
+            "trailer_income_split_amount": 400.0,
+        },
+        headers=tenant_headers,
+    )
+    assert create_response.status_code == 200
+    source_settlement_id = create_response.json()["id"]
+    trailer_settlement = db.query(Settlement).filter(Settlement.source_settlement_id == source_settlement_id).first()
+    assert trailer_settlement is not None
+
+    delete_response = client.delete(f"/api/settlements/{source_settlement_id}", headers=tenant_headers)
+    assert delete_response.status_code == 200
+    assert db.query(Settlement).filter(Settlement.id == source_settlement_id).first() is None
+    assert db.query(Settlement).filter(Settlement.id == trailer_settlement.id).first() is None

@@ -140,6 +140,9 @@ export interface Settlement {
   id: number
   truck_id: number
   driver_id?: number | null
+  trailer_income_split_trailer_id?: number | null
+  trailer_income_split_amount?: number | null
+  source_settlement_id?: number | null
   settlement_date: string | null
   week_start?: string | null
   week_end?: string | null
@@ -324,7 +327,13 @@ export const settlementsApi = {
     }
     return formDataApi.put<Settlement>(`/settlements/${id}`, formData)
   },
-  upload: (file: File, truckId?: number, settlementType?: string) => {
+  upload: (
+    file: File,
+    truckId?: number,
+    settlementType?: string,
+    trailerIncomeSplitTrailerId?: number,
+    trailerIncomeSplitAmount?: number,
+  ) => {
     const formData = new FormData()
     formData.append('file', file)
     if (truckId !== undefined) {
@@ -332,6 +341,12 @@ export const settlementsApi = {
     }
     if (settlementType) {
       formData.append('settlement_type', settlementType)
+    }
+    if (trailerIncomeSplitTrailerId !== undefined) {
+      formData.append('trailer_income_split_trailer_id', trailerIncomeSplitTrailerId.toString())
+    }
+    if (trailerIncomeSplitAmount !== undefined) {
+      formData.append('trailer_income_split_amount', trailerIncomeSplitAmount.toString())
     }
     return formDataApi.post<Settlement>(`/settlements/upload`, formData)
   },

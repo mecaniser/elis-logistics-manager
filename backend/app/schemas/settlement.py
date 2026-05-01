@@ -65,6 +65,9 @@ class SettlementBase(BaseModel):
     license_plate: Optional[str] = None  # License plate from this settlement
     settlement_type: Optional[str] = None  # Type of settlement PDF
     duplicate_block_ids_warning: Optional[Dict[str, Any]] = None  # Warning about duplicate block IDs
+    trailer_income_split_trailer_id: Optional[int] = None
+    trailer_income_split_amount: Optional[Decimal] = None
+    source_settlement_id: Optional[int] = None
 
 class SettlementCreate(SettlementBase):
     pdf_file_path: Optional[str] = None
@@ -89,6 +92,9 @@ class SettlementUpdate(BaseModel):
     license_plate: Optional[str] = None
     settlement_type: Optional[str] = None
     pdf_file_path: Optional[str] = None
+    trailer_income_split_trailer_id: Optional[int] = None
+    trailer_income_split_amount: Optional[Decimal] = None
+    source_settlement_id: Optional[int] = None
 
 class SettlementResponse(SettlementBase):
     id: int

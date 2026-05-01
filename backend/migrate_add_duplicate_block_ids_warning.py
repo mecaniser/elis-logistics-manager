@@ -37,7 +37,7 @@ def migrate():
         
         if column_exists:
             print("✓ Column 'duplicate_block_ids_warning' already exists in settlements table.")
-            return True
+            return 0
         
         print("Adding 'duplicate_block_ids_warning' column to settlements table...")
         
@@ -50,21 +50,20 @@ def migrate():
         
         db.commit()
         print("✓ Successfully added 'duplicate_block_ids_warning' column to settlements table.")
-        return True
+        return 0
         
     except Exception as e:
         db.rollback()
         print(f"✗ Error adding column: {e}")
-        return False
+        return 1
     finally:
         db.close()
 
 if __name__ == "__main__":
     print(f"Running migration: add duplicate_block_ids_warning column\n")
     success = migrate()
-    if success:
+    if success == 0:
         print("\n✓ Migration completed successfully")
     else:
         print("\n✗ Migration failed")
         sys.exit(1)
-

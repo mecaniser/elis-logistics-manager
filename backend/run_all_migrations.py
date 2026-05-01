@@ -75,6 +75,7 @@ def main():
         ("migrate_add_interest_rate.py", "Add interest_rate column"),
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
         ("migrate_add_loan_paid_off_date.py", "Add loan_paid_off_date column"),
+        ("migrate_add_settlement_income_split_fields.py", "Add trailer-income split tracking to settlements"),
         ("migrate_recalculate_loan_interest_with_principal.py", "Recalculate loan interest with principal payments"),
     ]
     

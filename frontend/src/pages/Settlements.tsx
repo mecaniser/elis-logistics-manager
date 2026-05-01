@@ -69,6 +69,8 @@ export default function Settlements() {
   const [selectedSettlements, setSelectedSettlements] = useState<Set<number>>(new Set())
   const [deleteMode, setDeleteMode] = useState(false)
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
+  const [selectedTrailerForUpload, setSelectedTrailerForUpload] = useState<number | null>(null)
+  const [trailerSplitAmountForUpload, setTrailerSplitAmountForUpload] = useState<string>('')
   const [showManualForm, setShowManualForm] = useState(false)
   const [manualFormData, setManualFormData] = useState<Partial<Settlement>>({
     truck_id: undefined,
@@ -107,6 +109,7 @@ export default function Settlements() {
   const [searchFilter, setSearchFilter] = useState<string>('')
   const [editPdfFile, setEditPdfFile] = useState<File | null>(null)
   const [showExtractor, setShowExtractor] = useState(false)
+  const trailers = useMemo(() => trucks.filter((truck) => truck.vehicle_type === 'trailer'), [trucks])
 
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
@@ -352,12 +355,25 @@ export default function Settlements() {
 
     try {
       setUploading(true)
+      const splitAmount = trailerSplitAmountForUpload.trim() ? Number(trailerSplitAmountForUpload) : undefined
+      if (splitAmount !== undefined && Number.isNaN(splitAmount)) {
+        showToast('Trailer split amount must be a valid number', 'error')
+        return
+      }
       // Settlement type is optional - backend will use default parser
-      await settlementsApi.upload(uploadFile, selectedTruckForUpload || undefined, undefined)
+      await settlementsApi.upload(
+        uploadFile,
+        selectedTruckForUpload || undefined,
+        undefined,
+        selectedTrailerForUpload || undefined,
+        splitAmount,
+      )
       showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
       
       setUploadFile(null)
       setSelectedTruckForUpload(null)
+      setSelectedTrailerForUpload(null)
+      setTrailerSplitAmountForUpload('')
       setShowUploadForm(false)
       setSelectedSettlements(new Set()) // Clear any selected settlements
       loadSettlements(true)
@@ -793,6 +809,8 @@ export default function Settlements() {
         expense_categories: manualFormData.expense_categories,
         custom_expense_descriptions: customExpenseDescriptions,
         settlement_type: manualFormData.settlement_type || 'Manual Entry',
+        trailer_income_split_trailer_id: manualFormData.trailer_income_split_trailer_id,
+        trailer_income_split_amount: manualFormData.trailer_income_split_amount,
       }
 
       await settlementsApi.create(settlementData)
@@ -804,6 +822,8 @@ export default function Settlements() {
         gross_revenue: undefined,
         expenses: undefined,
         net_profit: undefined,
+        trailer_income_split_trailer_id: undefined,
+        trailer_income_split_amount: undefined,
       })
       setExpensesDescription('')
       setVinLookup('')
@@ -1248,6 +1268,8 @@ export default function Settlements() {
                       gross_revenue: undefined,
                       expenses: undefined,
                       net_profit: undefined,
+                      trailer_income_split_trailer_id: undefined,
+                      trailer_income_split_amount: undefined,
                     })
                     setExpensesDescription('')
                     setVinLookup('')
@@ -1283,6 +1305,8 @@ export default function Settlements() {
                     // Reset form when closing
                     setUploadFile(null)
                     setSelectedTruckForUpload(null)
+                    setSelectedTrailerForUpload(null)
+                    setTrailerSplitAmountForUpload('')
                   }
                   // Close extractor if open
                   if (showExtractor) {
@@ -1316,6 +1340,8 @@ export default function Settlements() {
                     setShowUploadForm(false)
                     setUploadFile(null)
                     setSelectedTruckForUpload(null)
+                    setSelectedTrailerForUpload(null)
+                    setTrailerSplitAmountForUpload('')
                   }
                   if (showManualForm) {
                     setShowManualForm(false)
@@ -1325,6 +1351,8 @@ export default function Settlements() {
                       gross_revenue: undefined,
                       expenses: undefined,
                       net_profit: undefined,
+                      trailer_income_split_trailer_id: undefined,
+                      trailer_income_split_amount: undefined,
                     })
                     setExpensesDescription('')
                     setVinLookup('')
@@ -1388,6 +1416,43 @@ export default function Settlements() {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Trailer Income Vehicle
+                </label>
+                <select
+                  value={selectedTrailerForUpload || ''}
+                  onChange={(e) => setSelectedTrailerForUpload(e.target.value ? Number(e.target.value) : null)}
+                  disabled={uploading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No trailer income split</option>
+                  {trailers.map((trailer) => (
+                    <option key={trailer.id} value={trailer.id}>
+                      🚛 {trailer.name}
+                      {trailer.tag_number ? ` [Tag: ${trailer.tag_number}]` : ''}
+                      {trailer.vin ? ` - VIN: ${trailer.vin}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Trailer Weekly Share ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={trailerSplitAmountForUpload}
+                  onChange={(e) => setTrailerSplitAmountForUpload(e.target.value)}
+                  disabled={uploading}
+                  placeholder="400.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">PDF File *</label>
@@ -1598,6 +1663,46 @@ export default function Settlements() {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trailer Income Vehicle</label>
+                <select
+                  value={manualFormData.trailer_income_split_trailer_id || ''}
+                  onChange={(e) => setManualFormData({
+                    ...manualFormData,
+                    trailer_income_split_trailer_id: e.target.value ? Number(e.target.value) : undefined,
+                  })}
+                  disabled={creatingManual}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No trailer income split</option>
+                  {trailers.map((trailer) => (
+                    <option key={trailer.id} value={trailer.id}>
+                      🚛 {trailer.name}
+                      {trailer.tag_number ? ` [Tag: ${trailer.tag_number}]` : ''}
+                      {trailer.vin ? ` - VIN: ${trailer.vin}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trailer Weekly Share ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={manualFormData.trailer_income_split_amount || ''}
+                  onChange={(e) => setManualFormData({
+                    ...manualFormData,
+                    trailer_income_split_amount: e.target.value ? parseFloat(e.target.value) : undefined,
+                  })}
+                  disabled={creatingManual}
+                  placeholder="400.00"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Expenses Description</label>
               <textarea
@@ -1666,6 +1771,8 @@ export default function Settlements() {
                     gross_revenue: undefined,
                     expenses: undefined,
                     net_profit: undefined,
+                    trailer_income_split_trailer_id: undefined,
+                    trailer_income_split_amount: undefined,
                   })
                   setExpensesDescription('')
                   setVinLookup('')
