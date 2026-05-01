@@ -64,12 +64,14 @@ export default function Dashboard() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [data, setData] = useState<any>(null)
+  const [businessSummary, setBusinessSummary] = useState<any>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [reserveBalances, setReserveBalances] = useState<ReserveBalance[]>([])
+  const [selectedTrailerContributionTotal, setSelectedTrailerContributionTotal] = useState(0)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('monthly')
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
@@ -89,15 +91,25 @@ export default function Dashboard() {
     setTrucks([])
     setData(null)
     setReserveBalances([])
+    setSelectedTrailerContributionTotal(0)
     // Only load logistics data for logistics businesses
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
       loadDashboard()
       loadReserveBalances()
     } else {
+      setBusinessSummary(null)
       setLoading(false)
     }
   }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type])
+
+  useEffect(() => {
+    if (currentTenant?.business_type === 'logistics') {
+      loadBusinessSummary()
+    } else {
+      setBusinessSummary(null)
+    }
+  }, [currentTenant?.id, currentTenant?.business_type])
 
   useEffect(() => {
     const handleResize = () => {
@@ -213,6 +225,52 @@ export default function Dashboard() {
     setRepairExpensesExpanded(false)
   }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod, vehicleTypeFilter])
 
+  useEffect(() => {
+    if (currentTenant?.business_type !== 'logistics') {
+      setSelectedTrailerContributionTotal(0)
+      return
+    }
+
+    const selectedVehicle = selectedTruck ? trucks.find((truck) => truck.id === selectedTruck) : null
+
+    if (!selectedTruck) {
+      setSelectedTrailerContributionTotal(Number(businessSummary?.trailers?.net_profit) || 0)
+      return
+    }
+
+    const trailerId =
+      selectedVehicle?.vehicle_type === 'trailer'
+        ? selectedVehicle.id
+        : selectedVehicle?.default_trailer_id || null
+
+    if (!trailerId) {
+      setSelectedTrailerContributionTotal(0)
+      return
+    }
+
+    let cancelled = false
+
+    const loadTrailerContribution = async () => {
+      try {
+        const response = await analyticsApi.getVehicleROI(trailerId)
+        if (!cancelled) {
+          setSelectedTrailerContributionTotal(Number(response.data.cumulative_net_profit) || 0)
+        }
+      } catch (err) {
+        console.error('Failed to load trailer contribution total:', err)
+        if (!cancelled) {
+          setSelectedTrailerContributionTotal(0)
+        }
+      }
+    }
+
+    loadTrailerContribution()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTruck, trucks, businessSummary, currentTenant?.business_type])
+
   const loadTrucks = async () => {
     try {
       const response = await trucksApi.getAll()
@@ -233,6 +291,16 @@ export default function Dashboard() {
       console.error('Failed to load dashboard:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadBusinessSummary = async () => {
+    try {
+      const response = await analyticsApi.getDashboard()
+      setBusinessSummary(response.data)
+    } catch (err) {
+      console.error('Failed to load business summary:', err)
+      setBusinessSummary(null)
     }
   }
 
@@ -746,12 +814,6 @@ export default function Dashboard() {
   }
 
   const previousPeriodData = getPreviousPeriodData()
-  const selectedPeriodIndex = (() => {
-    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return -1
-    const periods = getSelectedPeriodsList()
-    const periodKey = getSelectedPeriodKey()
-    return periods.findIndex((period: any) => period[periodKey] === selectedExpensePeriod)
-  })()
 
   const getPeriodRepairCost = (periodData: any) => {
     if (!periodData) return 0
@@ -784,13 +846,6 @@ export default function Dashboard() {
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
 
-  const getCumulativePeriodValue = (field: 'trailer_income_split_amount' | 'repair_reserve_amount') => {
-    if (selectedPeriodIndex < 0) return 0
-    return getSelectedPeriodsList()
-      .slice(0, selectedPeriodIndex + 1)
-      .reduce((sum, period: any) => sum + (Number(period[field]) || 0), 0)
-  }
-
   const visibleReserveBalances = selectedTruck
     ? reserveBalances.filter((row) => row.truck_id === selectedTruck)
     : reserveBalances
@@ -799,8 +854,8 @@ export default function Dashboard() {
   const totalReserveWithdrawals = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.withdrawals_total) || 0), 0)
   const totalReserveAdjustments = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.adjustments_total) || 0), 0)
   const reserveDepositsThisPeriod = Number((selectedPeriodData as any)?.repair_reserve_amount) || 0
-  const truckNetProfitTotal = Number(data?.trucks?.net_profit) || 0
-  const trailerNetProfitTotal = Number(data?.trailers?.net_profit) || 0
+  const truckNetProfitTotal = Number(businessSummary?.trucks?.net_profit) || 0
+  const trailerNetProfitTotal = Number(businessSummary?.trailers?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
 
   const renderMetricTrend = (
@@ -1174,7 +1229,7 @@ export default function Dashboard() {
                 const trailerSplitThisPeriod = Number((selectedPeriodData as any).trailer_income_split_amount) || 0
                 const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
-                const cumulativeTrailerContribution = getCumulativePeriodValue('trailer_income_split_amount')
+                const cumulativeTrailerContribution = selectedTrailerContributionTotal
                 const reserveDepositsToDate = totalReserveDeposits
                 const reserveWithdrawalsToDate = totalReserveWithdrawals
                 const reserveAdjustmentsToDate = totalReserveAdjustments

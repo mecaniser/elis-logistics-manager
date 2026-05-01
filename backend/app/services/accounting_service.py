@@ -24,6 +24,22 @@ from app.utils.account_mapping import (
 )
 
 
+def _journal_entry_supports_soft_delete() -> bool:
+    return hasattr(JournalEntry, "deleted_at")
+
+
+def _filter_active_journal_entries(query):
+    if _journal_entry_supports_soft_delete():
+        return query.filter(JournalEntry.deleted_at.is_(None))
+    return query
+
+
+def _delete_or_soft_delete_journal_entry(db: Session, journal_entry: JournalEntry) -> None:
+    # Settlement/repair journal entries are regenerated on update, so they must be
+    # removed from the uniqueness key entirely instead of being soft-deleted.
+    db.delete(journal_entry)
+
+
 def uses_per_asset_accounting(tenant: Tenant) -> bool:
     """
     Check if tenant uses per-asset accounting (LS Logistics).
@@ -366,6 +382,7 @@ def create_settlement_journal_entry(
         JournalEntry.reference_type == "settlement",
         JournalEntry.reference_id == settlement.id
     )
+    existing_query = _filter_active_journal_entries(existing_query)
     if per_asset:
         existing_query = existing_query.filter(JournalEntry.truck_id == settlement.truck_id)
     else:
@@ -566,6 +583,7 @@ def create_repair_journal_entry(
         JournalEntry.reference_type == "repair",
         JournalEntry.reference_id == repair.id
     )
+    existing_query = _filter_active_journal_entries(existing_query)
     if per_asset:
         existing_query = existing_query.filter(JournalEntry.truck_id == repair.truck_id)
     else:
@@ -651,14 +669,14 @@ def create_repair_journal_entry(
 
 def delete_settlement_journal_entry(db: Session, settlement_id: int, auto_commit: bool = True):
     """Soft-delete journal entry for a settlement."""
-    journal_entry = db.query(JournalEntry).filter(
+    journal_entry_query = db.query(JournalEntry).filter(
         JournalEntry.reference_type == "settlement",
         JournalEntry.reference_id == settlement_id,
-        JournalEntry.deleted_at.is_(None),
-    ).first()
+    )
+    journal_entry = _filter_active_journal_entries(journal_entry_query).first()
 
     if journal_entry:
-        journal_entry.deleted_at = datetime.now()
+        _delete_or_soft_delete_journal_entry(db, journal_entry)
         if auto_commit:
             db.commit()
         else:
@@ -667,14 +685,14 @@ def delete_settlement_journal_entry(db: Session, settlement_id: int, auto_commit
 
 def delete_repair_journal_entry(db: Session, repair_id: int, auto_commit: bool = True):
     """Soft-delete journal entry for a repair."""
-    journal_entry = db.query(JournalEntry).filter(
+    journal_entry_query = db.query(JournalEntry).filter(
         JournalEntry.reference_type == "repair",
         JournalEntry.reference_id == repair_id,
-        JournalEntry.deleted_at.is_(None),
-    ).first()
+    )
+    journal_entry = _filter_active_journal_entries(journal_entry_query).first()
 
     if journal_entry:
-        journal_entry.deleted_at = datetime.now()
+        _delete_or_soft_delete_journal_entry(db, journal_entry)
         if auto_commit:
             db.commit()
         else:
@@ -702,12 +720,12 @@ def calculate_account_balance(
     # Build query with date and truck filtering (exclude soft-deleted)
     total_debits = db.query(func.sum(JournalEntryLine.debit)).join(JournalEntry).filter(
         JournalEntryLine.account_id == account_id,
-        JournalEntry.deleted_at.is_(None),
     )
+    total_debits = _filter_active_journal_entries(total_debits)
     total_credits = db.query(func.sum(JournalEntryLine.credit)).join(JournalEntry).filter(
         JournalEntryLine.account_id == account_id,
-        JournalEntry.deleted_at.is_(None),
     )
+    total_credits = _filter_active_journal_entries(total_credits)
     
     # For per-asset accounts, filter by journal entry's truck_id matching account's truck_id
     if account.truck_id is not None:

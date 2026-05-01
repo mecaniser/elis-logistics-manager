@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
+from app.services import accounting_service
 from app.models.repair import Repair
 from app.models.repair_reserve_ledger import RepairReserveLedger
 from app.models.settlement import Settlement
@@ -197,6 +198,30 @@ def test_repair_update_updates_and_deletes_withdrawal(client, db, tenant_headers
     )
     assert toggle_response.status_code == 200
     assert db.query(RepairReserveLedger).filter_by(source_type="repair", source_id=repair_id).first() is None
+
+
+def test_repair_update_works_without_soft_delete_support(client, db, tenant_headers, monkeypatch):
+    truck = make_truck(db, name="Compatibility Truck", license_plate="CMP-100")
+    response = client.post(
+        "/api/repairs/",
+        data=repair_form_data(truck.id, "2026-03-22", paid_from_reserve=True),
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    repair_id = response.json()["id"]
+
+    monkeypatch.setattr(accounting_service, "_journal_entry_supports_soft_delete", lambda: False)
+
+    update_response = client.put(
+        f"/api/repairs/{repair_id}",
+        data={"repair_update_json": json.dumps({"cost": 410.0, "paid_from_reserve": True})},
+        headers=tenant_headers,
+    )
+    assert update_response.status_code == 200
+
+    row = db.query(RepairReserveLedger).filter_by(source_type="repair", source_id=repair_id).first()
+    assert row is not None
+    assert float(row.amount) == 410.0
 
 
 def test_repair_requires_date_when_paid_from_reserve(client, db, tenant_headers):
