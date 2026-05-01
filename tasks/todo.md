@@ -228,3 +228,17 @@
 - All-time view intentionally does not attempt a trend comparison and instead shows `No prior comparison`.
 - Verification:
   - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+
+# Reserve Summary Panel
+
+## Plan
+- [x] Inspect what reserve and repair data is already available on the vehicle detail page and avoid adding a new backend endpoint if the totals can be derived safely.
+- [x] Load stored settlement reserve amounts for the selected vehicle and compute reserve set aside, repairs used, and cushion available.
+- [x] Add a reserve summary panel to the vehicle detail page and verify the frontend build.
+
+## Review
+- Frontend-only change: `frontend/src/pages/VehicleDetail.tsx` now loads all settlements for the selected vehicle alongside the existing ROI and repairs data so the page can sum `repair_reserve_amount` directly from stored settlement rows.
+- UI behavior: truck detail now shows a `Repair Reserve Summary` panel with `Reserve Set Aside`, `Reserve Used by Repairs`, and `Reserve Cushion Available`. The panel also shows the truck’s default weekly reserve when configured.
+- Calculation rule: reserve cushion is currently `sum(repair_reserve_amount on this truck's settlements) - cumulative_repair_costs`. That means older settlements with no stored reserve allocation will not contribute until they are re-uploaded or edited.
+- Verification:
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.

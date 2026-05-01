@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { analyticsApi, trucksApi, repairsApi, Truck, VehicleROI, Repair } from '../services/api'
+import { analyticsApi, trucksApi, repairsApi, settlementsApi, Truck, VehicleROI, Repair, Settlement } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
@@ -46,6 +46,7 @@ export default function VehicleDetail() {
   const [roiData, setRoiData] = useState<VehicleROI | null>(null)
   const [attachedTrailer, setAttachedTrailer] = useState<Truck | null>(null)
   const [attachedTrailerRoi, setAttachedTrailerRoi] = useState<VehicleROI | null>(null)
+  const [settlements, setSettlements] = useState<Settlement[]>([])
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [loading, setLoading] = useState(true)
   const [investmentExpanded, setInvestmentExpanded] = useState(!isMobile)
@@ -65,6 +66,7 @@ export default function VehicleDetail() {
       setRoiData(null)
       setAttachedTrailer(null)
       setAttachedTrailerRoi(null)
+      setSettlements([])
       loadVehicleData()
     }
   }, [id, currentTenant?.id])
@@ -78,9 +80,10 @@ export default function VehicleDetail() {
       const vehicleResponse = await trucksApi.getById(vehicleId)
       const currentVehicle = vehicleResponse.data
 
-      const [roiResponse, repairsResponse] = await Promise.all([
+      const [roiResponse, repairsResponse, settlementsResponse] = await Promise.all([
         analyticsApi.getVehicleROI(vehicleId),
-        repairsApi.getAll(vehicleId)
+        repairsApi.getAll(vehicleId),
+        settlementsApi.getAll(vehicleId, 0)
       ])
 
       let nextAttachedTrailer: Truck | null = null
@@ -104,6 +107,7 @@ export default function VehicleDetail() {
       setRoiData(roiResponse.data)
       setAttachedTrailer(nextAttachedTrailer)
       setAttachedTrailerRoi(nextAttachedTrailerRoi)
+      setSettlements(settlementsResponse.data || [])
       setRepairs(repairsResponse.data || [])
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
@@ -140,6 +144,10 @@ export default function VehicleDetail() {
   const showProfitComposition = vehicle.vehicle_type === 'truck' && attachedTrailerRoi !== null
   const trailerContribution = attachedTrailerRoi?.cumulative_net_profit ?? 0
   const combinedTrueNetProfit = roiData.cumulative_net_profit + trailerContribution
+  const reserveSetAside = settlements.reduce((sum, settlement) => sum + (Number(settlement.repair_reserve_amount) || 0), 0)
+  const reserveUsedByRepairs = Number(roiData.cumulative_repair_costs) || 0
+  const reserveCushionAvailable = reserveSetAside - reserveUsedByRepairs
+  const showReserveSummary = vehicle.vehicle_type === 'truck' && (reserveSetAside > 0 || (vehicle.default_repair_reserve_amount || 0) > 0)
 
   return (
     <div>
@@ -267,6 +275,56 @@ export default function VehicleDetail() {
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
                     Truck and trailer together as one earning unit.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showReserveSummary && (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Repair Reserve Summary</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Weekly reserve amounts stored on settlements versus repairs already spent on this truck.
+                  </p>
+                </div>
+                {vehicle.default_repair_reserve_amount != null && vehicle.default_repair_reserve_amount > 0 && (
+                  <div className="text-xs text-amber-700 font-medium">
+                    Default weekly reserve: ${safeToLocaleString(vehicle.default_repair_reserve_amount)}
+                  </div>
+                )}
+              </div>
+
+              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Reserve Set Aside</div>
+                  <div className="text-xl font-bold mt-1 text-amber-700">
+                    ${safeToLocaleString(reserveSetAside)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Sum of stored weekly repair reserve allocations across this truck&apos;s settlements.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Reserve Used by Repairs</div>
+                  <div className="text-xl font-bold mt-1 text-red-600">
+                    ${safeToLocaleString(reserveUsedByRepairs)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Current cumulative repair spend recorded for this truck.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Reserve Cushion Available</div>
+                  <div className={`text-xl font-bold mt-1 ${reserveCushionAvailable >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    ${safeToLocaleString(reserveCushionAvailable)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Reserve set aside minus recorded repairs. Negative means repairs have already outspent the reserve.
                   </div>
                 </div>
               </div>
