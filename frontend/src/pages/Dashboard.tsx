@@ -69,6 +69,10 @@ export default function Dashboard() {
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
+  const [businessTimeSeries, setBusinessTimeSeries] = useState<{ truck: TimeSeriesData | null; trailer: TimeSeriesData | null }>({
+    truck: null,
+    trailer: null,
+  })
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
   const [reserveBalances, setReserveBalances] = useState<ReserveBalance[]>([])
   const [selectedTrailerContributionTotal, setSelectedTrailerContributionTotal] = useState(0)
@@ -92,6 +96,7 @@ export default function Dashboard() {
     setData(null)
     setReserveBalances([])
     setSelectedTrailerContributionTotal(0)
+    setBusinessTimeSeries({ truck: null, trailer: null })
     // Only load logistics data for logistics businesses
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
@@ -110,6 +115,14 @@ export default function Dashboard() {
       setBusinessSummary(null)
     }
   }, [currentTenant?.id, currentTenant?.business_type])
+
+  useEffect(() => {
+    if (currentTenant?.business_type === 'logistics') {
+      loadBusinessTimeSeries()
+    } else {
+      setBusinessTimeSeries({ truck: null, trailer: null })
+    }
+  }, [currentTenant?.id, currentTenant?.business_type, selectedTruck, trucks])
 
   useEffect(() => {
     const handleResize = () => {
@@ -336,6 +349,42 @@ export default function Dashboard() {
       })
     } finally {
       setTimeSeriesLoading(false)
+    }
+  }
+
+  const normalizeTimeSeries = (rawData: any): TimeSeriesData => ({
+    by_week: Array.isArray(rawData?.by_week) ? rawData.by_week : [],
+    by_month: Array.isArray(rawData?.by_month) ? rawData.by_month : [],
+    by_year: Array.isArray(rawData?.by_year) ? rawData.by_year : [],
+  })
+
+  const loadBusinessTimeSeries = async () => {
+    try {
+      const selectedVehicle = selectedTruck ? trucks.find((truck) => truck.id === selectedTruck) : null
+      const selectedTrailerId =
+        selectedVehicle?.vehicle_type === 'trailer'
+          ? selectedVehicle.id
+          : selectedVehicle?.default_trailer_id || null
+
+      const truckPromise =
+        selectedTruck && selectedVehicle?.vehicle_type === 'trailer'
+          ? Promise.resolve(null)
+          : analyticsApi.getTimeSeries(undefined, selectedTruck && selectedVehicle?.vehicle_type !== 'trailer' ? selectedTruck : undefined, selectedTruck ? undefined : 'truck')
+
+      const trailerPromise = selectedTrailerId
+        ? analyticsApi.getTimeSeries(undefined, selectedTrailerId, undefined)
+        : selectedTruck
+        ? Promise.resolve(null)
+        : analyticsApi.getTimeSeries(undefined, undefined, 'trailer')
+
+      const [truckResponse, trailerResponse] = await Promise.all([truckPromise, trailerPromise])
+      setBusinessTimeSeries({
+        truck: truckResponse ? normalizeTimeSeries(truckResponse.data) : null,
+        trailer: trailerResponse ? normalizeTimeSeries(trailerResponse.data) : null,
+      })
+    } catch (err) {
+      console.error('Failed to load business time series:', err)
+      setBusinessTimeSeries({ truck: null, trailer: null })
     }
   }
 
@@ -846,6 +895,25 @@ export default function Dashboard() {
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
 
+  const getMatchingBusinessPeriod = (series: TimeSeriesData | null) => {
+    if (!series || expenseAnalysisView === 'all_time') return null
+    const periods =
+      expenseAnalysisView === 'weekly'
+        ? series.by_week
+        : expenseAnalysisView === 'monthly'
+        ? series.by_month
+        : series.by_year
+    const keyName = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+    if (!periods.length) return null
+    if (!selectedExpensePeriod) return periods[periods.length - 1] as any
+    return ((periods as any[]).find((period) => period[keyName] === selectedExpensePeriod) || null) as any
+  }
+
+  const sumNetProfitAcrossSeries = (series: TimeSeriesData | null) => {
+    if (!series) return 0
+    return series.by_year.reduce((sum, period) => sum + (Number(period.net_profit) || 0), 0)
+  }
+
   const visibleReserveBalances = selectedTruck
     ? reserveBalances.filter((row) => row.truck_id === selectedTruck)
     : reserveBalances
@@ -853,10 +921,25 @@ export default function Dashboard() {
   const totalReserveDeposits = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.deposits_total) || 0), 0)
   const totalReserveWithdrawals = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.withdrawals_total) || 0), 0)
   const totalReserveAdjustments = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.adjustments_total) || 0), 0)
-  const reserveDepositsThisPeriod = Number((selectedPeriodData as any)?.repair_reserve_amount) || 0
-  const truckNetProfitTotal = Number(businessSummary?.trucks?.net_profit) || 0
-  const trailerNetProfitTotal = Number(businessSummary?.trailers?.net_profit) || 0
+  const truckBusinessPeriod = getMatchingBusinessPeriod(businessTimeSeries.truck)
+  const trailerBusinessPeriod = getMatchingBusinessPeriod(businessTimeSeries.trailer)
+  const reserveDepositsThisPeriod = expenseAnalysisView === 'all_time'
+    ? totalReserveDeposits
+    : Number((truckBusinessPeriod as any)?.repair_reserve_amount) || 0
+  const truckNetProfitTotal = expenseAnalysisView === 'all_time'
+    ? sumNetProfitAcrossSeries(businessTimeSeries.truck) || Number(businessSummary?.trucks?.net_profit) || 0
+    : Number((truckBusinessPeriod as any)?.net_profit) || 0
+  const trailerNetProfitTotal = expenseAnalysisView === 'all_time'
+    ? sumNetProfitAcrossSeries(businessTimeSeries.trailer) || Number(businessSummary?.trailers?.net_profit) || 0
+    : Number((trailerBusinessPeriod as any)?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
+  const businessTotalScopeLabel = expenseAnalysisView === 'all_time'
+    ? 'All time'
+    : expenseAnalysisView === 'weekly'
+    ? ((selectedPeriodData as any)?.week_label || 'Selected week')
+    : expenseAnalysisView === 'monthly'
+    ? ((selectedPeriodData as any)?.month_label || 'Selected month')
+    : ((selectedPeriodData as any)?.year_label || 'Selected year')
 
   const renderMetricTrend = (
     currentValue: number | null,
@@ -913,6 +996,9 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
             <p className="mt-1 text-sm text-gray-600">
               Truck and trailer profit combined. Reserve deposits are already netted out of truck profit and shown separately for context.
+            </p>
+            <p className="mt-1 text-xs font-medium text-gray-500">
+              Scope: {businessTotalScopeLabel}
             </p>
           </div>
           <div className="text-left lg:text-right">
