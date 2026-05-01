@@ -15,6 +15,7 @@ class RepairBase(BaseModel):
     category: Optional[str] = None
     cost: Optional[Decimal] = None  # Optional - can be set manually if PDF parsing fails
     miles: Optional[Decimal] = None  # Miles/odometer reading at time of repair (for PM tracking)
+    paid_from_reserve: bool = False
     receipt_path: Optional[str] = None
     invoice_number: Optional[str] = None
     image_paths: Optional[List[str]] = None
@@ -31,6 +32,7 @@ class RepairUpdate(BaseModel):
     category: Optional[str] = None
     cost: Optional[Decimal] = None
     miles: Optional[Decimal] = None
+    paid_from_reserve: Optional[bool] = None
 
 class RepairResponse(RepairBase):
     id: int
@@ -45,4 +47,3 @@ class RepairUploadResponse(BaseModel):
     vin_found: Optional[bool] = None
     vin: Optional[str] = None
     requires_truck_selection: Optional[bool] = None
-

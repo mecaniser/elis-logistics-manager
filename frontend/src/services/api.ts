@@ -191,6 +191,29 @@ export interface Repair {
   invoice_number?: string
   receipt_path?: string
   image_paths?: string[]
+  paid_from_reserve?: boolean
+}
+
+export interface ReserveBalance {
+  truck_id: number
+  balance: number
+  deposits_total: number
+  withdrawals_total: number
+  adjustments_total: number
+  as_of: string
+}
+
+export interface ReserveLedgerEntry {
+  id: number
+  tenant_id: number
+  truck_id: number
+  entry_date: string
+  entry_type: 'deposit' | 'withdrawal' | 'adjustment'
+  amount: number
+  description?: string | null
+  source_type?: string | null
+  source_id?: number | null
+  created_at?: string
 }
 
 export interface DashboardData {
@@ -498,6 +521,15 @@ export const repairsApi = {
   delete: (id: number) => api.delete(`/repairs/${id}`),
   deleteImage: (repairId: number, imageIndex: number) => 
     api.delete(`/repairs/${repairId}/images/${imageIndex}`),
+}
+
+export const reserveApi = {
+  getBalance: (truckId: number) =>
+    api.get<ReserveBalance>(`/trucks/${truckId}/reserve-balance`),
+  getLedger: (truckId: number, params?: { from?: string; to?: string }) =>
+    api.get<ReserveLedgerEntry[]>(`/trucks/${truckId}/reserve-ledger`, { params }),
+  getAllBalances: () =>
+    api.get<ReserveBalance[]>('/reserve-balances'),
 }
 
 export interface TimeSeriesPeriod {

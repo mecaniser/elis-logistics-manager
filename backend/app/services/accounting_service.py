@@ -33,7 +33,16 @@ def uses_per_asset_accounting(tenant: Tenant) -> bool:
     return tenant.name.lower() == "ls logistics" and tenant.name.lower() != "elis logistics llc"
 
 
-def get_or_create_account(db: Session, code: str, name: str, account_type: str, tenant_id: int, parent_id: Optional[int] = None, truck_id: Optional[int] = None) -> ChartOfAccount:
+def get_or_create_account(
+    db: Session,
+    code: str,
+    name: str,
+    account_type: str,
+    tenant_id: int,
+    parent_id: Optional[int] = None,
+    truck_id: Optional[int] = None,
+    auto_commit: bool = True,
+) -> ChartOfAccount:
     """
     Get an account by code for a tenant (and truck if per-asset accounting), or create it if it doesn't exist.
     """
@@ -60,12 +69,20 @@ def get_or_create_account(db: Session, code: str, name: str, account_type: str, 
             is_active=True
         )
         db.add(account)
-        db.commit()
-        db.refresh(account)
+        if auto_commit:
+            db.commit()
+            db.refresh(account)
+        else:
+            db.flush()
     return account
 
 
-def ensure_standard_accounts_exist(db: Session, tenant_id: int, truck_id: Optional[int] = None):
+def ensure_standard_accounts_exist(
+    db: Session,
+    tenant_id: int,
+    truck_id: Optional[int] = None,
+    auto_commit: bool = True,
+):
     """
     Ensure all standard chart of accounts exist for a tenant based on business type.
     For LS Logistics with truck_id, creates accounts per truck/trailer.
@@ -92,31 +109,31 @@ def ensure_standard_accounts_exist(db: Session, tenant_id: int, truck_id: Option
     # but we don't want to create all the logistics accounts - just the ones that might be needed
     if not per_asset and business_type == 'logistics' and truck_id is None:
         # Ensure minimal accounts exist - these are the ones used by Elis Logistics
-        get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, truck_id=None)
-        get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, truck_id=None)
-        get_or_create_account(db, "4100", "Trailer Rental Income", "Revenue", tenant_id, truck_id=None)
-        get_or_create_account(db, "5100", "Maintenance & Repairs", "Expense", tenant_id, truck_id=None)
-        get_or_create_account(db, "5200", "Trailer Expenses", "Expense", tenant_id, truck_id=None)
-        get_or_create_account(db, "5300", "Interest Expense", "Expense", tenant_id, truck_id=None)
-        get_or_create_account(db, "5400", "Depreciation Expense", "Expense", tenant_id, truck_id=None)
-        get_or_create_account(db, "5500", "Section 179 Deduction", "Expense", tenant_id, truck_id=None)
+        get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "4100", "Trailer Rental Income", "Revenue", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "5100", "Maintenance & Repairs", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "5200", "Trailer Expenses", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "5300", "Interest Expense", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "5400", "Depreciation Expense", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "5500", "Section 179 Deduction", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
         # Also ensure common accounts exist
-        get_or_create_account(db, "1500", "Vehicles & Equipment", "Asset", tenant_id, truck_id=None)
-        get_or_create_account(db, "1600", "Accumulated Depreciation - Vehicles", "Asset", tenant_id, truck_id=None)
-        get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=None)
-        get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id, truck_id=None)
-        get_or_create_account(db, "3100", "Retained Earnings", "Equity", tenant_id, truck_id=None)
+        get_or_create_account(db, "1500", "Vehicles & Equipment", "Asset", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "1600", "Accumulated Depreciation - Vehicles", "Asset", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "3000", "Owner Equity", "Equity", tenant_id, truck_id=None, auto_commit=auto_commit)
+        get_or_create_account(db, "3100", "Retained Earnings", "Equity", tenant_id, truck_id=None, auto_commit=auto_commit)
         return
     
     # Common accounts for all business types
     # Assets
-    get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, truck_id=truck_id)
-    get_or_create_account(db, "1100", "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "1000", "Cash", "Asset", tenant_id, truck_id=truck_id, auto_commit=auto_commit)
+    get_or_create_account(db, "1100", "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id, auto_commit=auto_commit)
     
     # Liabilities
-    get_or_create_account(db, "2000", "Accounts Payable", "Liability", tenant_id, truck_id=truck_id)
-    get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=truck_id)
-    get_or_create_account(db, "2200", "Accrued Expenses", "Liability", tenant_id, truck_id=truck_id)
+    get_or_create_account(db, "2000", "Accounts Payable", "Liability", tenant_id, truck_id=truck_id, auto_commit=auto_commit)
+    get_or_create_account(db, "2100", "Loans Payable", "Liability", tenant_id, truck_id=truck_id, auto_commit=auto_commit)
+    get_or_create_account(db, "2200", "Accrued Expenses", "Liability", tenant_id, truck_id=truck_id, auto_commit=auto_commit)
 
 
 def initialize_minimal_logistics_accounts(db: Session, tenant_id: int) -> list[ChartOfAccount]:
@@ -312,7 +329,11 @@ def validate_journal_entry_lines(lines: List[Dict], tenant_id: int, db: Session,
     return True, ""
 
 
-def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Optional[JournalEntry]:
+def create_settlement_journal_entry(
+    db: Session,
+    settlement: Settlement,
+    auto_commit: bool = True,
+) -> Optional[JournalEntry]:
     """
     Create a journal entry for a settlement.
     
@@ -355,7 +376,7 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
         return existing  # Already created
     
     # Ensure accounts exist
-    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting)
+    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting, auto_commit=auto_commit)
     
     entry_date = settlement.settlement_date or settlement.created_at.date() if settlement.created_at else date.today()
     
@@ -376,10 +397,10 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
     # For Elis Logistics: Simple entry with net_profit only
     if not per_asset:
         # Elis Logistics receives clean profit - simple entry
-        net_profit = float(settlement.net_profit) if settlement.net_profit else 0.0
+        net_profit = Decimal(str(settlement.net_profit)) if settlement.net_profit else Decimal(0)
         if net_profit > 0:
-            cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=None)
-            revenue_account = get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, truck_id=None)
+            cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=None, auto_commit=auto_commit)
+            revenue_account = get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, truck_id=None, auto_commit=auto_commit)
             
             lines.append({
                 "journal_entry_id": journal_entry.id,
@@ -399,11 +420,11 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
             })
     else:
         # LS Logistics: Full entry with revenue and expenses
-        revenue_account = get_or_create_account(db, get_revenue_account_code(), "Operating Revenue", "Revenue", tenant_id, truck_id=truck_id_for_accounting)
-        ar_account = get_or_create_account(db, get_accounts_receivable_code(), "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id_for_accounting)
+        revenue_account = get_or_create_account(db, get_revenue_account_code(), "Operating Revenue", "Revenue", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
+        ar_account = get_or_create_account(db, get_accounts_receivable_code(), "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
         
         # Revenue side: Debit AR, Credit Revenue
-        gross_revenue = float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+        gross_revenue = Decimal(str(settlement.gross_revenue)) if settlement.gross_revenue else Decimal(0)
         if gross_revenue > 0:
             lines.append({
                 "journal_entry_id": journal_entry.id,
@@ -431,8 +452,8 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                 if category == "reimbursement":
                     continue
                 
-                amount_float = float(amount) if amount else 0.0
-                if amount_float > 0:
+                amount_dec = Decimal(str(amount)) if amount else Decimal(0)
+                if amount_dec > 0:
                     account_code = get_account_code_for_expense_category(category)
                     expense_account = get_or_create_account(
                         db, 
@@ -440,13 +461,14 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                         f"{category.replace('_', ' ').title()} Expense",
                         "Expense",
                         tenant_id,
-                        truck_id=truck_id_for_accounting
+                        truck_id=truck_id_for_accounting,
+                        auto_commit=auto_commit,
                     )
                     
                     lines.append({
                         "journal_entry_id": journal_entry.id,
                         "account_id": expense_account.id,
-                        "debit": amount_float,
+                        "debit": amount_dec,
                         "credit": 0,
                         "description": f"{category} expense",
                         "truck_id": settlement.truck_id,
@@ -456,7 +478,7 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                         "journal_entry_id": journal_entry.id,
                         "account_id": ar_account.id,
                         "debit": 0,
-                        "credit": amount_float,
+                        "credit": amount_dec,
                         "description": f"Payment for {category}",
                         "truck_id": settlement.truck_id,
                         "tenant_id": tenant_id
@@ -466,7 +488,7 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
         if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
             reimbursement = settlement.expense_categories.get("reimbursement", 0)
             if reimbursement:
-                reimbursement_float = float(reimbursement)
+                reimbursement_float = Decimal(str(reimbursement))
                 # Reimbursement: Debit AR, Credit Expense (reduces expense)
                 lines.append({
                     "journal_entry_id": journal_entry.id,
@@ -478,7 +500,7 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
                     "tenant_id": tenant_id
                 })
                 # Credit to a reimbursement income account or reduce expenses
-                reimbursement_account = get_or_create_account(db, "4100", "Reimbursement Income", "Revenue", tenant_id, truck_id=truck_id_for_accounting)
+                reimbursement_account = get_or_create_account(db, "4100", "Reimbursement Income", "Revenue", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
                 lines.append({
                     "journal_entry_id": journal_entry.id,
                     "account_id": reimbursement_account.id,
@@ -497,7 +519,8 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
     # Validate entry balances with enhanced validation
     is_valid, error_msg = validate_journal_entry_lines(lines, tenant_id, db, entry_tenant_id=tenant_id)
     if not is_valid:
-        db.rollback()
+        if auto_commit:
+            db.rollback()
         raise ValueError(f"Invalid journal entry: {error_msg}")
     
     # Create lines
@@ -505,12 +528,19 @@ def create_settlement_journal_entry(db: Session, settlement: Settlement) -> Opti
         line = JournalEntryLine(**line_data)
         db.add(line)
     
-    db.commit()
-    db.refresh(journal_entry)
+    if auto_commit:
+        db.commit()
+        db.refresh(journal_entry)
+    else:
+        db.flush()
     return journal_entry
 
 
-def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[JournalEntry]:
+def create_repair_journal_entry(
+    db: Session,
+    repair: Repair,
+    auto_commit: bool = True,
+) -> Optional[JournalEntry]:
     """
     Create a journal entry for a repair expense.
     Repair entries:
@@ -545,18 +575,18 @@ def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[Journal
     if existing:
         return existing  # Already created
     
-    if not repair.cost or float(repair.cost) <= 0:
+    if not repair.cost or Decimal(str(repair.cost)) <= 0:
         return None  # No cost, no entry
     
     # Ensure accounts exist
-    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting)
+    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting, auto_commit=auto_commit)
     
     # Get accounts - use 5100 for Elis Logistics, 6011 for LS Logistics
     if per_asset:
-        maintenance_account = get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id, truck_id=truck_id_for_accounting)
+        maintenance_account = get_or_create_account(db, "6011", "Maintenance Expense", "Expense", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
     else:
-        maintenance_account = get_or_create_account(db, "5100", "Maintenance & Repairs", "Expense", tenant_id, truck_id=None)
-    cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=truck_id_for_accounting)
+        maintenance_account = get_or_create_account(db, "5100", "Maintenance & Repairs", "Expense", tenant_id, truck_id=None, auto_commit=auto_commit)
+    cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
     
     entry_date = repair.repair_date or (repair.created_at.date() if repair.created_at else date.today())
     
@@ -572,7 +602,7 @@ def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[Journal
     db.add(journal_entry)
     db.flush()  # Get the ID
     
-    cost = float(repair.cost)
+    cost = Decimal(str(repair.cost))
     
     # Debit Maintenance Expense, Credit Cash
     lines = [
@@ -602,7 +632,8 @@ def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[Journal
     # Validate entry balances with enhanced validation
     is_valid, error_msg = validate_journal_entry_lines(lines, tenant_id, db, entry_tenant_id=tenant_id)
     if not is_valid:
-        db.rollback()
+        if auto_commit:
+            db.rollback()
         raise ValueError(f"Invalid journal entry: {error_msg}")
     
     # Create lines
@@ -610,36 +641,55 @@ def create_repair_journal_entry(db: Session, repair: Repair) -> Optional[Journal
         line = JournalEntryLine(**line_data)
         db.add(line)
     
-    db.commit()
-    db.refresh(journal_entry)
+    if auto_commit:
+        db.commit()
+        db.refresh(journal_entry)
+    else:
+        db.flush()
     return journal_entry
 
 
-def delete_settlement_journal_entry(db: Session, settlement_id: int):
-    """Delete journal entry for a settlement."""
+def delete_settlement_journal_entry(db: Session, settlement_id: int, auto_commit: bool = True):
+    """Soft-delete journal entry for a settlement."""
     journal_entry = db.query(JournalEntry).filter(
         JournalEntry.reference_type == "settlement",
-        JournalEntry.reference_id == settlement_id
+        JournalEntry.reference_id == settlement_id,
+        JournalEntry.deleted_at.is_(None),
     ).first()
-    
+
     if journal_entry:
-        db.delete(journal_entry)
-        db.commit()
+        journal_entry.deleted_at = datetime.now()
+        if auto_commit:
+            db.commit()
+        else:
+            db.flush()
 
 
-def delete_repair_journal_entry(db: Session, repair_id: int):
-    """Delete journal entry for a repair."""
+def delete_repair_journal_entry(db: Session, repair_id: int, auto_commit: bool = True):
+    """Soft-delete journal entry for a repair."""
     journal_entry = db.query(JournalEntry).filter(
         JournalEntry.reference_type == "repair",
-        JournalEntry.reference_id == repair_id
+        JournalEntry.reference_id == repair_id,
+        JournalEntry.deleted_at.is_(None),
     ).first()
-    
+
     if journal_entry:
-        db.delete(journal_entry)
-        db.commit()
+        journal_entry.deleted_at = datetime.now()
+        if auto_commit:
+            db.commit()
+        else:
+            db.flush()
 
 
-def calculate_account_balance(db: Session, account_id: int, start_date: Optional[date] = None, end_date: Optional[date] = None, truck_id: Optional[int] = None) -> Decimal:
+def calculate_account_balance(
+    db: Session,
+    account_id: int,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    truck_id: Optional[int] = None,
+    reference_types: Optional[list[str]] = None,
+    exclude_reference_types: Optional[list[str]] = None,
+) -> Decimal:
     """
     Calculate account balance (debits - credits for assets/expenses, credits - debits for liabilities/equity/revenue).
     For per-asset accounts, filters by account's truck_id and journal entry's truck_id.
@@ -649,12 +699,14 @@ def calculate_account_balance(db: Session, account_id: int, start_date: Optional
     if not account:
         return Decimal(0)
     
-    # Build query with date and truck filtering
+    # Build query with date and truck filtering (exclude soft-deleted)
     total_debits = db.query(func.sum(JournalEntryLine.debit)).join(JournalEntry).filter(
-        JournalEntryLine.account_id == account_id
+        JournalEntryLine.account_id == account_id,
+        JournalEntry.deleted_at.is_(None),
     )
     total_credits = db.query(func.sum(JournalEntryLine.credit)).join(JournalEntry).filter(
-        JournalEntryLine.account_id == account_id
+        JournalEntryLine.account_id == account_id,
+        JournalEntry.deleted_at.is_(None),
     )
     
     # For per-asset accounts, filter by journal entry's truck_id matching account's truck_id
@@ -672,6 +724,12 @@ def calculate_account_balance(db: Session, account_id: int, start_date: Optional
     if end_date:
         total_debits = total_debits.filter(JournalEntry.entry_date <= end_date)
         total_credits = total_credits.filter(JournalEntry.entry_date <= end_date)
+    if reference_types:
+        total_debits = total_debits.filter(JournalEntry.reference_type.in_(reference_types))
+        total_credits = total_credits.filter(JournalEntry.reference_type.in_(reference_types))
+    if exclude_reference_types:
+        total_debits = total_debits.filter(~JournalEntry.reference_type.in_(exclude_reference_types))
+        total_credits = total_credits.filter(~JournalEntry.reference_type.in_(exclude_reference_types))
     if truck_id:
         # Additional filter on journal entry lines for operational tracking
         total_debits = total_debits.filter(JournalEntryLine.truck_id == truck_id)
@@ -880,48 +938,55 @@ def generate_balance_sheet(db: Session, tenant_id: int, as_of_date: Optional[dat
             Repair.repair_date <= as_of_date
         ).all()
         
-        total_revenue = sum(float(s.gross_revenue) if s.gross_revenue else 0 for s in settlements)
-        total_expenses = sum(float(s.expenses) if s.expenses else 0 for s in settlements)
-        total_repairs = sum(float(r.cost) if r.cost else 0 for r in repairs)
-        
-        retained_earnings = Decimal(str(total_revenue - total_expenses - total_repairs))
+        total_revenue = sum((Decimal(str(s.gross_revenue)) if s.gross_revenue else Decimal(0) for s in settlements), Decimal(0))
+        total_expenses = sum((Decimal(str(s.expenses)) if s.expenses else Decimal(0) for s in settlements), Decimal(0))
+        total_repairs = sum((Decimal(str(r.cost)) if r.cost else Decimal(0) for r in repairs), Decimal(0))
+
+        retained_earnings = total_revenue - total_expenses - total_repairs
     
     total_equity = owner_equity_balance + retained_earnings
     total_liabilities_and_equity = total_liabilities + total_equity
     
-    # Convert to float, ensuring no NaN values
-    def safe_float(value):
+    def safe_dec(value) -> float:
         try:
-            result = float(value or 0)
-            return result if not (result != result) else 0.0  # Check for NaN
-        except (TypeError, ValueError):
+            d = Decimal(str(value or 0))
+            return float(d.quantize(Decimal("0.01")))
+        except Exception:
             return 0.0
-    
+
     return {
         "as_of_date": as_of_date.isoformat(),
         "assets": {
-            "cash": safe_float(cash_balance),
-            "accounts_receivable": safe_float(ar_balance),
-            "vehicles": safe_float(fixed_assets_balance),
-            "accumulated_depreciation": safe_float(acc_dep_balance),
-            "net_vehicles": safe_float(net_fixed_assets),
-            "total": safe_float(total_assets)
+            "cash": safe_dec(cash_balance),
+            "accounts_receivable": safe_dec(ar_balance),
+            "vehicles": safe_dec(fixed_assets_balance),
+            "accumulated_depreciation": safe_dec(acc_dep_balance),
+            "net_vehicles": safe_dec(net_fixed_assets),
+            "total": safe_dec(total_assets)
         },
         "liabilities": {
-            "accounts_payable": safe_float(ap_balance),
-            "loans_payable": safe_float(loans_balance),
-            "total": safe_float(total_liabilities)
+            "accounts_payable": safe_dec(ap_balance),
+            "loans_payable": safe_dec(loans_balance),
+            "total": safe_dec(total_liabilities)
         },
         "equity": {
-            "owner_equity": safe_float(owner_equity_balance),
-            "retained_earnings": safe_float(retained_earnings),
-            "total": safe_float(total_equity)
+            "owner_equity": safe_dec(owner_equity_balance),
+            "retained_earnings": safe_dec(retained_earnings),
+            "total": safe_dec(total_equity)
         },
-        "total_liabilities_and_equity": safe_float(total_liabilities_and_equity)
+        "total_liabilities_and_equity": safe_dec(total_liabilities_and_equity)
     }
 
 
-def generate_income_statement(db: Session, tenant_id: int, start_date: date, end_date: date, truck_id: Optional[int] = None) -> Dict:
+def generate_income_statement(
+    db: Session,
+    tenant_id: int,
+    start_date: date,
+    end_date: date,
+    truck_id: Optional[int] = None,
+    reference_types: Optional[list[str]] = None,
+    exclude_reference_types: Optional[list[str]] = None,
+) -> Dict:
     """
     Generate income statement for a date range for a specific tenant.
     For LS Logistics, truck_id is required for per-asset accounting.
@@ -964,35 +1029,33 @@ def generate_income_statement(db: Session, tenant_id: int, start_date: date, end
     revenue_by_category = {}
     revenue_balance = Decimal(0)
     for account in revenue_accounts:
-        balance = calculate_account_balance(db, account.id, start_date, end_date, truck_id)
+        balance = calculate_account_balance(db, account.id, start_date, end_date, truck_id, reference_types, exclude_reference_types)
         if balance > 0:
-            revenue_by_category[account.name] = float(balance)
+            revenue_by_category[account.name] = float(Decimal(str(balance)).quantize(Decimal("0.01")))
             revenue_balance += balance
-    
-    # Expenses by category
+
     expense_accounts = db.query(ChartOfAccount).filter(
         *account_filter,
         ChartOfAccount.account_type == "Expense"
     ).all()
     expenses_by_category = {}
     total_expenses = Decimal(0)
-    
+
     for account in expense_accounts:
-        balance = calculate_account_balance(db, account.id, start_date, end_date, truck_id)
+        balance = calculate_account_balance(db, account.id, start_date, end_date, truck_id, reference_types, exclude_reference_types)
         if balance > 0:
-            expenses_by_category[account.name] = float(balance)
+            expenses_by_category[account.name] = float(Decimal(str(balance)).quantize(Decimal("0.01")))
             total_expenses += balance
-    
+
     net_income = revenue_balance - total_expenses
-    
+
     return {
         "start_date": start_date.isoformat(),
         "end_date": end_date.isoformat(),
         "truck_id": truck_id,
-        "revenue": revenue_by_category if revenue_by_category else {"operating_revenue": float(revenue_balance)},
-        "total_revenue": float(revenue_balance),
+        "revenue": revenue_by_category if revenue_by_category else {"operating_revenue": float(revenue_balance.quantize(Decimal("0.01")))},
+        "total_revenue": float(revenue_balance.quantize(Decimal("0.01"))),
         "expenses": expenses_by_category,
-        "total_expenses": float(total_expenses),
-        "net_income": float(net_income)
+        "total_expenses": float(total_expenses.quantize(Decimal("0.01"))),
+        "net_income": float(net_income.quantize(Decimal("0.01")))
     }
-

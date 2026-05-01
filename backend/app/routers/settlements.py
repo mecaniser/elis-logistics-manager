@@ -16,6 +16,7 @@ from app.utils.cloudinary import upload_pdf
 from app.utils.loan_interest import calculate_weekly_loan_interest
 from app.utils.block_id_validator import validate_block_ids
 from app.services.accounting_service import create_settlement_journal_entry, delete_settlement_journal_entry
+from app.services.reserve_service import delete_reserve_ledger_entry, sync_repair_reserve_ledger
 from app.services.loan_balance_service import calculate_current_loan_balance_for_truck, sync_current_loan_balance
 import os
 import json
@@ -288,6 +289,24 @@ def sync_trailer_income_split_settlement(
     db.add(source_settlement)
     return linked_settlement
 
+
+def sync_managed_settlement_rows(
+    db: Session,
+    source_settlement: Settlement,
+    trailer: Optional[Truck],
+    split_amount: float,
+) -> Optional[Settlement]:
+    linked_settlement = sync_trailer_income_split_settlement(
+        db,
+        source_settlement,
+        trailer,
+        split_amount,
+    )
+    db.flush()
+    sync_repair_reserve_ledger(db, source_settlement)
+    db.flush()
+    return linked_settlement
+
 @router.get("/duplicate-block-ids")
 def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """
@@ -409,6 +428,9 @@ async def upload_settlement_pdf(
         for settlement_data in settlements_data:
             # Determine truck_id - use provided, or auto-detect from license plate
             if truck_id:
+                truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+                if not truck:
+                    raise HTTPException(status_code=400, detail=f"Truck with ID {truck_id} not found")
                 settlement_data["truck_id"] = truck_id
             else:
                 # Auto-detect truck from license plate (check both current and historic plates)
@@ -416,10 +438,13 @@ async def upload_settlement_pdf(
                 if license_plate:
                     license_plate_upper = license_plate.upper()
                     # Try to find truck by current license plate
-                    truck = db.query(Truck).filter(Truck.license_plate.ilike(license_plate_upper)).first()
+                    truck = db.query(Truck).filter(
+                        Truck.license_plate.ilike(license_plate_upper),
+                        Truck.tenant_id == tenant_id,
+                    ).first()
                     if not truck:
                         # Try to find in license plate history
-                        trucks = db.query(Truck).all()
+                        trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
                         for t in trucks:
                             # Check current plate (case insensitive)
                             if t.license_plate and t.license_plate.upper() == license_plate_upper:
@@ -480,7 +505,10 @@ async def upload_settlement_pdf(
             settlement_data.pop("driver_name", None)
             
             # Calculate and add loan interest to expense_categories
-            truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
+            truck = db.query(Truck).filter(
+                Truck.id == settlement_data["truck_id"],
+                Truck.tenant_id == tenant_id,
+            ).first()
             if truck and truck.vehicle_type == 'truck':
                 current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
@@ -575,12 +603,7 @@ async def upload_settlement_pdf(
             db_settlement = Settlement(**settlement_data)
             db.add(db_settlement)
             db.flush()
-            linked_trailer_settlement = sync_trailer_income_split_settlement(
-                db,
-                db_settlement,
-                trailer,
-                split_amount,
-            )
+            linked_trailer_settlement = sync_managed_settlement_rows(db, db_settlement, trailer, split_amount)
             created_settlements.append(db_settlement)
             if linked_trailer_settlement:
                 managed_child_settlements.append(linked_trailer_settlement)
@@ -590,6 +613,10 @@ async def upload_settlement_pdf(
                 status_code=400,
                 detail="No valid settlements could be created from this PDF. Check that trucks exist and settlements aren't duplicates."
             )
+
+        db.flush()
+        for settlement in created_settlements + managed_child_settlements:
+            create_settlement_journal_entry(db, settlement, auto_commit=False)
         
         db.commit()
         
@@ -598,17 +625,6 @@ async def upload_settlement_pdf(
             db.refresh(settlement)
         for settlement in managed_child_settlements:
             db.refresh(settlement)
-        
-        # Create accounting journal entries for settlements
-        for settlement in created_settlements + managed_child_settlements:
-            try:
-                create_settlement_journal_entry(db, settlement)
-            except Exception as e:
-                # Log error but don't fail settlement creation
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
-        
         # Clean up local PDF file if it was uploaded to Cloudinary
         # (Only delete if all settlements were created successfully and PDF is in Cloudinary)
         if os.path.exists(file_path):
@@ -638,7 +654,8 @@ async def upload_settlement_pdf_bulk(
     files: List[UploadFile] = File(...),
     truck_id: Optional[int] = Form(None),
     settlement_type: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """Upload and parse multiple Amazon Relay settlement PDFs"""
     results = []
@@ -665,11 +682,15 @@ async def upload_settlement_pdf_bulk(
             file_successful = 0
             file_failed = 0
             file_settlements = []  # Track settlements created for this file
+            file_managed_settlements = []
             
             for settlement_data in settlements_data:
                 try:
                     # Determine truck_id - use provided, or auto-detect from license plate
                     if truck_id:
+                        truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+                        if not truck:
+                            raise HTTPException(status_code=400, detail=f"Truck with ID {truck_id} not found")
                         settlement_data["truck_id"] = truck_id
                     else:
                         # Auto-detect truck from license plate (check both current and historic plates)
@@ -677,10 +698,13 @@ async def upload_settlement_pdf_bulk(
                         if license_plate:
                             license_plate_upper = license_plate.upper()
                             # Try to find truck by current license plate
-                            truck = db.query(Truck).filter(Truck.license_plate.ilike(license_plate_upper)).first()
+                            truck = db.query(Truck).filter(
+                                Truck.license_plate.ilike(license_plate_upper),
+                                Truck.tenant_id == tenant_id,
+                            ).first()
                             if not truck:
                                 # Try to find in license plate history
-                                trucks = db.query(Truck).all()
+                                trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
                                 for t in trucks:
                                     # Check current plate (case insensitive)
                                     if t.license_plate and t.license_plate.upper() == license_plate_upper:
@@ -748,7 +772,10 @@ async def upload_settlement_pdf_bulk(
                     settlement_data.pop("driver_name", None)
                     
                     # Calculate and add loan interest to expense_categories
-                    truck = db.query(Truck).filter(Truck.id == settlement_data["truck_id"]).first()
+                    truck = db.query(Truck).filter(
+                        Truck.id == settlement_data["truck_id"],
+                        Truck.tenant_id == tenant_id,
+                    ).first()
                     if truck and truck.vehicle_type == 'truck':
                         current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                         interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
@@ -774,6 +801,35 @@ async def upload_settlement_pdf_bulk(
                             # Recalculate net profit
                             revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                             settlement_data["net_profit"] = revenue - settlement_data["expenses"]
+
+                    resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
+                        truck,
+                        settlement_data.get("trailer_income_split_trailer_id"),
+                        settlement_data.get("trailer_income_split_amount"),
+                    ) if truck else (None, None)
+                    resolved_repair_reserve_amount = resolve_repair_reserve_input(
+                        truck,
+                        settlement_data.get("repair_reserve_amount"),
+                    ) if truck else None
+                    trailer, split_amount = validate_trailer_income_split(
+                        db,
+                        tenant_id,
+                        truck,
+                        resolved_trailer_id,
+                        resolved_split_amount,
+                    ) if truck else (None, 0.0)
+                    validated_repair_reserve_amount = validate_repair_reserve_amount(
+                        truck,
+                        resolved_repair_reserve_amount,
+                    ) if truck else 0.0
+
+                    if trailer and split_amount > 0:
+                        apply_trailer_income_split_to_source(settlement_data, split_amount)
+                    if validated_repair_reserve_amount > 0:
+                        apply_repair_reserve_to_source(settlement_data, validated_repair_reserve_amount)
+                    settlement_data["trailer_income_split_trailer_id"] = trailer.id if trailer else None
+                    settlement_data["trailer_income_split_amount"] = split_amount or None
+                    settlement_data["repair_reserve_amount"] = validated_repair_reserve_amount or None
                     
                     # Check for duplicate settlement (same truck + date)
                     existing = db.query(Settlement).filter(
@@ -818,7 +874,16 @@ async def upload_settlement_pdf_bulk(
                     # Create settlement
                     db_settlement = Settlement(**settlement_data)
                     db.add(db_settlement)
+                    db.flush()
+                    linked_trailer_settlement = sync_managed_settlement_rows(
+                        db,
+                        db_settlement,
+                        trailer,
+                        split_amount,
+                    )
                     file_settlements.append(db_settlement)  # Track for loan balance update
+                    if linked_trailer_settlement:
+                        file_managed_settlements.append(linked_trailer_settlement)
                     file_successful += 1
                 except Exception as e:
                     file_failed += 1
@@ -831,18 +896,15 @@ async def upload_settlement_pdf_bulk(
             
             # Commit all settlements for this file
             if file_successful > 0:
+                db.flush()
+                for settlement in file_settlements + file_managed_settlements:
+                    create_settlement_journal_entry(db, settlement, auto_commit=False)
                 db.commit()
                 # Refresh settlements to get IDs
                 for settlement in file_settlements:
                     db.refresh(settlement)
-                # Create accounting journal entries
-                for settlement in file_settlements:
-                    try:
-                        create_settlement_journal_entry(db, settlement)
-                    except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
+                for settlement in file_managed_settlements:
+                    db.refresh(settlement)
                 # Update loan balances for trucks after settlements are created
                 truck_ids_updated = set()
                 for settlement in file_settlements:
@@ -872,6 +934,7 @@ async def upload_settlement_pdf_bulk(
                     })
             
         except HTTPException as e:
+            db.rollback()
             results.append({
                 "filename": file.filename,
                 "success": False,
@@ -884,6 +947,7 @@ async def upload_settlement_pdf_bulk(
                 except:
                     pass
         except Exception as e:
+            db.rollback()
             results.append({
                 "filename": file.filename,
                 "success": False,
@@ -1005,39 +1069,20 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         db_settlement = Settlement(**settlement_dict)
         db.add(db_settlement)
         db.flush()
-        linked_trailer_settlement = sync_trailer_income_split_settlement(
-            db,
-            db_settlement,
-            trailer,
-            split_amount,
-        )
+        linked_trailer_settlement = sync_managed_settlement_rows(db, db_settlement, trailer, split_amount)
+        create_settlement_journal_entry(db, db_settlement, auto_commit=False)
+        if linked_trailer_settlement:
+            create_settlement_journal_entry(db, linked_trailer_settlement, auto_commit=False)
         db.commit()
         
         # Update loan balance if cash investment is recovered
         update_loan_balance_after_settlement(truck.id, db)
-        
-        # Create accounting journal entry
-        try:
-            create_settlement_journal_entry(db, db_settlement)
-        except Exception as e:
-            # Log error but don't fail settlement creation
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to create journal entry for settlement {db_settlement.id}: {str(e)}")
-
-        if linked_trailer_settlement:
-            try:
-                create_settlement_journal_entry(db, linked_trailer_settlement)
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to create journal entry for trailer split settlement {linked_trailer_settlement.id}: {str(e)}")
-        
         db.refresh(db_settlement)
         return db_settlement
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create settlement: {str(e)}")
@@ -1208,52 +1253,39 @@ async def update_settlement(
     for field, value in update_data.items():
         setattr(settlement, field, value)
 
-    linked_trailer_settlement = sync_trailer_income_split_settlement(
+    linked_trailer_settlement = sync_managed_settlement_rows(
         db,
         settlement,
         trailer if update_data.get("trailer_income_split_trailer_id", settlement.trailer_income_split_trailer_id) else None,
         split_amount,
     )
-    
-    db.commit()
-    db.refresh(settlement)
-    
-    # Update accounting journal entry (delete old, create new)
-    try:
-        delete_settlement_journal_entry(db, settlement.id)
-        create_settlement_journal_entry(db, settlement)
-    except Exception as e:
-        # Log error but don't fail settlement update
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to update journal entry for settlement {settlement.id}: {str(e)}")
 
-    if existing_linked_settlement and not linked_trailer_settlement:
-        try:
-            delete_settlement_journal_entry(db, existing_linked_settlement.id)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to delete journal entry for trailer split settlement {existing_linked_settlement.id}: {str(e)}")
-    elif linked_trailer_settlement:
-        try:
-            delete_settlement_journal_entry(db, linked_trailer_settlement.id)
-        except Exception:
-            pass
-        try:
-            create_settlement_journal_entry(db, linked_trailer_settlement)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to update trailer split journal entry for settlement {linked_trailer_settlement.id}: {str(e)}")
-    
-    return settlement
+    try:
+        delete_settlement_journal_entry(db, settlement.id, auto_commit=False)
+        create_settlement_journal_entry(db, settlement, auto_commit=False)
+
+        if existing_linked_settlement and (
+            not linked_trailer_settlement or existing_linked_settlement.id != linked_trailer_settlement.id
+        ):
+            delete_settlement_journal_entry(db, existing_linked_settlement.id, auto_commit=False)
+
+        if linked_trailer_settlement:
+            delete_settlement_journal_entry(db, linked_trailer_settlement.id, auto_commit=False)
+            create_settlement_journal_entry(db, linked_trailer_settlement, auto_commit=False)
+
+        db.commit()
+        db.refresh(settlement)
+        return settlement
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to update settlement: {str(e)}")
 
 @router.post("/upload-consolidated")
 def upload_consolidated_settlements(
     json_data: str = Form(...),
     dry_run: bool = Form(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """
     Upload consolidated settlement JSON files (format used by ingest_consolidated_settlements.py).
@@ -1298,6 +1330,8 @@ def upload_consolidated_settlements(
         
         created_settlements = []
         updated_settlements = []
+        managed_settlements = []
+        removed_linked_ids = []
         would_create_count = 0
         would_update_count = 0
         skipped_count = 0
@@ -1319,23 +1353,32 @@ def upload_consolidated_settlements(
         def map_truck(unit_number, plate_number):
             """Resolve truck_id using plate or unit number"""
             if plate_number:
-                truck = db.query(Truck).filter(Truck.license_plate == plate_number).first()
+                truck = db.query(Truck).filter(
+                    Truck.license_plate == plate_number,
+                    Truck.tenant_id == tenant_id,
+                ).first()
                 if truck:
                     return truck.id
                 
                 # Check license plate history
-                trucks = db.query(Truck).filter(Truck.license_plate_history.isnot(None)).all()
+                trucks = db.query(Truck).filter(
+                    Truck.license_plate_history.isnot(None),
+                    Truck.tenant_id == tenant_id,
+                ).all()
                 for truck in trucks:
                     history = truck.license_plate_history or []
                     if plate_number in history:
                         return truck.id
             
             if unit_number:
-                truck = db.query(Truck).filter(Truck.name == unit_number).first()
+                truck = db.query(Truck).filter(Truck.name == unit_number, Truck.tenant_id == tenant_id).first()
                 if truck:
                     return truck.id
                 
-                truck = db.query(Truck).filter(Truck.name == f"Volvo {unit_number}").first()
+                truck = db.query(Truck).filter(
+                    Truck.name == f"Volvo {unit_number}",
+                    Truck.tenant_id == tenant_id,
+                ).first()
                 if truck:
                     return truck.id
             
@@ -1389,7 +1432,7 @@ def upload_consolidated_settlements(
             
             # Calculate loan interest
             weekly_interest = 0.0
-            truck = db.query(Truck).filter(Truck.id == truck_id).first()
+            truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
             if truck and truck.vehicle_type == 'truck':
                 current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
@@ -1413,8 +1456,23 @@ def upload_consolidated_settlements(
             else:
                 final_expenses = calculated_expenses + weekly_interest
                 final_net_profit = float(gross_revenue or 0) - final_expenses
-            
-            return {
+
+            trailer, split_amount = validate_trailer_income_split(
+                db,
+                tenant_id,
+                truck,
+                *resolve_trailer_income_split_inputs(
+                    truck,
+                    None,
+                    None,
+                ),
+            ) if truck else (None, 0.0)
+            validated_repair_reserve_amount = validate_repair_reserve_amount(
+                truck,
+                resolve_repair_reserve_input(truck, None),
+            ) if truck else 0.0
+
+            entry_data = {
                 "truck_id": truck_id,
                 "settlement_date": settlement_date,
                 "week_start": week_start,
@@ -1429,6 +1487,17 @@ def upload_consolidated_settlements(
                 "pdf_file_path": pdf_file_path,
                 "license_plate": license_plate,
             }
+
+            if trailer and split_amount > 0:
+                apply_trailer_income_split_to_source(entry_data, split_amount)
+            if validated_repair_reserve_amount > 0:
+                apply_repair_reserve_to_source(entry_data, validated_repair_reserve_amount)
+
+            entry_data["trailer_income_split_trailer_id"] = trailer.id if trailer else None
+            entry_data["trailer_income_split_amount"] = split_amount or None
+            entry_data["repair_reserve_amount"] = validated_repair_reserve_amount or None
+            
+            return entry_data
         
         # Process all entries
         for idx, item in enumerate(data, 1):
@@ -1475,6 +1544,27 @@ def upload_consolidated_settlements(
                             for k, v in entry_data.items():
                                 setattr(existing, k, v)
                             db.add(existing)
+                            existing_linked_settlement = get_trailer_income_split_child(db, existing.id)
+                            trailer = None
+                            if existing.trailer_income_split_trailer_id:
+                                trailer = db.query(Truck).filter(
+                                    Truck.id == existing.trailer_income_split_trailer_id,
+                                    Truck.tenant_id == tenant_id,
+                                    Truck.vehicle_type == "trailer",
+                                ).first()
+                            linked_trailer_settlement = sync_managed_settlement_rows(
+                                db,
+                                existing,
+                                trailer,
+                                float(existing.trailer_income_split_amount or 0.0),
+                            )
+                            if existing_linked_settlement and (
+                                not linked_trailer_settlement
+                                or existing_linked_settlement.id != linked_trailer_settlement.id
+                            ):
+                                removed_linked_ids.append(existing_linked_settlement.id)
+                            if linked_trailer_settlement:
+                                managed_settlements.append(linked_trailer_settlement)
                             updated_settlements.append(existing)
                         else:
                             would_update_count += 1
@@ -1500,6 +1590,22 @@ def upload_consolidated_settlements(
                         if not dry_run:
                             db_settlement = Settlement(**entry_data)
                             db.add(db_settlement)
+                            db.flush()
+                            trailer = None
+                            if db_settlement.trailer_income_split_trailer_id:
+                                trailer = db.query(Truck).filter(
+                                    Truck.id == db_settlement.trailer_income_split_trailer_id,
+                                    Truck.tenant_id == tenant_id,
+                                    Truck.vehicle_type == "trailer",
+                                ).first()
+                            linked_trailer_settlement = sync_managed_settlement_rows(
+                                db,
+                                db_settlement,
+                                trailer,
+                                float(db_settlement.trailer_income_split_amount or 0.0),
+                            )
+                            if linked_trailer_settlement:
+                                managed_settlements.append(linked_trailer_settlement)
                             created_settlements.append(db_settlement)
                         else:
                             would_create_count += 1
@@ -1554,6 +1660,27 @@ def upload_consolidated_settlements(
                                 for k, v in entry_data.items():
                                     setattr(existing, k, v)
                                 db.add(existing)
+                                existing_linked_settlement = get_trailer_income_split_child(db, existing.id)
+                                trailer = None
+                                if existing.trailer_income_split_trailer_id:
+                                    trailer = db.query(Truck).filter(
+                                        Truck.id == existing.trailer_income_split_trailer_id,
+                                        Truck.tenant_id == tenant_id,
+                                        Truck.vehicle_type == "trailer",
+                                    ).first()
+                                linked_trailer_settlement = sync_managed_settlement_rows(
+                                    db,
+                                    existing,
+                                    trailer,
+                                    float(existing.trailer_income_split_amount or 0.0),
+                                )
+                                if existing_linked_settlement and (
+                                    not linked_trailer_settlement
+                                    or existing_linked_settlement.id != linked_trailer_settlement.id
+                                ):
+                                    removed_linked_ids.append(existing_linked_settlement.id)
+                                if linked_trailer_settlement:
+                                    managed_settlements.append(linked_trailer_settlement)
                                 updated_settlements.append(existing)
                             else:
                                 would_update_count += 1
@@ -1579,6 +1706,22 @@ def upload_consolidated_settlements(
                             if not dry_run:
                                 db_settlement = Settlement(**entry_data)
                                 db.add(db_settlement)
+                                db.flush()
+                                trailer = None
+                                if db_settlement.trailer_income_split_trailer_id:
+                                    trailer = db.query(Truck).filter(
+                                        Truck.id == db_settlement.trailer_income_split_trailer_id,
+                                        Truck.tenant_id == tenant_id,
+                                        Truck.vehicle_type == "trailer",
+                                    ).first()
+                                linked_trailer_settlement = sync_managed_settlement_rows(
+                                    db,
+                                    db_settlement,
+                                    trailer,
+                                    float(db_settlement.trailer_income_split_amount or 0.0),
+                                )
+                                if linked_trailer_settlement:
+                                    managed_settlements.append(linked_trailer_settlement)
                                 created_settlements.append(db_settlement)
                             else:
                                 would_create_count += 1
@@ -1589,33 +1732,30 @@ def upload_consolidated_settlements(
                 continue
         
         if not dry_run and (created_settlements or updated_settlements):
+            all_settlements = created_settlements + updated_settlements
+            db.flush()
+            for settlement in created_settlements:
+                create_settlement_journal_entry(db, settlement, auto_commit=False)
+
+            for settlement in updated_settlements:
+                delete_settlement_journal_entry(db, settlement.id, auto_commit=False)
+                create_settlement_journal_entry(db, settlement, auto_commit=False)
+
+            for linked_id in removed_linked_ids:
+                delete_settlement_journal_entry(db, linked_id, auto_commit=False)
+
+            for settlement in managed_settlements:
+                delete_settlement_journal_entry(db, settlement.id, auto_commit=False)
+                create_settlement_journal_entry(db, settlement, auto_commit=False)
+
             db.commit()
             
             # Refresh all settlements
             for settlement in all_settlements:
                 db.refresh(settlement)
             
-            # Create/update accounting journal entries
-            for settlement in created_settlements:
-                try:
-                    create_settlement_journal_entry(db, settlement)
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
-            
-            for settlement in updated_settlements:
-                try:
-                    delete_settlement_journal_entry(db, settlement.id)
-                    create_settlement_journal_entry(db, settlement)
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to update journal entry for settlement {settlement.id}: {str(e)}")
-            
             # Update loan balances
             truck_ids_updated = set()
-            all_settlements = created_settlements + updated_settlements
             for settlement in all_settlements:
                 if settlement.truck_id not in truck_ids_updated:
                     update_loan_balance_after_settlement(settlement.truck_id, db)
@@ -1649,17 +1789,21 @@ def upload_consolidated_settlements(
             }
         
     except json.JSONDecodeError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
+        db.rollback()
         import traceback
         raise HTTPException(status_code=400, detail=f"Failed to process consolidated JSON: {str(e)}\n{traceback.format_exc()}")
 
 @router.post("/upload-json", response_model=List[SettlementResponse])
 def upload_settlement_json(
     json_data: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """
     Upload settlement data from JSON structure (extracted from PDFs).
@@ -1702,11 +1846,14 @@ def upload_settlement_json(
             
             if license_plate:
                 # Try exact match first
-                truck = db.query(Truck).filter(Truck.license_plate == license_plate).first()
+                truck = db.query(Truck).filter(
+                    Truck.license_plate == license_plate,
+                    Truck.tenant_id == tenant_id,
+                ).first()
                 
                 # If not found, check license plate history (stored as JSON array)
                 if not truck:
-                    trucks = db.query(Truck).all()
+                    trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
                     for t in trucks:
                         # Check current plate (case insensitive)
                         if t.license_plate and t.license_plate.upper() == license_plate.upper():
@@ -1752,7 +1899,7 @@ def upload_settlement_json(
                 expense_categories["payroll_fee"] = driver_pay["payroll_fee"]
             
             # Calculate and add loan interest
-            truck = db.query(Truck).filter(Truck.id == truck_id).first()
+            truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
             if truck and truck.vehicle_type == 'truck':
                 current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
@@ -1801,6 +1948,35 @@ def upload_settlement_json(
                 "settlement_type": metadata.get("settlement_type") or data.get("settlement_type"),
                 "pdf_file_path": None  # No PDF stored
             }
+
+            resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
+                truck,
+                settlement_data.get("trailer_income_split_trailer_id"),
+                settlement_data.get("trailer_income_split_amount"),
+            ) if truck else (None, None)
+            resolved_repair_reserve_amount = resolve_repair_reserve_input(
+                truck,
+                settlement_data.get("repair_reserve_amount"),
+            ) if truck else None
+            trailer, split_amount = validate_trailer_income_split(
+                db,
+                tenant_id,
+                truck,
+                resolved_trailer_id,
+                resolved_split_amount,
+            ) if truck else (None, 0.0)
+            validated_repair_reserve_amount = validate_repair_reserve_amount(
+                truck,
+                resolved_repair_reserve_amount,
+            ) if truck else 0.0
+
+            if trailer and split_amount > 0:
+                apply_trailer_income_split_to_source(settlement_data, split_amount)
+            if validated_repair_reserve_amount > 0:
+                apply_repair_reserve_to_source(settlement_data, validated_repair_reserve_amount)
+            settlement_data["trailer_income_split_trailer_id"] = trailer.id if trailer else None
+            settlement_data["trailer_income_split_amount"] = split_amount or None
+            settlement_data["repair_reserve_amount"] = validated_repair_reserve_amount or None
             
             # Store duplicate warning if found
             if has_duplicates:
@@ -1816,23 +1992,24 @@ def upload_settlement_json(
             
             db_settlement = Settlement(**settlement_data)
             db.add(db_settlement)
+            db.flush()
+            linked_trailer_settlement = sync_managed_settlement_rows(
+                db,
+                db_settlement,
+                trailer,
+                split_amount,
+            )
             created_settlements.append(db_settlement)
+            if linked_trailer_settlement:
+                create_settlement_journal_entry(db, linked_trailer_settlement, auto_commit=False)
         
+        for settlement in created_settlements:
+            create_settlement_journal_entry(db, settlement, auto_commit=False)
         db.commit()
         
         # Refresh all created settlements
         for settlement in created_settlements:
             db.refresh(settlement)
-        
-        # Create accounting journal entries
-        for settlement in created_settlements:
-            try:
-                create_settlement_journal_entry(db, settlement)
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to create journal entry for settlement {settlement.id}: {str(e)}")
-        
         # Update loan balances for trucks after settlements are created
         truck_ids_updated = set()
         for settlement in created_settlements:
@@ -1843,10 +2020,13 @@ def upload_settlement_json(
         return created_settlements
         
     except json.JSONDecodeError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to process JSON: {str(e)}")
 
 @router.delete("/{settlement_id}")
@@ -1867,23 +2047,6 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
 
     linked_trailer_settlement = get_trailer_income_split_child(db, settlement.id)
     
-    # Delete accounting journal entry
-    try:
-        delete_settlement_journal_entry(db, settlement_id)
-    except Exception as e:
-        # Log error but don't fail settlement deletion
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to delete journal entry for settlement {settlement_id}: {str(e)}")
-
-    if linked_trailer_settlement:
-        try:
-            delete_settlement_journal_entry(db, linked_trailer_settlement.id)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to delete journal entry for trailer split settlement {linked_trailer_settlement.id}: {str(e)}")
-    
     # Delete PDF file if it exists
     if settlement.pdf_file_path and os.path.exists(settlement.pdf_file_path):
         try:
@@ -1891,8 +2054,15 @@ def delete_settlement(settlement_id: int, db: Session = Depends(get_db), tenant_
         except Exception:
             pass  # Don't fail if file deletion fails
     
-    if linked_trailer_settlement:
-        db.delete(linked_trailer_settlement)
-    db.delete(settlement)
-    db.commit()
-    return {"message": "Settlement deleted successfully"}
+    try:
+        delete_reserve_ledger_entry(db, source_type="settlement", source_id=settlement_id)
+        delete_settlement_journal_entry(db, settlement_id, auto_commit=False)
+        if linked_trailer_settlement:
+            delete_settlement_journal_entry(db, linked_trailer_settlement.id, auto_commit=False)
+            db.delete(linked_trailer_settlement)
+        db.delete(settlement)
+        db.commit()
+        return {"message": "Settlement deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to delete settlement: {str(e)}")

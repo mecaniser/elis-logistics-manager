@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { analyticsApi, trucksApi, repairsApi, settlementsApi, Truck, VehicleROI, Repair, Settlement } from '../services/api'
+import { analyticsApi, trucksApi, repairsApi, settlementsApi, reserveApi, Truck, VehicleROI, Repair, Settlement, ReserveBalance } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
@@ -48,6 +48,7 @@ export default function VehicleDetail() {
   const [attachedTrailerRoi, setAttachedTrailerRoi] = useState<VehicleROI | null>(null)
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [repairs, setRepairs] = useState<Repair[]>([])
+  const [reserveBalance, setReserveBalance] = useState<ReserveBalance | null>(null)
   const [loading, setLoading] = useState(true)
   const [investmentExpanded, setInvestmentExpanded] = useState(!isMobile)
   const [vehicleInfoExpanded, setVehicleInfoExpanded] = useState(!isMobile)
@@ -67,6 +68,7 @@ export default function VehicleDetail() {
       setAttachedTrailer(null)
       setAttachedTrailerRoi(null)
       setSettlements([])
+      setReserveBalance(null)
       loadVehicleData()
     }
   }, [id, currentTenant?.id])
@@ -109,6 +111,10 @@ export default function VehicleDetail() {
       setAttachedTrailerRoi(nextAttachedTrailerRoi)
       setSettlements(settlementsResponse.data || [])
       setRepairs(repairsResponse.data || [])
+      if (currentVehicle.vehicle_type === 'truck') {
+        const reserveResponse = await reserveApi.getBalance(vehicleId)
+        setReserveBalance(reserveResponse.data)
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
       showToast('Failed to load vehicle data', 'error')
@@ -144,10 +150,21 @@ export default function VehicleDetail() {
   const showProfitComposition = vehicle.vehicle_type === 'truck' && attachedTrailerRoi !== null
   const trailerContribution = attachedTrailerRoi?.cumulative_net_profit ?? 0
   const combinedTrueNetProfit = roiData.cumulative_net_profit + trailerContribution
-  const reserveSetAside = settlements.reduce((sum, settlement) => sum + (Number(settlement.repair_reserve_amount) || 0), 0)
-  const reserveUsedByRepairs = Number(roiData.cumulative_repair_costs) || 0
-  const reserveCushionAvailable = reserveSetAside - reserveUsedByRepairs
-  const showReserveSummary = vehicle.vehicle_type === 'truck' && (reserveSetAside > 0 || (vehicle.default_repair_reserve_amount || 0) > 0)
+  const reserveDeposits = Number(reserveBalance?.deposits_total) || 0
+  const reserveWithdrawals = Number(reserveBalance?.withdrawals_total) || 0
+  const reserveAdjustments = Number(reserveBalance?.adjustments_total) || 0
+  const reserveCushionAvailable = Number(reserveBalance?.balance) || 0
+  const reserveDepositedAcrossLoadedSettlements = settlements.reduce(
+    (sum, settlement) => sum + (Number(settlement.repair_reserve_amount) || 0),
+    0
+  )
+  const showReserveSummary = vehicle.vehicle_type === 'truck' && (
+    reserveDeposits > 0 ||
+    reserveWithdrawals > 0 ||
+    reserveAdjustments > 0 ||
+    reserveCushionAvailable > 0 ||
+    (vehicle.default_repair_reserve_amount || 0) > 0
+  )
 
   return (
     <div>
@@ -287,7 +304,7 @@ export default function VehicleDetail() {
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">Repair Reserve Summary</h3>
                   <p className="text-xs text-gray-600 mt-1">
-                    Weekly reserve amounts stored on settlements versus repairs already spent on this truck.
+                    Ledger-backed reserve totals for this truck under the 2026 reserve regime.
                   </p>
                 </div>
                 {vehicle.default_repair_reserve_amount != null && vehicle.default_repair_reserve_amount > 0 && (
@@ -299,35 +316,44 @@ export default function VehicleDetail() {
 
               <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
                 <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Set Aside</div>
+                  <div className="text-xs font-medium text-gray-500">Reserve Deposits</div>
                   <div className="text-xl font-bold mt-1 text-amber-700">
-                    ${safeToLocaleString(reserveSetAside)}
+                    ${safeToLocaleString(reserveDeposits)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Sum of stored weekly repair reserve allocations across this truck&apos;s settlements.
+                    Total deposits synced from 2026+ settlements.
                   </div>
                 </div>
 
                 <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Used by Repairs</div>
+                  <div className="text-xs font-medium text-gray-500">Reserve Withdrawals</div>
                   <div className="text-xl font-bold mt-1 text-red-600">
-                    ${safeToLocaleString(reserveUsedByRepairs)}
+                    ${safeToLocaleString(reserveWithdrawals)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Current cumulative repair spend recorded for this truck.
+                    Repairs explicitly marked as paid from reserve.
                   </div>
                 </div>
 
                 <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Cushion Available</div>
+                  <div className="text-xs font-medium text-gray-500">Reserve Balance</div>
                   <div className={`text-xl font-bold mt-1 ${reserveCushionAvailable >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                     ${safeToLocaleString(reserveCushionAvailable)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Reserve set aside minus recorded repairs. Negative means repairs have already outspent the reserve.
+                    Deposits plus adjustments minus withdrawals.
                   </div>
                 </div>
               </div>
+              <div className="mt-3 flex flex-col gap-1 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                <span>Loaded settlements on this screen contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} of reserve deposits.</span>
+                <span>Reserve regime starts 2026-01-01. Pre-2026 settlements are not included.</span>
+              </div>
+              {reserveAdjustments > 0 && (
+                <div className="mt-2 text-xs text-gray-600">
+                  Reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
+                </div>
+              )}
             </div>
           )}
           

@@ -45,7 +45,8 @@ export default function Repairs() {
     description: '',
     category: '',
     cost: undefined,
-    invoice_number: ''
+    invoice_number: '',
+    paid_from_reserve: false,
   })
   const [manualFormImages, setManualFormImages] = useState<File[]>([])
   const [creating, setCreating] = useState(false)
@@ -168,6 +169,10 @@ export default function Repairs() {
       showModal('Error', 'Please select a truck', 'error')
       return
     }
+    if (manualFormData.paid_from_reserve && !manualFormData.repair_date) {
+      showModal('Error', 'Set a repair date before marking this repair as paid from reserve.', 'error')
+      return
+    }
 
     // If "other" category is selected, use custom category value
     const categoryToSave = manualFormData.category === 'other' && manualCustomCategory 
@@ -186,7 +191,8 @@ export default function Repairs() {
         category: categoryToSave || undefined,
         cost: manualFormData.cost || undefined,
         miles: manualFormData.miles || undefined,
-        invoice_number: manualFormData.invoice_number || undefined
+        invoice_number: manualFormData.invoice_number || undefined,
+        paid_from_reserve: Boolean(manualFormData.paid_from_reserve),
       }
       
       // Remove undefined and empty string values
@@ -208,7 +214,8 @@ export default function Repairs() {
         description: '',
         category: '',
         cost: undefined,
-        invoice_number: ''
+        invoice_number: '',
+        paid_from_reserve: false,
       })
       setManualCustomCategory('')
       setManualFormImages([])
@@ -238,7 +245,8 @@ export default function Repairs() {
       description: repair.description || '',
       category: isCustomCategory ? 'other' : category,
       cost: repair.cost,
-      miles: repair.miles
+      miles: repair.miles,
+      paid_from_reserve: Boolean(repair.paid_from_reserve),
     })
     setEditCustomCategory(isCustomCategory ? category : '')
     setEditImages([])
@@ -247,6 +255,10 @@ export default function Repairs() {
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!repairToEdit) return
+    if (editFormData.paid_from_reserve && !editFormData.repair_date) {
+      showModal('Error', 'Set a repair date before marking this repair as paid from reserve.', 'error')
+      return
+    }
 
     // If "other" category is selected, use custom category value
     const categoryToSave = editFormData.category === 'other' && editCustomCategory 
@@ -420,7 +432,8 @@ export default function Repairs() {
                   description: '',
                   category: '',
                   cost: undefined,
-                  invoice_number: ''
+                  invoice_number: '',
+                  paid_from_reserve: false,
                 })
                 setManualFormImages([])
               }
@@ -623,6 +636,21 @@ export default function Repairs() {
                   disabled={creating}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(manualFormData.paid_from_reserve)}
+                    onChange={(e) => setManualFormData({ ...manualFormData, paid_from_reserve: e.target.checked })}
+                    disabled={creating}
+                    className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Pay this repair from reserve?</div>
+                    <div className="text-xs text-gray-600">Requires a repair date. This will create a reserve withdrawal entry.</div>
+                  </div>
+                </label>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Cost</label>
@@ -980,6 +1008,21 @@ export default function Repairs() {
                 disabled={saving}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editFormData.paid_from_reserve)}
+                  onChange={(e) => setEditFormData({ ...editFormData, paid_from_reserve: e.target.checked })}
+                  disabled={saving}
+                  className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-gray-900">Pay this repair from reserve?</div>
+                  <div className="text-xs text-gray-600">Requires a repair date. This will sync a reserve withdrawal entry.</div>
+                </div>
+              </label>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>

@@ -1,7 +1,7 @@
 """
 Repair expense model
 """
-from sqlalchemy import Column, Integer, String, Date, Numeric, ForeignKey, DateTime, Text, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Date, Numeric, ForeignKey, DateTime, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -18,6 +18,7 @@ class Repair(Base):
     category = Column(String(50))  # engine, tires, maintenance, etc
     cost = Column(Numeric(10, 2), nullable=True)  # Made optional - can be set manually if PDF parsing fails
     miles = Column(Numeric(10, 2), nullable=True)  # Miles/odometer reading at time of repair (for PM tracking)
+    paid_from_reserve = Column(Boolean, nullable=False, server_default='false')
     receipt_path = Column(String(255))
     invoice_number = Column(String(50), nullable=True)  # Invoice number from PDF
     image_paths = Column(JSON, nullable=True)  # List of image file paths
@@ -25,4 +26,3 @@ class Repair(Base):
 
     # Relationships
     truck = relationship("Truck", back_populates="repairs")
-

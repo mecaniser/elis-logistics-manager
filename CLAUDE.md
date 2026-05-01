@@ -40,3 +40,12 @@ Key routing rules:
 - Review what gstack has learned → invoke /learn
 - Tune question sensitivity → invoke /plan-tune
 - Code quality dashboard → invoke /health
+
+## Settlement & Repair Side-Effects
+
+For settlement and repair lifecycle writes, route handlers own the transaction boundary.
+
+- Side-effect helpers must stage changes with `db.add()`, `db.delete()`, and `db.flush()` only.
+- Side-effect helpers must not call `db.commit()` internally.
+- Call all sibling side-effects before the route handler commits.
+- If one side-effect fails, the route handler must roll back the whole lifecycle so settlement or repair state, ledger rows, trailer split rows, and journal entries stay atomic.

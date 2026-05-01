@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { analyticsApi, trucksApi, Truck, TimeSeriesData } from '../services/api'
+import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, ReserveBalance } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
@@ -69,6 +69,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData | null>(null)
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
+  const [reserveBalances, setReserveBalances] = useState<ReserveBalance[]>([])
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('monthly')
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
   const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
@@ -87,10 +88,12 @@ export default function Dashboard() {
     setSelectedTruck(null)
     setTrucks([])
     setData(null)
+    setReserveBalances([])
     // Only load logistics data for logistics businesses
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
       loadDashboard()
+      loadReserveBalances()
     } else {
       setLoading(false)
     }
@@ -230,6 +233,16 @@ export default function Dashboard() {
       console.error('Failed to load dashboard:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadReserveBalances = async () => {
+    try {
+      const response = await reserveApi.getAllBalances()
+      setReserveBalances(Array.isArray(response.data) ? response.data : [])
+    } catch (err) {
+      console.error('Failed to load reserve balances:', err)
+      setReserveBalances([])
     }
   }
 
@@ -394,26 +407,6 @@ export default function Dashboard() {
     return (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time')
       ? (Number(pd.repairs) || 0)
       : 0
-  }
-
-  const getPeriodEndDate = (pd: any): Date | null => {
-    if (!pd) return null
-
-    if (expenseAnalysisView === 'weekly') {
-      if (pd.week_end) return new Date(pd.week_end)
-      if (pd.week_key) return new Date(pd.week_key)
-    }
-
-    if (expenseAnalysisView === 'monthly' && pd.month_key) {
-      const [year, month] = pd.month_key.split('-').map((value: string) => Number(value))
-      return new Date(year, month, 0, 23, 59, 59, 999)
-    }
-
-    if (expenseAnalysisView === 'yearly' && pd.year_key) {
-      return new Date(`${pd.year_key}-12-31T23:59:59`)
-    }
-
-    return null
   }
 
   // Identify months with PM (preventive maintenance) repairs by truck
@@ -798,19 +791,17 @@ export default function Dashboard() {
       .reduce((sum, period: any) => sum + (Number(period[field]) || 0), 0)
   }
 
-  const getCumulativeRepairSpendToDate = () => {
-    const periodEndDate = getPeriodEndDate(selectedPeriodData)
-    if (!periodEndDate) return 0
-
-    return repairsByMonth.reduce((sum, repair) => {
-      if (!repair.repair_date) return sum
-      const repairDate = new Date(repair.repair_date)
-      if (repairDate <= periodEndDate) {
-        return sum + (Number(repair.cost) || 0)
-      }
-      return sum
-    }, 0)
-  }
+  const visibleReserveBalances = selectedTruck
+    ? reserveBalances.filter((row) => row.truck_id === selectedTruck)
+    : reserveBalances
+  const totalReserveBalance = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.balance) || 0), 0)
+  const totalReserveDeposits = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.deposits_total) || 0), 0)
+  const totalReserveWithdrawals = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.withdrawals_total) || 0), 0)
+  const totalReserveAdjustments = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.adjustments_total) || 0), 0)
+  const reserveDepositsThisPeriod = Number((selectedPeriodData as any)?.repair_reserve_amount) || 0
+  const truckNetProfitTotal = Number(data?.trucks?.net_profit) || 0
+  const trailerNetProfitTotal = Number(data?.trailers?.net_profit) || 0
+  const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
 
   const renderMetricTrend = (
     currentValue: number | null,
@@ -859,6 +850,49 @@ export default function Dashboard() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Truck and trailer profit combined. Reserve deposits are already netted out of truck profit and shown separately for context.
+            </p>
+          </div>
+          <div className="text-left lg:text-right">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Total Business Profit</div>
+            <div className={`text-2xl font-bold ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              ${safeToLocaleString(businessTotalProfit)}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <div className="text-xs font-medium text-gray-600">Truck Profits</div>
+            <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+              ${safeToLocaleString(truckNetProfitTotal)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-purple-100 bg-purple-50 p-4">
+            <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
+            <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+              ${safeToLocaleString(trailerNetProfitTotal)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
+            <div className="text-xs font-medium text-gray-600">Reserve Deposits This Period</div>
+            <div className="mt-1 text-xl font-bold text-amber-700">
+              ${safeToLocaleString(reserveDepositsThisPeriod)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+            <div className="text-xs font-medium text-gray-600">Current Reserve Balance</div>
+            <div className={`mt-1 text-xl font-bold ${totalReserveBalance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              ${safeToLocaleString(totalReserveBalance)}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Detailed Expense Analysis Section - First Chart */}
@@ -1141,9 +1175,10 @@ export default function Dashboard() {
                 const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
                 const cumulativeTrailerContribution = getCumulativePeriodValue('trailer_income_split_amount')
-                const cumulativeReserveSetAside = getCumulativePeriodValue('repair_reserve_amount')
-                const cumulativeRepairSpendToDate = getCumulativeRepairSpendToDate()
-                const reserveCushionToDate = cumulativeReserveSetAside - cumulativeRepairSpendToDate
+                const reserveDepositsToDate = totalReserveDeposits
+                const reserveWithdrawalsToDate = totalReserveWithdrawals
+                const reserveAdjustmentsToDate = totalReserveAdjustments
+                const reserveCushionToDate = totalReserveBalance
                 
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
@@ -1231,22 +1266,31 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Set Aside To Date</span>
+                          <span className="text-sm text-gray-600">Reserve Deposits To Date</span>
                           <span className="text-sm font-semibold text-amber-700">
-                            ${safeToLocaleString(cumulativeReserveSetAside)}
+                            ${safeToLocaleString(reserveDepositsToDate)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Repair Spend To Date</span>
+                          <span className="text-sm text-gray-600">Reserve Withdrawals To Date</span>
                           <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(cumulativeRepairSpendToDate)}
+                            ${safeToLocaleString(reserveWithdrawalsToDate)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-sm text-gray-600">Reserve Adjustments To Date</span>
+                          <span className="text-sm font-semibold text-slate-700">
+                            ${safeToLocaleString(reserveAdjustmentsToDate)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-t border-blue-200">
-                          <span className="text-sm font-semibold text-gray-900">Reserve Cushion Available</span>
+                          <span className="text-sm font-semibold text-gray-900">Current Reserve Balance</span>
                           <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                             ${safeToLocaleString(reserveCushionToDate)}
                           </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Reserve regime starts 2026-01-01. This ledger view tracks deposits, withdrawals, and adjustments rather than all repair spend.
                         </div>
                       </div>
                     </div>

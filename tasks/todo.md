@@ -1,3 +1,25 @@
+# Repair Reserve Ledger + Business Rollup
+
+## Plan
+- [x] Audit and patch the backend schema, shared helpers, and migration scripts for the reserve ledger and `repairs.paid_from_reserve`.
+- [x] Refactor settlement and repair side-effect flows so reserve sync and journal-entry work can run in a single caller-owned transaction.
+- [x] Wire reserve synchronization into every settlement and repair write path, and add the new reserve API router with tenant-scoped balance and ledger endpoints.
+- [x] Implement the reserve backfill script with `--dry-run`, chunked commits, and idempotent deposit reconciliation for 2026+ settlements only.
+- [x] Add backend tests for reserve lifecycle behavior, tenant isolation, backfill idempotency, query-count protection, and atomic rollback behavior.
+- [x] Verify the backend with targeted pytest runs, migration/backfill dry-runs, and schema checks before touching the frontend.
+- [x] Replace the current heuristic reserve UI with ledger-backed reserve totals in `VehicleDetail.tsx`, add the dashboard business-total rollup, and add the repair `paid_from_reserve` checkbox flow.
+- [x] Verify frontend TypeScript build and capture final review notes below.
+
+## Review
+- Added `repair_reserve_ledger` model, reserve helpers, reserve router, `reserve_regime.py`, `backfill_repair_reserves.py`, and the `paid_from_reserve` repair flag plus migration registration. The reserve router is mounted in `backend/app/main.py`, and `CLAUDE.md` now documents the caller-owned side-effect transaction rule.
+- Settlement and repair write flows now sync reserve ledger entries inside the same transaction as sibling side effects. During verification, a real rollback bug surfaced in manual settlement create; that route now calls `db.rollback()` on journal-entry failure so source settlement rows, derived trailer rows, and reserve rows do not leak through partial failure.
+- Frontend changes landed in `frontend/src/services/api.ts`, `Repairs.tsx`, `VehicleDetail.tsx`, and `Dashboard.tsx`. Repairs now send `paid_from_reserve`, vehicle detail shows ledger-backed deposit/withdrawal/balance totals, and the dashboard includes a business-total rollup plus current reserve balance context.
+- `backend/venv/bin/pytest backend/tests/test_repair_reserves.py -q` passed: 12 targeted tests covering cutoff behavior, create/update/delete reserve sync for settlements and repairs, reserve-balance math, tenant isolation, bulk endpoint query count, backfill idempotency, and atomic rollback.
+- `python3 -m compileall backend/app backend/backfill_repair_reserves.py` passed.
+- `npx tsc --noEmit --pretty false` passed in `frontend/`.
+- Local DB verification required using the repo-root SQLite file (`./elisgroup.db`), which is the active `DATABASE_URL`, not `backend/elisgroup.db`. After running `backend/migrate_add_repair_reserve_fields.py`, `backend/migrate_add_paid_from_reserve_to_repairs.py`, and `Base.metadata.create_all(...)`, `backend/venv/bin/python backend/backfill_repair_reserves.py --dry-run` passed with `0` pending updates on the current local file.
+- Remaining gap: I did not add the full import-path regression matrix or the forced mid-run backfill crash-recovery test from the original 23-test design. The current suite covers the core reserve ledger contract and the new API surface.
+
 # 77 Cargo LLC Settlement Parser
 
 ## Plan

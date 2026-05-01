@@ -18,6 +18,7 @@ from app.schemas.repair import RepairCreate, RepairResponse, RepairUploadRespons
 from app.utils.repair_invoice_parser import parse_repair_invoice_pdf
 from app.utils.cloudinary import upload_image, upload_pdf, delete_image, CLOUDINARY_CONFIGURED
 from app.services.accounting_service import create_repair_journal_entry, delete_repair_journal_entry
+from app.services.reserve_service import delete_reserve_ledger_entry, sync_repair_reserve_withdrawal
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,33 @@ router = APIRouter()
 # Upload directory
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def get_tenant_truck_or_404(db: Session, truck_id: int, tenant_id: int) -> Truck:
+    truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
+    if not truck:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    return truck
+
+
+def get_tenant_repair_or_404(db: Session, repair_id: int, tenant_id: int) -> Repair:
+    repair = (
+        db.query(Repair)
+        .join(Truck)
+        .filter(Repair.id == repair_id, Truck.tenant_id == tenant_id)
+        .first()
+    )
+    if not repair:
+        raise HTTPException(status_code=404, detail="Repair not found")
+    return repair
+
+
+def validate_paid_from_reserve(repair_date, paid_from_reserve: bool) -> None:
+    if paid_from_reserve and not repair_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Set a repair date before marking 'paid from reserve'.",
+        )
 
 @router.get("", response_model=List[RepairResponse])
 @router.get("/", response_model=List[RepairResponse])
@@ -107,6 +135,8 @@ async def create_repair(
     # Validate required fields
     if not repair_data.get("truck_id"):
         raise HTTPException(status_code=400, detail="Truck ID is required")
+
+    truck = get_tenant_truck_or_404(db, int(repair_data["truck_id"]), tenant_id)
     
     # Handle date conversion if provided as string
     repair_date = repair_data.get("repair_date")
@@ -135,9 +165,12 @@ async def create_repair(
             miles = float(miles)
         except (ValueError, TypeError):
             miles = None
-    
+
+    paid_from_reserve = bool(repair_data.get("paid_from_reserve", False))
+    validate_paid_from_reserve(repair_date, paid_from_reserve)
+
     db_repair = Repair(
-        truck_id=repair_data.get("truck_id"),
+        truck_id=truck.id,
         repair_date=repair_date,
         title=repair_data.get("title") or None,
         details=repair_data.get("details") or None,
@@ -145,6 +178,7 @@ async def create_repair(
         category=repair_data.get("category") or None,
         cost=cost,
         miles=miles,
+        paid_from_reserve=paid_from_reserve,
         receipt_path=repair_data.get("receipt_path") or None,
         invoice_number=repair_data.get("invoice_number") or None,
         image_paths=image_paths if image_paths else None
@@ -152,31 +186,28 @@ async def create_repair(
     
     try:
         db.add(db_repair)
+        db.flush()
+        sync_repair_reserve_withdrawal(db, db_repair)
+        create_repair_journal_entry(db, db_repair, auto_commit=False)
         db.commit()
         db.refresh(db_repair)
-        
-        # Create accounting journal entry
-        try:
-            create_repair_journal_entry(db, db_repair)
-        except Exception as e:
-            # Log error but don't fail repair creation
-            logger.error(f"Failed to create journal entry for repair {db_repair.id}: {str(e)}")
-        
         return db_repair
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to create repair: {str(e)}")
 
 @router.get("/{repair_id}/invoice")
-async def get_repair_invoice(repair_id: int, db: Session = Depends(get_db)):
+async def get_repair_invoice(
+    repair_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
     """Proxy repair invoice PDF from Cloudinary with inline display headers"""
     import logging
     logger = logging.getLogger(__name__)
     
     try:
-        repair = db.query(Repair).filter(Repair.id == repair_id).first()
-        if not repair:
-            raise HTTPException(status_code=404, detail="Repair not found")
+        repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
         
         if not repair.receipt_path:
             raise HTTPException(status_code=404, detail="No invoice found for this repair")
@@ -255,24 +286,24 @@ async def get_repair_invoice(repair_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Unexpected error: {type(e).__name__}: {error_msg}")
 
 @router.get("/{repair_id}", response_model=RepairResponse)
-def get_repair(repair_id: int, db: Session = Depends(get_db)):
+def get_repair(
+    repair_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
     """Get a specific repair"""
-    repair = db.query(Repair).filter(Repair.id == repair_id).first()
-    if not repair:
-        raise HTTPException(status_code=404, detail="Repair not found")
-    return repair
+    return get_tenant_repair_or_404(db, repair_id, tenant_id)
 
 @router.put("/{repair_id}", response_model=RepairResponse)
 async def update_repair(
     repair_id: int,
     repair_update_json: Optional[str] = Form(None),
     images: List[UploadFile] = File(default=[]),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """Update a repair, optionally adding new images"""
-    repair = db.query(Repair).filter(Repair.id == repair_id).first()
-    if not repair:
-        raise HTTPException(status_code=404, detail="Repair not found")
+    repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
     
     # Parse JSON data from form
     update_data = {}
@@ -318,30 +349,37 @@ async def update_repair(
         
         # Merge existing and new images
         update_data["image_paths"] = list(existing_images) + new_image_paths
+
+    if "truck_id" in update_data and update_data["truck_id"] is not None:
+        truck = get_tenant_truck_or_404(db, int(update_data["truck_id"]), tenant_id)
+        update_data["truck_id"] = truck.id
+
+    next_repair_date = update_data.get("repair_date", repair.repair_date)
+    next_paid_from_reserve = bool(update_data.get("paid_from_reserve", repair.paid_from_reserve))
+    validate_paid_from_reserve(next_repair_date, next_paid_from_reserve)
     
     # Update only provided fields
     for field, value in update_data.items():
         setattr(repair, field, value)
-    
-    db.commit()
-    db.refresh(repair)
-    
-    # Update accounting journal entry (delete old, create new)
+
     try:
-        delete_repair_journal_entry(db, repair.id)
-        create_repair_journal_entry(db, repair)
+        sync_repair_reserve_withdrawal(db, repair)
+        delete_repair_journal_entry(db, repair.id, auto_commit=False)
+        create_repair_journal_entry(db, repair, auto_commit=False)
+        db.commit()
+        db.refresh(repair)
+        return repair
     except Exception as e:
-        # Log error but don't fail repair update
-        logger.error(f"Failed to update journal entry for repair {repair.id}: {str(e)}")
-    
-    return repair
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to update repair: {str(e)}")
 
 @router.post("/upload", response_model=RepairUploadResponse)
 async def upload_repair_invoice(
     file: UploadFile = File(...),
     images: List[UploadFile] = File(default=[]),
     truck_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """Upload and parse repair invoice PDF. Truck is automatically identified by VIN if available, otherwise truck_id must be provided."""
     # Save uploaded PDF file
@@ -370,7 +408,7 @@ async def upload_repair_invoice(
     
     if vin:
         # Find truck by VIN (case-insensitive)
-        truck = db.query(Truck).filter(Truck.vin.ilike(vin)).first()
+        truck = db.query(Truck).filter(Truck.vin.ilike(vin), Truck.tenant_id == tenant_id).first()
         if not truck:
             # VIN found but no matching truck - clean up file and return info so frontend can show truck selection
             if os.path.exists(file_path):
@@ -401,18 +439,7 @@ async def upload_repair_invoice(
     
     # If truck_id provided but no VIN found, use truck_id
     if not truck and truck_id:
-        truck = db.query(Truck).filter(Truck.id == truck_id).first()
-        if not truck:
-            # Clean up uploaded file
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-            raise HTTPException(
-                status_code=404,
-                detail=f"No truck found with ID {truck_id}."
-            )
+        truck = get_tenant_truck_or_404(db, truck_id, tenant_id)
     
     # Check for duplicates before creating repair
     invoice_number = repair_data.get("invoice_number")
@@ -522,20 +549,17 @@ async def upload_repair_invoice(
             category=repair_data.get("category"),
             cost=repair_data.get("cost"),
             miles=repair_data.get("miles"),
+            paid_from_reserve=False,
             receipt_path=receipt_path,
             invoice_number=repair_data.get("invoice_number"),
             image_paths=image_paths if image_paths else None
         )
         db.add(db_repair)
+        db.flush()
+        sync_repair_reserve_withdrawal(db, db_repair)
+        create_repair_journal_entry(db, db_repair, auto_commit=False)
         db.commit()
         db.refresh(db_repair)
-        
-        # Create accounting journal entry
-        try:
-            create_repair_journal_entry(db, db_repair)
-        except Exception as e:
-            # Log error but don't fail repair creation
-            logger.error(f"Failed to create journal entry for repair {db_repair.id}: {str(e)}")
         
         warning_parts = []
         if not repair_data.get("repair_date"):
@@ -575,12 +599,11 @@ async def upload_repair_invoice(
 async def delete_repair_image(
     repair_id: int,
     image_index: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
 ):
     """Delete a specific image from a repair"""
-    repair = db.query(Repair).filter(Repair.id == repair_id).first()
-    if not repair:
-        raise HTTPException(status_code=404, detail="Repair not found")
+    repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
     
     if not repair.image_paths or not isinstance(repair.image_paths, list):
         raise HTTPException(status_code=400, detail="No images found for this repair")
@@ -615,21 +638,14 @@ async def delete_repair_image(
 @router.delete("/{repair_id}")
 def delete_repair(repair_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a repair"""
-    repair = db.query(Repair).join(Truck).filter(
-        Repair.id == repair_id,
-        Truck.tenant_id == tenant_id
-    ).first()
-    if not repair:
-        raise HTTPException(status_code=404, detail="Repair not found")
-    
-    # Delete accounting journal entry
-    try:
-        delete_repair_journal_entry(db, repair_id)
-    except Exception as e:
-        # Log error but don't fail repair deletion
-        logger.error(f"Failed to delete journal entry for repair {repair_id}: {str(e)}")
-    
-    db.delete(repair)
-    db.commit()
-    return {"message": "Repair deleted successfully"}
+    repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
 
+    try:
+        delete_reserve_ledger_entry(db, source_type="repair", source_id=repair_id)
+        delete_repair_journal_entry(db, repair_id, auto_commit=False)
+        db.delete(repair)
+        db.commit()
+        return {"message": "Repair deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to delete repair: {str(e)}")
