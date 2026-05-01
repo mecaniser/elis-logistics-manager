@@ -13,6 +13,8 @@ class TruckBase(BaseModel):
     license_plate: Optional[str] = None  # For trucks
     tag_number: Optional[str] = None  # For trailers
     vin: Optional[str] = None
+    default_trailer_id: Optional[int] = None
+    default_trailer_income_split_amount: Optional[float] = None
     license_plate_history: Optional[List[str]] = None
     cash_investment: Optional[float] = None  # Cash invested in vehicle
     loan_amount: Optional[float] = None  # Loan amount (trucks only, null for trailers)
@@ -37,6 +39,8 @@ class TruckUpdate(BaseModel):
     license_plate: Optional[str] = None
     tag_number: Optional[str] = None
     vin: Optional[str] = None
+    default_trailer_id: Optional[int] = None
+    default_trailer_income_split_amount: Optional[float] = None
     license_plate_history: Optional[List[str]] = None
     cash_investment: Optional[float] = None
     loan_amount: Optional[float] = None

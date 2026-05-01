@@ -110,6 +110,25 @@ def validate_trailer_income_split(
     return trailer, normalized_amount
 
 
+def resolve_trailer_income_split_inputs(
+    source_vehicle: Truck,
+    trailer_id: Optional[int],
+    split_amount: Optional[float],
+) -> tuple[Optional[int], Optional[float]]:
+    """Use explicit split inputs when provided, otherwise fall back to the truck defaults."""
+    has_explicit_trailer = trailer_id not in (None, "")
+    has_explicit_amount = split_amount is not None
+
+    if has_explicit_trailer or has_explicit_amount:
+        return trailer_id, split_amount
+
+    return source_vehicle.default_trailer_id, (
+        float(source_vehicle.default_trailer_income_split_amount)
+        if source_vehicle.default_trailer_income_split_amount is not None
+        else None
+    )
+
+
 def apply_trailer_income_split_to_source(
     settlement_data: dict,
     split_amount: float,
@@ -420,12 +439,18 @@ async def upload_settlement_pdf(
                     revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                     settlement_data["net_profit"] = revenue - settlement_data["expenses"]
 
+            resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
+                truck,
+                trailer_income_split_trailer_id,
+                trailer_income_split_amount,
+            ) if truck else (None, None)
+
             trailer, split_amount = validate_trailer_income_split(
                 db,
                 tenant_id,
                 truck,
-                trailer_income_split_trailer_id,
-                trailer_income_split_amount,
+                resolved_trailer_id,
+                resolved_split_amount,
             ) if truck else (None, 0.0)
 
             if trailer and split_amount > 0:
@@ -870,12 +895,18 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
                 revenue = float(settlement_dict.get("gross_revenue", 0) or 0)
                 settlement_dict["net_profit"] = revenue - settlement_dict["expenses"]
 
+        resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
+            truck,
+            settlement_dict.get("trailer_income_split_trailer_id"),
+            settlement_dict.get("trailer_income_split_amount"),
+        )
+
         trailer, split_amount = validate_trailer_income_split(
             db,
             tenant_id,
             truck,
-            settlement_dict.get("trailer_income_split_trailer_id"),
-            settlement_dict.get("trailer_income_split_amount"),
+            resolved_trailer_id,
+            resolved_split_amount,
         )
 
         if trailer and split_amount > 0:

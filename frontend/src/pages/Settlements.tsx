@@ -111,6 +111,22 @@ export default function Settlements() {
   const [showExtractor, setShowExtractor] = useState(false)
   const trailers = useMemo(() => trucks.filter((truck) => truck.vehicle_type === 'trailer'), [trucks])
 
+  const getTruckDefaultTrailerSplit = (vehicleId?: number | null) => {
+    const selectedVehicle = trucks.find((truck) => truck.id === vehicleId)
+    if (!selectedVehicle || selectedVehicle.vehicle_type !== 'truck') {
+      return { trailerId: null as number | null, amount: '' }
+    }
+
+    const defaultTrailerId = selectedVehicle.default_trailer_id ?? null
+    const trailerExists = defaultTrailerId != null && trailers.some((trailer) => trailer.id === defaultTrailerId)
+    return {
+      trailerId: trailerExists ? defaultTrailerId : null,
+      amount: selectedVehicle.default_trailer_income_split_amount != null
+        ? String(Number(selectedVehicle.default_trailer_income_split_amount))
+        : '',
+    }
+  }
+
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
     'fuel',
@@ -214,6 +230,36 @@ export default function Settlements() {
   useEffect(() => {
     loadSettlements(true)
   }, [selectedTruck])
+
+  useEffect(() => {
+    if (!showUploadForm) return
+
+    const defaults = getTruckDefaultTrailerSplit(selectedTruckForUpload)
+    setSelectedTrailerForUpload(defaults.trailerId)
+    setTrailerSplitAmountForUpload(defaults.amount)
+  }, [selectedTruckForUpload, showUploadForm, trucks, trailers])
+
+  useEffect(() => {
+    if (!showManualForm) return
+
+    const defaults = getTruckDefaultTrailerSplit(manualFormData.truck_id)
+    const nextAmount = defaults.amount ? parseFloat(defaults.amount) : undefined
+
+    setManualFormData((prev) => {
+      if (
+        prev.trailer_income_split_trailer_id === defaults.trailerId &&
+        prev.trailer_income_split_amount === nextAmount
+      ) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        trailer_income_split_trailer_id: defaults.trailerId ?? undefined,
+        trailer_income_split_amount: nextAmount,
+      }
+    })
+  }, [manualFormData.truck_id, showManualForm, trucks, trailers])
 
   // Lock body scroll when modal is open
   useEffect(() => {

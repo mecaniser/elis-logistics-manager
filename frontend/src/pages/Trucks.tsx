@@ -94,6 +94,8 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   name: vehicle.name,
   vehicle_type: vehicle.vehicle_type,
   vin: vehicle.vin || '',
+  default_trailer_id: vehicle.default_trailer_id?.toString() || '',
+  default_trailer_income_split_amount: vehicle.default_trailer_income_split_amount?.toString() || '',
   license_plate: vehicle.license_plate || '',
   tag_number: vehicle.tag_number || '',
   cash_investment: vehicle.cash_investment?.toString() || '',
@@ -193,6 +195,8 @@ export default function Trucks() {
     name: '', 
     vehicle_type: 'truck' as 'truck' | 'trailer' | 'suv',
     vin: '', 
+    default_trailer_id: '',
+    default_trailer_income_split_amount: '',
     license_plate: '',
     tag_number: '',
     cash_investment: '',
@@ -563,6 +567,12 @@ export default function Trucks() {
       const cash = parseNumeric(formData.cash_investment)
       const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
       const registration = parseNumeric(formData.registration_fee)
+      const defaultTrailerId = formData.vehicle_type === 'truck' && formData.default_trailer_id
+        ? parseInt(formData.default_trailer_id, 10)
+        : null
+      const defaultTrailerIncomeSplitAmount = formData.vehicle_type === 'truck' && formData.default_trailer_income_split_amount
+        ? parseNumeric(formData.default_trailer_income_split_amount)
+        : null
       
       // Calculate additional expenses total
       const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
@@ -634,6 +644,8 @@ export default function Trucks() {
           name: formData.name,
           vehicle_type: formData.vehicle_type,
           vin: formData.vin || undefined,
+          default_trailer_id: defaultTrailerId,
+          default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
@@ -644,6 +656,8 @@ export default function Trucks() {
           name: formData.name,
           vehicle_type: formData.vehicle_type,
           vin: formData.vin || undefined,
+          default_trailer_id: defaultTrailerId,
+          default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
@@ -679,6 +693,8 @@ export default function Trucks() {
       name: '',
       vehicle_type: 'truck',
       vin: '',
+      default_trailer_id: '',
+      default_trailer_income_split_amount: '',
       license_plate: '',
       tag_number: '',
       cash_investment: '',
@@ -730,6 +746,7 @@ export default function Trucks() {
     return truck.vehicle_type === vehicleTypeFilter
   })
 
+  const allTrailers = trucks.filter(t => t.vehicle_type === 'trailer')
   const trucksList = filteredTrucks.filter(t => t.vehicle_type === 'truck')
   const trailersList = filteredTrucks.filter(t => t.vehicle_type === 'trailer')
   const suvsList = filteredTrucks.filter(t => t.vehicle_type === 'suv')
@@ -892,6 +909,8 @@ export default function Trucks() {
                   setFormData({ 
                     ...formData, 
                     vehicle_type: newType,
+                    default_trailer_id: newType === 'truck' ? formData.default_trailer_id : '',
+                    default_trailer_income_split_amount: newType === 'truck' ? formData.default_trailer_income_split_amount : '',
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
                           tag_number: (newType === 'truck' || newType === 'suv') ? '' : formData.tag_number
                   })
@@ -979,6 +998,66 @@ export default function Trucks() {
                         style={{ minWidth: '120px' }}
                 />
               </div>
+            )}
+            {formData.vehicle_type === 'truck' && (
+                    <>
+                      <div className="flex items-center min-w-0">
+                        <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                          <label className="text-xs font-medium text-gray-500">Default Trailer</label>
+                        </div>
+                        <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                        <select
+                          value={formData.default_trailer_id}
+                          onChange={(e) => setFormData({ ...formData, default_trailer_id: e.target.value })}
+                          className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm border-l-0"
+                          style={{ minWidth: '220px' }}
+                        >
+                          <option value="">No settlement split default</option>
+                          {allTrailers.map((trailer) => (
+                            <option key={trailer.id} value={trailer.id}>
+                              {trailer.name}
+                              {trailer.tag_number ? ` [Tag: ${trailer.tag_number}]` : ''}
+                              {trailer.vin ? ` - VIN: ${trailer.vin}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center min-w-0">
+                        <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                          <label className="text-xs font-medium text-gray-500">Default Trailer Split ($)</label>
+                        </div>
+                        <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={focusedFields.has('default_trailer_income_split_amount') ? formData.default_trailer_income_split_amount : formatCurrencyDisplay(formData.default_trailer_income_split_amount)}
+                          onChange={(e) => {
+                            const inputValue = e.target.value
+                            if (isValidNumericInput(inputValue)) {
+                              const value = parseCurrency(inputValue)
+                              if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                                setFormData({ ...formData, default_trailer_income_split_amount: value })
+                              }
+                            }
+                          }}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('default_trailer_income_split_amount'))}
+                          onBlur={(e) => {
+                            const value = parseCurrency(e.target.value)
+                            if (value && !isNaN(parseFloat(value))) {
+                              setFormData({ ...formData, default_trailer_income_split_amount: parseFloat(value).toFixed(2) })
+                            }
+                            setFocusedFields(prev => {
+                              const next = new Set(prev)
+                              next.delete('default_trailer_income_split_amount')
+                              return next
+                            })
+                          }}
+                          placeholder="400.00"
+                          className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                          style={{ minWidth: '130px' }}
+                        />
+                      </div>
+                    </>
             )}
                 </div>
               </div>

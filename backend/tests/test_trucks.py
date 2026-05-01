@@ -24,6 +24,35 @@ def test_create_truck(client: TestClient, tenant_headers):
     assert "created_at" in data
 
 
+def test_create_truck_with_default_trailer_split(client: TestClient, db, tenant_headers):
+    """A truck can store its default trailer split settings for future settlement autofill."""
+    trailer = Truck(
+        tenant_id=1,
+        name="Autofill Trailer",
+        vehicle_type="trailer",
+        tag_number="TRL-777",
+    )
+    db.add(trailer)
+    db.commit()
+    db.refresh(trailer)
+
+    response = client.post(
+        "/api/trucks",
+        json={
+            "name": "77 Cargo Truck",
+            "vehicle_type": "truck",
+            "license_plate": "VW9327",
+            "default_trailer_id": trailer.id,
+            "default_trailer_income_split_amount": 400.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["default_trailer_id"] == trailer.id
+    assert float(data["default_trailer_income_split_amount"]) == 400.0
+
+
 def test_get_trucks_empty(client: TestClient, tenant_headers):
     """Test getting trucks when none exist"""
     response = client.get("/api/trucks", headers=tenant_headers)
@@ -328,6 +357,55 @@ def test_create_settlement_with_trailer_income_split_creates_managed_trailer_set
     assert trailer_roi.status_code == 200
     assert truck_roi.json()["cumulative_revenue"] == 600.0
     assert trailer_roi.json()["cumulative_revenue"] == 400.0
+
+
+def test_create_settlement_uses_truck_default_trailer_split(client: TestClient, db, tenant_headers):
+    """Truck-level default split settings should apply when the settlement omits explicit split fields."""
+    trailer = Truck(
+        tenant_id=1,
+        name="Attached Trailer",
+        vehicle_type="trailer",
+        tag_number="TRL-778",
+    )
+    truck = Truck(
+        tenant_id=1,
+        name="Truck 77 Cargo",
+        vehicle_type="truck",
+        license_plate="VW9327",
+        default_trailer_id=None,
+        default_trailer_income_split_amount=None,
+    )
+    db.add_all([truck, trailer])
+    db.commit()
+    truck.default_trailer_id = trailer.id
+    truck.default_trailer_income_split_amount = 400.0
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2024-02-04",
+            "gross_revenue": 1200.0,
+            "expenses": 100.0,
+            "net_profit": 1100.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["trailer_income_split_trailer_id"] == trailer.id
+    assert float(data["trailer_income_split_amount"]) == 400.0
+    assert float(data["gross_revenue"]) == 800.0
+    assert float(data["net_profit"]) == 700.0
+
+    trailer_settlement = db.query(Settlement).filter(Settlement.source_settlement_id == data["id"]).first()
+    assert trailer_settlement is not None
+    assert trailer_settlement.truck_id == trailer.id
+    assert float(trailer_settlement.gross_revenue) == 400.0
+    assert float(trailer_settlement.net_profit) == 400.0
 
 
 def test_delete_source_settlement_removes_managed_trailer_income_split(client: TestClient, db, tenant_headers):

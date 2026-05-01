@@ -85,6 +85,56 @@ def cleanup_vehicle_document_file(file_path: Optional[str]) -> None:
     if local_path.exists():
         local_path.unlink()
 
+
+def validate_default_trailer_split(
+    db: Session,
+    tenant_id: int,
+    vehicle_type: str,
+    default_trailer_id: Optional[int],
+    default_trailer_income_split_amount: Optional[float],
+) -> tuple[Optional[int], Optional[float]]:
+    """Validate stored default trailer split settings for a truck."""
+    normalized_trailer_id = int(default_trailer_id) if default_trailer_id else None
+    normalized_amount = (
+        round(float(default_trailer_income_split_amount), 2)
+        if default_trailer_income_split_amount is not None
+        else None
+    )
+
+    if normalized_amount is not None and normalized_amount < 0:
+        raise HTTPException(status_code=400, detail="Default trailer split amount cannot be negative.")
+
+    if vehicle_type != "truck":
+        if normalized_trailer_id or normalized_amount:
+            raise HTTPException(
+                status_code=400,
+                detail="Default trailer split settings can only be saved on trucks.",
+            )
+        return None, None
+
+    if not normalized_trailer_id and normalized_amount in (None, 0):
+        return None, None
+
+    if not normalized_trailer_id or normalized_amount is None or normalized_amount <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Default trailer split requires both a trailer and a positive weekly split amount.",
+        )
+
+    trailer = (
+        db.query(Truck)
+        .filter(
+            Truck.id == normalized_trailer_id,
+            Truck.tenant_id == tenant_id,
+            Truck.vehicle_type == "trailer",
+        )
+        .first()
+    )
+    if not trailer:
+        raise HTTPException(status_code=400, detail=f"Trailer with ID {normalized_trailer_id} not found.")
+
+    return normalized_trailer_id, normalized_amount
+
 @router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
 def get_trucks(
@@ -173,10 +223,20 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
             status_code=400,
             detail=f"A {vehicle_type} with name '{truck.name}' already exists"
         )
-    
+
+    default_trailer_id, default_trailer_amount = validate_default_trailer_split(
+        db,
+        tenant_id,
+        vehicle_type,
+        truck.default_trailer_id,
+        truck.default_trailer_income_split_amount,
+    )
+
     truck_dict = truck.model_dump()
     truck_dict['tenant_id'] = tenant_id
     truck_dict['vehicle_type'] = vehicle_type  # Ensure lowercase
+    truck_dict['default_trailer_id'] = default_trailer_id
+    truck_dict['default_trailer_income_split_amount'] = default_trailer_amount
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
         truck_dict['interest_rate'] = 0.07  # Default 7%
@@ -308,6 +368,17 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
         vehicle_type = update_data['vehicle_type']
     else:
         vehicle_type = truck.vehicle_type
+
+    if any(field in update_data for field in ['default_trailer_id', 'default_trailer_income_split_amount', 'vehicle_type']):
+        default_trailer_id, default_trailer_amount = validate_default_trailer_split(
+            db,
+            tenant_id,
+            vehicle_type,
+            update_data.get('default_trailer_id', truck.default_trailer_id),
+            update_data.get('default_trailer_income_split_amount', truck.default_trailer_income_split_amount),
+        )
+        update_data['default_trailer_id'] = default_trailer_id
+        update_data['default_trailer_income_split_amount'] = default_trailer_amount
     
     # Calculate additional expenses total
     additional_expenses_total = 0.0

@@ -16,6 +16,8 @@ class Truck(Base):
     license_plate = Column(String(20), nullable=True)  # For trucks
     tag_number = Column(String(20), nullable=True)  # For trailers (trailer tag number)
     vin = Column(String(17), nullable=True)  # Vehicle Identification Number
+    default_trailer_id = Column(Integer, nullable=True)  # Default attached trailer used for settlement income splits
+    default_trailer_income_split_amount = Column(Numeric(10, 2), nullable=True)  # Default weekly trailer income allocation
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates
     cash_investment = Column(Numeric(10, 2), nullable=True)  # Cash invested in vehicle
     loan_amount = Column(Numeric(10, 2), nullable=True)  # Loan amount (trucks only, null for trailers)
