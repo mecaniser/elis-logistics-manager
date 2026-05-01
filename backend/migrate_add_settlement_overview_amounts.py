@@ -31,7 +31,7 @@ def migrate():
 
         if "overview_amounts" in existing_columns:
             print("✓ Column 'overview_amounts' already exists")
-            return True
+            return 0
 
         print("Adding column 'overview_amounts'...")
         if DATABASE_URL.startswith("sqlite"):
@@ -40,17 +40,17 @@ def migrate():
             db.execute(text("ALTER TABLE settlements ADD COLUMN overview_amounts JSONB"))
         db.commit()
         print("✓ Added column 'overview_amounts'")
-        return True
+        return 0
     except Exception as e:
         db.rollback()
         print(f"✗ Error adding column: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return 1
     finally:
         db.close()
 
 
 if __name__ == "__main__":
     success = migrate()
-    sys.exit(0 if success else 1)
+    sys.exit(0 if success == 0 else 1)

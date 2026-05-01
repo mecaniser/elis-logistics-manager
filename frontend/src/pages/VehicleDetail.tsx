@@ -44,6 +44,8 @@ export default function VehicleDetail() {
   const navigate = useNavigate()
   const [vehicle, setVehicle] = useState<Truck | null>(null)
   const [roiData, setRoiData] = useState<VehicleROI | null>(null)
+  const [attachedTrailer, setAttachedTrailer] = useState<Truck | null>(null)
+  const [attachedTrailerRoi, setAttachedTrailerRoi] = useState<VehicleROI | null>(null)
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [loading, setLoading] = useState(true)
   const [investmentExpanded, setInvestmentExpanded] = useState(!isMobile)
@@ -61,6 +63,8 @@ export default function VehicleDetail() {
     if (id) {
       setVehicle(null)
       setRoiData(null)
+      setAttachedTrailer(null)
+      setAttachedTrailerRoi(null)
       loadVehicleData()
     }
   }, [id, currentTenant?.id])
@@ -70,13 +74,36 @@ export default function VehicleDetail() {
     
     try {
       setLoading(true)
-      const [vehicleResponse, roiResponse, repairsResponse] = await Promise.all([
-        trucksApi.getById(parseInt(id)),
-        analyticsApi.getVehicleROI(parseInt(id)),
-        repairsApi.getAll(parseInt(id))
+      const vehicleId = parseInt(id)
+      const vehicleResponse = await trucksApi.getById(vehicleId)
+      const currentVehicle = vehicleResponse.data
+
+      const [roiResponse, repairsResponse] = await Promise.all([
+        analyticsApi.getVehicleROI(vehicleId),
+        repairsApi.getAll(vehicleId)
       ])
-      setVehicle(vehicleResponse.data)
+
+      let nextAttachedTrailer: Truck | null = null
+      let nextAttachedTrailerRoi: VehicleROI | null = null
+
+      if (currentVehicle.vehicle_type === 'truck' && currentVehicle.default_trailer_id) {
+        const [trailerResult, trailerRoiResult] = await Promise.allSettled([
+          trucksApi.getById(currentVehicle.default_trailer_id),
+          analyticsApi.getVehicleROI(currentVehicle.default_trailer_id)
+        ])
+
+        if (trailerResult.status === 'fulfilled') {
+          nextAttachedTrailer = trailerResult.value.data
+        }
+        if (trailerRoiResult.status === 'fulfilled') {
+          nextAttachedTrailerRoi = trailerRoiResult.value.data
+        }
+      }
+
+      setVehicle(currentVehicle)
       setRoiData(roiResponse.data)
+      setAttachedTrailer(nextAttachedTrailer)
+      setAttachedTrailerRoi(nextAttachedTrailerRoi)
       setRepairs(repairsResponse.data || [])
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
@@ -110,6 +137,9 @@ export default function VehicleDetail() {
   const cashRecoveryAmount = roiData.cash_recovery_amount ?? 0
   const isCashRecovered = roiData.cash_recovery_achieved ?? false
   const remainingToCashRecovery = roiData.remaining_to_cash_recovery ?? 0
+  const showProfitComposition = vehicle.vehicle_type === 'truck' && attachedTrailerRoi !== null
+  const trailerContribution = attachedTrailerRoi?.cumulative_net_profit ?? 0
+  const combinedTrueNetProfit = roiData.cumulative_net_profit + trailerContribution
 
   return (
     <div>
@@ -191,11 +221,64 @@ export default function VehicleDetail() {
       {vehicle.vehicle_type !== 'suv' && roiData.cash_investment && roiData.cash_investment > 0 && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-900">ROI Metrics</h2>
+
+          {showProfitComposition && (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Profit Composition</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Truck profit stays separate from the attached trailer so you can see the pair and the combined result clearly.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-medium text-gray-500">Combined True Net Profit</div>
+                  <div className={`text-2xl font-bold ${combinedTrueNetProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    ${safeToLocaleString(combinedTrueNetProfit)}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Truck Net Profit</div>
+                  <div className={`text-xl font-bold mt-1 ${roiData.cumulative_net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${safeToLocaleString(roiData.cumulative_net_profit)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {vehicle.name} after trailer allocation and repair reserve.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Trailer Contribution</div>
+                  <div className={`text-xl font-bold mt-1 ${trailerContribution >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${safeToLocaleString(trailerContribution)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {attachedTrailer?.name || 'Attached trailer'} including trailer-specific repairs and costs.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Combined True Net Profit</div>
+                  <div className={`text-xl font-bold mt-1 ${combinedTrueNetProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    ${safeToLocaleString(combinedTrueNetProfit)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Truck and trailer together as one earning unit.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Cumulative Net Profit */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-4">
-              <span className="text-sm font-medium text-gray-600">Cumulative Net Profit</span>
+              <span className="text-sm font-medium text-gray-600">
+                {showProfitComposition ? 'Truck Cumulative Net Profit' : 'Cumulative Net Profit'}
+              </span>
               <span className={`text-2xl font-bold ${
                 roiData.cumulative_net_profit >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
@@ -203,6 +286,11 @@ export default function VehicleDetail() {
               </span>
             </div>
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+              {showProfitComposition && (
+                <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+                  This truck figure excludes the trailer allocation that is tracked separately on {attachedTrailer?.name || 'the attached trailer'}.
+                </div>
+              )}
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Revenue</span>
                 <span className="text-sm font-semibold text-gray-900">

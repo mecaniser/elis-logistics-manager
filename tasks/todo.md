@@ -171,9 +171,45 @@
 
 ## Plan
 - [x] Inspect the vehicle data model and settlement upload flow to identify where a truck-level attached trailer/default split should live.
-- [ ] Add truck-level default trailer split fields and expose them through the API plus vehicle edit form.
-- [ ] Autofill the settlement upload/manual forms from the selected truck's default trailer split while keeping the values editable.
-- [ ] Verify the behavior with targeted checks and capture the outcome below.
+- [x] Add truck-level default trailer split fields and expose them through the API plus vehicle edit form.
+- [x] Autofill the settlement upload/manual forms from the selected truck's default trailer split while keeping the values editable.
+- [x] Verify the behavior with targeted checks and capture the outcome below.
 
 ## Review
-- Pending.
+- Added truck-level default split fields `default_trailer_id` and `default_trailer_income_split_amount` to the truck model/schema/API, plus the migration script [backend/migrate_add_default_trailer_split_to_trucks.py](/Users/sergio/GitHub/elis-logistics-app/backend/migrate_add_default_trailer_split_to_trucks.py:1). The new migration is registered in both master migration runners.
+- Backend behavior: truck create/update now validates that default split settings only point to a trailer in the same tenant, and settlement create/upload now falls back to those truck defaults when explicit split fields are omitted. That means the business rule lives in the stored truck configuration, not just in the upload form.
+- Frontend behavior: the Vehicles form now lets a truck store its default attached trailer and default weekly trailer split amount, and the Settlements upload/manual forms auto-fill those values whenever that truck is selected while still allowing the user to edit them before saving.
+- Verification:
+  - `PYTHONPATH=backend backend/venv/bin/pytest backend/tests/test_trucks.py -q` passed with 14 tests, including new coverage for saving truck default split settings and using them automatically during settlement creation.
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+  - `python3 -m compileall backend/app backend/migrate_add_default_trailer_split_to_trucks.py backend/run_all_migrations.py backend/run_all_production_migrations.py` passed.
+
+# Weekly Repair Reserve
+
+## Plan
+- [x] Inspect the existing settlement split flow and choose how a weekly repair reserve should be modeled without colliding with trailer split behavior.
+- [x] Add truck-level default repair reserve settings plus settlement-level reserve tracking in backend models, schemas, migrations, and write paths.
+- [x] Autofill the settlement upload/manual UI from the selected truck defaults while keeping the reserve editable and visible in settlement cards.
+- [x] Verify the reserve flow with targeted tests/build checks and capture the result below.
+
+## Review
+- Added `default_repair_reserve_amount` to trucks and `repair_reserve_amount` to settlements, plus the migration script [backend/migrate_add_repair_reserve_fields.py](/Users/sergio/GitHub/elis-logistics-app/backend/migrate_add_repair_reserve_fields.py:1). The new migration is registered in both master migration runners.
+- Backend behavior: truck create/update can now store a default weekly repair reserve for trucks, and settlement create/upload falls back to that stored default when no explicit reserve is provided. The reserve is applied on top of any trailer split by reducing the source truck settlement `gross_revenue` and `net_profit`, and the amount is stored on the settlement for later display/editing.
+- Frontend behavior: the Vehicles form now includes `Default Repair Reserve ($)` for trucks, and the Settlements upload/manual flows auto-fill that amount whenever a truck with a default reserve is selected. Settlement cards now show the booked `Repair Reserve` amount separately.
+- Verification:
+  - `PYTHONPATH=backend backend/venv/bin/pytest backend/tests/test_trucks.py -q` passed with 15 tests, including new coverage for saving a truck default repair reserve and automatically applying it during settlement creation.
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+  - `python3 -m compileall backend/app backend/migrate_add_repair_reserve_fields.py backend/run_all_migrations.py backend/run_all_production_migrations.py` passed.
+
+# Vehicle Profit Composition
+
+## Plan
+- [x] Inspect the current vehicle detail ROI view and decide how to present truck-only, trailer-only, and combined profit without changing existing settlement math.
+- [x] Load the attached trailer ROI on the truck detail page and add a dedicated profit composition UI.
+- [x] Verify the frontend build and capture the results below.
+
+## Review
+- Frontend-only change: `frontend/src/pages/VehicleDetail.tsx` now loads the selected truck first, then optionally loads the attached trailer and its ROI when the truck has a `default_trailer_id`. Trailer ROI fetch failures do not block the main truck detail page.
+- UI behavior: truck detail now shows a dedicated `Profit Composition` block with `Truck Net Profit`, `Trailer Contribution`, and `Combined True Net Profit`. The existing cumulative net profit card is relabeled as truck-only when a trailer contribution is being shown, with an inline note that the trailer allocation is tracked separately.
+- Verification:
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.

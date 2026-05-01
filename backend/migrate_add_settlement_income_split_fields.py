@@ -3,13 +3,15 @@
 Migration script to add settlement trailer-income split tracking columns.
 Works with both SQLite (local) and PostgreSQL (Railway).
 """
-import os
 import sys
+from pathlib import Path
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, backend_dir)
+BASE_DIR = Path(__file__).resolve().parents[0]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
-from app.database import DATABASE_URL, engine
+from sqlalchemy import text
+from app.database import DATABASE_URL, SessionLocal
 
 
 def migrate():
@@ -19,66 +21,40 @@ def migrate():
         ("trailer_income_split_amount", "NUMERIC(10, 2)"),
         ("source_settlement_id", "INTEGER"),
     ]
+    db = SessionLocal()
+    try:
+        if DATABASE_URL.startswith("sqlite"):
+            result = db.execute(text("PRAGMA table_info(settlements)"))
+            existing_columns = {row[1] for row in result.fetchall()}
+        else:
+            result = db.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='settlements'
+            """))
+            existing_columns = {row[0] for row in result.fetchall()}
 
-    if DATABASE_URL.startswith("sqlite"):
-        import sqlite3
+        for column_name, column_type in columns_to_add:
+            if column_name in existing_columns:
+                print(f"✓ Column '{column_name}' already exists in settlements table. No migration needed.")
+                continue
+            print(f"Adding '{column_name}' column to settlements table...")
+            db.execute(text(f"ALTER TABLE settlements ADD COLUMN {column_name} {column_type}"))
 
-        db_path = os.path.join(backend_dir, "elisgroup.db")
-        if not os.path.exists(db_path):
-            print(f"Database file not found at {db_path}")
-            print("The database will be created automatically on next app startup.")
-            return
-
-        print(f"Connecting to database: {db_path}")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("PRAGMA table_info(settlements)")
-            existing_columns = {column[1] for column in cursor.fetchall()}
-
-            for column_name, column_type in columns_to_add:
-                if column_name not in existing_columns:
-                    print(f"Adding '{column_name}' column to settlements table...")
-                    cursor.execute(f"ALTER TABLE settlements ADD COLUMN {column_name} {column_type}")
-                else:
-                    print(f"✓ Column '{column_name}' already exists in settlements table. No migration needed.")
-
-            conn.commit()
-            print("✓ Settlement income split columns are ready.")
-        except Exception as exc:
-            print(f"✗ Error adding settlement income split columns: {exc}")
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-    else:
-        from sqlalchemy import text
-
-        with engine.connect() as conn:
-            try:
-                for column_name, column_type in columns_to_add:
-                    result = conn.execute(text("""
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name='settlements' AND column_name=:column_name
-                    """), {"column_name": column_name})
-
-                    if not result.fetchone():
-                        print(f"Adding '{column_name}' column to settlements table...")
-                        conn.execute(text(f"ALTER TABLE settlements ADD COLUMN {column_name} {column_type}"))
-                    else:
-                        print(f"✓ Column '{column_name}' already exists in settlements table. No migration needed.")
-
-                conn.commit()
-                print("✓ Settlement income split columns are ready.")
-            except Exception as exc:
-                print(f"✗ Error adding settlement income split columns: {exc}")
-                conn.rollback()
-                raise
-
-    print("Migration completed successfully!")
+        db.commit()
+        print("✓ Settlement income split columns are ready.")
+        print("Migration completed successfully!")
+        return 0
+    except Exception as exc:
+        print(f"✗ Error adding settlement income split columns: {exc}")
+        db.rollback()
+        import traceback
+        traceback.print_exc()
+        return 1
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
-    migrate()
+    success = migrate()
+    sys.exit(0 if success == 0 else 1)
