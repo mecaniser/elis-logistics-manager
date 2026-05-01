@@ -213,3 +213,18 @@
 - UI behavior: truck detail now shows a dedicated `Profit Composition` block with `Truck Net Profit`, `Trailer Contribution`, and `Combined True Net Profit`. The existing cumulative net profit card is relabeled as truck-only when a trailer contribution is being shown, with an inline note that the trailer allocation is tracked separately.
 - Verification:
   - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+
+# Per-Mile Trend Indicators
+
+## Plan
+- [x] Inspect the current dashboard per-mile cards and confirm which period datasets are already available for comparison.
+- [x] Add previous-period comparison helpers for the selected weekly/monthly/yearly expense-analysis view.
+- [x] Show up/down trend arrows and comparison text on the per-mile visuals without changing backend calculations.
+- [x] Verify the frontend build and capture the result below.
+
+## Review
+- Frontend-only change: `frontend/src/pages/Dashboard.tsx` now derives the immediately previous selected period from the already-loaded weekly/monthly/yearly time-series arrays and calculates the same four dollar-per-mile metrics for that comparison period.
+- UI behavior: the per-mile cards now show a compact trend row with arrows and delta text versus the previous week, month, or year. Revenue-based cards are treated as better when they go up, while cost-based cards are treated as better when they go down, so the trend colors stay meaningful.
+- All-time view intentionally does not attempt a trend comparison and instead shows `No prior comparison`.
+- Verification:
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.

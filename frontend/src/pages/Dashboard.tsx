@@ -56,6 +56,10 @@ const formatCurrencyMetric = (value: number | null | undefined): string => {
   return `$${safeToLocaleString(value)}`
 }
 
+const formatMetricDelta = (value: number): string => {
+  return `$${safeToLocaleString(Math.abs(value))}`
+}
+
 export default function Dashboard() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
@@ -698,6 +702,100 @@ export default function Dashboard() {
   }
 
   const selectedPeriodData = getSelectedPeriodData()
+  const getSelectedPeriodsList = () => {
+    if (!timeSeriesData) return []
+    if (expenseAnalysisView === 'weekly') return Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : []
+    if (expenseAnalysisView === 'monthly') return Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : []
+    if (expenseAnalysisView === 'yearly') return Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : []
+    return []
+  }
+
+  const getSelectedPeriodKey = () => {
+    if (expenseAnalysisView === 'weekly') return 'week_key'
+    if (expenseAnalysisView === 'monthly') return 'month_key'
+    if (expenseAnalysisView === 'yearly') return 'year_key'
+    return ''
+  }
+
+  const getComparisonPeriodLabel = () => {
+    if (expenseAnalysisView === 'weekly') return 'previous week'
+    if (expenseAnalysisView === 'monthly') return 'previous month'
+    if (expenseAnalysisView === 'yearly') return 'previous year'
+    return 'previous period'
+  }
+
+  const getPreviousPeriodData = () => {
+    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return null
+    const periods = getSelectedPeriodsList()
+    const periodKey = getSelectedPeriodKey()
+    const selectedIndex = periods.findIndex((period: any) => period[periodKey] === selectedExpensePeriod)
+    if (selectedIndex <= 0) return null
+    return periods[selectedIndex - 1] as any
+  }
+
+  const previousPeriodData = getPreviousPeriodData()
+
+  const getPeriodRepairCost = (periodData: any) => {
+    if (!periodData) return 0
+    return getRepairCostForSelectedPeriod(periodData)
+  }
+
+  const calculatePeriodMetrics = (periodData: any) => {
+    if (!periodData) {
+      return {
+        revenuePerMile: null,
+        rawGrossPerMile: null,
+        settlementCostPerMile: null,
+        allInCostPerMile: null,
+      }
+    }
+
+    const milesDriven = Number(periodData.miles_driven) || 0
+    const rawGrossRevenue = Number(periodData.raw_gross_revenue) || 0
+    const rawGrossMilesDriven = Number(periodData.raw_gross_miles_driven) || 0
+    const settlementExpenses = Number(periodData.expenses) || 0
+    const repairsForPeriod = getPeriodRepairCost(periodData)
+
+    return {
+      revenuePerMile: milesDriven > 0 ? Number(periodData.gross_revenue) / milesDriven : null,
+      rawGrossPerMile: rawGrossMilesDriven > 0 ? rawGrossRevenue / rawGrossMilesDriven : null,
+      settlementCostPerMile: milesDriven > 0 ? settlementExpenses / milesDriven : null,
+      allInCostPerMile: milesDriven > 0 ? (settlementExpenses + repairsForPeriod) / milesDriven : null,
+    }
+  }
+
+  const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
+
+  const renderMetricTrend = (
+    currentValue: number | null,
+    previousValue: number | null,
+    prefersLower: boolean,
+  ) => {
+    if (expenseAnalysisView === 'all_time' || currentValue == null || previousValue == null) {
+      return <div className="text-[10px] sm:text-xs text-gray-400 mt-1">No prior comparison</div>
+    }
+
+    const difference = currentValue - previousValue
+    if (Math.abs(difference) < 0.005) {
+      return (
+        <div className="text-[10px] sm:text-xs text-gray-500 mt-1">
+          <span className="font-semibold">→</span> Flat vs {getComparisonPeriodLabel()}
+        </div>
+      )
+    }
+
+    const direction = difference > 0 ? 'up' : 'down'
+    const improved = prefersLower ? difference < 0 : difference > 0
+    const colorClass = improved ? 'text-green-600' : 'text-red-600'
+    const arrow = direction === 'up' ? '↑' : '↓'
+    const movementLabel = direction === 'up' ? 'up' : 'down'
+
+    return (
+      <div className={`text-[10px] sm:text-xs mt-1 ${colorClass}`}>
+        <span className="font-semibold">{arrow}</span> {movementLabel} {formatMetricDelta(difference)} vs {getComparisonPeriodLabel()}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -956,24 +1054,28 @@ export default function Dashboard() {
                         <div className="text-base sm:text-xl font-bold text-cyan-700">
                           {formatCurrencyMetric(revenuePerMile)}
                         </div>
+                        {renderMetricTrend(revenuePerMile, previousPeriodMetrics.revenuePerMile, false)}
                       </div>
                       <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">77 Cargo Raw Gross / Mile</div>
                         <div className="text-base sm:text-xl font-bold text-indigo-700">
                           {formatCurrencyMetric(rawGrossPerMile)}
                         </div>
+                        {renderMetricTrend(rawGrossPerMile, previousPeriodMetrics.rawGrossPerMile, false)}
                       </div>
                       <div className="bg-amber-50 p-3 sm:p-4 rounded-lg border border-amber-200">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Settlement Cost / Mile</div>
                         <div className="text-base sm:text-xl font-bold text-amber-700">
                           {formatCurrencyMetric(settlementCostPerMile)}
                         </div>
+                        {renderMetricTrend(settlementCostPerMile, previousPeriodMetrics.settlementCostPerMile, true)}
                       </div>
                       <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">All-In Cost / Mile</div>
                         <div className="text-base sm:text-xl font-bold text-rose-700">
                           {formatCurrencyMetric(allInCostPerMile)}
                         </div>
+                        {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
                       </div>
                     </div>
                   </>
