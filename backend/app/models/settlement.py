@@ -33,6 +33,7 @@ class Settlement(Base):
     duplicate_block_ids_warning = Column(JSON, nullable=True)  # Warning about duplicate block IDs: {"has_duplicates": true, "duplicate_block_ids": ["B-123"], "conflicting_settlements": [...]}
     trailer_income_split_trailer_id = Column(Integer, nullable=True)  # Trailer receiving a revenue allocation from this truck settlement
     trailer_income_split_amount = Column(Numeric(10, 2), nullable=True)  # Revenue allocated from the truck settlement to the trailer
+    repair_reserve_amount = Column(Numeric(10, 2), nullable=True)  # Weekly repair/PM reserve taken out before carryover profit
     source_settlement_id = Column(Integer, nullable=True)  # Source truck settlement when this is a derived trailer-allocation settlement
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

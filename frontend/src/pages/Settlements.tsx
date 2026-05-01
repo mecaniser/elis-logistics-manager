@@ -71,6 +71,7 @@ export default function Settlements() {
   const [selectedTruckForUpload, setSelectedTruckForUpload] = useState<number | null>(null)
   const [selectedTrailerForUpload, setSelectedTrailerForUpload] = useState<number | null>(null)
   const [trailerSplitAmountForUpload, setTrailerSplitAmountForUpload] = useState<string>('')
+  const [repairReserveAmountForUpload, setRepairReserveAmountForUpload] = useState<string>('')
   const [showManualForm, setShowManualForm] = useState(false)
   const [manualFormData, setManualFormData] = useState<Partial<Settlement>>({
     truck_id: undefined,
@@ -114,7 +115,7 @@ export default function Settlements() {
   const getTruckDefaultTrailerSplit = (vehicleId?: number | null) => {
     const selectedVehicle = trucks.find((truck) => truck.id === vehicleId)
     if (!selectedVehicle || selectedVehicle.vehicle_type !== 'truck') {
-      return { trailerId: null as number | null, amount: '' }
+      return { trailerId: null as number | null, amount: '', repairReserveAmount: '' }
     }
 
     const defaultTrailerId = selectedVehicle.default_trailer_id ?? null
@@ -123,6 +124,9 @@ export default function Settlements() {
       trailerId: trailerExists ? defaultTrailerId : null,
       amount: selectedVehicle.default_trailer_income_split_amount != null
         ? String(Number(selectedVehicle.default_trailer_income_split_amount))
+        : '',
+      repairReserveAmount: selectedVehicle.default_repair_reserve_amount != null
+        ? String(Number(selectedVehicle.default_repair_reserve_amount))
         : '',
     }
   }
@@ -237,6 +241,7 @@ export default function Settlements() {
     const defaults = getTruckDefaultTrailerSplit(selectedTruckForUpload)
     setSelectedTrailerForUpload(defaults.trailerId)
     setTrailerSplitAmountForUpload(defaults.amount)
+    setRepairReserveAmountForUpload(defaults.repairReserveAmount)
   }, [selectedTruckForUpload, showUploadForm, trucks, trailers])
 
   useEffect(() => {
@@ -244,11 +249,13 @@ export default function Settlements() {
 
     const defaults = getTruckDefaultTrailerSplit(manualFormData.truck_id)
     const nextAmount = defaults.amount ? parseFloat(defaults.amount) : undefined
+    const nextRepairReserveAmount = defaults.repairReserveAmount ? parseFloat(defaults.repairReserveAmount) : undefined
 
     setManualFormData((prev) => {
       if (
         prev.trailer_income_split_trailer_id === defaults.trailerId &&
-        prev.trailer_income_split_amount === nextAmount
+        prev.trailer_income_split_amount === nextAmount &&
+        prev.repair_reserve_amount === nextRepairReserveAmount
       ) {
         return prev
       }
@@ -257,6 +264,7 @@ export default function Settlements() {
         ...prev,
         trailer_income_split_trailer_id: defaults.trailerId ?? undefined,
         trailer_income_split_amount: nextAmount,
+        repair_reserve_amount: nextRepairReserveAmount,
       }
     })
   }, [manualFormData.truck_id, showManualForm, trucks, trailers])
@@ -403,8 +411,13 @@ export default function Settlements() {
     try {
       setUploading(true)
       const splitAmount = trailerSplitAmountForUpload.trim() ? Number(trailerSplitAmountForUpload) : undefined
+      const repairReserveAmount = repairReserveAmountForUpload.trim() ? Number(repairReserveAmountForUpload) : undefined
       if (splitAmount !== undefined && Number.isNaN(splitAmount)) {
         showToast('Trailer split amount must be a valid number', 'error')
+        return
+      }
+      if (repairReserveAmount !== undefined && Number.isNaN(repairReserveAmount)) {
+        showToast('Repair reserve amount must be a valid number', 'error')
         return
       }
       // Settlement type is optional - backend will use default parser
@@ -414,6 +427,7 @@ export default function Settlements() {
         undefined,
         selectedTrailerForUpload || undefined,
         splitAmount,
+        repairReserveAmount,
       )
       showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
       
@@ -421,6 +435,7 @@ export default function Settlements() {
       setSelectedTruckForUpload(null)
       setSelectedTrailerForUpload(null)
       setTrailerSplitAmountForUpload('')
+      setRepairReserveAmountForUpload('')
       setShowUploadForm(false)
       setSelectedSettlements(new Set()) // Clear any selected settlements
       loadSettlements(true)
@@ -858,6 +873,7 @@ export default function Settlements() {
         settlement_type: manualFormData.settlement_type || 'Manual Entry',
         trailer_income_split_trailer_id: manualFormData.trailer_income_split_trailer_id,
         trailer_income_split_amount: manualFormData.trailer_income_split_amount,
+        repair_reserve_amount: manualFormData.repair_reserve_amount,
       }
 
       await settlementsApi.create(settlementData)
@@ -871,6 +887,7 @@ export default function Settlements() {
         net_profit: undefined,
         trailer_income_split_trailer_id: undefined,
         trailer_income_split_amount: undefined,
+        repair_reserve_amount: undefined,
       })
       setExpensesDescription('')
       setVinLookup('')
@@ -1317,6 +1334,7 @@ export default function Settlements() {
                       net_profit: undefined,
                       trailer_income_split_trailer_id: undefined,
                       trailer_income_split_amount: undefined,
+                      repair_reserve_amount: undefined,
                     })
                     setExpensesDescription('')
                     setVinLookup('')
@@ -1354,6 +1372,7 @@ export default function Settlements() {
                     setSelectedTruckForUpload(null)
                     setSelectedTrailerForUpload(null)
                     setTrailerSplitAmountForUpload('')
+                    setRepairReserveAmountForUpload('')
                   }
                   // Close extractor if open
                   if (showExtractor) {
@@ -1389,6 +1408,7 @@ export default function Settlements() {
                     setSelectedTruckForUpload(null)
                     setSelectedTrailerForUpload(null)
                     setTrailerSplitAmountForUpload('')
+                    setRepairReserveAmountForUpload('')
                   }
                   if (showManualForm) {
                     setShowManualForm(false)
@@ -1400,6 +1420,7 @@ export default function Settlements() {
                       net_profit: undefined,
                       trailer_income_split_trailer_id: undefined,
                       trailer_income_split_amount: undefined,
+                      repair_reserve_amount: undefined,
                     })
                     setExpensesDescription('')
                     setVinLookup('')
@@ -1464,7 +1485,7 @@ export default function Settlements() {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Trailer Income Vehicle
@@ -1497,6 +1518,21 @@ export default function Settlements() {
                   onChange={(e) => setTrailerSplitAmountForUpload(e.target.value)}
                   disabled={uploading}
                   placeholder="400.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Repair Reserve ($)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={repairReserveAmountForUpload}
+                  onChange={(e) => setRepairReserveAmountForUpload(e.target.value)}
+                  disabled={uploading}
+                  placeholder="500.00"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1710,7 +1746,7 @@ export default function Settlements() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Trailer Income Vehicle</label>
                 <select
@@ -1745,6 +1781,23 @@ export default function Settlements() {
                   })}
                   disabled={creatingManual}
                   placeholder="400.00"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Repair Reserve ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={manualFormData.repair_reserve_amount || ''}
+                  onChange={(e) => setManualFormData({
+                    ...manualFormData,
+                    repair_reserve_amount: e.target.value ? parseFloat(e.target.value) : undefined,
+                  })}
+                  disabled={creatingManual}
+                  placeholder="500.00"
                   autoComplete="off"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -1820,6 +1873,7 @@ export default function Settlements() {
                     net_profit: undefined,
                     trailer_income_split_trailer_id: undefined,
                     trailer_income_split_amount: undefined,
+                    repair_reserve_amount: undefined,
                   })
                   setExpensesDescription('')
                   setVinLookup('')
@@ -1970,6 +2024,14 @@ export default function Settlements() {
                           <span className="text-gray-500">Trailer Split:</span>
                           <span className="font-medium text-purple-600">
                             ${Number(settlement.trailer_income_split_amount).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.repair_reserve_amount != null && settlement.repair_reserve_amount > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Repair Reserve:</span>
+                          <span className="font-medium text-amber-600">
+                            ${Number(settlement.repair_reserve_amount).toLocaleString()}
                           </span>
                         </div>
                       )}

@@ -73,6 +73,7 @@ export interface Truck {
   vin?: string
   default_trailer_id?: number | null
   default_trailer_income_split_amount?: number | null
+  default_repair_reserve_amount?: number | null
   license_plate_history?: string[]
   cash_investment?: number  // Cash invested in vehicle
   loan_amount?: number  // Loan amount (trucks only, null for trailers)
@@ -144,6 +145,7 @@ export interface Settlement {
   driver_id?: number | null
   trailer_income_split_trailer_id?: number | null
   trailer_income_split_amount?: number | null
+  repair_reserve_amount?: number | null
   source_settlement_id?: number | null
   settlement_date: string | null
   week_start?: string | null
@@ -365,6 +367,7 @@ export const settlementsApi = {
     settlementType?: string,
     trailerIncomeSplitTrailerId?: number,
     trailerIncomeSplitAmount?: number,
+    repairReserveAmount?: number,
   ) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -379,6 +382,9 @@ export const settlementsApi = {
     }
     if (trailerIncomeSplitAmount !== undefined) {
       formData.append('trailer_income_split_amount', trailerIncomeSplitAmount.toString())
+    }
+    if (repairReserveAmount !== undefined) {
+      formData.append('repair_reserve_amount', repairReserveAmount.toString())
     }
     return formDataApi.post<Settlement>(`/settlements/upload`, formData)
   },

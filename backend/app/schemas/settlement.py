@@ -68,6 +68,7 @@ class SettlementBase(BaseModel):
     duplicate_block_ids_warning: Optional[Dict[str, Any]] = None  # Warning about duplicate block IDs
     trailer_income_split_trailer_id: Optional[int] = None
     trailer_income_split_amount: Optional[Decimal] = None
+    repair_reserve_amount: Optional[Decimal] = None
     source_settlement_id: Optional[int] = None
 
 class SettlementCreate(SettlementBase):
@@ -96,6 +97,7 @@ class SettlementUpdate(BaseModel):
     pdf_file_path: Optional[str] = None
     trailer_income_split_trailer_id: Optional[int] = None
     trailer_income_split_amount: Optional[Decimal] = None
+    repair_reserve_amount: Optional[Decimal] = None
     source_settlement_id: Optional[int] = None
 
 class SettlementResponse(SettlementBase):

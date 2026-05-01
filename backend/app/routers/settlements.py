@@ -129,6 +129,40 @@ def resolve_trailer_income_split_inputs(
     )
 
 
+def validate_repair_reserve_amount(
+    source_vehicle: Truck,
+    repair_reserve_amount: Optional[float],
+) -> float:
+    """Validate the optional repair reserve allocation for a truck settlement."""
+    normalized_amount = round(float(repair_reserve_amount or 0), 2)
+
+    if normalized_amount < 0:
+        raise HTTPException(status_code=400, detail="Repair reserve amount cannot be negative.")
+
+    if normalized_amount == 0:
+        return 0.0
+
+    if source_vehicle.vehicle_type != "truck":
+        raise HTTPException(status_code=400, detail="Only truck settlements can allocate a repair reserve.")
+
+    return normalized_amount
+
+
+def resolve_repair_reserve_input(
+    source_vehicle: Truck,
+    repair_reserve_amount: Optional[float],
+) -> Optional[float]:
+    """Use explicit repair reserve input when provided, otherwise fall back to the truck default."""
+    if repair_reserve_amount is not None:
+        return repair_reserve_amount
+
+    return (
+        float(source_vehicle.default_repair_reserve_amount)
+        if source_vehicle.default_repair_reserve_amount is not None
+        else None
+    )
+
+
 def apply_trailer_income_split_to_source(
     settlement_data: dict,
     split_amount: float,
@@ -156,6 +190,35 @@ def apply_trailer_income_split_to_source(
 
     settlement_data["gross_revenue"] = round(raw_gross_total - split_amount, 2)
     settlement_data["net_profit"] = round(raw_net_total - split_amount, 2)
+
+
+def apply_repair_reserve_to_source(
+    settlement_data: dict,
+    repair_reserve_amount: float,
+    existing_reserve_amount: float = 0.0,
+) -> None:
+    """Reduce the source truck settlement by the repair reserve amount."""
+    displayed_gross = float(settlement_data.get("gross_revenue") or 0.0)
+    displayed_expenses = float(settlement_data.get("expenses") or 0.0)
+    displayed_net = settlement_data.get("net_profit")
+    if displayed_net is None:
+        displayed_net = displayed_gross - displayed_expenses
+    displayed_net = float(displayed_net or 0.0)
+
+    raw_gross_total = round(displayed_gross + existing_reserve_amount, 2)
+    raw_net_total = round(displayed_net + existing_reserve_amount, 2)
+
+    if repair_reserve_amount > raw_gross_total:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Repair reserve ${repair_reserve_amount:.2f} cannot exceed "
+                f"the settlement gross revenue ${raw_gross_total:.2f}."
+            ),
+        )
+
+    settlement_data["gross_revenue"] = round(raw_gross_total - repair_reserve_amount, 2)
+    settlement_data["net_profit"] = round(raw_net_total - repair_reserve_amount, 2)
 
 
 def sync_trailer_income_split_settlement(
@@ -305,6 +368,7 @@ async def upload_settlement_pdf(
     settlement_type: Optional[str] = Form(None),
     trailer_income_split_trailer_id: Optional[int] = Form(None),
     trailer_income_split_amount: Optional[float] = Form(None),
+    repair_reserve_amount: Optional[float] = Form(None),
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
@@ -329,10 +393,14 @@ async def upload_settlement_pdf(
             # Single-truck parser for all other settlement types (277 Logistics, etc.)
             settlements_data = [parse_amazon_relay_pdf(file_path, settlement_type)]
 
-        if (trailer_income_split_trailer_id or trailer_income_split_amount) and len(settlements_data) > 1:
+        if (
+            trailer_income_split_trailer_id
+            or trailer_income_split_amount
+            or repair_reserve_amount is not None
+        ) and len(settlements_data) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Trailer income split is only supported for single-settlement uploads.",
+                detail="Trailer split and repair reserve allocations are only supported for single-settlement uploads.",
             )
         
         created_settlements = []
@@ -444,6 +512,10 @@ async def upload_settlement_pdf(
                 trailer_income_split_trailer_id,
                 trailer_income_split_amount,
             ) if truck else (None, None)
+            resolved_repair_reserve_amount = resolve_repair_reserve_input(
+                truck,
+                repair_reserve_amount,
+            ) if truck else None
 
             trailer, split_amount = validate_trailer_income_split(
                 db,
@@ -452,9 +524,16 @@ async def upload_settlement_pdf(
                 resolved_trailer_id,
                 resolved_split_amount,
             ) if truck else (None, 0.0)
+            validated_repair_reserve_amount = validate_repair_reserve_amount(
+                truck,
+                resolved_repair_reserve_amount,
+            ) if truck else 0.0
 
             if trailer and split_amount > 0:
                 apply_trailer_income_split_to_source(settlement_data, split_amount)
+            if validated_repair_reserve_amount > 0:
+                apply_repair_reserve_to_source(settlement_data, validated_repair_reserve_amount)
+            settlement_data["repair_reserve_amount"] = validated_repair_reserve_amount or None
             
             # Check for duplicate settlement (same truck + date)
             existing = db.query(Settlement).filter(
@@ -900,6 +979,10 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
             settlement_dict.get("trailer_income_split_trailer_id"),
             settlement_dict.get("trailer_income_split_amount"),
         )
+        resolved_repair_reserve_amount = resolve_repair_reserve_input(
+            truck,
+            settlement_dict.get("repair_reserve_amount"),
+        )
 
         trailer, split_amount = validate_trailer_income_split(
             db,
@@ -908,9 +991,16 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
             resolved_trailer_id,
             resolved_split_amount,
         )
+        validated_repair_reserve_amount = validate_repair_reserve_amount(
+            truck,
+            resolved_repair_reserve_amount,
+        )
 
         if trailer and split_amount > 0:
             apply_trailer_income_split_to_source(settlement_dict, split_amount)
+        if validated_repair_reserve_amount > 0:
+            apply_repair_reserve_to_source(settlement_dict, validated_repair_reserve_amount)
+        settlement_dict["repair_reserve_amount"] = validated_repair_reserve_amount or None
         
         db_settlement = Settlement(**settlement_dict)
         db.add(db_settlement)
@@ -1038,8 +1128,16 @@ async def update_settlement(
 
     existing_linked_settlement = get_trailer_income_split_child(db, settlement.id)
     existing_linked_amount = float(existing_linked_settlement.gross_revenue or 0) if existing_linked_settlement else 0.0
+    existing_repair_reserve_amount = float(settlement.repair_reserve_amount or 0.0)
 
-    if "gross_revenue" in update_data or "expenses" in update_data or "net_profit" in update_data or "trailer_income_split_amount" in update_data or "trailer_income_split_trailer_id" in update_data:
+    if (
+        "gross_revenue" in update_data
+        or "expenses" in update_data
+        or "net_profit" in update_data
+        or "trailer_income_split_amount" in update_data
+        or "trailer_income_split_trailer_id" in update_data
+        or "repair_reserve_amount" in update_data
+    ):
         source_vehicle_id = update_data.get("truck_id", settlement.truck_id)
         source_vehicle = db.query(Truck).filter(Truck.id == source_vehicle_id, Truck.tenant_id == tenant_id).first()
         if not source_vehicle:
@@ -1052,19 +1150,28 @@ async def update_settlement(
             update_data.get("trailer_income_split_trailer_id", settlement.trailer_income_split_trailer_id),
             update_data.get("trailer_income_split_amount", settlement.trailer_income_split_amount),
         )
+        validated_repair_reserve_amount = validate_repair_reserve_amount(
+            source_vehicle,
+            update_data.get("repair_reserve_amount", settlement.repair_reserve_amount),
+        )
 
         source_preview = {
             "gross_revenue": update_data.get("gross_revenue", settlement.gross_revenue),
             "expenses": update_data.get("expenses", settlement.expenses),
             "net_profit": update_data.get("net_profit", settlement.net_profit),
         }
-        apply_trailer_income_split_to_source(source_preview, split_amount, existing_linked_amount)
+        source_preview["gross_revenue"] = round(float(source_preview.get("gross_revenue") or 0.0) + existing_linked_amount + existing_repair_reserve_amount, 2)
+        source_preview["net_profit"] = round(float(source_preview.get("net_profit") or 0.0) + existing_linked_amount + existing_repair_reserve_amount, 2)
+        apply_trailer_income_split_to_source(source_preview, split_amount)
+        apply_repair_reserve_to_source(source_preview, validated_repair_reserve_amount)
         update_data["gross_revenue"] = source_preview["gross_revenue"]
         update_data["net_profit"] = source_preview["net_profit"]
         update_data["trailer_income_split_trailer_id"] = trailer.id if trailer else None
         update_data["trailer_income_split_amount"] = split_amount or None
+        update_data["repair_reserve_amount"] = validated_repair_reserve_amount or None
     else:
         split_amount = float(settlement.trailer_income_split_amount or 0.0)
+        validated_repair_reserve_amount = float(settlement.repair_reserve_amount or 0.0)
         trailer = None
         if settlement.trailer_income_split_trailer_id:
             trailer = (

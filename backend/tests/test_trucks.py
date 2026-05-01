@@ -44,6 +44,7 @@ def test_create_truck_with_default_trailer_split(client: TestClient, db, tenant_
             "license_plate": "VW9327",
             "default_trailer_id": trailer.id,
             "default_trailer_income_split_amount": 400.0,
+            "default_repair_reserve_amount": 500.0,
         },
         headers=tenant_headers,
     )
@@ -51,6 +52,7 @@ def test_create_truck_with_default_trailer_split(client: TestClient, db, tenant_
     data = response.json()
     assert data["default_trailer_id"] == trailer.id
     assert float(data["default_trailer_income_split_amount"]) == 400.0
+    assert float(data["default_repair_reserve_amount"]) == 500.0
 
 
 def test_get_trucks_empty(client: TestClient, tenant_headers):
@@ -406,6 +408,37 @@ def test_create_settlement_uses_truck_default_trailer_split(client: TestClient, 
     assert trailer_settlement.truck_id == trailer.id
     assert float(trailer_settlement.gross_revenue) == 400.0
     assert float(trailer_settlement.net_profit) == 400.0
+
+
+def test_create_settlement_uses_truck_default_repair_reserve(client: TestClient, db, tenant_headers):
+    """Truck-level default repair reserve should reduce carried truck profit when split fields are omitted."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck Reserve",
+        vehicle_type="truck",
+        license_plate="VW9330",
+        default_repair_reserve_amount=500.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2024-02-11",
+            "gross_revenue": 2000.0,
+            "expenses": 200.0,
+            "net_profit": 1800.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["repair_reserve_amount"]) == 500.0
+    assert float(data["gross_revenue"]) == 1500.0
+    assert float(data["net_profit"]) == 1300.0
 
 
 def test_delete_source_settlement_removes_managed_trailer_income_split(client: TestClient, db, tenant_headers):

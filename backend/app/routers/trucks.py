@@ -135,6 +135,29 @@ def validate_default_trailer_split(
 
     return normalized_trailer_id, normalized_amount
 
+
+def validate_default_repair_reserve(
+    vehicle_type: str,
+    default_repair_reserve_amount: Optional[float],
+) -> Optional[float]:
+    """Validate the default weekly repair reserve stored on a vehicle."""
+    if default_repair_reserve_amount is None:
+        return None
+
+    normalized_amount = round(float(default_repair_reserve_amount), 2)
+    if normalized_amount < 0:
+        raise HTTPException(status_code=400, detail="Default repair reserve amount cannot be negative.")
+
+    if vehicle_type != "truck":
+        if normalized_amount > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Default repair reserve settings can only be saved on trucks.",
+            )
+        return None
+
+    return normalized_amount or None
+
 @router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
 def get_trucks(
@@ -231,12 +254,17 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
         truck.default_trailer_id,
         truck.default_trailer_income_split_amount,
     )
+    default_repair_reserve_amount = validate_default_repair_reserve(
+        vehicle_type,
+        truck.default_repair_reserve_amount,
+    )
 
     truck_dict = truck.model_dump()
     truck_dict['tenant_id'] = tenant_id
     truck_dict['vehicle_type'] = vehicle_type  # Ensure lowercase
     truck_dict['default_trailer_id'] = default_trailer_id
     truck_dict['default_trailer_income_split_amount'] = default_trailer_amount
+    truck_dict['default_repair_reserve_amount'] = default_repair_reserve_amount
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
         truck_dict['interest_rate'] = 0.07  # Default 7%
@@ -379,6 +407,11 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
         )
         update_data['default_trailer_id'] = default_trailer_id
         update_data['default_trailer_income_split_amount'] = default_trailer_amount
+    if any(field in update_data for field in ['default_repair_reserve_amount', 'vehicle_type']):
+        update_data['default_repair_reserve_amount'] = validate_default_repair_reserve(
+            vehicle_type,
+            update_data.get('default_repair_reserve_amount', truck.default_repair_reserve_amount),
+        )
     
     # Calculate additional expenses total
     additional_expenses_total = 0.0
