@@ -503,6 +503,8 @@ export const repairsApi = {
 export interface TimeSeriesPeriod {
   week_key?: string
   week_label?: string
+  week_start?: string | null
+  week_end?: string | null
   month_key?: string
   month_label?: string
   year_key?: string
@@ -512,6 +514,9 @@ export interface TimeSeriesPeriod {
   raw_gross_miles_driven: number
   miles_driven: number
   net_profit: number
+  expenses?: number
+  trailer_income_split_amount?: number
+  repair_reserve_amount?: number
   driver_pay: number
   payroll_fee: number
   fuel: number
@@ -534,12 +539,17 @@ export interface TimeSeriesData {
   by_week: Array<{
     week_key: string
     week_label: string
+    week_start?: string | null
+    week_end?: string | null
     gross_revenue: number
     raw_gross_revenue: number
     raw_gross_miles_driven: number
     miles_driven: number
     net_profit: number
     driver_pay: number
+    expenses: number
+    trailer_income_split_amount?: number
+    repair_reserve_amount?: number
     payroll_fee: number
     fuel: number
     tolls: number
@@ -563,6 +573,9 @@ export interface TimeSeriesData {
     raw_gross_miles_driven: number
     miles_driven: number
     net_profit: number
+    expenses: number
+    trailer_income_split_amount?: number
+    repair_reserve_amount?: number
     driver_pay: number
     payroll_fee: number
     fuel: number
@@ -597,6 +610,9 @@ export interface TimeSeriesData {
     raw_gross_miles_driven: number
     miles_driven: number
     net_profit: number
+    expenses: number
+    trailer_income_split_amount?: number
+    repair_reserve_amount?: number
     driver_pay: number
     payroll_fee: number
     fuel: number

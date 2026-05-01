@@ -242,3 +242,20 @@
 - Calculation rule: reserve cushion is currently `sum(repair_reserve_amount on this truck's settlements) - cumulative_repair_costs`. That means older settlements with no stored reserve allocation will not contribute until they are re-uploaded or edited.
 - Verification:
   - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+
+# Dashboard Reserve And Trailer Breakdown
+
+## Plan
+- [x] Inspect the dashboard `Detailed Expense Analysis` math and identify which new period and cumulative fields are needed to show trailer contribution and reserve cushion correctly.
+- [x] Extend the time-series backend and frontend types to carry weekly/monthly/yearly trailer split and repair reserve totals for the selected truck context.
+- [x] Update the dashboard net profit details block to show current-period trailer split and repair reserve deductions plus up-to-date cumulative trailer contribution and reserve cushion.
+- [x] Verify the backend/frontend changes and capture the result below.
+
+## Review
+- Backend: `backend/app/routers/analytics.py` now includes `trailer_income_split_amount` and `repair_reserve_amount` in weekly, monthly, and yearly time-series aggregates, and weekly rows now also return `week_start` / `week_end` so the dashboard can align weekly repair filtering to the actual settlement window.
+- Frontend types: `frontend/src/services/api.ts` now exposes those new time-series fields so the dashboard can use stored period allocations instead of inferring them from net profit alone.
+- Dashboard behavior: `frontend/src/pages/Dashboard.tsx` now reconstructs `Settlement Net Profit` before deductions, shows current-period `Less: Trailer Split` and `Less: Repair Reserve` lines, and adds an `Up-To-Date Position` block with cumulative trailer contribution, reserve set aside, repair spend to date, and reserve cushion available as of the selected period boundary.
+- Correction applied from user feedback: cumulative repair spend on the dashboard is now capped at the selected period end date, instead of mixing a selected month/week with all truck repairs.
+- Verification:
+  - `npx tsc --noEmit --pretty false` passed in `frontend/`.
+  - `python3 -m compileall backend/app/routers/analytics.py` passed.

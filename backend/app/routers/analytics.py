@@ -1164,6 +1164,8 @@ def _get_time_series_impl(
         "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
+        "trailer_income_split_amount": 0.0,
+        "repair_reserve_amount": 0.0,
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -1191,6 +1193,8 @@ def _get_time_series_impl(
         "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
+        "trailer_income_split_amount": 0.0,
+        "repair_reserve_amount": 0.0,
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -1216,6 +1220,8 @@ def _get_time_series_impl(
         "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
+        "trailer_income_split_amount": 0.0,
+        "repair_reserve_amount": 0.0,
         "driver_pay": 0.0,
         "payroll_fee": 0.0,
         "fuel": 0.0,
@@ -1295,6 +1301,8 @@ def _get_time_series_impl(
         weekly_data[week_key]["miles_driven"] += miles_driven
         weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
         weekly_data[week_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
+        weekly_data[week_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
+        weekly_data[week_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
         weekly_data[week_key]["trucks"].add(settlement.truck_id)
         if not weekly_data[week_key]["week_start"]:
             weekly_data[week_key]["week_start"] = week_start
@@ -1311,6 +1319,8 @@ def _get_time_series_impl(
             monthly_data[month_key]["miles_driven"] += miles_driven
             monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
             monthly_data[month_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
+            monthly_data[month_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
+            monthly_data[month_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
         
         # Aggregate yearly data
@@ -1321,6 +1331,8 @@ def _get_time_series_impl(
             yearly_data[year_key]["miles_driven"] += miles_driven
             yearly_data[year_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
             yearly_data[year_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
+            yearly_data[year_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
+            yearly_data[year_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
             yearly_data[year_key]["trucks"].add(settlement.truck_id)
         
         # Process expense categories
@@ -1430,12 +1442,16 @@ def _get_time_series_impl(
         by_week.append({
             "week_key": week_key,
             "week_label": week_label,
+            "week_start": week_start_date.isoformat() if week_start_date else None,
+            "week_end": week_end_date.isoformat() if week_end_date else None,
             "gross_revenue": round(week_data["gross_revenue"], 2),
             "raw_gross_revenue": round(week_data["raw_gross_revenue"], 2),
             "raw_gross_miles_driven": round(week_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(week_data["miles_driven"], 2),
             "net_profit": round(week_data["net_profit"], 2),
             "expenses": round(week_data["expenses"], 2),
+            "trailer_income_split_amount": round(week_data["trailer_income_split_amount"], 2),
+            "repair_reserve_amount": round(week_data["repair_reserve_amount"], 2),
             "driver_pay": round(week_data["driver_pay"], 2),
             "payroll_fee": round(week_data["payroll_fee"], 2),
             "fuel": round(week_data["fuel"], 2),
@@ -1528,6 +1544,8 @@ def _get_time_series_impl(
             "miles_driven": round(month_data["miles_driven"], 2),
             "net_profit": round(month_data["net_profit"], 2),
             "expenses": round(month_data["expenses"], 2),
+            "trailer_income_split_amount": round(month_data["trailer_income_split_amount"], 2),
+            "repair_reserve_amount": round(month_data["repair_reserve_amount"], 2),
             "driver_pay": round(month_data["driver_pay"], 2),
             "payroll_fee": round(month_data["payroll_fee"], 2),
             "fuel": round(month_data["fuel"], 2),
@@ -1613,6 +1631,8 @@ def _get_time_series_impl(
             "miles_driven": round(year_data["miles_driven"], 2),
             "net_profit": round(year_data["net_profit"], 2),
             "expenses": round(year_data["expenses"], 2),
+            "trailer_income_split_amount": round(year_data["trailer_income_split_amount"], 2),
+            "repair_reserve_amount": round(year_data["repair_reserve_amount"], 2),
             "driver_pay": round(year_data["driver_pay"], 2),
             "payroll_fee": round(year_data["payroll_fee"], 2),
             "fuel": round(year_data["fuel"], 2),

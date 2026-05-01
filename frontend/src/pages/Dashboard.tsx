@@ -366,9 +366,8 @@ export default function Dashboard() {
     }
 
     if (expenseAnalysisView === 'weekly') {
-      const weekSettlementDate = new Date(pd.week_key)
-      const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000)
-      const weekEnd = new Date(weekSettlementDate)
+      const weekStart = pd.week_start ? new Date(pd.week_start) : new Date(new Date(pd.week_key).getTime() - 7 * 24 * 60 * 60 * 1000)
+      const weekEnd = pd.week_end ? new Date(pd.week_end) : new Date(pd.week_key)
 
       return repairsByMonth.filter((repair: RepairByMonth) => {
         if (!repair.repair_date) return false
@@ -395,6 +394,26 @@ export default function Dashboard() {
     return (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time')
       ? (Number(pd.repairs) || 0)
       : 0
+  }
+
+  const getPeriodEndDate = (pd: any): Date | null => {
+    if (!pd) return null
+
+    if (expenseAnalysisView === 'weekly') {
+      if (pd.week_end) return new Date(pd.week_end)
+      if (pd.week_key) return new Date(pd.week_key)
+    }
+
+    if (expenseAnalysisView === 'monthly' && pd.month_key) {
+      const [year, month] = pd.month_key.split('-').map((value: string) => Number(value))
+      return new Date(year, month, 0, 23, 59, 59, 999)
+    }
+
+    if (expenseAnalysisView === 'yearly' && pd.year_key) {
+      return new Date(`${pd.year_key}-12-31T23:59:59`)
+    }
+
+    return null
   }
 
   // Identify months with PM (preventive maintenance) repairs by truck
@@ -734,6 +753,12 @@ export default function Dashboard() {
   }
 
   const previousPeriodData = getPreviousPeriodData()
+  const selectedPeriodIndex = (() => {
+    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return -1
+    const periods = getSelectedPeriodsList()
+    const periodKey = getSelectedPeriodKey()
+    return periods.findIndex((period: any) => period[periodKey] === selectedExpensePeriod)
+  })()
 
   const getPeriodRepairCost = (periodData: any) => {
     if (!periodData) return 0
@@ -765,6 +790,27 @@ export default function Dashboard() {
   }
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
+
+  const getCumulativePeriodValue = (field: 'trailer_income_split_amount' | 'repair_reserve_amount') => {
+    if (selectedPeriodIndex < 0) return 0
+    return getSelectedPeriodsList()
+      .slice(0, selectedPeriodIndex + 1)
+      .reduce((sum, period: any) => sum + (Number(period[field]) || 0), 0)
+  }
+
+  const getCumulativeRepairSpendToDate = () => {
+    const periodEndDate = getPeriodEndDate(selectedPeriodData)
+    if (!periodEndDate) return 0
+
+    return repairsByMonth.reduce((sum, repair) => {
+      if (!repair.repair_date) return sum
+      const repairDate = new Date(repair.repair_date)
+      if (repairDate <= periodEndDate) {
+        return sum + (Number(repair.cost) || 0)
+      }
+      return sum
+    }, 0)
+  }
 
   const renderMetricTrend = (
     currentValue: number | null,
@@ -1091,6 +1137,13 @@ export default function Dashboard() {
                   : ((selectedPeriodData as any).year_label || 'Selected Year')
                 const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
                 const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                const trailerSplitThisPeriod = Number((selectedPeriodData as any).trailer_income_split_amount) || 0
+                const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
+                const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
+                const cumulativeTrailerContribution = getCumulativePeriodValue('trailer_income_split_amount')
+                const cumulativeReserveSetAside = getCumulativePeriodValue('repair_reserve_amount')
+                const cumulativeRepairSpendToDate = getCumulativeRepairSpendToDate()
+                const reserveCushionToDate = cumulativeReserveSetAside - cumulativeRepairSpendToDate
                 
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
@@ -1109,9 +1162,27 @@ export default function Dashboard() {
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
                         <span className="text-sm font-medium text-gray-700">Settlement Net Profit</span>
                         <span className="text-sm font-semibold text-gray-900">
-                          ${safeToLocaleString(netProfitValue + loanInterest)}
+                          ${safeToLocaleString(settlementNetProfitBeforeDeductions)}
                         </span>
                       </div>
+
+                      {trailerSplitThisPeriod > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Less: Trailer Split (this period)</span>
+                          <span className="text-sm font-medium text-purple-600">
+                            -${safeToLocaleString(trailerSplitThisPeriod)}
+                          </span>
+                        </div>
+                      )}
+
+                      {repairReserveThisPeriod > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Less: Repair Reserve (this period)</span>
+                          <span className="text-sm font-medium text-amber-600">
+                            -${safeToLocaleString(repairReserveThisPeriod)}
+                          </span>
+                        </div>
+                      )}
                       
                       {/* Loan Interest: informative - already deducted in settlement */}
                       {loanInterest > 0 && (
@@ -1147,6 +1218,36 @@ export default function Dashboard() {
                         <span className={`text-xl font-bold ${(netProfitValue - repairs) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ${safeToLocaleString(netProfitValue - repairs)}
                         </span>
+                      </div>
+                    </div>
+
+                    <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Up-To-Date Position</h4>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-sm text-gray-600">Trailer Contribution To Date</span>
+                          <span className={`text-sm font-semibold ${cumulativeTrailerContribution >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                            ${safeToLocaleString(cumulativeTrailerContribution)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-sm text-gray-600">Reserve Set Aside To Date</span>
+                          <span className="text-sm font-semibold text-amber-700">
+                            ${safeToLocaleString(cumulativeReserveSetAside)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-sm text-gray-600">Repair Spend To Date</span>
+                          <span className="text-sm font-semibold text-red-600">
+                            ${safeToLocaleString(cumulativeRepairSpendToDate)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-2 border-t border-blue-200">
+                          <span className="text-sm font-semibold text-gray-900">Reserve Cushion Available</span>
+                          <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                            ${safeToLocaleString(reserveCushionToDate)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     
