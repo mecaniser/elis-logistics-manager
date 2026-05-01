@@ -57,6 +57,7 @@ class SettlementBase(BaseModel):
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
+    overview_amounts: Optional[Dict[str, float]] = None  # Display-only derived amounts not included in booked expenses
     custom_expense_descriptions: Optional[Dict[str, str]] = None  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
     custom_expense_validation: Optional[Dict[str, bool]] = None  # Validation status for custom expenses: {deduct: true, decals: false, custom: true}
     reimbursement_details: Optional[List[Dict[str, Any]]] = None  # Reimbursement details: [{"description": "...", "amount": 100.00}]
@@ -84,6 +85,7 @@ class SettlementUpdate(BaseModel):
     gross_revenue: Optional[Decimal] = None
     expenses: Optional[Decimal] = None
     expense_categories: Optional[Dict[str, float]] = None
+    overview_amounts: Optional[Dict[str, float]] = None
     custom_expense_descriptions: Optional[Dict[str, str]] = None
     custom_expense_validation: Optional[Dict[str, bool]] = None
     reimbursement_details: Optional[List[Dict[str, Any]]] = None
@@ -103,4 +105,3 @@ class SettlementResponse(SettlementBase):
 
     class Config:
         from_attributes = True
-

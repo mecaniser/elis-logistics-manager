@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.models.chart_of_accounts import ChartOfAccount
 from app.models.journal_entry_line import JournalEntryLine
+from app.models.repair import Repair
 from app.models.settlement import Settlement
 from app.models.tenant import Tenant
 from app.models.truck import Truck
@@ -229,6 +230,11 @@ def test_parse_77_cargo_pdf_extracts_expected_fields(patch_77_cargo_pdf):
         "driver_pay": 2175.00,
         "deduct": 920.45,
     }
+    assert parsed["overview_amounts"] == {
+        "dispatch_fee": 870.00,
+        "gross_before_dispatch": 7250.00,
+        "pay_rate_percent": 88.0,
+    }
     assert parsed["deduction_details"] == [
         {"description": "Form 2290", "amount": 194.28},
         {"description": "Title Fee", "amount": 16.26},
@@ -261,6 +267,11 @@ def test_parse_77_cargo_pdf_handles_inline_route_text_in_load_rows(patch_77_carg
         "insurance": 300.00,
         "driver_pay": 3435.00,
     }
+    assert parsed["overview_amounts"] == {
+        "dispatch_fee": 1374.00,
+        "gross_before_dispatch": 11450.00,
+        "pay_rate_percent": 88.0,
+    }
     assert parsed["deduction_details"] is None
 
 
@@ -274,6 +285,7 @@ def test_77_cargo_detection_flows_through_extractor(patch_77_cargo_pdf):
     assert len(extracted["settlements"]) == 1
     settlement = extracted["settlements"][0]
     assert settlement["metadata"]["driver_name"] == "Oleksandr Moskaliuk"
+    assert settlement["overview_amounts"]["dispatch_fee"] == pytest.approx(870.00)
     assert settlement["expenses"]["categories"]["tolls"] == pytest.approx(393.30)
     assert settlement["revenue"]["gross_revenue"] == pytest.approx(6380.00)
     assert settlement["revenue"]["net_profit"] == pytest.approx(485.39)
@@ -312,6 +324,7 @@ def test_upload_settlement_accepts_manual_truck_selection_for_77_cargo(
     assert float(data["gross_revenue"]) == pytest.approx(6380.00)
     assert float(data["expenses"]) == pytest.approx(5894.61)
     assert float(data["net_profit"]) == pytest.approx(485.39)
+    assert float(data["overview_amounts"]["dispatch_fee"]) == pytest.approx(870.00)
     assert float(data["expense_categories"]["tolls"]) == pytest.approx(393.30)
     assert data["deduction_details"] == [
         {"description": "Form 2290", "amount": 194.28},
@@ -363,6 +376,112 @@ def test_dashboard_reports_tolls_as_first_class_expense_category(
     data = response.json()
     assert data["expense_categories"]["tolls"] == pytest.approx(393.30)
     assert data["trucks"]["expense_categories"]["tolls"] == pytest.approx(393.30)
+    assert data["expense_categories"]["deduct"] == pytest.approx(920.45)
+    assert data["trucks"]["expense_categories"]["deduct"] == pytest.approx(920.45)
+
+
+def test_analytics_exposes_operational_per_mile_inputs_for_77_cargo(
+    client: TestClient,
+    db,
+    tenant_headers,
+):
+    truck = Truck(
+        tenant_id=1,
+        name="Volvo 417",
+        license_plate="VV9952",
+        vehicle_type="truck",
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    db.add(
+        Settlement(
+            truck_id=truck.id,
+            settlement_date=date(2026, 4, 6),
+            week_start=date(2026, 3, 30),
+            week_end=date(2026, 4, 6),
+            miles_driven=Decimal("2023.00"),
+            gross_revenue=Decimal("6380.00"),
+            expenses=Decimal("5894.61"),
+            net_profit=Decimal("485.39"),
+            expense_categories={
+                "fuel": 1658.36,
+                "tolls": 393.30,
+                "insurance": 600.00,
+                "prepass": 147.50,
+                "driver_pay": 2175.00,
+                "deduct": 920.45,
+            },
+            overview_amounts={
+                "dispatch_fee": 870.00,
+                "gross_before_dispatch": 7250.00,
+                "pay_rate_percent": 88.0,
+            },
+            settlement_type="77 Cargo LLC",
+        )
+    )
+    db.add(
+        Repair(
+            truck_id=truck.id,
+            repair_date=date(2026, 4, 3),
+            description="Wheel seal",
+            cost=Decimal("500.00"),
+        )
+    )
+    db.commit()
+
+    dashboard_response = client.get("/api/analytics/dashboard", headers=tenant_headers)
+    assert dashboard_response.status_code == 200, dashboard_response.text
+    dashboard = dashboard_response.json()
+
+    combined_metrics = dashboard["operational_metrics"]
+    truck_metrics = dashboard["trucks"]["operational_metrics"]
+    for metrics in (combined_metrics, truck_metrics):
+        assert metrics["miles_driven"] == pytest.approx(2023.0)
+        assert metrics["post_dispatch_revenue"] == pytest.approx(6380.0)
+        assert metrics["settlement_expenses"] == pytest.approx(5894.61)
+        assert metrics["repair_costs"] == pytest.approx(500.0)
+        assert metrics["raw_gross_revenue"] == pytest.approx(7250.0)
+        assert metrics["raw_gross_miles_driven"] == pytest.approx(2023.0)
+        assert metrics["post_dispatch_revenue_per_mile"] == pytest.approx(3.15)
+        assert metrics["raw_gross_revenue_per_mile"] == pytest.approx(3.58)
+        assert metrics["settlement_cost_per_mile"] == pytest.approx(2.91)
+        assert metrics["all_in_cost_per_mile"] == pytest.approx(3.16)
+
+    time_series_response = client.get("/api/analytics/time-series", headers=tenant_headers)
+    assert time_series_response.status_code == 200, time_series_response.text
+    time_series = time_series_response.json()
+
+    assert len(time_series["by_week"]) == 1
+    weekly = time_series["by_week"][0]
+    assert weekly["week_key"] == "2026-04-06"
+    assert weekly["gross_revenue"] == pytest.approx(6380.0)
+    assert weekly["raw_gross_revenue"] == pytest.approx(7250.0)
+    assert weekly["raw_gross_miles_driven"] == pytest.approx(2023.0)
+    assert weekly["miles_driven"] == pytest.approx(2023.0)
+    assert weekly["expenses"] == pytest.approx(5894.61)
+    assert weekly["deduct"] == pytest.approx(920.45)
+
+    assert len(time_series["by_month"]) == 1
+    monthly = time_series["by_month"][0]
+    assert monthly["month_key"] == "2026-04"
+    assert monthly["gross_revenue"] == pytest.approx(6380.0)
+    assert monthly["raw_gross_revenue"] == pytest.approx(7250.0)
+    assert monthly["raw_gross_miles_driven"] == pytest.approx(2023.0)
+    assert monthly["miles_driven"] == pytest.approx(2023.0)
+    assert monthly["expenses"] == pytest.approx(5894.61)
+    assert monthly["deduct"] == pytest.approx(920.45)
+
+    assert len(time_series["by_year"]) == 1
+    yearly = time_series["by_year"][0]
+    assert yearly["year_key"] == "2026"
+    assert yearly["gross_revenue"] == pytest.approx(6380.0)
+    assert yearly["raw_gross_revenue"] == pytest.approx(7250.0)
+    assert yearly["raw_gross_miles_driven"] == pytest.approx(2023.0)
+    assert yearly["miles_driven"] == pytest.approx(2023.0)
+    assert yearly["expenses"] == pytest.approx(5894.61)
+    assert yearly["deduct"] == pytest.approx(920.45)
 
 
 def test_create_settlement_journal_entry_maps_tolls_to_dedicated_account(db, monkeypatch):

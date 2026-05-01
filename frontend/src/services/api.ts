@@ -71,6 +71,8 @@ export interface Truck {
   license_plate?: string  // For trucks and SUVs
   tag_number?: string  // For trailers
   vin?: string
+  default_trailer_id?: number | null
+  default_trailer_income_split_amount?: number | null
   license_plate_history?: string[]
   cash_investment?: number  // Cash invested in vehicle
   loan_amount?: number  // Loan amount (trucks only, null for trailers)
@@ -152,6 +154,7 @@ export interface Settlement {
   gross_revenue?: number | null
   expenses?: number | null
   expense_categories?: { [key: string]: number } | null
+  overview_amounts?: { [key: string]: number } | null
   custom_expense_descriptions?: { [key: string]: string } | null  // Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
   custom_expense_validation?: { [key: string]: boolean } | null  // Validation status for custom expenses: {deduct: true, decals: false}
   reimbursement_details?: Array<{ description: string; amount: number | null }> | null  // Reimbursement details from PDF
@@ -194,13 +197,16 @@ export interface DashboardData {
   total_revenue: number
   total_expenses: number
   net_profit: number
+  operational_metrics?: OperationalMetrics
   expense_categories?: {
     fuel: number
+    tolls: number
     dispatch_fee: number
     insurance: number
     safety: number
     prepass: number
     ifta: number
+    deduct: number
     driver_pay: number
     payroll_fee: number
     truck_parking: number
@@ -228,6 +234,32 @@ export interface DashboardData {
     days_overdue: number | null
     pm_threshold_months: number
   }>
+  trucks?: DashboardVehicleAggregate
+  trailers?: DashboardVehicleAggregate
+}
+
+export interface OperationalMetrics {
+  miles_driven: number
+  post_dispatch_revenue: number
+  settlement_expenses: number
+  repair_costs: number
+  raw_gross_revenue: number
+  raw_gross_miles_driven: number
+  post_dispatch_revenue_per_mile: number | null
+  raw_gross_revenue_per_mile: number | null
+  settlement_cost_per_mile: number | null
+  all_in_cost_per_mile: number | null
+}
+
+export interface DashboardVehicleAggregate {
+  total_revenue: number
+  total_expenses: number
+  net_profit: number
+  expense_categories?: DashboardData['expense_categories']
+  custom_descriptions?: { [key: string]: string }
+  operational_metrics?: OperationalMetrics
+  truck_profits?: DashboardData['truck_profits']
+  trailer_profits?: DashboardData['truck_profits']
 }
 
 export interface PMStatus {
@@ -470,11 +502,16 @@ export interface TimeSeriesPeriod {
   year_key?: string
   year_label?: string
   gross_revenue: number
+  raw_gross_revenue: number
+  raw_gross_miles_driven: number
+  miles_driven: number
   net_profit: number
   driver_pay: number
   payroll_fee: number
   fuel: number
+  tolls: number
   dispatch_fee: number
+  deduct: number
   insurance: number
   safety: number
   prepass: number
@@ -492,11 +529,16 @@ export interface TimeSeriesData {
     week_key: string
     week_label: string
     gross_revenue: number
+    raw_gross_revenue: number
+    raw_gross_miles_driven: number
+    miles_driven: number
     net_profit: number
     driver_pay: number
     payroll_fee: number
     fuel: number
+    tolls: number
     dispatch_fee: number
+    deduct: number
     insurance: number
     safety: number
     prepass: number
@@ -511,11 +553,16 @@ export interface TimeSeriesData {
     month_key: string
     month_label: string
     gross_revenue: number
+    raw_gross_revenue: number
+    raw_gross_miles_driven: number
+    miles_driven: number
     net_profit: number
     driver_pay: number
     payroll_fee: number
     fuel: number
+    tolls: number
     dispatch_fee: number
+    deduct: number
     insurance: number
     safety: number
     prepass: number
@@ -540,11 +587,16 @@ export interface TimeSeriesData {
     year_key: string
     year_label: string
     gross_revenue: number
+    raw_gross_revenue: number
+    raw_gross_miles_driven: number
+    miles_driven: number
     net_profit: number
     driver_pay: number
     payroll_fee: number
     fuel: number
+    tolls: number
     dispatch_fee: number
+    deduct: number
     insurance: number
     safety: number
     prepass: number
@@ -723,10 +775,25 @@ export const tenantsApi = {
 
 // Accounting API
 export const accountingApi = {
+  importIncomeCsv: (file: File, commit: boolean = false, incomeKeywords?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('commit', String(commit))
+    if (incomeKeywords) {
+      formData.append('income_keywords', incomeKeywords)
+    }
+    return formDataApi.post('/accounting/income/import-csv', formData)
+  },
+  importExpenseCsv: (file: File, commit: boolean = false) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('commit', String(commit))
+    return formDataApi.post('/accounting/expenses/import-csv', formData)
+  },
   initializeChartOfAccounts: () =>
     api.post<ChartOfAccount[]>('/accounting/chart-of-accounts/initialize'),
   resetChartOfAccounts: () =>
-    api.delete<{ message: string }>('/accounting/chart-of-accounts/reset'),
+    api.delete<{ message: string }>('/accounting/chart-of-accounts/reset', { params: { confirm: 'CONFIRM_RESET' } }),
   getChartOfAccounts: (accountType?: string, isActive?: boolean, truckId?: number) => {
     const params: Record<string, any> = {}
     if (accountType) params.account_type = accountType
@@ -763,9 +830,10 @@ export const accountingApi = {
     if (truckId) params.truck_id = truckId
     return api.get<BalanceSheet>('/accounting/balance-sheet', { params })
   },
-  getIncomeStatement: (startDate: string, endDate: string, truckId?: number) => {
+  getIncomeStatement: (startDate: string, endDate: string, truckId?: number, source?: 'all' | 'csv_only' | 'app_only') => {
     const params: Record<string, any> = { start_date: startDate, end_date: endDate }
     if (truckId) params.truck_id = truckId
+    if (source) params.source = source
     return api.get<IncomeStatement>('/accounting/income-statement', { params })
   },
   calculateDepreciation: (truckId: number, asOfDate?: string) => {
@@ -825,5 +893,9 @@ export const accountingApi = {
     const params: Record<string, any> = { year }
     if (truckId) params.truck_id = truckId
     return api.get('/accounting/schedule-c', { params })
+  },
+  // Tax package export (ZIP with all reports)
+  exportTaxPackage: (year: number) => {
+    return api.get('/accounting/export/tax-package', { params: { year }, responseType: 'blob' })
   },
 }

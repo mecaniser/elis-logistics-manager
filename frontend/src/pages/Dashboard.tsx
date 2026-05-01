@@ -33,7 +33,9 @@ interface BlockByTruckMonth {
 
 interface ExpenseData {
   fuel: number[]
+  tolls: number[]
   dispatch_fee: number[]
+  deduct: number[]
   insurance: number[]
   safety: number[]
   prepass: number[]
@@ -47,6 +49,11 @@ interface ExpenseData {
 const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
   if (value == null || isNaN(value)) return '0.00'
   return value.toLocaleString(undefined, options || { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const formatCurrencyMetric = (value: number | null | undefined): string => {
+  if (value == null || isNaN(value)) return '—'
+  return `$${safeToLocaleString(value)}`
 }
 
 export default function Dashboard() {
@@ -122,8 +129,10 @@ export default function Dashboard() {
     if (expenseCategories && Object.keys(expenseCategories).length > 0) {
       const categories = [
         { name: 'Fuel', value: expenseCategories.fuel || 0 },
+        { name: 'Tolls', value: expenseCategories.tolls || 0 },
         { name: 'Repairs', value: expenseCategories.repairs || 0 },
         { name: 'Dispatch Fee', value: expenseCategories.dispatch_fee || 0 },
+        { name: 'Deductions', value: expenseCategories.deduct || 0 },
         { name: 'Insurance', value: expenseCategories.insurance || 0 },
         { name: 'Safety', value: expenseCategories.safety || 0 },
         { name: 'Prepass', value: expenseCategories.prepass || 0 },
@@ -132,7 +141,6 @@ export default function Dashboard() {
         { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0 },
         { name: 'Loan Interest', value: expenseCategories.loan_interest || 0 },
         { name: 'Truck Parking', value: expenseCategories.truck_parking || 0 },
-        { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0 },
       ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
       
       if (categories.length > 0) {
@@ -308,19 +316,20 @@ export default function Dashboard() {
       expenseCategories = data.expense_categories
     }
     
-    // For trailers, only show repairs and custom expenses
+    // For trailers, only show repairs
     if (vehicleTypeFilter === 'trailers') {
       return [
         { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
-        { name: 'Custom Expenses', value: expenseCategories.custom || expenseCategories.other || 0, color: '#6b7280' },
       ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
     }
     
     // For trucks, show all categories
     return expenseCategories && Object.keys(expenseCategories).length > 0 ? [
       { name: 'Fuel', value: expenseCategories.fuel || 0, color: '#3b82f6' },
+      { name: 'Tolls', value: expenseCategories.tolls || 0, color: '#14b8a6' },
       { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
       { name: 'Dispatch Fee', value: expenseCategories.dispatch_fee || 0, color: '#f59e0b' },
+      { name: 'Deductions', value: expenseCategories.deduct || 0, color: '#6366f1' },
       { name: 'Insurance', value: expenseCategories.insurance || 0, color: '#f97316' },
       { name: 'Safety', value: expenseCategories.safety || 0, color: '#eab308' },
       { name: 'Prepass', value: expenseCategories.prepass || 0, color: '#84cc16' },
@@ -329,7 +338,6 @@ export default function Dashboard() {
       { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0, color: '#ec4899' },
       { name: 'Loan Interest', value: expenseCategories.loan_interest || 0, color: '#fbbf24' },
       { name: 'Truck Parking', value: expenseCategories.truck_parking || 0, color: '#a855f7' },
-      { name: 'Custom', value: expenseCategories.custom || expenseCategories.other || 0, color: '#6b7280' },
     ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
   }
   
@@ -337,6 +345,53 @@ export default function Dashboard() {
 
   const blocksByTruckMonth: BlockByTruckMonth[] = data.blocks_by_truck_month || []
   const repairsByMonth: RepairByMonth[] = data.repairs_by_month || []
+
+  const getRepairsForSelectedPeriod = (pd: any): RepairByMonth[] => {
+    if (!pd || vehicleTypeFilter !== 'trucks') return []
+
+    if (expenseAnalysisView === 'monthly') {
+      return repairsByMonth.filter((repair: RepairByMonth) => repair.month_key === pd.month_key)
+    }
+
+    if (expenseAnalysisView === 'yearly') {
+      return repairsByMonth.filter((repair: RepairByMonth) => {
+        if (!repair.repair_date) return false
+        const repairYear = new Date(repair.repair_date).getFullYear().toString()
+        return repairYear === pd.year_key
+      })
+    }
+
+    if (expenseAnalysisView === 'weekly') {
+      const weekSettlementDate = new Date(pd.week_key)
+      const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const weekEnd = new Date(weekSettlementDate)
+
+      return repairsByMonth.filter((repair: RepairByMonth) => {
+        if (!repair.repair_date) return false
+        const repairDate = new Date(repair.repair_date)
+        return repairDate >= weekStart && repairDate <= weekEnd
+      })
+    }
+
+    return []
+  }
+
+  const getRepairCostForSelectedPeriod = (pd: any): number => {
+    if (!pd) return 0
+
+    if (vehicleTypeFilter === 'trucks') {
+      if (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') {
+        return getRepairsForSelectedPeriod(pd).reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
+      }
+      if (expenseAnalysisView === 'all_time') {
+        return Number(pd.repairs) || 0
+      }
+    }
+
+    return (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time')
+      ? (Number(pd.repairs) || 0)
+      : 0
+  }
 
   // Identify months with PM (preventive maintenance) repairs by truck
   const getPMMonthsByTruck = () => {
@@ -420,7 +475,7 @@ export default function Dashboard() {
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_week) || data.by_week.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_week.map((item) => item.week_label)
@@ -431,14 +486,16 @@ export default function Dashboard() {
     
     const expenses: ExpenseData = {
       fuel: data.by_week.map((item) => item.fuel),
+      tolls: data.by_week.map((item) => (item as any).tolls || 0),
       dispatch_fee: data.by_week.map((item) => item.dispatch_fee),
+      deduct: data.by_week.map((item) => item.deduct || 0),
       insurance: data.by_week.map((item) => item.insurance),
       safety: data.by_week.map((item) => item.safety),
       prepass: data.by_week.map((item) => item.prepass),
       ifta: data.by_week.map((item) => item.ifta),
       loan_interest: data.by_week.map((item) => item.loan_interest || 0),
       truck_parking: data.by_week.map((item) => item.truck_parking),
-      custom: data.by_week.map((item) => item.custom),
+      custom: data.by_week.map(() => 0),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
@@ -446,7 +503,7 @@ export default function Dashboard() {
 
   const processMonthlyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_month) || data.by_month.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], dispatch_fee: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_month.map((item) => item.month_label)
@@ -457,14 +514,16 @@ export default function Dashboard() {
     
     const expenses: ExpenseData = {
       fuel: data.by_month.map((item) => item.fuel),
+      tolls: data.by_month.map((item) => (item as any).tolls || 0),
       dispatch_fee: data.by_month.map((item) => item.dispatch_fee),
+      deduct: data.by_month.map((item) => item.deduct || 0),
       insurance: data.by_month.map((item) => item.insurance),
       safety: data.by_month.map((item) => item.safety),
       prepass: data.by_month.map((item) => item.prepass),
       ifta: data.by_month.map((item) => item.ifta),
       loan_interest: data.by_month.map((item) => item.loan_interest || 0),
       truck_parking: data.by_month.map((item) => item.truck_parking),
-      custom: data.by_month.map((item) => item.custom),
+      custom: data.by_month.map(() => 0),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
@@ -517,7 +576,7 @@ export default function Dashboard() {
     allPeriods.forEach(period => {
       const revenue = period.gross_revenue || 0
       if (revenue > 0) {
-        const categories = ['fuel', 'dispatch_fee', 'insurance', 'safety', 'prepass', 'ifta', 'truck_parking', 'custom', 'driver_pay', 'payroll_fee']
+    const categories = ['fuel', 'tolls', 'dispatch_fee', 'deduct', 'insurance', 'safety', 'prepass', 'ifta', 'truck_parking', 'driver_pay', 'payroll_fee']
         categories.forEach(cat => {
           const amount = (period as any)[cat] || 0
           const percent = (amount / revenue) * 100
@@ -554,55 +613,58 @@ export default function Dashboard() {
       let grossRevenue = 0
       let netProfit = 0
       let truckProfits: any[] = []
+      let totalExpensesFromBackend = 0
+      let operationalMetrics: any = {}
       
       if (vehicleTypeFilter === 'trucks' && data.trucks) {
         expenseCategories = data.trucks.expense_categories || {}
         grossRevenue = data.trucks.total_revenue || 0
         netProfit = data.trucks.net_profit || 0
         truckProfits = data.trucks.truck_profits || []
+        totalExpensesFromBackend = data.trucks.total_expenses || 0
+        operationalMetrics = data.trucks.operational_metrics || {}
+        expenseCategories.custom = 0
       } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
         expenseCategories = data.trailers.expense_categories || {}
         grossRevenue = data.trailers.total_revenue || 0
         netProfit = data.trailers.net_profit || 0
         truckProfits = data.trailers.trailer_profits || []
+        totalExpensesFromBackend = data.trailers.total_expenses || 0
+        operationalMetrics = data.trailers.operational_metrics || {}
+        expenseCategories.custom = 0
       } else {
         // Fallback - should not happen since 'all' is removed
         expenseCategories = {}
         grossRevenue = 0
         netProfit = 0
         truckProfits = []
+        totalExpensesFromBackend = 0
+        operationalMetrics = {}
       }
+
+      // Remove custom expenses from totals/net profit to align with settlement net profit
+      const customAmount = expenseCategories.custom || 0
+      const adjustedTotalExpenses = Math.max(0, (totalExpensesFromBackend || 0) - customAmount)
+      const adjustedNetProfit = netProfit + customAmount
       
       const aggregated = {
         all_time_key: 'all_time',
         all_time_label: 'All Time',
         gross_revenue: grossRevenue,
-        net_profit: netProfit,
-        expenses: (() => {
-          // For trailers, use total_expenses from dashboard data
-          // For trucks, use total_expenses from dashboard data
-          if (vehicleTypeFilter === 'trucks' && data.trucks) {
-            return data.trucks.total_expenses || 0
-          } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
-            return data.trailers.total_expenses || 0
-          } else {
-            return 0
-          }
-        })(),
+        raw_gross_revenue: operationalMetrics.raw_gross_revenue || 0,
+        raw_gross_miles_driven: operationalMetrics.raw_gross_miles_driven || 0,
+        miles_driven: operationalMetrics.miles_driven || 0,
+        net_profit: adjustedNetProfit,
+        expenses: operationalMetrics.settlement_expenses || 0,
         total_expenses: (() => {
-          // Use backend's calculated total_expenses if available, otherwise calculate from categories
-          if (vehicleTypeFilter === 'trucks' && data.trucks) {
-            return data.trucks.total_expenses || 0
-          } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
-            return data.trailers.total_expenses || 0
-          } else {
-            return 0
-          }
+          return adjustedTotalExpenses
         })(),
         driver_pay: expenseCategories.driver_pay || 0,
         payroll_fee: expenseCategories.payroll_fee || 0,
         fuel: expenseCategories.fuel || 0,
+        tolls: expenseCategories.tolls || 0,
         dispatch_fee: expenseCategories.dispatch_fee || 0,
+        deduct: expenseCategories.deduct || 0,
         insurance: expenseCategories.insurance || 0,
         safety: expenseCategories.safety || 0,
         prepass: expenseCategories.prepass || 0,
@@ -610,8 +672,8 @@ export default function Dashboard() {
         loan_interest: expenseCategories.loan_interest || 0,
         truck_parking: expenseCategories.truck_parking || 0,
         service_on_truck: expenseCategories.service_on_truck || 0,
-        custom: expenseCategories.custom || 0,
-        repairs: expenseCategories.repairs || 0,
+        custom: 0,
+        repairs: operationalMetrics.repair_costs || expenseCategories.repairs || 0,
         trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp: any) => ({
           truck_id: tp.truck_id,
           truck_name: tp.truck_name
@@ -793,135 +855,133 @@ export default function Dashboard() {
               {(() => {
                 // Calculate repairs for the selected period to show True Net Profit
                 const pd = selectedPeriodData as any
-                let repairsForPeriod = 0
+                const repairsForPeriod = getRepairCostForSelectedPeriod(pd)
                 
-                if (vehicleTypeFilter === 'trucks') {
-                  // For trucks, calculate repairs from repairsByMonth for weekly/monthly/yearly views
-                  if (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') {
-                    const periodKey = expenseAnalysisView === 'weekly' 
-                      ? pd.week_key 
-                      : expenseAnalysisView === 'monthly' 
-                      ? pd.month_key 
-                      : pd.year_key
-                    
-                    let repairsForPeriodList: RepairByMonth[] = []
-                    
-                    if (expenseAnalysisView === 'monthly') {
-                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => repair.month_key === periodKey)
-                    } else if (expenseAnalysisView === 'yearly') {
-                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => {
-                        if (!repair.repair_date) return false
-                        const repairYear = new Date(repair.repair_date).getFullYear().toString()
-                        return repairYear === periodKey
-                      })
-                    } else if (expenseAnalysisView === 'weekly') {
-                      const weekSettlementDate = new Date(periodKey)
-                      const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000)
-                      const weekEnd = new Date(weekSettlementDate)
-                      
-                      repairsForPeriodList = repairsByMonth.filter((repair: RepairByMonth) => {
-                        if (!repair.repair_date) return false
-                        const repairDate = new Date(repair.repair_date)
-                        return repairDate >= weekStart && repairDate <= weekEnd
-                      })
-                    }
-                    
-                    repairsForPeriod = repairsForPeriodList.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
-                  } else if (expenseAnalysisView === 'all_time') {
-                    // For all_time view, use repairs from selectedPeriodData if available
-                    repairsForPeriod = Number(pd.repairs) || 0
-                  }
-                } else {
-                  // For trailers, use repairs from selectedPeriodData if available
-                  repairsForPeriod = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                }
-                
-                const netProfitValue = Number(selectedPeriodData.net_profit) || 0
-                const trueNetProfit = netProfitValue - repairsForPeriod
+                    const customAmount = Number((selectedPeriodData as any).custom) || 0
+                    const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                    const adjustedNetProfitValue = netProfitValue + customAmount
+                    const trueNetProfit = adjustedNetProfitValue - repairsForPeriod
+                    const milesDriven = Number(pd.miles_driven) || 0
+                    const rawGrossRevenue = Number(pd.raw_gross_revenue) || 0
+                    const rawGrossMilesDriven = Number(pd.raw_gross_miles_driven) || 0
+                    const settlementExpenses = Number(pd.expenses) || 0
+                    const revenuePerMile = milesDriven > 0 ? Number(selectedPeriodData.gross_revenue) / milesDriven : null
+                    const rawGrossPerMile = rawGrossMilesDriven > 0 ? rawGrossRevenue / rawGrossMilesDriven : null
+                    const settlementCostPerMile = milesDriven > 0 ? settlementExpenses / milesDriven : null
+                    const allInCostPerMile = milesDriven > 0 ? (settlementExpenses + repairsForPeriod) / milesDriven : null
                 
                 return (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-                    <div className="bg-blue-50 p-2 sm:p-4 rounded-lg">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
-                        <span className="text-base sm:text-xl font-bold text-blue-600">
-                          ${safeToLocaleString(selectedPeriodData.gross_revenue)}
-                        </span>
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                      <div className="bg-blue-50 p-2 sm:p-4 rounded-lg">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-xs sm:text-sm font-medium text-gray-600">Gross Revenue:</span>
+                          <span className="text-base sm:text-xl font-bold text-blue-600">
+                            ${safeToLocaleString(selectedPeriodData.gross_revenue)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                       </div>
-                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                    </div>
-                    <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
-                        <span className="text-base sm:text-xl font-bold text-red-600">
-                          ${(() => {
-                            // For trailers, use the expenses field directly from settlements
-                            // This is the total expenses set in the settlement (income - net_profit = expenses)
-                            if (vehicleTypeFilter === 'trailers') {
-                              // Use settlement.expenses field directly from database
-                              if (pd.expenses !== undefined && pd.expenses !== null) {
-                                const settlementExpenses = Number(pd.expenses) || 0
-                                // Add repairs if applicable (for yearly/monthly/all_time views)
-                                const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                                return settlementExpenses + repairs
+                      <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
+                          <span className="text-base sm:text-xl font-bold text-red-600">
+                            ${(() => {
+                              const customAmt = Number((selectedPeriodData as any).custom) || 0
+                              // For trailers, use the expenses field directly from settlements
+                              // This is the total expenses set in the settlement (income - net_profit = expenses)
+                              if (vehicleTypeFilter === 'trailers') {
+                                // Use settlement.expenses field directly from database
+                                if (pd.expenses !== undefined && pd.expenses !== null) {
+                                  const settlementExpenses = Number(pd.expenses) || 0
+                                  // Add repairs if applicable (for yearly/monthly/all_time views)
+                                  const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                                  return Math.max(0, settlementExpenses + repairs - customAmt)
+                                }
+                                // Fallback: just repairs (custom removed)
+                                const trailerExpenses = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                                return Math.max(0, trailerExpenses)
                               }
-                              // Fallback: sum custom and repairs if expenses field not available
-                              const trailerExpenses = (
-                                (Number(pd.custom) || 0) +
+                              
+                              // For trucks, use backend's calculated total_expenses if available and > 0
+                              if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                                return Math.max(0, pd.total_expenses - customAmt)
+                              }
+                              
+                              // For trucks, sum all categories
+                              const sum = (
+                                (Number(pd.fuel) || 0) +
+                                (Number(pd.tolls) || 0) +
+                                (Number(pd.dispatch_fee) || 0) +
+                                (Number(pd.deduct) || 0) +
+                                (Number(pd.insurance) || 0) +
+                                (Number(pd.safety) || 0) +
+                                (Number(pd.prepass) || 0) +
+                                (Number(pd.ifta) || 0) +
+                                (Number(pd.loan_interest) || 0) +
+                                (Number(pd.truck_parking) || 0) +
+                                (Number(pd.driver_pay) || 0) +
+                                (Number(pd.payroll_fee) || 0) +
+                                // Repairs are only included for yearly/monthly/all_time, not weekly
                                 (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                               )
-                              return trailerExpenses
-                            }
-                            
-                            // For trucks, use backend's calculated total_expenses if available and > 0
-                            if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                              return pd.total_expenses
-                            }
-                            
-                            // For trucks, sum all categories
-                            const sum = (
-                              (Number(pd.fuel) || 0) +
-                              (Number(pd.dispatch_fee) || 0) +
-                              (Number(pd.insurance) || 0) +
-                              (Number(pd.safety) || 0) +
-                              (Number(pd.prepass) || 0) +
-                              (Number(pd.ifta) || 0) +
-                              (Number(pd.loan_interest) || 0) +
-                              (Number(pd.truck_parking) || 0) +
-                              (Number(pd.custom) || 0) +
-                              (Number(pd.driver_pay) || 0) +
-                              (Number(pd.payroll_fee) || 0) +
-                              // Repairs are only included for yearly/monthly/all_time, not weekly
-                              (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                            )
-                            return isNaN(sum) ? 0 : sum
-                          })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
+                              return isNaN(sum) ? 0 : Math.max(0, sum - customAmt)
+                            })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                       </div>
-                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                    </div>
-                    <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
-                        <span className={`text-base sm:text-xl font-bold ${
-                          trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          ${safeToLocaleString(trueNetProfit)}
-                        </span>
+                      <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
+                          <span className={`text-base sm:text-xl font-bold ${
+                            trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            ${safeToLocaleString(trueNetProfit)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                       </div>
-                      <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                     </div>
-                  </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4 mb-6">
+                      <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Miles</div>
+                        <div className="text-base sm:text-xl font-bold text-slate-700">
+                          {milesDriven > 0 ? `${safeToLocaleString(milesDriven, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi` : '—'}
+                        </div>
+                      </div>
+                      <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Revenue / Mile</div>
+                        <div className="text-base sm:text-xl font-bold text-cyan-700">
+                          {formatCurrencyMetric(revenuePerMile)}
+                        </div>
+                      </div>
+                      <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">77 Cargo Raw Gross / Mile</div>
+                        <div className="text-base sm:text-xl font-bold text-indigo-700">
+                          {formatCurrencyMetric(rawGrossPerMile)}
+                        </div>
+                      </div>
+                      <div className="bg-amber-50 p-3 sm:p-4 rounded-lg border border-amber-200">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Settlement Cost / Mile</div>
+                        <div className="text-base sm:text-xl font-bold text-amber-700">
+                          {formatCurrencyMetric(settlementCostPerMile)}
+                        </div>
+                      </div>
+                      <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">All-In Cost / Mile</div>
+                        <div className="text-base sm:text-xl font-bold text-rose-700">
+                          {formatCurrencyMetric(allInCostPerMile)}
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )
               })()}
 
               {/* Net Profit Details & Repair Expenses - Only show for trucks in weekly/monthly/yearly view */}
               {vehicleTypeFilter === 'trucks' && (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') && selectedPeriodData && (() => {
-                const periodKey = expenseAnalysisView === 'weekly' 
-                  ? (selectedPeriodData as any).week_key 
-                  : expenseAnalysisView === 'monthly' 
-                  ? (selectedPeriodData as any).month_key 
-                  : (selectedPeriodData as any).year_key
                 const periodLabel = expenseAnalysisView === 'weekly' 
                   ? ((selectedPeriodData as any).week_label || 'Selected Week')
                   : expenseAnalysisView === 'monthly'
@@ -931,39 +991,10 @@ export default function Dashboard() {
                 const netProfitValue = Number(selectedPeriodData.net_profit) || 0
                 
                 // Filter repairs for the selected period
-                let repairsForPeriod: RepairByMonth[] = []
-                
-                if (expenseAnalysisView === 'monthly') {
-                  // For monthly view, filter by month_key
-                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => repair.month_key === periodKey)
-                } else if (expenseAnalysisView === 'yearly') {
-                  // For yearly view, filter by year extracted from repair_date
-                  // year_key is in format "YYYY"
-                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => {
-                    if (!repair.repair_date) return false
-                    const repairYear = new Date(repair.repair_date).getFullYear().toString()
-                    return repairYear === periodKey
-                  })
-                } else if (expenseAnalysisView === 'weekly') {
-                  // For weekly view, match repairs to the week by finding repairs whose repair_date
-                  // falls within the week range. week_key is the settlement_date (ISO format),
-                  // which represents the end of the pay period. We'll match repairs that fall
-                  // within 7 days before the settlement_date (the pay period)
-                  const weekSettlementDate = new Date(periodKey)
-                  const weekStart = new Date(weekSettlementDate.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days before settlement
-                  const weekEnd = new Date(weekSettlementDate) // Settlement date is the end of the week
-                  
-                  // Filter repairs that fall within this week range
-                  repairsForPeriod = repairsByMonth.filter((repair: RepairByMonth) => {
-                    if (!repair.repair_date) return false
-                    const repairDate = new Date(repair.repair_date)
-                    return repairDate >= weekStart && repairDate <= weekEnd
-                  })
-                }
+                const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
                 
                 // Calculate repairs total from filtered repairs to ensure consistency with displayed repairs
                 const repairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
-                
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -1201,14 +1232,15 @@ export default function Dashboard() {
                   // For trucks, show all categories (trailers are not shown in this view)
                   const standardCategories = [
                         { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
+                        { key: 'tolls', label: 'Tolls', value: (selectedPeriodData as any).tolls || 0 },
                         { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
+                        { key: 'deduct', label: 'Deductions', value: (selectedPeriodData as any).deduct || 0 },
                         { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
                         { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
                         { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
                         { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
                         { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as any).loan_interest || 0 },
                         { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
-                        { key: 'custom', label: 'Custom', value: (selectedPeriodData as any).custom || 0 },
                         { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
                         { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
                         ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
@@ -1423,7 +1455,9 @@ export default function Dashboard() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {[
                         { key: 'fuel', label: 'Fuel' },
+                        { key: 'tolls', label: 'Tolls' },
                         { key: 'dispatch_fee', label: 'Dispatch Fee' },
+                        { key: 'deduct', label: 'Deductions' },
                         { key: 'insurance', label: 'Insurance' },
                         { key: 'safety', label: 'Safety' },
                         { key: 'prepass', label: 'Prepass' },
@@ -1432,7 +1466,6 @@ export default function Dashboard() {
                         { key: 'payroll_fee', label: 'Payroll Fee' },
                         { key: 'loan_interest', label: 'Loan Interest' },
                         { key: 'truck_parking', label: 'Truck Parking' },
-                        { key: 'custom', label: 'Custom' },
                         ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
                       ]
                         .map(({ key, label }) => ({
@@ -2458,7 +2491,7 @@ export default function Dashboard() {
                       padding: [8, 12]
                     },
                     legend: {
-                      data: ['Fuel', 'Dispatch Fee', 'Insurance', 'Safety', 'Prepass', 'IFTA', 'Truck Parking', 'Custom'],
+                      data: ['Fuel', 'Tolls', 'Dispatch Fee', 'Deductions', 'Insurance', 'Safety', 'Prepass', 'IFTA', 'Truck Parking'],
                       top: isMobile ? 'bottom' : 10,
                       bottom: isMobile ? 0 : 'auto',
                       type: 'scroll',
@@ -2509,11 +2542,25 @@ export default function Dashboard() {
                             itemStyle: { color: '#3b82f6' }
                           },
                           {
+                            name: 'Tolls',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.tolls || [],
+                            itemStyle: { color: '#14b8a6' }
+                          },
+                          {
                             name: 'Dispatch Fee',
                             type: 'line',
                             smooth: true,
                             data: currentData.expenses?.dispatch_fee || [],
                             itemStyle: { color: '#f59e0b' }
+                          },
+                          {
+                            name: 'Deductions',
+                            type: 'line',
+                            smooth: true,
+                            data: currentData.expenses?.deduct || [],
+                            itemStyle: { color: '#6366f1' }
                           },
                           {
                             name: 'Insurance',
@@ -2549,13 +2596,6 @@ export default function Dashboard() {
                             smooth: true,
                             data: currentData.expenses?.truck_parking || [],
                             itemStyle: { color: '#a855f7' }
-                          },
-                          {
-                            name: 'Custom',
-                            type: 'line',
-                            smooth: true,
-                            data: currentData.expenses?.custom || [],
-                            itemStyle: { color: '#6b7280' }
                           }
                         ]
                   }}

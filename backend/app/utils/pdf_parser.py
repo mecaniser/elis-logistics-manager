@@ -114,6 +114,7 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
         "license_plate": None,
         "settlement_type": "77 Cargo LLC",
         "expense_categories": {},
+        "overview_amounts": None,
         "deduction_details": None,
     }
 
@@ -172,6 +173,17 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
         raise ValueError("77 Cargo load rate subtotal mismatch")
     if abs(gross_subtotal - round(gross_total, 2)) > 0.01:
         raise ValueError("77 Cargo gross subtotal mismatch")
+
+    pay_rate_match = re.search(r"Pay rate:\s*(\d+)%", text)
+    pay_rate_percent = float(pay_rate_match.group(1)) if pay_rate_match else None
+    dispatch_fee_overview = round(rate_subtotal - gross_subtotal, 2)
+    if dispatch_fee_overview > 0:
+        settlement_data["overview_amounts"] = {
+            "dispatch_fee": dispatch_fee_overview,
+            "gross_before_dispatch": round(rate_subtotal, 2),
+        }
+        if pay_rate_percent is not None:
+            settlement_data["overview_amounts"]["pay_rate_percent"] = pay_rate_percent
 
     fuel_match = re.search(r"Fuel .*?Subtotal:\s*-\$([\d,]+\.\d{2})", text, re.DOTALL)
     tolls_match = re.search(r"Tolls .*?Subtotal\s*:?\s*-\$([\d,]+\.\d{2})", text, re.DOTALL)

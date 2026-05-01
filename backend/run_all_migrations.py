@@ -74,8 +74,10 @@ def main():
         ("migrate_add_registration_fee.py", "Add registration_fee column"),
         ("migrate_add_interest_rate.py", "Add interest_rate column"),
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
+        ("migrate_add_default_trailer_split_to_trucks.py", "Add truck-level default trailer split settings"),
         ("migrate_add_loan_paid_off_date.py", "Add loan_paid_off_date column"),
         ("migrate_add_settlement_income_split_fields.py", "Add trailer-income split tracking to settlements"),
+        ("migrate_add_settlement_overview_amounts.py", "Add overview-only settlement amounts"),
         ("migrate_recalculate_loan_interest_with_principal.py", "Recalculate loan interest with principal payments"),
     ]
     

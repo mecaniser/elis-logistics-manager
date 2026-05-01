@@ -16,6 +16,46 @@ from collections import defaultdict
 
 router = APIRouter()
 
+
+def _safe_per_mile(amount: float, miles: float) -> Optional[float]:
+    if miles <= 0:
+        return None
+    return round(amount / miles, 2)
+
+
+def _extract_raw_gross_amount(settlement: Settlement) -> float:
+    if settlement.overview_amounts and isinstance(settlement.overview_amounts, dict):
+        raw_gross = settlement.overview_amounts.get("gross_before_dispatch", 0)
+        try:
+            raw_gross_float = float(raw_gross or 0)
+            if raw_gross_float > 0:
+                return raw_gross_float
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _calculate_operational_metrics(
+    post_dispatch_revenue: float,
+    settlement_expenses: float,
+    repair_costs: float,
+    miles_driven: float,
+    raw_gross_revenue: float = 0.0,
+    raw_gross_miles_driven: float = 0.0,
+) -> Dict[str, Optional[float]]:
+    return {
+        "miles_driven": round(miles_driven, 2),
+        "post_dispatch_revenue": round(post_dispatch_revenue, 2),
+        "settlement_expenses": round(settlement_expenses, 2),
+        "repair_costs": round(repair_costs, 2),
+        "raw_gross_revenue": round(raw_gross_revenue, 2),
+        "raw_gross_miles_driven": round(raw_gross_miles_driven, 2),
+        "post_dispatch_revenue_per_mile": _safe_per_mile(post_dispatch_revenue, miles_driven),
+        "raw_gross_revenue_per_mile": _safe_per_mile(raw_gross_revenue, raw_gross_miles_driven),
+        "settlement_cost_per_mile": _safe_per_mile(settlement_expenses, miles_driven),
+        "all_in_cost_per_mile": _safe_per_mile(settlement_expenses + repair_costs, miles_driven),
+    }
+
 def get_current_mileage(truck_id: int, db: Session) -> Optional[float]:
     """
     Get the current mileage for a truck.
@@ -253,6 +293,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     # Standard expense categories
     STANDARD_CATEGORIES = [
         "fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
+        "deduct",
         "driver_pay", "payroll_fee", "loan_interest", "truck_parking", "service_on_truck"
     ]
     
@@ -267,6 +308,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
             "safety": 0.0,
             "prepass": 0.0,
             "ifta": 0.0,
+            "deduct": 0.0,
             "driver_pay": 0.0,
             "payroll_fee": 0.0,
             "loan_interest": 0.0,
@@ -338,6 +380,36 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         
         return expense_cats, custom_descs
     
+    def calculate_operational_metrics_for_settlements(settlements_list, repair_costs: float):
+        miles_driven = 0.0
+        post_dispatch_revenue = 0.0
+        settlement_expenses = 0.0
+        raw_gross_revenue = 0.0
+        raw_gross_miles_driven = 0.0
+
+        for settlement in settlements_list:
+            miles = float(settlement.miles_driven) if settlement.miles_driven else 0.0
+            revenue = float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+            expenses = float(settlement.expenses) if settlement.expenses else 0.0
+            raw_gross = _extract_raw_gross_amount(settlement)
+
+            miles_driven += miles
+            post_dispatch_revenue += revenue
+            settlement_expenses += expenses
+
+            if raw_gross > 0:
+                raw_gross_revenue += raw_gross
+                raw_gross_miles_driven += miles
+
+        return _calculate_operational_metrics(
+            post_dispatch_revenue=post_dispatch_revenue,
+            settlement_expenses=settlement_expenses,
+            repair_costs=float(repair_costs or 0.0),
+            miles_driven=miles_driven,
+            raw_gross_revenue=raw_gross_revenue,
+            raw_gross_miles_driven=raw_gross_miles_driven,
+        )
+
     # Calculate expense categories separately for trucks and trailers
     truck_settlements = truck_settlements_query.all()
     trailer_settlements = trailer_settlements_query.all()
@@ -346,6 +418,8 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     
     truck_expense_categories, truck_custom_descriptions = calculate_expense_categories(truck_settlements, truck_repairs)
     trailer_expense_categories, trailer_custom_descriptions = calculate_expense_categories(trailer_settlements, trailer_repairs)
+    truck_operational_metrics = calculate_operational_metrics_for_settlements(truck_settlements, float(truck_repairs_cost))
+    trailer_operational_metrics = calculate_operational_metrics_for_settlements(trailer_settlements, float(trailer_repairs_cost))
     
     # Combined expense categories (for backward compatibility)
     expense_categories = {
@@ -356,6 +430,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         "safety": truck_expense_categories["safety"] + trailer_expense_categories["safety"],
         "prepass": truck_expense_categories["prepass"] + trailer_expense_categories["prepass"],
         "ifta": truck_expense_categories["ifta"] + trailer_expense_categories["ifta"],
+        "deduct": truck_expense_categories["deduct"] + trailer_expense_categories["deduct"],
         "driver_pay": truck_expense_categories["driver_pay"] + trailer_expense_categories["driver_pay"],
         "payroll_fee": truck_expense_categories["payroll_fee"] + trailer_expense_categories["payroll_fee"],
         "loan_interest": truck_expense_categories["loan_interest"] + trailer_expense_categories["loan_interest"],
@@ -377,6 +452,14 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     # Combined net profit (for backward compatibility)
     total_expenses_sum = sum(expense_categories.values())
     net_profit = float(total_revenue) - float(total_expenses_sum)
+    combined_operational_metrics = _calculate_operational_metrics(
+        post_dispatch_revenue=float(total_revenue),
+        settlement_expenses=float(truck_expenses + trailer_expenses),
+        repair_costs=float(total_repairs_cost),
+        miles_driven=truck_operational_metrics["miles_driven"] + trailer_operational_metrics["miles_driven"],
+        raw_gross_revenue=truck_operational_metrics["raw_gross_revenue"] + trailer_operational_metrics["raw_gross_revenue"],
+        raw_gross_miles_driven=truck_operational_metrics["raw_gross_miles_driven"] + trailer_operational_metrics["raw_gross_miles_driven"],
+    )
     
     # Get truck profits (only trucks, not trailers)
     truck_profits = []
@@ -821,6 +904,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         "total_expenses": float(total_expenses_sum),
         "net_profit": net_profit,
         "expense_categories": expense_categories,
+        "operational_metrics": combined_operational_metrics,
         "custom_descriptions": custom_descriptions,
         "truck_profits": truck_profits,
         "blocks_by_truck_month": blocks_by_truck_month,
@@ -834,6 +918,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
             "total_expenses": float(truck_expenses_sum),
             "net_profit": truck_net_profit,
             "expense_categories": truck_expense_categories,
+            "operational_metrics": truck_operational_metrics,
             "custom_descriptions": truck_custom_descriptions,
             "truck_profits": truck_profits
         },
@@ -845,6 +930,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
             "total_expenses": float(trailer_expenses_sum),
             "net_profit": trailer_net_profit,
             "expense_categories": trailer_expense_categories,
+            "operational_metrics": trailer_operational_metrics,
             "custom_descriptions": trailer_custom_descriptions,
             "trailer_profits": trailer_profits
         }
@@ -1068,11 +1154,14 @@ def _get_time_series_impl(
         return "Custom"
     
     # Standard expense categories
-    STANDARD_CATEGORIES = ["fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "driver_pay", "payroll_fee", "loan_interest"]
+    STANDARD_CATEGORIES = ["fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "deduct", "driver_pay", "payroll_fee", "loan_interest"]
     
     # Initialize data structures
     weekly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
+        "raw_gross_revenue": 0.0,
+        "raw_gross_miles_driven": 0.0,
+        "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
@@ -1084,6 +1173,7 @@ def _get_time_series_impl(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "deduct": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1096,6 +1186,9 @@ def _get_time_series_impl(
     
     monthly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
+        "raw_gross_revenue": 0.0,
+        "raw_gross_miles_driven": 0.0,
+        "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
@@ -1107,6 +1200,7 @@ def _get_time_series_impl(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "deduct": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1117,6 +1211,9 @@ def _get_time_series_impl(
     
     yearly_data = defaultdict(lambda: {
         "gross_revenue": 0.0,
+        "raw_gross_revenue": 0.0,
+        "raw_gross_miles_driven": 0.0,
+        "miles_driven": 0.0,
         "net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "driver_pay": 0.0,
@@ -1128,6 +1225,7 @@ def _get_time_series_impl(
         "safety": 0.0,
         "prepass": 0.0,
         "ifta": 0.0,
+        "deduct": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1185,9 +1283,16 @@ def _get_time_series_impl(
             year_key = date_to_use.strftime("%Y")
         elif settlement.settlement_date:
             year_key = settlement.settlement_date.strftime("%Y")
-        
+
+        miles_driven = float(settlement.miles_driven) if settlement.miles_driven else 0.0
+        raw_gross_revenue = _extract_raw_gross_amount(settlement)
+        raw_gross_miles_driven = miles_driven if raw_gross_revenue > 0 else 0.0
+
         # Aggregate weekly data
         weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+        weekly_data[week_key]["raw_gross_revenue"] += raw_gross_revenue
+        weekly_data[week_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
+        weekly_data[week_key]["miles_driven"] += miles_driven
         weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
         weekly_data[week_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
         weekly_data[week_key]["trucks"].add(settlement.truck_id)
@@ -1201,6 +1306,9 @@ def _get_time_series_impl(
         # Aggregate monthly data
         if month_key:
             monthly_data[month_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+            monthly_data[month_key]["raw_gross_revenue"] += raw_gross_revenue
+            monthly_data[month_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
+            monthly_data[month_key]["miles_driven"] += miles_driven
             monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
             monthly_data[month_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
@@ -1208,6 +1316,9 @@ def _get_time_series_impl(
         # Aggregate yearly data
         if year_key:
             yearly_data[year_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
+            yearly_data[year_key]["raw_gross_revenue"] += raw_gross_revenue
+            yearly_data[year_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
+            yearly_data[year_key]["miles_driven"] += miles_driven
             yearly_data[year_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
             yearly_data[year_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             yearly_data[year_key]["trucks"].add(settlement.truck_id)
@@ -1320,6 +1431,9 @@ def _get_time_series_impl(
             "week_key": week_key,
             "week_label": week_label,
             "gross_revenue": round(week_data["gross_revenue"], 2),
+            "raw_gross_revenue": round(week_data["raw_gross_revenue"], 2),
+            "raw_gross_miles_driven": round(week_data["raw_gross_miles_driven"], 2),
+            "miles_driven": round(week_data["miles_driven"], 2),
             "net_profit": round(week_data["net_profit"], 2),
             "expenses": round(week_data["expenses"], 2),
             "driver_pay": round(week_data["driver_pay"], 2),
@@ -1331,6 +1445,7 @@ def _get_time_series_impl(
             "safety": round(week_data["safety"], 2),
             "prepass": round(week_data["prepass"], 2),
             "ifta": round(week_data["ifta"], 2),
+            "deduct": round(week_data["deduct"], 2),
             "loan_interest": round(week_data["loan_interest"], 2),
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
@@ -1408,6 +1523,9 @@ def _get_time_series_impl(
             "month_key": month_key,
             "month_label": month_label,
             "gross_revenue": round(month_data["gross_revenue"], 2),
+            "raw_gross_revenue": round(month_data["raw_gross_revenue"], 2),
+            "raw_gross_miles_driven": round(month_data["raw_gross_miles_driven"], 2),
+            "miles_driven": round(month_data["miles_driven"], 2),
             "net_profit": round(month_data["net_profit"], 2),
             "expenses": round(month_data["expenses"], 2),
             "driver_pay": round(month_data["driver_pay"], 2),
@@ -1419,6 +1537,7 @@ def _get_time_series_impl(
             "safety": round(month_data["safety"], 2),
             "prepass": round(month_data["prepass"], 2),
             "ifta": round(month_data["ifta"], 2),
+            "deduct": round(month_data["deduct"], 2),
             "loan_interest": round(month_data["loan_interest"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
@@ -1489,6 +1608,9 @@ def _get_time_series_impl(
             "year_key": year_key,
             "year_label": year_label,
             "gross_revenue": round(year_data["gross_revenue"], 2),
+            "raw_gross_revenue": round(year_data["raw_gross_revenue"], 2),
+            "raw_gross_miles_driven": round(year_data["raw_gross_miles_driven"], 2),
+            "miles_driven": round(year_data["miles_driven"], 2),
             "net_profit": round(year_data["net_profit"], 2),
             "expenses": round(year_data["expenses"], 2),
             "driver_pay": round(year_data["driver_pay"], 2),
@@ -1500,6 +1622,7 @@ def _get_time_series_impl(
             "safety": round(year_data["safety"], 2),
             "prepass": round(year_data["prepass"], 2),
             "ifta": round(year_data["ifta"], 2),
+            "deduct": round(year_data["deduct"], 2),
             "loan_interest": round(year_data["loan_interest"], 2),
             "truck_parking": round(year_data["truck_parking"], 2),
             "custom": round(year_data["custom"], 2),

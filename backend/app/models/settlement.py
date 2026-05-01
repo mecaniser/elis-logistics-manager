@@ -21,6 +21,7 @@ class Settlement(Base):
     gross_revenue = Column(Numeric(10, 2))
     expenses = Column(Numeric(10, 2))  # Fuel, tolls, etc from Amazon
     expense_categories = Column(JSON)  # Categorized expenses: {fuel, dispatch_fee, insurance, etc}
+    overview_amounts = Column(JSON, nullable=True)  # Display-only derived amounts: {dispatch_fee, gross_before_dispatch, pay_rate_percent}
     custom_expense_descriptions = Column(JSON, nullable=True)  # Descriptions for custom expenses: {custom_1: "handles replaced", custom_2: "truck parking"}
     custom_expense_validation = Column(JSON, nullable=True)  # Validation status for custom expenses: {deduct: true, decals: false, custom: true}
     reimbursement_details = Column(JSON, nullable=True)  # Reimbursement details: [{"description": "...", "amount": 100.00}]
@@ -43,4 +44,3 @@ class Settlement(Base):
     __table_args__ = (
         UniqueConstraint('truck_id', 'settlement_date', name='unique_truck_settlement'),
     )
-

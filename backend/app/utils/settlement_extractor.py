@@ -102,6 +102,7 @@ class SettlementExtractor:
                     "gross_revenue": float(settlement_data.get("gross_revenue") or 0),
                     "net_profit": float(settlement_data.get("net_profit") or 0)
                 },
+                "overview_amounts": self._normalize_expense_categories(settlement_data.get("overview_amounts", {})),
                 "expenses": {
                     "total_expenses": float(settlement_data.get("expenses") or 0),
                     "categories": self._normalize_expense_categories(settlement_data.get("expense_categories", {}))

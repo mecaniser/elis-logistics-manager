@@ -159,6 +159,7 @@ export default function Settlements() {
       fuel: 'Fuel',
       tolls: 'Tolls',
       dispatch_fee: 'Dispatch Fee',
+      deduct: 'Deductions',
       insurance: 'Insurance',
       safety: 'Safety',
       prepass: 'Prepass',
@@ -1910,6 +1911,28 @@ export default function Settlements() {
                           </span>
                         </div>
                       )}
+                      {settlement.overview_amounts?.dispatch_fee != null && settlement.overview_amounts.dispatch_fee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Dispatch Fee:</span>
+                          <span className="font-medium text-indigo-600">
+                            ${Number(settlement.overview_amounts.dispatch_fee).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.trailer_income_split_amount != null && settlement.trailer_income_split_amount > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Trailer Split:</span>
+                          <span className="font-medium text-purple-600">
+                            ${Number(settlement.trailer_income_split_amount).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.source_settlement_id != null && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Managed Allocation:</span>
+                          <span className="font-medium text-purple-600">Trailer income</span>
+                        </div>
+                      )}
                       {/* Hide secondary fields on mobile, show on desktop */}
                       {!isMobile && (
                         <>
@@ -1943,6 +1966,14 @@ export default function Settlements() {
                                   })}
                                 </div>
                               )}
+                            </div>
+                          )}
+                          {settlement.overview_amounts?.gross_before_dispatch != null && settlement.overview_amounts?.pay_rate_percent != null && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">77 Cargo Gross:</span>
+                              <span className="font-medium text-gray-800">
+                                ${Number(settlement.overview_amounts.gross_before_dispatch).toLocaleString()} @ {Number(settlement.overview_amounts.pay_rate_percent).toLocaleString()}%
+                              </span>
                             </div>
                           )}
                         </>

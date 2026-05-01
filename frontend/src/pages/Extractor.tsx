@@ -16,6 +16,11 @@ interface ExtractedSettlement {
     gross_revenue: number
     net_profit: number
   }
+  overview_amounts?: {
+    dispatch_fee?: number
+    gross_before_dispatch?: number
+    pay_rate_percent?: number
+  }
   expenses: {
     total_expenses: number
     categories: { [key: string]: number }
@@ -600,7 +605,7 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                             {Object.entries(settlement.expenses.categories)
                               .filter(([_, value]) => value > 0)
                               .map(([key, value]) => {
-                                const isDeduction = key === 'custom' && value > 0
+                                const isDeduction = key === 'deduct' && value > 0
                                 return (
                                   <div key={key} className={`text-xs ${isDeduction ? 'bg-yellow-100 px-1 py-0.5 rounded' : ''}`}>
                                     <span className={`${isDeduction ? 'font-semibold' : ''} text-gray-600 capitalize`}>
@@ -832,12 +837,18 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                             <p className={`text-base font-bold ${settlement.revenue.net_profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                               {formatCurrency(settlement.revenue.net_profit)}
                             </p>
-                            {settlement.expenses.categories.custom > 0 && (
+                            {settlement.expenses.categories.deduct > 0 && (
                               <p className="text-xs text-gray-500 mt-0.5 italic">
                                 (after all expenses including deductions)
                               </p>
                             )}
                           </div>
+                          {settlement.overview_amounts?.dispatch_fee && (
+                            <div>
+                              <span className="text-xs text-gray-500">Dispatch Fee:</span>
+                              <p className="text-base font-bold text-indigo-700">{formatCurrency(settlement.overview_amounts.dispatch_fee)}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -853,7 +864,7 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                             {Object.entries(settlement.expenses.categories)
                               .filter(([_, value]) => value > 0)
                               .map(([key, value]) => {
-                                const isDeduction = key === 'custom' && value > 0
+                                const isDeduction = key === 'deduct' && value > 0
                                 return (
                                   <div key={key} className={`text-xs mb-1 ${isDeduction ? 'bg-yellow-100 p-1 rounded border border-yellow-300' : ''}`}>
                                     <span className={`${isDeduction ? 'font-semibold' : ''} text-gray-600 capitalize`}>
@@ -982,12 +993,18 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                       <p className={`text-lg font-bold ${selectedSettlement.settlement.revenue.net_profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                         {formatCurrency(selectedSettlement.settlement.revenue.net_profit)}
                       </p>
-                      {selectedSettlement.settlement.expenses.categories.custom > 0 && (
+                      {selectedSettlement.settlement.expenses.categories.deduct > 0 && (
                         <p className="text-xs text-gray-500 mt-0.5 italic">
                           (after all expenses including deductions)
                         </p>
                       )}
                     </div>
+                    {selectedSettlement.settlement.overview_amounts?.dispatch_fee && (
+                      <div>
+                        <span className="text-xs text-gray-500">Dispatch Fee:</span>
+                        <p className="text-lg font-bold text-indigo-700">{formatCurrency(selectedSettlement.settlement.overview_amounts.dispatch_fee)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1006,7 +1023,7 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                       .filter(([_, value]) => value > 0)
                       .sort(([_, a], [__, b]) => (b as number) - (a as number))
                       .map(([key, value]) => {
-                        const isDeduction = key === 'custom' && value > 0
+                        const isDeduction = key === 'deduct' && value > 0
                         return (
                           <div key={key} className={`bg-white p-1.5 rounded border ${isDeduction ? 'border-yellow-400 bg-yellow-50' : 'border-red-100'}`}>
                             <span className={`text-xs ${isDeduction ? 'font-semibold' : ''} text-gray-500 capitalize block`}>
