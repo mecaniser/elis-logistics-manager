@@ -204,6 +204,36 @@ def test_update_truck_normalizes_percent_interest_rate_input(client: TestClient,
     assert float(data["interest_rate"]) == 0.065
 
 
+def test_vehicle_roi_reflects_updated_interest_rate(client: TestClient, db, tenant_headers):
+    """Vehicle ROI should show the truck's updated stored interest rate."""
+    truck = Truck(
+        tenant_id=1,
+        name="ROI Interest Truck",
+        vehicle_type="truck",
+        license_plate="INT-652",
+        cash_investment=100.0,
+        loan_amount=500.0,
+        current_loan_balance=500.0,
+        interest_rate=0.07,
+        total_cost=600.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    update_response = client.put(
+        f"/api/trucks/{truck.id}",
+        json={"interest_rate": 6.5},
+        headers=tenant_headers,
+    )
+    assert update_response.status_code == 200
+
+    roi_response = client.get(f"/api/analytics/vehicle/{truck.id}/roi", headers=tenant_headers)
+    assert roi_response.status_code == 200
+    data = roi_response.json()
+    assert float(data["interest_rate"]) == 0.065
+
+
 def test_create_settlement_skips_interest_when_history_already_paid_off(client: TestClient, db, tenant_headers):
     """New settlements should not accrue interest when the truck is already in clean return."""
     truck = Truck(

@@ -158,6 +158,16 @@ export default function VehicleDetail() {
     (sum, settlement) => sum + (Number(settlement.repair_reserve_amount) || 0),
     0
   )
+  const displayInterestRate = (() => {
+    if (vehicle.interest_rate == null || Number.isNaN(Number(vehicle.interest_rate))) {
+      return roiData.interest_rate
+    }
+    const normalizedRate = Number(vehicle.interest_rate) > 1
+      ? Number(vehicle.interest_rate) / 100
+      : Number(vehicle.interest_rate)
+    return normalizedRate
+  })()
+  const displayLoanAmount = vehicle.loan_amount ?? roiData.loan_amount ?? 0
   const showReserveSummary = vehicle.vehicle_type === 'truck' && (
     reserveDeposits > 0 ||
     reserveWithdrawals > 0 ||
@@ -815,7 +825,7 @@ export default function VehicleDetail() {
       )}
 
       {/* Investment Information */}
-      {(roiData.cash_investment || roiData.total_cost || vehicle.registration_fee) && (
+      {(vehicle.cash_investment || vehicle.total_cost || vehicle.registration_fee || roiData.current_loan_balance !== null) && (
         <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-6">
           <button
             onClick={() => setInvestmentExpanded(!investmentExpanded)}
@@ -837,17 +847,17 @@ export default function VehicleDetail() {
               <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                 <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Cash Investment</span>
                 <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                  ${safeToLocaleString(roiData.cash_investment)}
+                  ${safeToLocaleString(vehicle.cash_investment ?? roiData.cash_investment)}
                 </p>
               </div>
               
               {/* Loan Information - Only for trucks */}
-              {vehicle.vehicle_type === 'truck' && roiData.loan_amount && (
+              {vehicle.vehicle_type === 'truck' && displayLoanAmount > 0 && (
                 <>
                   <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                     <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Original Loan</span>
                     <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                      ${safeToLocaleString(roiData.loan_amount)}
+                      ${safeToLocaleString(displayLoanAmount)}
                     </p>
                   </div>
                   
@@ -856,14 +866,14 @@ export default function VehicleDetail() {
                       <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Remaining Balance</span>
                       <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold ${
                         roiData.current_loan_balance === 0 ? 'text-green-600' : 
-                        roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' : 
+                        roiData.current_loan_balance < displayLoanAmount ? 'text-orange-600' : 
                         'text-gray-900'
                       }`}>
                         ${safeToLocaleString(roiData.current_loan_balance)}
                       </p>
-                      {roiData.current_loan_balance < roiData.loan_amount && roiData.current_loan_balance > 0 && (
+                      {roiData.current_loan_balance < displayLoanAmount && roiData.current_loan_balance > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
-                          ${safeToLocaleString((roiData.loan_amount || 0) - (roiData.current_loan_balance || 0))} principal paid
+                          ${safeToLocaleString(displayLoanAmount - (roiData.current_loan_balance || 0))} principal paid
                         </p>
                       )}
                       {roiData.current_loan_balance === 0 && (
@@ -885,7 +895,7 @@ export default function VehicleDetail() {
                   <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                     <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Interest Rate</span>
                     <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
-                      {(roiData.interest_rate * 100).toFixed(2)}%
+                      {(displayInterestRate * 100).toFixed(2)}%
                     </p>
                   </div>
                 </>
@@ -903,7 +913,7 @@ export default function VehicleDetail() {
               <div className={`flex flex-col ${isMobile ? 'bg-blue-50 border-2 border-blue-200 rounded-lg p-3' : ''}`}>
                 <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Total Cost</span>
                 <p className={`${isMobile ? 'text-base' : 'text-xl'} font-bold ${isMobile ? 'text-blue-700' : 'text-gray-900'}`}>
-                  ${safeToLocaleString(roiData.total_cost)}
+                  ${safeToLocaleString(vehicle.total_cost ?? roiData.total_cost)}
                 </p>
               </div>
             </div>
