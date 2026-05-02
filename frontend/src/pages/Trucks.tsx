@@ -101,7 +101,15 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   tag_number: vehicle.tag_number || '',
   cash_investment: vehicle.cash_investment?.toString() || '',
   loan_amount: vehicle.loan_amount?.toString() || '',
-  interest_rate: vehicle.interest_rate?.toString() || '0.07',
+  interest_rate: (() => {
+    if (vehicle.interest_rate == null || Number.isNaN(Number(vehicle.interest_rate))) {
+      return '0.07'
+    }
+    const normalizedRate = Number(vehicle.interest_rate) > 1
+      ? Number(vehicle.interest_rate) / 100
+      : Number(vehicle.interest_rate)
+    return normalizedRate.toString()
+  })(),
   total_cost: vehicle.total_cost?.toString() || '',
   registration_fee: vehicle.registration_fee?.toString() || '',
   purchase_date: vehicle.purchase_date ? new Date(vehicle.purchase_date).toISOString().split('T')[0] : '',
@@ -154,6 +162,14 @@ export default function Trucks() {
   // Helper to parse currency input (remove $, commas, etc.)
   const parseCurrency = (value: string): string => {
     return value.replace(/[$,]/g, '').trim()
+  }
+
+  const normalizeInterestRateDecimal = (value: string | number | undefined | null): number | undefined => {
+    if (value === undefined || value === null || value === '') return undefined
+    const parsed = typeof value === 'number' ? value : parseFloat(String(value).trim())
+    if (Number.isNaN(parsed)) return undefined
+    if (parsed < 0) return undefined
+    return parsed > 1 ? parsed / 100 : parsed
   }
 
   // Helper to validate numeric input (allows numbers, decimal point, empty string)
@@ -597,6 +613,8 @@ export default function Trucks() {
       } else if (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') {
         if (loan > 0) {
           investmentData.loan_amount = loan
+          const normalizedInterestRate = normalizeInterestRateDecimal(formData.interest_rate)
+          investmentData.interest_rate = normalizedInterestRate ?? 0.07
         } else {
           investmentData.loan_amount = null
           investmentData.interest_rate = undefined

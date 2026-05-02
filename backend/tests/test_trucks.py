@@ -55,6 +55,26 @@ def test_create_truck_with_default_trailer_split(client: TestClient, db, tenant_
     assert float(data["default_repair_reserve_amount"]) == 500.0
 
 
+def test_create_truck_normalizes_percent_interest_rate_input(client: TestClient, tenant_headers):
+    """Truck creation should treat 6.5 as 6.5%, not 650%."""
+    response = client.post(
+        "/api/trucks",
+        json={
+            "name": "Interest Rate Truck",
+            "vehicle_type": "truck",
+            "license_plate": "INT-650",
+            "cash_investment": 10000,
+            "loan_amount": 5000,
+            "interest_rate": 6.5,
+            "total_cost": 15000,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["interest_rate"]) == 0.065
+
+
 def test_get_trucks_empty(client: TestClient, tenant_headers):
     """Test getting trucks when none exist"""
     response = client.get("/api/trucks", headers=tenant_headers)
@@ -155,6 +175,33 @@ def test_update_truck_resyncs_paid_off_loan_balance(client: TestClient, db, tena
     assert response.status_code == 200
     data = response.json()
     assert data["current_loan_balance"] == 0.0
+
+
+def test_update_truck_normalizes_percent_interest_rate_input(client: TestClient, db, tenant_headers):
+    """Truck updates should normalize 6.5 to decimal interest storage."""
+    truck = Truck(
+        tenant_id=1,
+        name="Interest Update Truck",
+        vehicle_type="truck",
+        license_plate="INT-651",
+        cash_investment=100.0,
+        loan_amount=500.0,
+        current_loan_balance=500.0,
+        interest_rate=0.07,
+        total_cost=600.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.put(
+        f"/api/trucks/{truck.id}",
+        json={"interest_rate": 6.5},
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["interest_rate"]) == 0.065
 
 
 def test_create_settlement_skips_interest_when_history_already_paid_off(client: TestClient, db, tenant_headers):

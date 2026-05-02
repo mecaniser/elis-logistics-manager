@@ -162,6 +162,28 @@ def validate_default_repair_reserve(
     return normalized_amount or None
 
 
+def normalize_interest_rate(interest_rate: Optional[float]) -> Optional[float]:
+    """Normalize user-entered interest rates to decimal form.
+
+    Examples:
+    - 0.07 stays 0.07
+    - 6.5 becomes 0.065
+    """
+    if interest_rate is None:
+        return None
+
+    normalized_rate = float(interest_rate)
+    if normalized_rate < 0:
+        raise HTTPException(status_code=400, detail="Interest rate cannot be negative.")
+
+    if normalized_rate > 1:
+        if normalized_rate > 100:
+            raise HTTPException(status_code=400, detail="Interest rate cannot exceed 100%.")
+        normalized_rate = normalized_rate / 100.0
+
+    return round(normalized_rate, 4)
+
+
 def resync_truck_default_repair_reserve(
     db: Session,
     truck: Truck,
@@ -307,6 +329,8 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
         truck_dict['interest_rate'] = 0.07  # Default 7%
+    else:
+        truck_dict['interest_rate'] = normalize_interest_rate(truck_dict['interest_rate'])
     # Initialize current_loan_balance = loan_amount for trucks and SUVs
     if vehicle_type in ['truck', 'suv'] and truck_dict.get('loan_amount'):
         if 'current_loan_balance' not in truck_dict or truck_dict['current_loan_balance'] is None:
@@ -452,6 +476,8 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
             vehicle_type,
             update_data.get('default_repair_reserve_amount', truck.default_repair_reserve_amount),
         )
+    if 'interest_rate' in update_data:
+        update_data['interest_rate'] = normalize_interest_rate(update_data['interest_rate'])
     
     # Calculate additional expenses total
     additional_expenses_total = 0.0
