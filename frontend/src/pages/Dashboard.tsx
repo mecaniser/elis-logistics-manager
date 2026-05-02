@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [showBlockDetails, setShowBlockDetails] = useState<boolean>(false) // Show/hide block details table
   const [expenseDetailsExpanded, setExpenseDetailsExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
   const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
+  const [cumulativePositionExpanded, setCumulativePositionExpanded] = useState<boolean>(false)
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
@@ -236,6 +237,7 @@ export default function Dashboard() {
     // Collapse settlements info and repair expenses when view or period changes
     setSettlementsInfoExpanded(false)
     setRepairExpensesExpanded(false)
+    setCumulativePositionExpanded(false)
   }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod, vehicleTypeFilter])
 
   useEffect(() => {
@@ -1320,6 +1322,11 @@ export default function Dashboard() {
                 const reserveWithdrawalsToDate = totalReserveWithdrawals
                 const reserveAdjustmentsToDate = totalReserveAdjustments
                 const reserveCushionToDate = totalReserveBalance
+                const periodScopeLabel = expenseAnalysisView === 'weekly'
+                  ? 'This Week'
+                  : expenseAnalysisView === 'monthly'
+                  ? 'This Month'
+                  : 'This Year'
                 
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
@@ -1398,40 +1405,87 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Up-To-Date Position</h4>
+                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Selected Period Position</h4>
                       <div className="space-y-3">
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Trailer Contribution To Date</span>
-                          <span className={`text-sm font-semibold ${cumulativeTrailerContribution >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                            ${safeToLocaleString(cumulativeTrailerContribution)}
+                          <span className="text-sm text-gray-600">Trailer Contribution {periodScopeLabel}</span>
+                          <span className={`text-sm font-semibold ${trailerSplitThisPeriod >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                            ${safeToLocaleString(trailerSplitThisPeriod)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Deposits To Date</span>
+                          <span className="text-sm text-gray-600">Reserve Deposit {periodScopeLabel}</span>
                           <span className="text-sm font-semibold text-amber-700">
-                            ${safeToLocaleString(reserveDepositsToDate)}
+                            ${safeToLocaleString(repairReserveThisPeriod)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Withdrawals To Date (Repairs)</span>
+                          <span className="text-sm text-gray-600">Reserve Withdrawals {periodScopeLabel} (Repairs)</span>
                           <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(reserveWithdrawalsToDate)}
+                            ${safeToLocaleString(repairs)}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Manual Reserve Adjustments To Date</span>
-                          <span className="text-sm font-semibold text-slate-700">
-                            ${safeToLocaleString(reserveAdjustmentsToDate)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-t border-blue-200">
-                          <span className="text-sm font-semibold text-gray-900">Current Reserve Balance</span>
-                          <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                            ${safeToLocaleString(reserveCushionToDate)}
-                          </span>
+                        <div className="rounded-md border border-blue-200 bg-white/70 px-3 py-3">
+                          <button
+                            type="button"
+                            onClick={() => setCumulativePositionExpanded(!cumulativePositionExpanded)}
+                            className="w-full flex items-center justify-between text-left"
+                          >
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900">To-Date Position</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Full trailer contribution and reserve balance across the 2026 reserve regime.
+                              </div>
+                            </div>
+                            <svg
+                              className={`w-5 h-5 text-gray-600 transition-transform ${cumulativePositionExpanded ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {cumulativePositionExpanded && (
+                            <div className="mt-4 space-y-3 border-t border-blue-100 pt-4">
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-sm text-gray-600">Trailer Contribution To Date</span>
+                                <span className={`text-sm font-semibold ${cumulativeTrailerContribution >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                                  ${safeToLocaleString(cumulativeTrailerContribution)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-sm text-gray-600">Reserve Deposits To Date</span>
+                                <span className="text-sm font-semibold text-amber-700">
+                                  ${safeToLocaleString(reserveDepositsToDate)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-sm text-gray-600">Reserve Withdrawals To Date (Repairs)</span>
+                                <span className="text-sm font-semibold text-red-600">
+                                  ${safeToLocaleString(reserveWithdrawalsToDate)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-sm text-gray-600">Manual Reserve Adjustments To Date</span>
+                                <span className="text-sm font-semibold text-slate-700">
+                                  ${safeToLocaleString(reserveAdjustmentsToDate)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center py-2 border-t border-blue-200">
+                                <span className="text-sm font-semibold text-gray-900">Current Reserve Balance (To Date)</span>
+                                <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                  ${safeToLocaleString(reserveCushionToDate)}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500">
-                          Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
+                          The values above follow the currently selected {expenseAnalysisView} period. Expand the to-date section for cumulative reserve and trailer totals.
                         </div>
                       </div>
                     </div>
