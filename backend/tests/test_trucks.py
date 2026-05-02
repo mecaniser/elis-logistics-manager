@@ -441,6 +441,73 @@ def test_create_settlement_uses_truck_default_repair_reserve(client: TestClient,
     assert float(data["net_profit"]) == 1300.0
 
 
+def test_update_truck_default_repair_reserve_rewrites_2026_settlements_and_ledger(client: TestClient, db, tenant_headers):
+    """Changing the truck default reserve should rewrite 2026+ settlements and re-sync deposit ledger rows."""
+    from app.models.repair_reserve_ledger import RepairReserveLedger
+
+    truck = Truck(
+        tenant_id=1,
+        name="Truck Retro Reserve",
+        vehicle_type="truck",
+        license_plate="VW9331",
+        default_repair_reserve_amount=500.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    create_response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2026-02-11",
+            "gross_revenue": 2000.0,
+            "expenses": 200.0,
+            "net_profit": 1800.0,
+        },
+        headers=tenant_headers,
+    )
+    assert create_response.status_code == 200
+    settlement_2026_id = create_response.json()["id"]
+
+    legacy_settlement = Settlement(
+        truck_id=truck.id,
+        settlement_date=date(2025, 12, 20),
+        gross_revenue=1500.0,
+        expenses=200.0,
+        net_profit=1300.0,
+        repair_reserve_amount=500.0,
+    )
+    db.add(legacy_settlement)
+    db.commit()
+    db.refresh(legacy_settlement)
+
+    update_response = client.put(
+        f"/api/trucks/{truck.id}",
+        json={"default_repair_reserve_amount": 300.0},
+        headers=tenant_headers,
+    )
+    assert update_response.status_code == 200
+    assert float(update_response.json()["default_repair_reserve_amount"]) == 300.0
+
+    refreshed_2026 = db.query(Settlement).filter(Settlement.id == settlement_2026_id).first()
+    refreshed_2025 = db.query(Settlement).filter(Settlement.id == legacy_settlement.id).first()
+    assert refreshed_2026 is not None
+    assert refreshed_2025 is not None
+
+    assert float(refreshed_2026.repair_reserve_amount) == 300.0
+    assert float(refreshed_2026.gross_revenue) == 1700.0
+    assert float(refreshed_2026.net_profit) == 1500.0
+
+    assert float(refreshed_2025.repair_reserve_amount) == 500.0
+    assert float(refreshed_2025.gross_revenue) == 1500.0
+    assert float(refreshed_2025.net_profit) == 1300.0
+
+    ledger_row = db.query(RepairReserveLedger).filter_by(source_type="settlement", source_id=settlement_2026_id).first()
+    assert ledger_row is not None
+    assert float(ledger_row.amount) == 300.0
+
+
 def test_delete_source_settlement_removes_managed_trailer_income_split(client: TestClient, db, tenant_headers):
     """Deleting the source truck settlement should also delete the managed trailer income settlement."""
     truck = Truck(

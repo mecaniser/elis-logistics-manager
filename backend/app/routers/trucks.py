@@ -13,12 +13,15 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.dependencies import get_tenant_id
+from app.models.settlement import Settlement
 from app.models.truck import Truck
 from app.models.vehicle_document import VehicleDocument
 from app.services.loan_balance_service import sync_current_loan_balance
+from app.services.reserve_service import sync_repair_reserve_ledger
 from app.schemas.truck import TruckCreate, TruckResponse, TruckUpdate
 from app.schemas.vehicle_document import VehicleDocumentResponse
 from app.utils.cloudinary import delete_uploaded_file, upload_image, upload_pdf
+from app.utils.reserve_regime import RESERVE_REGIME_START_DATE
 
 router = APIRouter()
 
@@ -157,6 +160,42 @@ def validate_default_repair_reserve(
         return None
 
     return normalized_amount or None
+
+
+def resync_truck_default_repair_reserve(
+    db: Session,
+    truck: Truck,
+    new_default_repair_reserve_amount: Optional[float],
+) -> int:
+    """Rewrite 2026+ source settlements to the new truck default reserve amount."""
+    settlements = (
+        db.query(Settlement)
+        .filter(
+            Settlement.truck_id == truck.id,
+            Settlement.source_settlement_id.is_(None),
+            Settlement.settlement_date >= RESERVE_REGIME_START_DATE,
+        )
+        .order_by(Settlement.id.asc())
+        .all()
+    )
+
+    rewritten_count = 0
+    normalized_new_amount = round(float(new_default_repair_reserve_amount or 0.0), 2)
+
+    for settlement in settlements:
+        existing_reserve_amount = round(float(settlement.repair_reserve_amount or 0.0), 2)
+        if existing_reserve_amount == normalized_new_amount:
+            sync_repair_reserve_ledger(db, settlement)
+            continue
+
+        settlement.gross_revenue = round(float(settlement.gross_revenue or 0.0) + existing_reserve_amount - normalized_new_amount, 2)
+        settlement.net_profit = round(float(settlement.net_profit or 0.0) + existing_reserve_amount - normalized_new_amount, 2)
+        settlement.repair_reserve_amount = normalized_new_amount or None
+        db.add(settlement)
+        sync_repair_reserve_ledger(db, settlement)
+        rewritten_count += 1
+
+    return rewritten_count
 
 @router.get("", response_model=List[TruckResponse])
 @router.get("/", response_model=List[TruckResponse])
@@ -387,6 +426,7 @@ def delete_vehicle_document(
 def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Update a truck or trailer"""
     truck = get_tenant_truck_or_404(db, truck_id, tenant_id)
+    previous_default_repair_reserve_amount = round(float(truck.default_repair_reserve_amount or 0.0), 2)
     
     # Update only provided fields
     update_data = truck_update.model_dump(exclude_unset=True)
@@ -487,6 +527,14 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     )
     if should_resync_loan_balance:
         sync_current_loan_balance(db, truck)
+
+    next_default_repair_reserve_amount = round(float(truck.default_repair_reserve_amount or 0.0), 2)
+    should_resync_default_reserve = (
+        vehicle_type == 'truck'
+        and previous_default_repair_reserve_amount != next_default_repair_reserve_amount
+    )
+    if should_resync_default_reserve:
+        resync_truck_default_repair_reserve(db, truck, truck.default_repair_reserve_amount)
     
     db.commit()
     db.refresh(truck)
