@@ -103,12 +103,12 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   loan_amount: vehicle.loan_amount?.toString() || '',
   interest_rate: (() => {
     if (vehicle.interest_rate == null || Number.isNaN(Number(vehicle.interest_rate))) {
-      return '0.07'
+      return '7.00'
     }
     const normalizedRate = Number(vehicle.interest_rate) > 1
       ? Number(vehicle.interest_rate) / 100
       : Number(vehicle.interest_rate)
-    return normalizedRate.toString()
+    return (Math.round(normalizedRate * 10000) / 100).toFixed(2)
   })(),
   total_cost: vehicle.total_cost?.toString() || '',
   registration_fee: vehicle.registration_fee?.toString() || '',
@@ -219,7 +219,7 @@ export default function Trucks() {
     tag_number: '',
     cash_investment: '',
     loan_amount: '',
-    interest_rate: '0.07',
+    interest_rate: '7.00',
     total_cost: '',
     registration_fee: '',
     purchase_date: '',
@@ -725,7 +725,7 @@ export default function Trucks() {
       tag_number: '',
       cash_investment: '',
       loan_amount: '',
-      interest_rate: '0.07',
+      interest_rate: '7.00',
       total_cost: '',
       registration_fee: '',
       purchase_date: '',
@@ -1258,16 +1258,13 @@ export default function Trucks() {
                             if (!formData.interest_rate || formData.interest_rate === '') {
                               return ''
                             }
-                            const decimalValue = parseFloat(formData.interest_rate)
-                            if (isNaN(decimalValue)) {
+                            const percentValue = parseFloat(formData.interest_rate)
+                            if (isNaN(percentValue)) {
                               return ''
                             }
-                            const percentValue = decimalValue * 100
-                            // Round to avoid floating point precision issues (e.g., 0.07 * 100 = 7.000000000000001)
-                            const roundedPercent = Math.round(percentValue * 100) / 100
                             return focusedFields.has('interest_rate') 
-                              ? roundedPercent.toString() 
-                              : roundedPercent.toFixed(2)
+                              ? formData.interest_rate
+                              : percentValue.toFixed(2)
                           })()}
                         onChange={(e) => {
                             const inputValue = e.target.value
@@ -1280,8 +1277,7 @@ export default function Trucks() {
                                 if (value !== '') {
                                   const percentValue = parseFloat(value)
                                   if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
-                                    const decimalValue = (percentValue / 100).toFixed(4)
-                                    setFormData({ ...formData, interest_rate: decimalValue })
+                                    setFormData({ ...formData, interest_rate: value })
                                   }
                                 }
                               }
@@ -1297,8 +1293,7 @@ export default function Trucks() {
                             if (value !== '') {
                               const percentValue = parseFloat(value)
                               if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
-                                const decimalValue = (percentValue / 100).toFixed(4)
-                                setFormData({ ...formData, interest_rate: decimalValue })
+                                setFormData({ ...formData, interest_rate: percentValue.toFixed(2) })
                               }
                             }
                           }
