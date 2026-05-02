@@ -331,7 +331,7 @@ export default function VehicleDetail() {
                     ${safeToLocaleString(reserveWithdrawals)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Repairs explicitly marked as paid from reserve.
+                    Repairs marked as paid from reserve reduce the balance here.
                   </div>
                 </div>
 
@@ -341,17 +341,17 @@ export default function VehicleDetail() {
                     ${safeToLocaleString(reserveCushionAvailable)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Deposits plus adjustments minus withdrawals.
+                    Deposits plus manual adjustments minus withdrawals.
                   </div>
                 </div>
               </div>
               <div className="mt-3 flex flex-col gap-1 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
                 <span>Loaded settlements on this screen contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} of reserve deposits.</span>
-                <span>Reserve regime starts 2026-01-01. Pre-2026 settlements are not included.</span>
+                <span>Reserve regime starts 2026-01-01. Repairs paid from reserve show under withdrawals; adjustments are manual corrections only.</span>
               </div>
               {reserveAdjustments > 0 && (
                 <div className="mt-2 text-xs text-gray-600">
-                  Reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
+                  Manual reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
                 </div>
               )}
             </div>

@@ -1413,13 +1413,13 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Withdrawals To Date</span>
+                          <span className="text-sm text-gray-600">Reserve Withdrawals To Date (Repairs)</span>
                           <span className="text-sm font-semibold text-red-600">
                             ${safeToLocaleString(reserveWithdrawalsToDate)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Adjustments To Date</span>
+                          <span className="text-sm text-gray-600">Manual Reserve Adjustments To Date</span>
                           <span className="text-sm font-semibold text-slate-700">
                             ${safeToLocaleString(reserveAdjustmentsToDate)}
                           </span>
@@ -1431,7 +1431,7 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <div className="text-xs text-gray-500">
-                          Reserve regime starts 2026-01-01. This ledger view tracks deposits, withdrawals, and adjustments rather than all repair spend.
+                          Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
                         </div>
                       </div>
                     </div>
