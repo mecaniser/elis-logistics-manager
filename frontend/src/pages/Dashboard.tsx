@@ -1315,6 +1315,7 @@ export default function Dashboard() {
                 const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
                 const netProfitValue = Number(selectedPeriodData.net_profit) || 0
                 const trailerSplitThisPeriod = Number((selectedPeriodData as any).trailer_income_split_amount) || 0
+                const trailerContributionThisPeriod = Number((trailerBusinessPeriod as any)?.net_profit) || 0
                 const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
                 const cumulativeTrailerContribution = selectedTrailerContributionTotal
@@ -1331,8 +1332,9 @@ export default function Dashboard() {
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
                 
-                // Calculate repairs total from filtered repairs to ensure consistency with displayed repairs
-                const repairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
+                const reserveFundedRepairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
+                const directRepairExpenses = 0
+                const trueNetProfitValue = netProfitValue - directRepairExpenses
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -1386,20 +1388,29 @@ export default function Dashboard() {
                       </div>
                       
                       {/* Repair Expenses: separate from settlement, shown for context */}
-                      {repairs > 0 && (
+                      {reserveFundedRepairs > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200 bg-blue-50 -mx-2 px-2 rounded-sm">
+                          <span className="text-sm text-gray-700">Reserve-Funded Repairs (covered by reserve)</span>
+                          <span className="text-sm font-medium text-blue-700">
+                            ${safeToLocaleString(reserveFundedRepairs)}
+                          </span>
+                        </div>
+                      )}
+
+                      {directRepairExpenses > 0 && (
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Repair Expenses (this period)</span>
+                          <span className="text-sm text-gray-600">Less: Direct Repair Expenses (not reserve-funded)</span>
                           <span className="text-sm font-medium text-red-600">
-                            -${safeToLocaleString(repairs)}
+                            -${safeToLocaleString(directRepairExpenses)}
                           </span>
                         </div>
                       )}
                       
-                      {/* True Net Profit: after all deductions including repairs */}
+                      {/* True Net Profit: direct business profit after reserve deposits and any non-reserve repairs */}
                       <div className="flex justify-between items-center pt-2">
                         <span className="text-base font-semibold text-gray-900">True Net Profit</span>
-                        <span className={`text-xl font-bold ${(netProfitValue - repairs) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${safeToLocaleString(netProfitValue - repairs)}
+                        <span className={`text-xl font-bold ${trueNetProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${safeToLocaleString(trueNetProfitValue)}
                         </span>
                       </div>
                     </div>
@@ -1409,8 +1420,8 @@ export default function Dashboard() {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center py-1">
                           <span className="text-sm text-gray-600">Trailer Contribution {periodScopeLabel}</span>
-                          <span className={`text-sm font-semibold ${trailerSplitThisPeriod >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                            ${safeToLocaleString(trailerSplitThisPeriod)}
+                          <span className={`text-sm font-semibold ${trailerContributionThisPeriod >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                            ${safeToLocaleString(trailerContributionThisPeriod)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-1">
@@ -1422,7 +1433,7 @@ export default function Dashboard() {
                         <div className="flex justify-between items-center py-1">
                           <span className="text-sm text-gray-600">Reserve Withdrawals {periodScopeLabel} (Repairs)</span>
                           <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(repairs)}
+                            ${safeToLocaleString(reserveFundedRepairs)}
                           </span>
                         </div>
                         <div className="rounded-md border border-blue-200 bg-white/70 px-3 py-3">
@@ -1561,7 +1572,7 @@ export default function Dashboard() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
                                   <span className="text-base font-bold text-red-600">
-                                    ${safeToLocaleString(repairs)}
+                                    ${safeToLocaleString(reserveFundedRepairs + directRepairExpenses)}
                                   </span>
                                 </div>
                               </div>
