@@ -166,7 +166,7 @@ async def create_repair(
         except (ValueError, TypeError):
             miles = None
 
-    paid_from_reserve = bool(repair_data.get("paid_from_reserve", False))
+    paid_from_reserve = True
     validate_paid_from_reserve(repair_date, paid_from_reserve)
 
     db_repair = Repair(
@@ -355,12 +355,13 @@ async def update_repair(
         update_data["truck_id"] = truck.id
 
     next_repair_date = update_data.get("repair_date", repair.repair_date)
-    next_paid_from_reserve = bool(update_data.get("paid_from_reserve", repair.paid_from_reserve))
+    next_paid_from_reserve = True
     validate_paid_from_reserve(next_repair_date, next_paid_from_reserve)
     
     # Update only provided fields
     for field, value in update_data.items():
         setattr(repair, field, value)
+    repair.paid_from_reserve = True
 
     try:
         sync_repair_reserve_withdrawal(db, repair)
@@ -549,7 +550,7 @@ async def upload_repair_invoice(
             category=repair_data.get("category"),
             cost=repair_data.get("cost"),
             miles=repair_data.get("miles"),
-            paid_from_reserve=False,
+            paid_from_reserve=True,
             receipt_path=receipt_path,
             invoice_number=repair_data.get("invoice_number"),
             image_paths=image_paths if image_paths else None

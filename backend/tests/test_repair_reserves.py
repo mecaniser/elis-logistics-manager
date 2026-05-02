@@ -60,19 +60,17 @@ def settlement_payload(truck_id: int, settlement_date: str, reserve_amount=None)
     return payload
 
 
-def repair_form_data(truck_id: int, repair_date: str, *, cost=300.0, paid_from_reserve=False):
-    return {
-        "repair_json": json.dumps(
-            {
-                "truck_id": truck_id,
-                "repair_date": repair_date,
-                "description": "Brake repair",
-                "category": "brakes",
-                "cost": cost,
-                "paid_from_reserve": paid_from_reserve,
-            }
-        )
+def repair_form_data(truck_id: int, repair_date: str, *, cost=300.0, paid_from_reserve=None):
+    payload = {
+        "truck_id": truck_id,
+        "repair_date": repair_date,
+        "description": "Brake repair",
+        "category": "brakes",
+        "cost": cost,
     }
+    if paid_from_reserve is not None:
+        payload["paid_from_reserve"] = paid_from_reserve
+    return {"repair_json": json.dumps(payload)}
 
 
 def test_settlement_create_respects_cutoff_and_creates_post_cutoff_deposit(client, db, tenant_headers):
@@ -146,12 +144,12 @@ def test_settlement_delete_removes_reserve_deposit(client, db, tenant_headers):
     assert db.query(RepairReserveLedger).filter_by(source_type="settlement", source_id=settlement_id).count() == 0
 
 
-def test_repair_create_respects_cutoff_and_paid_from_reserve_flag(client, db, tenant_headers):
+def test_repair_create_respects_cutoff_and_creates_withdrawal_automatically(client, db, tenant_headers):
     truck = make_truck(db, name="Repair Truck", license_plate="REP-100")
 
     pre_response = client.post(
         "/api/repairs/",
-        data=repair_form_data(truck.id, "2025-12-20", paid_from_reserve=True),
+        data=repair_form_data(truck.id, "2025-12-20"),
         headers=tenant_headers,
     )
     assert pre_response.status_code == 200
@@ -159,7 +157,7 @@ def test_repair_create_respects_cutoff_and_paid_from_reserve_flag(client, db, te
 
     post_response = client.post(
         "/api/repairs/",
-        data=repair_form_data(truck.id, "2026-03-15", paid_from_reserve=True),
+        data=repair_form_data(truck.id, "2026-03-15"),
         headers=tenant_headers,
     )
     assert post_response.status_code == 200
@@ -171,11 +169,11 @@ def test_repair_create_respects_cutoff_and_paid_from_reserve_flag(client, db, te
     assert float(row.amount) == 300.0
 
 
-def test_repair_update_updates_and_deletes_withdrawal(client, db, tenant_headers):
+def test_repair_update_updates_withdrawal_and_ignores_opt_out(client, db, tenant_headers):
     truck = make_truck(db, name="Repair Update Truck", license_plate="RUP-100")
     response = client.post(
         "/api/repairs/",
-        data=repair_form_data(truck.id, "2026-03-20", paid_from_reserve=True),
+        data=repair_form_data(truck.id, "2026-03-20"),
         headers=tenant_headers,
     )
     assert response.status_code == 200
@@ -183,7 +181,7 @@ def test_repair_update_updates_and_deletes_withdrawal(client, db, tenant_headers
 
     update_response = client.put(
         f"/api/repairs/{repair_id}",
-        data={"repair_update_json": json.dumps({"cost": 425.0, "paid_from_reserve": True})},
+        data={"repair_update_json": json.dumps({"cost": 425.0})},
         headers=tenant_headers,
     )
     assert update_response.status_code == 200
@@ -197,14 +195,16 @@ def test_repair_update_updates_and_deletes_withdrawal(client, db, tenant_headers
         headers=tenant_headers,
     )
     assert toggle_response.status_code == 200
-    assert db.query(RepairReserveLedger).filter_by(source_type="repair", source_id=repair_id).first() is None
+    row = db.query(RepairReserveLedger).filter_by(source_type="repair", source_id=repair_id).first()
+    assert row is not None
+    assert float(row.amount) == 425.0
 
 
 def test_repair_update_works_without_soft_delete_support(client, db, tenant_headers, monkeypatch):
     truck = make_truck(db, name="Compatibility Truck", license_plate="CMP-100")
     response = client.post(
         "/api/repairs/",
-        data=repair_form_data(truck.id, "2026-03-22", paid_from_reserve=True),
+        data=repair_form_data(truck.id, "2026-03-22"),
         headers=tenant_headers,
     )
     assert response.status_code == 200
@@ -214,7 +214,7 @@ def test_repair_update_works_without_soft_delete_support(client, db, tenant_head
 
     update_response = client.put(
         f"/api/repairs/{repair_id}",
-        data={"repair_update_json": json.dumps({"cost": 410.0, "paid_from_reserve": True})},
+        data={"repair_update_json": json.dumps({"cost": 410.0})},
         headers=tenant_headers,
     )
     assert update_response.status_code == 200
@@ -224,7 +224,7 @@ def test_repair_update_works_without_soft_delete_support(client, db, tenant_head
     assert float(row.amount) == 410.0
 
 
-def test_repair_requires_date_when_paid_from_reserve(client, db, tenant_headers):
+def test_repair_requires_date_under_reserve_rule(client, db, tenant_headers):
     truck = make_truck(db, name="Date Validation Truck", license_plate="DVR-100")
     response = client.post(
         "/api/repairs/",
@@ -235,7 +235,6 @@ def test_repair_requires_date_when_paid_from_reserve(client, db, tenant_headers)
                     "description": "Missing date repair",
                     "category": "maintenance",
                     "cost": 150.0,
-                    "paid_from_reserve": True,
                 }
             )
         },
@@ -467,7 +466,7 @@ def test_atomic_repair_write_rolls_back_repair_and_withdrawal(client, db, tenant
 
     response = client.post(
         "/api/repairs/",
-        data=repair_form_data(truck.id, "2026-04-10", paid_from_reserve=True),
+        data=repair_form_data(truck.id, "2026-04-10"),
         headers=tenant_headers,
     )
     assert response.status_code == 400

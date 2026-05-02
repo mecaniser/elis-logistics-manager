@@ -93,7 +93,7 @@ def sync_repair_reserve_withdrawal(db: Session, repair: Repair) -> Optional[Repa
         entry_date=repair.repair_date,
         amount=repair.cost,
         description_fn=lambda: format_withdrawal_description(repair),
-        should_write=bool(repair.paid_from_reserve),
+        should_write=True,
     )
 
 
