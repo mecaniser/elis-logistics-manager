@@ -91,21 +91,25 @@ export default function Dashboard() {
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
   useEffect(() => {
-    // Reset selected truck when tenant changes
+    // Reset vehicle-scoped dashboard state when the tenant changes.
     setSelectedTruck(null)
     setTrucks([])
     setData(null)
     setReserveBalances([])
     setSelectedTrailerContributionTotal(0)
     setBusinessTimeSeries({ truck: null, trailer: null })
-    // Only load logistics data for logistics businesses
+
+    if (currentTenant?.business_type !== 'logistics') {
+      setBusinessSummary(null)
+      setLoading(false)
+    }
+  }, [currentTenant?.id, currentTenant?.business_type])
+
+  useEffect(() => {
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
       loadDashboard()
       loadReserveBalances()
-    } else {
-      setBusinessSummary(null)
-      setLoading(false)
     }
   }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type])
 
@@ -123,7 +127,7 @@ export default function Dashboard() {
     } else {
       setBusinessTimeSeries({ truck: null, trailer: null })
     }
-  }, [currentTenant?.id, currentTenant?.business_type, selectedTruck, trucks])
+  }, [currentTenant?.id, currentTenant?.business_type])
 
   useEffect(() => {
     const handleResize = () => {
@@ -362,27 +366,13 @@ export default function Dashboard() {
 
   const loadBusinessTimeSeries = async () => {
     try {
-      const selectedVehicle = selectedTruck ? trucks.find((truck) => truck.id === selectedTruck) : null
-      const selectedTrailerId =
-        selectedVehicle?.vehicle_type === 'trailer'
-          ? selectedVehicle.id
-          : selectedVehicle?.default_trailer_id || null
-
-      const truckPromise =
-        selectedTruck && selectedVehicle?.vehicle_type === 'trailer'
-          ? Promise.resolve(null)
-          : analyticsApi.getTimeSeries(undefined, selectedTruck && selectedVehicle?.vehicle_type !== 'trailer' ? selectedTruck : undefined, selectedTruck ? undefined : 'truck')
-
-      const trailerPromise = selectedTrailerId
-        ? analyticsApi.getTimeSeries(undefined, selectedTrailerId, undefined)
-        : selectedTruck
-        ? Promise.resolve(null)
-        : analyticsApi.getTimeSeries(undefined, undefined, 'trailer')
-
-      const [truckResponse, trailerResponse] = await Promise.all([truckPromise, trailerPromise])
+      const [truckResponse, trailerResponse] = await Promise.all([
+        analyticsApi.getTimeSeries(undefined, undefined, 'truck'),
+        analyticsApi.getTimeSeries(undefined, undefined, 'trailer'),
+      ])
       setBusinessTimeSeries({
-        truck: truckResponse ? normalizeTimeSeries(truckResponse.data) : null,
-        trailer: trailerResponse ? normalizeTimeSeries(trailerResponse.data) : null,
+        truck: normalizeTimeSeries(truckResponse.data),
+        trailer: normalizeTimeSeries(trailerResponse.data),
       })
     } catch (err) {
       console.error('Failed to load business time series:', err)
@@ -916,25 +906,28 @@ export default function Dashboard() {
     return series.by_year.reduce((sum, period) => sum + (Number(period.net_profit) || 0), 0)
   }
 
-  const visibleReserveBalances = selectedTruck
+  const detailReserveBalances = selectedTruck
     ? reserveBalances.filter((row) => row.truck_id === selectedTruck)
     : reserveBalances
-  const totalReserveBalance = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.balance) || 0), 0)
-  const totalReserveDeposits = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.deposits_total) || 0), 0)
-  const totalReserveWithdrawals = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.withdrawals_total) || 0), 0)
-  const totalReserveAdjustments = visibleReserveBalances.reduce((sum, row) => sum + (Number(row.adjustments_total) || 0), 0)
-  const truckBusinessPeriod = getMatchingBusinessPeriod(businessTimeSeries.truck)
-  const trailerBusinessPeriod = getMatchingBusinessPeriod(businessTimeSeries.trailer)
-  const reserveDepositsThisPeriod = expenseAnalysisView === 'all_time'
-    ? totalReserveDeposits
-    : Number((truckBusinessPeriod as any)?.repair_reserve_amount) || 0
+  const summaryReserveBalance = reserveBalances.reduce((sum, row) => sum + (Number(row.balance) || 0), 0)
+  const summaryReserveDepositsToDate = reserveBalances.reduce((sum, row) => sum + (Number(row.deposits_total) || 0), 0)
+  const detailReserveBalance = detailReserveBalances.reduce((sum, row) => sum + (Number(row.balance) || 0), 0)
+  const detailReserveDepositsToDate = detailReserveBalances.reduce((sum, row) => sum + (Number(row.deposits_total) || 0), 0)
+  const detailReserveWithdrawalsToDate = detailReserveBalances.reduce((sum, row) => sum + (Number(row.withdrawals_total) || 0), 0)
+  const detailReserveAdjustmentsToDate = detailReserveBalances.reduce((sum, row) => sum + (Number(row.adjustments_total) || 0), 0)
+  const businessTruckPeriod = getMatchingBusinessPeriod(businessTimeSeries.truck)
+  const businessTrailerPeriod = getMatchingBusinessPeriod(businessTimeSeries.trailer)
+  const businessReserveDepositsThisPeriod = expenseAnalysisView === 'all_time'
+    ? summaryReserveDepositsToDate
+    : Number((businessTruckPeriod as any)?.repair_reserve_amount) || 0
   const truckNetProfitTotal = expenseAnalysisView === 'all_time'
     ? sumNetProfitAcrossSeries(businessTimeSeries.truck) || Number(businessSummary?.trucks?.net_profit) || 0
-    : Number((truckBusinessPeriod as any)?.net_profit) || 0
+    : Number((businessTruckPeriod as any)?.net_profit) || 0
   const trailerNetProfitTotal = expenseAnalysisView === 'all_time'
     ? sumNetProfitAcrossSeries(businessTimeSeries.trailer) || Number(businessSummary?.trailers?.net_profit) || 0
-    : Number((trailerBusinessPeriod as any)?.net_profit) || 0
+    : Number((businessTrailerPeriod as any)?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
+  const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
   const businessTotalScopeLabel = expenseAnalysisView === 'all_time'
     ? 'All time'
     : expenseAnalysisView === 'weekly'
@@ -976,20 +969,8 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4 sm:mb-6">
+      <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-        <select
-          value={selectedTruck || ''}
-          onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-        >
-          <option value="">All Vehicles</option>
-          {trucks.map((truck) => (
-            <option key={truck.id} value={truck.id}>
-              {truck.name}
-            </option>
-          ))}
-        </select>
       </div>
 
       <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -997,10 +978,7 @@ export default function Dashboard() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Truck and trailer profit combined. Reserve deposits are already netted out of truck profit and shown separately for context.
-            </p>
-            <p className="mt-1 text-xs font-medium text-gray-500">
-              Scope: {businessTotalScopeLabel}
+              Truck and trailer profit combined across all vehicles.
             </p>
           </div>
           <div className="text-left lg:text-right">
@@ -1010,29 +988,41 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <div className="text-xs font-medium text-gray-600">Truck Profits</div>
-            <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-              ${safeToLocaleString(truckNetProfitTotal)}
+        <div className="mt-3 flex flex-col gap-1 text-xs font-medium text-gray-500">
+          <span>Scope: {businessTotalScopeLabel}</span>
+          <span>Showing all vehicles. Use the filter below for per-vehicle detail.</span>
+        </div>
+        <div className="mt-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{businessPeriodSectionLabel}</div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <div className="text-xs font-medium text-gray-600">Truck Profits</div>
+              <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+                ${safeToLocaleString(truckNetProfitTotal)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-purple-100 bg-purple-50 p-4">
+              <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
+              <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                ${safeToLocaleString(trailerNetProfitTotal)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
+              <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
+              <div className="mt-1 text-xl font-bold text-amber-700">
+                ${safeToLocaleString(businessReserveDepositsThisPeriod)}
+              </div>
             </div>
           </div>
-          <div className="rounded-lg border border-purple-100 bg-purple-50 p-4">
-            <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
-            <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-              ${safeToLocaleString(trailerNetProfitTotal)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
-            <div className="text-xs font-medium text-gray-600">Reserve Deposits This Period</div>
-            <div className="mt-1 text-xl font-bold text-amber-700">
-              ${safeToLocaleString(reserveDepositsThisPeriod)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
-            <div className="text-xs font-medium text-gray-600">Current Reserve Balance</div>
-            <div className={`mt-1 text-xl font-bold ${totalReserveBalance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              ${safeToLocaleString(totalReserveBalance)}
+        </div>
+        <div className="mt-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Running Totals</div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:max-w-md">
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+              <div className="text-xs font-medium text-gray-600">Reserve Balance (to date)</div>
+              <div className={`mt-1 text-xl font-bold ${summaryReserveBalance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                ${safeToLocaleString(summaryReserveBalance)}
+              </div>
             </div>
           </div>
         </div>
@@ -1043,33 +1033,45 @@ export default function Dashboard() {
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="flex flex-col mb-6 gap-4">
             <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              {/* Vehicle Type Filter - Left */}
-              <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
-                <button
-                  type="button"
-                  onClick={() => setVehicleTypeFilter('trucks')}
-                  className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
-                    vehicleTypeFilter === 'trucks'
-                      ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
+            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
+                  <button
+                    type="button"
+                    onClick={() => setVehicleTypeFilter('trucks')}
+                    className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
+                      vehicleTypeFilter === 'trucks'
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    🚚 Vehicles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVehicleTypeFilter('trailers')}
+                    className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
+                      vehicleTypeFilter === 'trailers'
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    🚛 Trailers
+                  </button>
+                </div>
+                <select
+                  value={selectedTruck || ''}
+                  onChange={(e) => setSelectedTruck(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
-                  🚚 Vehicles
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVehicleTypeFilter('trailers')}
-                  className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
-                    vehicleTypeFilter === 'trailers'
-                      ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  🚛 Trailers
-                </button>
+                  <option value="">All Vehicles</option>
+                  {trucks.map((truck) => (
+                    <option key={truck.id} value={truck.id}>
+                      {truck.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {/* Time Range Filter - Center (Same design for mobile and desktop) */}
               <div className="flex items-center justify-center flex-1 gap-2 overflow-x-auto">
                 {vehicleTypeFilter === 'trucks' && (
                   <>
@@ -1139,30 +1141,29 @@ export default function Dashboard() {
                   <span className="text-xs font-medium">All Time</span>
                 </button>
               </div>
-              {/* Period Selector - Right */}
               {expenseAnalysisView !== 'all_time' && (
-              <div className="w-full md:w-auto">
-                <select
-                  value={selectedExpensePeriod}
-                  onChange={(e) => setSelectedExpensePeriod(e.target.value)}
-                  className="w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                >
-                  {(expenseAnalysisView === 'weekly' 
-                    ? (timeSeriesData?.by_week || []) 
-                    : expenseAnalysisView === 'monthly'
-                    ? (timeSeriesData?.by_month || [])
-                    : (timeSeriesData?.by_year || [])
-                  ).map((period: any) => {
-                    const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
-                    const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
-                    return (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    )
-                  })}
-                </select>
-              </div>
+                <div className="w-full xl:w-auto">
+                  <select
+                    value={selectedExpensePeriod}
+                    onChange={(e) => setSelectedExpensePeriod(e.target.value)}
+                    className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    {(expenseAnalysisView === 'weekly'
+                      ? (timeSeriesData?.by_week || [])
+                      : expenseAnalysisView === 'monthly'
+                      ? (timeSeriesData?.by_month || [])
+                      : (timeSeriesData?.by_year || [])
+                    ).map((period: any) => {
+                      const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
+                      const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
+                      return (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
               )}
             </div>
           </div>
@@ -1190,6 +1191,11 @@ export default function Dashboard() {
                     const rawGrossPerMile = rawGrossMilesDriven > 0 ? rawGrossRevenue / rawGrossMilesDriven : null
                     const settlementCostPerMile = milesDriven > 0 ? settlementExpenses / milesDriven : null
                     const allInCostPerMile = milesDriven > 0 ? (settlementExpenses + repairsForPeriod) / milesDriven : null
+                    const showCostPerMileParityNote =
+                      vehicleTypeFilter === 'trucks' &&
+                      repairsForPeriod === 0 &&
+                      settlementCostPerMile != null &&
+                      allInCostPerMile != null
                 
                 return (
                   <>
@@ -1301,6 +1307,11 @@ export default function Dashboard() {
                         {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
                       </div>
                     </div>
+                    {showCostPerMileParityNote && (
+                      <div className="mb-6 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                        No repairs in this period. Settlement and all-in cost per mile are equal.
+                      </div>
+                    )}
                   </>
                 )
               })()}
@@ -1315,19 +1326,13 @@ export default function Dashboard() {
                 const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
                 const netProfitValue = Number(selectedPeriodData.net_profit) || 0
                 const trailerSplitThisPeriod = Number((selectedPeriodData as any).trailer_income_split_amount) || 0
-                const trailerContributionThisPeriod = Number((trailerBusinessPeriod as any)?.net_profit) || 0
                 const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
                 const cumulativeTrailerContribution = selectedTrailerContributionTotal
-                const reserveDepositsToDate = totalReserveDeposits
-                const reserveWithdrawalsToDate = totalReserveWithdrawals
-                const reserveAdjustmentsToDate = totalReserveAdjustments
-                const reserveCushionToDate = totalReserveBalance
-                const periodScopeLabel = expenseAnalysisView === 'weekly'
-                  ? 'This Week'
-                  : expenseAnalysisView === 'monthly'
-                  ? 'This Month'
-                  : 'This Year'
+                const reserveDepositsToDate = detailReserveDepositsToDate
+                const reserveWithdrawalsToDate = detailReserveWithdrawalsToDate
+                const reserveAdjustmentsToDate = detailReserveAdjustmentsToDate
+                const reserveCushionToDate = detailReserveBalance
                 
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
@@ -1335,6 +1340,10 @@ export default function Dashboard() {
                 const reserveFundedRepairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
                 const directRepairExpenses = 0
                 const trueNetProfitValue = netProfitValue - directRepairExpenses
+                const showTrueNetProfitParityNote =
+                  !selectedTruck &&
+                  Math.abs(truckNetProfitTotal - netProfitValue) < 0.005 &&
+                  Math.abs(netProfitValue - trueNetProfitValue) < 0.005
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -1407,97 +1416,83 @@ export default function Dashboard() {
                       )}
                       
                       {/* True Net Profit: direct business profit after reserve deposits and any non-reserve repairs */}
-                      <div className="flex justify-between items-center pt-2">
-                        <span className="text-base font-semibold text-gray-900">True Net Profit</span>
-                        <span className={`text-xl font-bold ${trueNetProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${safeToLocaleString(trueNetProfitValue)}
-                        </span>
+                      <div className="pt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-base font-semibold text-gray-900">True Net Profit</span>
+                          <span className={`text-xl font-bold ${trueNetProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${safeToLocaleString(trueNetProfitValue)}
+                          </span>
+                        </div>
+                        {showTrueNetProfitParityNote && (
+                          <div className="mt-2 text-sm text-gray-500">
+                            Same as Net Profit and Truck Profits above. No additional deductions this period.
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-3">Selected Period Position</h4>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Trailer Contribution {periodScopeLabel}</span>
-                          <span className={`text-sm font-semibold ${trailerContributionThisPeriod >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                            ${safeToLocaleString(trailerContributionThisPeriod)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Deposit {periodScopeLabel}</span>
-                          <span className="text-sm font-semibold text-amber-700">
-                            ${safeToLocaleString(repairReserveThisPeriod)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-1">
-                          <span className="text-sm text-gray-600">Reserve Withdrawals {periodScopeLabel} (Repairs)</span>
-                          <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(reserveFundedRepairs)}
-                          </span>
-                        </div>
-                        <div className="rounded-md border border-blue-200 bg-white/70 px-3 py-3">
-                          <button
-                            type="button"
-                            onClick={() => setCumulativePositionExpanded(!cumulativePositionExpanded)}
-                            className="w-full flex items-center justify-between text-left"
+                      <div className="rounded-md border border-blue-200 bg-white/70 px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setCumulativePositionExpanded(!cumulativePositionExpanded)}
+                          className="w-full flex items-center justify-between text-left"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">To-Date Position</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Cumulative trailer contribution and reserve balance across the 2026 reserve regime.
+                            </div>
+                          </div>
+                          <svg
+                            className={`w-5 h-5 text-gray-600 transition-transform ${cumulativePositionExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
                           >
-                            <div>
-                              <div className="text-sm font-semibold text-gray-900">To-Date Position</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                Full trailer contribution and reserve balance across the 2026 reserve regime.
-                              </div>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {cumulativePositionExpanded && (
+                          <div className="mt-4 space-y-3 border-t border-blue-100 pt-4">
+                            <div className="flex justify-between items-center py-1">
+                              <span className="text-sm text-gray-600">Trailer Contribution To Date</span>
+                              <span className={`text-sm font-semibold ${cumulativeTrailerContribution >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                                ${safeToLocaleString(cumulativeTrailerContribution)}
+                              </span>
                             </div>
-                            <svg
-                              className={`w-5 h-5 text-gray-600 transition-transform ${cumulativePositionExpanded ? 'rotate-180' : ''}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          {cumulativePositionExpanded && (
-                            <div className="mt-4 space-y-3 border-t border-blue-100 pt-4">
-                              <div className="flex justify-between items-center py-1">
-                                <span className="text-sm text-gray-600">Trailer Contribution To Date</span>
-                                <span className={`text-sm font-semibold ${cumulativeTrailerContribution >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                                  ${safeToLocaleString(cumulativeTrailerContribution)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center py-1">
-                                <span className="text-sm text-gray-600">Reserve Deposits To Date</span>
-                                <span className="text-sm font-semibold text-amber-700">
-                                  ${safeToLocaleString(reserveDepositsToDate)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center py-1">
-                                <span className="text-sm text-gray-600">Reserve Withdrawals To Date (Repairs)</span>
-                                <span className="text-sm font-semibold text-red-600">
-                                  ${safeToLocaleString(reserveWithdrawalsToDate)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center py-1">
-                                <span className="text-sm text-gray-600">Manual Reserve Adjustments To Date</span>
-                                <span className="text-sm font-semibold text-slate-700">
-                                  ${safeToLocaleString(reserveAdjustmentsToDate)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center py-2 border-t border-blue-200">
-                                <span className="text-sm font-semibold text-gray-900">Current Reserve Balance (To Date)</span>
-                                <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                                  ${safeToLocaleString(reserveCushionToDate)}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
-                              </div>
+                            <div className="flex justify-between items-center py-1">
+                              <span className="text-sm text-gray-600">Reserve Deposits To Date</span>
+                              <span className="text-sm font-semibold text-amber-700">
+                                ${safeToLocaleString(reserveDepositsToDate)}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          The values above follow the currently selected {expenseAnalysisView} period. Expand the to-date section for cumulative reserve and trailer totals.
-                        </div>
+                            <div className="flex justify-between items-center py-1">
+                              <span className="text-sm text-gray-600">Reserve Withdrawals To Date (Repairs)</span>
+                              <span className="text-sm font-semibold text-red-600">
+                                ${safeToLocaleString(reserveWithdrawalsToDate)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center py-1">
+                              <span className="text-sm text-gray-600">Manual Reserve Adjustments To Date</span>
+                              <span className="text-sm font-semibold text-slate-700">
+                                ${safeToLocaleString(reserveAdjustmentsToDate)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-t border-blue-200">
+                              <span className="text-sm font-semibold text-gray-900">Current Reserve Balance (To Date)</span>
+                              <span className={`text-base font-bold ${reserveCushionToDate >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                ${safeToLocaleString(reserveCushionToDate)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3 text-xs text-gray-500">
+                        This section is cumulative to date and intentionally separate from the selected-period profit breakdown above.
                       </div>
                     </div>
                     
