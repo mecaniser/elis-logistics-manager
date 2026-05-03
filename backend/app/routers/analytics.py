@@ -1180,6 +1180,7 @@ def _get_time_series_impl(
         "truck_parking": 0.0,
         "custom": 0.0,
         "trucks": set(),
+        "settlement_types": set(),
         "week_start": None,
         "week_end": None,
         "settlement_date": None,
@@ -1210,6 +1211,7 @@ def _get_time_series_impl(
         "custom": 0.0,
         "repairs": 0.0,
         "trucks": set(),
+        "settlement_types": set(),
         "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
@@ -1237,6 +1239,7 @@ def _get_time_series_impl(
         "custom": 0.0,
         "repairs": 0.0,
         "trucks": set(),
+        "settlement_types": set(),
         "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
@@ -1304,6 +1307,8 @@ def _get_time_series_impl(
         weekly_data[week_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
         weekly_data[week_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
         weekly_data[week_key]["trucks"].add(settlement.truck_id)
+        if settlement.settlement_type:
+            weekly_data[week_key]["settlement_types"].add(settlement.settlement_type)
         if not weekly_data[week_key]["week_start"]:
             weekly_data[week_key]["week_start"] = week_start
         if not weekly_data[week_key]["week_end"]:
@@ -1322,6 +1327,8 @@ def _get_time_series_impl(
             monthly_data[month_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
             monthly_data[month_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
+            if settlement.settlement_type:
+                monthly_data[month_key]["settlement_types"].add(settlement.settlement_type)
         
         # Aggregate yearly data
         if year_key:
@@ -1334,6 +1341,8 @@ def _get_time_series_impl(
             yearly_data[year_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
             yearly_data[year_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
             yearly_data[year_key]["trucks"].add(settlement.truck_id)
+            if settlement.settlement_type:
+                yearly_data[year_key]["settlement_types"].add(settlement.settlement_type)
         
         # Process expense categories
         if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
@@ -1466,7 +1475,8 @@ def _get_time_series_impl(
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,
-            "trucks": truck_list
+            "trucks": truck_list,
+            "settlement_types": sorted(week_data["settlement_types"])
         })
     
     # Format monthly data
@@ -1561,6 +1571,7 @@ def _get_time_series_impl(
             "custom": round(month_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,
             "trucks": truck_list,
+            "settlement_types": sorted(month_data["settlement_types"]),
             "settlement_count": len(month_settlements_map.get(month_key, [])),
             "settlements": month_settlements_map.get(month_key, [])  # Include settlement details for debugging
         })
@@ -1648,7 +1659,8 @@ def _get_time_series_impl(
             "custom": round(year_data["custom"], 2),
             "custom_descriptions": custom_descriptions_formatted,
             "repairs": round(year_data.get("repairs", 0.0), 2),
-            "trucks": truck_list
+            "trucks": truck_list,
+            "settlement_types": sorted(year_data["settlement_types"])
         })
     
     return {

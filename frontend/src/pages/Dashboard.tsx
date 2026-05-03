@@ -845,6 +845,29 @@ export default function Dashboard() {
     return 'previous period'
   }
 
+  const getPeriodComparisonSignature = (periodData: any) => {
+    if (!periodData) return null
+
+    const truckIds = Array.isArray(periodData.trucks)
+      ? periodData.trucks
+          .map((truck: any) => Number(truck?.truck_id))
+          .filter((truckId: number) => Number.isFinite(truckId))
+          .sort((a: number, b: number) => a - b)
+      : []
+
+    const settlementTypes = Array.isArray(periodData.settlement_types)
+      ? periodData.settlement_types
+          .map((settlementType: any) => String(settlementType || '').trim())
+          .filter(Boolean)
+          .sort()
+      : []
+
+    return JSON.stringify({
+      truckIds,
+      settlementTypes,
+    })
+  }
+
   const getPreviousPeriodData = () => {
     if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return null
     const periods = getSelectedPeriodsList()
@@ -855,6 +878,19 @@ export default function Dashboard() {
   }
 
   const previousPeriodData = getPreviousPeriodData()
+  const currentPeriodComparisonSignature = getPeriodComparisonSignature(selectedPeriodData)
+  const previousPeriodComparisonSignature = getPeriodComparisonSignature(previousPeriodData)
+  const comparisonContextMatches =
+    currentPeriodComparisonSignature != null &&
+    previousPeriodComparisonSignature != null &&
+    currentPeriodComparisonSignature === previousPeriodComparisonSignature
+  const shouldSuppressComparison =
+    expenseAnalysisView !== 'all_time' &&
+    previousPeriodData != null &&
+    !comparisonContextMatches
+  const comparisonUnavailableMessage = selectedTruck
+    ? `Comparison unavailable. Settlement source changed vs ${getComparisonPeriodLabel()}.`
+    : `Comparison unavailable. Vehicle or settlement source mix changed vs ${getComparisonPeriodLabel()}.`
 
   const getPeriodRepairCost = (periodData: any) => {
     if (!periodData) return 0
@@ -941,6 +977,10 @@ export default function Dashboard() {
     previousValue: number | null,
     prefersLower: boolean,
   ) => {
+    if (shouldSuppressComparison) {
+      return <div className="text-[10px] sm:text-xs text-gray-400 mt-1">{comparisonUnavailableMessage}</div>
+    }
+
     if (expenseAnalysisView === 'all_time' || currentValue == null || previousValue == null) {
       return <div className="text-[10px] sm:text-xs text-gray-400 mt-1">No prior comparison</div>
     }
@@ -1283,12 +1323,18 @@ export default function Dashboard() {
                         <div className="text-base sm:text-xl font-bold text-cyan-700">
                           {formatCurrencyMetric(revenuePerMile)}
                         </div>
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
+                          Gross revenue divided by miles driven. This is revenue efficiency, not a cost metric.
+                        </div>
                         {renderMetricTrend(revenuePerMile, previousPeriodMetrics.revenuePerMile, false)}
                       </div>
                       <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">77 Cargo Raw Gross / Mile</div>
                         <div className="text-base sm:text-xl font-bold text-indigo-700">
                           {formatCurrencyMetric(rawGrossPerMile)}
+                        </div>
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
+                          Pre-dispatch 77 Cargo gross divided by miles from settlements that include raw-gross data.
                         </div>
                         {renderMetricTrend(rawGrossPerMile, previousPeriodMetrics.rawGrossPerMile, false)}
                       </div>
@@ -1297,12 +1343,18 @@ export default function Dashboard() {
                         <div className="text-base sm:text-xl font-bold text-amber-700">
                           {formatCurrencyMetric(settlementCostPerMile)}
                         </div>
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
+                          Settlement expenses divided by miles driven. This is booked cost per mile before repairs.
+                        </div>
                         {renderMetricTrend(settlementCostPerMile, previousPeriodMetrics.settlementCostPerMile, true)}
                       </div>
                       <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">All-In Cost / Mile</div>
                         <div className="text-base sm:text-xl font-bold text-rose-700">
                           {formatCurrencyMetric(allInCostPerMile)}
+                        </div>
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
+                          Settlement expenses plus repairs for this period, divided by miles driven.
                         </div>
                         {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
                       </div>

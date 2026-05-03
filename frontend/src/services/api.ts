@@ -564,7 +564,8 @@ export interface TimeSeriesPeriod {
   custom: number
   repairs?: number
   custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
-  trucks?: number[]
+  trucks?: Array<{ truck_id: number; truck_name: string }>
+  settlement_types?: string[]
 }
 
 export interface TimeSeriesData {
@@ -596,6 +597,7 @@ export interface TimeSeriesData {
     custom: number
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
+    settlement_types?: string[]
   }>
   by_month: Array<{
     month_key: string
@@ -623,6 +625,7 @@ export interface TimeSeriesData {
     custom: number
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
+    settlement_types?: string[]
     settlement_count?: number
     settlements?: Array<{
       settlement_id: number
@@ -661,6 +664,7 @@ export interface TimeSeriesData {
     repairs?: number
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
+    settlement_types?: string[]
   }>
 }
 
