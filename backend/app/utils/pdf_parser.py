@@ -48,6 +48,32 @@ def _parse_currency(amount_str: str) -> float:
     return float(cleaned)
 
 
+def _populate_dispatch_overview_amounts(settlement_data: Dict, settlement_type: str = None) -> None:
+    """Populate display-only pre-dispatch overview amounts for supported settlement sources."""
+    settlement_type_upper = settlement_type.upper() if settlement_type else ""
+    if settlement_type_upper not in {"277 LOGISTICS", "NBM TRANSPORT LLC"}:
+        return
+
+    gross_revenue = settlement_data.get("gross_revenue")
+    expense_categories = settlement_data.get("expense_categories")
+    if gross_revenue is None or not isinstance(expense_categories, dict):
+        return
+
+    try:
+        gross_revenue_value = float(gross_revenue)
+        dispatch_fee_value = float(expense_categories.get("dispatch_fee") or 0)
+    except (TypeError, ValueError):
+        return
+
+    if gross_revenue_value <= 0 or dispatch_fee_value <= 0:
+        return
+
+    settlement_data["overview_amounts"] = {
+        "dispatch_fee": round(dispatch_fee_value, 2),
+        "gross_before_dispatch": round(gross_revenue_value + dispatch_fee_value, 2),
+    }
+
+
 def _normalize_77_cargo_description(description: str) -> str:
     cleaned = re.sub(r"^Other:\s*", "", description, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"\s*-\s*Unit\s+\d+\s*$", "", cleaned, flags=re.IGNORECASE)
@@ -319,7 +345,8 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
         "net_profit": None,
         "driver_id": None,
         "driver_name": None,  # Extract driver name from PDF
-        "license_plate": None  # Extract from PDF for truck matching
+        "license_plate": None,  # Extract from PDF for truck matching
+        "overview_amounts": None,
     }
     
     try:
@@ -743,6 +770,7 @@ def parse_amazon_relay_pdf(file_path: str, settlement_type: str = None) -> Dict:
             
             # Always set expense_categories, even if empty (so frontend can display all categories)
             settlement_data["expense_categories"] = expense_categories
+            _populate_dispatch_overview_amounts(settlement_data, settlement_type)
             
             # Set total expenses if we found any, or calculate from gross - net if available
             if total_expenses > 0:
@@ -1716,6 +1744,7 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                     "driver_id": None,
                     "driver_name": data.get("driver_name"),
                     "license_plate": license_plate,
+                    "overview_amounts": None,
                 }
                 
                 # Initialize expense categories
@@ -1764,6 +1793,7 @@ def parse_amazon_relay_pdf_multi_truck(file_path: str, settlement_type: str = No
                 expense_categories["reimbursement"] = plate_reimbursement
                 plate_settlement["expenses"] = total_expenses
                 plate_settlement["expense_categories"] = expense_categories
+                _populate_dispatch_overview_amounts(plate_settlement, settlement_type)
                 
                 settlements.append(plate_settlement)
                 is_first_truck = False  # Mark that we've processed the first truck

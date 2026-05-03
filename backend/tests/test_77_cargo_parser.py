@@ -166,6 +166,61 @@ ezLoads TMS and Driver App
 ezloads.net
 """
 
+PAGE_277_INCOME = """OWNER OPERATOR INCOME SHEET
+COMPANY NAME: Date Submitted: 5/16/2025
+DRIVER NAME: ELIS LOGISTICS LLC / VW1503 #418 Date Period : 05/04-05/10/2025
+CARD# TRUCK# VW1503
+DATE P/L D/L LOAD STOPS LOAD MILES LOAD AMT DRIVER PAY DATE FUEL FUEL
+05/03-05/05/2025 5G88-GSP1 GSP1 6 908.0 ($ 1,399.04) ($ 570.00) 5/4/2025 ($ 404.12) C. Vereen
+05/05-05/06/2025 QBG8-GSP1 GSP1 8 776.0 ($ 1,329.24) ($ 570.00) 5/6/2025 ($ 327.91) card #102
+05/06-05/08/2025 R7ZP-CLT5 CLT5 7 904.0 ($ 1,351.54) ($ 570.00) 5/6/2025 ($ 45.40)
+05/08-05/09/2025 QRJ0-GSP1 GSP1 5 668.0 ($ 1,084.66) ($ 570.00) 5/7/2025 ($ 315.96)
+5/8/2025 ($ 428.44)
+5/8/2025 ($ 45.48)
+SUMMARY GROSS 3256.0 ($ 5,164.48) ($ 2,280.00) ($ 1,567.31)
+DISPATCH FEE 6% ($ 309.87) ($ 148.20)
+FUEL ($ 1,567.31)
+TOTAL
+PAYMENT ($ 3,287.30)
+IFTA ($ 50.00)
+SAFETY ($ 20.00)
+PREPASS ($ 70.00)
+INSURANCE ($ 350.00)
+DRIVER'S PAY ($ 2,428.20)
+SERVICE ON THE TRUCK
+TRUCK PARKING
+TOTAL ($ 369.10)
+PAID TO DRIVER ($ 369.10)
+insurance #417 ($ (350.00)
+($ 19.10)
+"""
+
+PAGE_277_PAYSTUB = """277 Logistics
+PayeeE:LIS LOGISTICS LLC 277 VW9327
+Plate#: VW9327 417
+Email: Elislogistics86@gmail.com
+Fuel Card #:
+Pay Period: 10/25/2025
+Generated on: 10/30/2025
+Pay Period Block ID Driver Plate # Start of Load End of Load Week Ending Pay Amount Driver's pay Fuel amount Reimb Bonus Deduct
+10/25/2025 B-WVNX2XWTZ Dominique Nobles VW9327 10/19/2025 10/20/2025 10/25/2025 $1,987.61 $570.00 $1,650.00 $0.00 $0.00 $70.00
+B-KP8BG7QQQ Dominique Nobles VW9327 10/23/2025 10/25/2025 10/25/2025 $2,103.04 $570.00
+B-VFQ33B2ZH Jorge Luis Montoya TaVbWar9e3s27 10/21/2025 10/23/2025 10/25/2025 $2,102.11 $600.00
+Gross Pay $6,192.76
+Dispatch Fee $495.42
+Driver's Pay $1,740.00
+Driver's Pay Fee $113.10
+Fuel $1,650.00
+IFTA $50.00
+Safety $20.00
+Prepass $70.00
+Insurance $350.00
+Reimbursment $0.00
+Bonus $0.00
+Deductions $70.00
+Net Pay $1,634.24
+"""
+
 
 class FakePage:
     def __init__(self, text: str):
@@ -199,6 +254,24 @@ def patch_77_cargo_pdf(monkeypatch):
 def patch_77_cargo_pdf_2280(monkeypatch):
     def fake_open(*_args, **_kwargs):
         return FakePDF([PAGE_2280_1, PAGE_2280_2])
+
+    monkeypatch.setattr(pdf_parser_module.pdfplumber, "open", fake_open)
+    monkeypatch.setattr(settlement_extractor_module.pdfplumber, "open", fake_open)
+
+
+@pytest.fixture
+def patch_277_income_pdf(monkeypatch):
+    def fake_open(*_args, **_kwargs):
+        return FakePDF([PAGE_277_INCOME])
+
+    monkeypatch.setattr(pdf_parser_module.pdfplumber, "open", fake_open)
+    monkeypatch.setattr(settlement_extractor_module.pdfplumber, "open", fake_open)
+
+
+@pytest.fixture
+def patch_277_paystub_pdf(monkeypatch):
+    def fake_open(*_args, **_kwargs):
+        return FakePDF([PAGE_277_PAYSTUB])
 
     monkeypatch.setattr(pdf_parser_module.pdfplumber, "open", fake_open)
     monkeypatch.setattr(settlement_extractor_module.pdfplumber, "open", fake_open)
@@ -274,6 +347,37 @@ def test_parse_77_cargo_pdf_handles_inline_route_text_in_load_rows(patch_77_carg
         "pay_rate_percent": 88.0,
     }
     assert parsed["deduction_details"] is None
+
+
+def test_parse_277_income_sheet_populates_overview_amounts(patch_277_income_pdf):
+    parsed = parse_amazon_relay_pdf("dummy.pdf", "277 Logistics")
+
+    assert parsed["settlement_date"] == date(2025, 5, 10)
+    assert parsed["week_start"] == date(2025, 5, 4)
+    assert parsed["week_end"] == date(2025, 5, 10)
+    assert parsed["license_plate"] == "VW1503"
+    assert parsed["gross_revenue"] == pytest.approx(5164.48)
+    assert parsed["net_profit"] == pytest.approx(369.10)
+    assert parsed["expense_categories"]["dispatch_fee"] == pytest.approx(309.87)
+    assert parsed["overview_amounts"] == {
+        "dispatch_fee": 309.87,
+        "gross_before_dispatch": 5474.35,
+    }
+
+
+def test_parse_277_paystub_populates_overview_amounts(patch_277_paystub_pdf):
+    parsed = parse_amazon_relay_pdf("dummy.pdf", "277 Logistics")
+
+    assert parsed["settlement_date"] == date(2025, 10, 25)
+    assert parsed["week_end"] == date(2025, 10, 25)
+    assert parsed["license_plate"] == "VW9327"
+    assert parsed["gross_revenue"] == pytest.approx(6192.76)
+    assert parsed["net_profit"] == pytest.approx(1634.24)
+    assert parsed["expense_categories"]["dispatch_fee"] == pytest.approx(495.42)
+    assert parsed["overview_amounts"] == {
+        "dispatch_fee": 495.42,
+        "gross_before_dispatch": 6688.18,
+    }
 
 
 def test_77_cargo_detection_flows_through_extractor(patch_77_cargo_pdf):

@@ -3,6 +3,7 @@ import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, ReserveBala
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
+import AccountingTooltip from '../components/AccountingTooltip'
 
 // Type definitions for dashboard data structures
 interface RepairByMonth {
@@ -58,6 +59,19 @@ const formatCurrencyMetric = (value: number | null | undefined): string => {
 
 const formatMetricDelta = (value: number): string => {
   return `$${safeToLocaleString(Math.abs(value))}`
+}
+
+function MetricLabelWithTooltip({ label, description }: { label: string; description: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span>{label}</span>
+      <div className="hidden md:inline-flex">
+        <AccountingTooltip term={label} description={description}>
+          <span className="sr-only">{label} description</span>
+        </AccountingTooltip>
+      </div>
+    </div>
+  )
 }
 
 export default function Dashboard() {
@@ -922,6 +936,11 @@ export default function Dashboard() {
   }
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
+  const selectableVehicles = trucks.filter((truck) =>
+    vehicleTypeFilter === 'trucks'
+      ? truck.vehicle_type === 'truck'
+      : truck.vehicle_type === 'trailer'
+  )
 
   const getMatchingBusinessPeriod = (series: TimeSeriesData | null) => {
     if (!series || expenseAnalysisView === 'all_time') return null
@@ -1105,7 +1124,7 @@ export default function Dashboard() {
                   className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="">All Vehicles</option>
-                  {trucks.map((truck) => (
+                  {selectableVehicles.map((truck) => (
                     <option key={truck.id} value={truck.id}>
                       {truck.name}
                     </option>
@@ -1236,6 +1255,10 @@ export default function Dashboard() {
                       repairsForPeriod === 0 &&
                       settlementCostPerMile != null &&
                       allInCostPerMile != null
+                    const revenuePerMileDescription = 'Gross revenue divided by miles driven. This is revenue efficiency, not a cost metric.'
+                    const rawGrossPerMileDescription = 'Pre-dispatch 77 Cargo gross divided by miles from settlements that include raw-gross data.'
+                    const settlementCostPerMileDescription = 'Settlement expenses divided by miles driven. This is booked cost per mile before repairs.'
+                    const allInCostPerMileDescription = 'Settlement expenses plus repairs for this period, divided by miles driven.'
                 
                 return (
                   <>
@@ -1255,27 +1278,20 @@ export default function Dashboard() {
                           <span className="text-base sm:text-xl font-bold text-red-600">
                             ${(() => {
                               const customAmt = Number((selectedPeriodData as any).custom) || 0
-                              // For trailers, use the expenses field directly from settlements
-                              // This is the total expenses set in the settlement (income - net_profit = expenses)
                               if (vehicleTypeFilter === 'trailers') {
-                                // Use settlement.expenses field directly from database
                                 if (pd.expenses !== undefined && pd.expenses !== null) {
                                   const settlementExpenses = Number(pd.expenses) || 0
-                                  // Add repairs if applicable (for yearly/monthly/all_time views)
                                   const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                                   return Math.max(0, settlementExpenses + repairs - customAmt)
                                 }
-                                // Fallback: just repairs (custom removed)
                                 const trailerExpenses = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                                 return Math.max(0, trailerExpenses)
                               }
-                              
-                              // For trucks, use backend's calculated total_expenses if available and > 0
+
                               if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
                                 return Math.max(0, pd.total_expenses - customAmt)
                               }
-                              
-                              // For trucks, sum all categories
+
                               const sum = (
                                 (Number(pd.fuel) || 0) +
                                 (Number(pd.tolls) || 0) +
@@ -1289,7 +1305,6 @@ export default function Dashboard() {
                                 (Number(pd.truck_parking) || 0) +
                                 (Number(pd.driver_pay) || 0) +
                                 (Number(pd.payroll_fee) || 0) +
-                                // Repairs are only included for yearly/monthly/all_time, not weekly
                                 (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
                               )
                               return isNaN(sum) ? 0 : Math.max(0, sum - customAmt)
@@ -1311,50 +1326,58 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4 mb-6">
-                      <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4 mb-6">
+                      <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200 md:min-h-[120px]">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Miles</div>
                         <div className="text-base sm:text-xl font-bold text-slate-700">
                           {milesDriven > 0 ? `${safeToLocaleString(milesDriven, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi` : '—'}
                         </div>
                       </div>
-                      <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200">
-                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Revenue / Mile</div>
+                      <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200 md:min-h-[120px]">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                          <MetricLabelWithTooltip label="Revenue / Mile" description={revenuePerMileDescription} />
+                        </div>
                         <div className="text-base sm:text-xl font-bold text-cyan-700">
                           {formatCurrencyMetric(revenuePerMile)}
                         </div>
-                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
-                          Gross revenue divided by miles driven. This is revenue efficiency, not a cost metric.
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
+                          {revenuePerMileDescription}
                         </div>
                         {renderMetricTrend(revenuePerMile, previousPeriodMetrics.revenuePerMile, false)}
                       </div>
-                      <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200">
-                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">77 Cargo Raw Gross / Mile</div>
+                      <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200 md:min-h-[120px]">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                          <MetricLabelWithTooltip label="77 Cargo Raw Gross / Mile" description={rawGrossPerMileDescription} />
+                        </div>
                         <div className="text-base sm:text-xl font-bold text-indigo-700">
                           {formatCurrencyMetric(rawGrossPerMile)}
                         </div>
-                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
-                          Pre-dispatch 77 Cargo gross divided by miles from settlements that include raw-gross data.
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
+                          {rawGrossPerMileDescription}
                         </div>
                         {renderMetricTrend(rawGrossPerMile, previousPeriodMetrics.rawGrossPerMile, false)}
                       </div>
-                      <div className="bg-amber-50 p-3 sm:p-4 rounded-lg border border-amber-200">
-                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Settlement Cost / Mile</div>
+                      <div className="bg-amber-50 p-3 sm:p-4 rounded-lg border border-amber-200 md:min-h-[120px]">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                          <MetricLabelWithTooltip label="Settlement Cost / Mile" description={settlementCostPerMileDescription} />
+                        </div>
                         <div className="text-base sm:text-xl font-bold text-amber-700">
                           {formatCurrencyMetric(settlementCostPerMile)}
                         </div>
-                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
-                          Settlement expenses divided by miles driven. This is booked cost per mile before repairs.
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
+                          {settlementCostPerMileDescription}
                         </div>
                         {renderMetricTrend(settlementCostPerMile, previousPeriodMetrics.settlementCostPerMile, true)}
                       </div>
-                      <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200">
-                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">All-In Cost / Mile</div>
+                      <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200 md:min-h-[120px]">
+                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                          <MetricLabelWithTooltip label="All-In Cost / Mile" description={allInCostPerMileDescription} />
+                        </div>
                         <div className="text-base sm:text-xl font-bold text-rose-700">
                           {formatCurrencyMetric(allInCostPerMile)}
                         </div>
-                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500">
-                          Settlement expenses plus repairs for this period, divided by miles driven.
+                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
+                          {allInCostPerMileDescription}
                         </div>
                         {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
                       </div>
