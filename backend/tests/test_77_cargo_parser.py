@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models.chart_of_accounts import ChartOfAccount
+from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
 from app.models.repair import Repair
 from app.models.settlement import Settlement
@@ -331,6 +332,64 @@ def test_upload_settlement_accepts_manual_truck_selection_for_77_cargo(
         {"description": "Title Fee", "amount": 16.26},
         {"description": "Truck Registration", "amount": 709.91},
     ]
+
+
+def test_upload_settlement_allows_zero_net_without_journal_entry(
+    client: TestClient,
+    db,
+    tenant_headers,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settlements_router, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(settlements_router, "upload_pdf", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        settlements_router,
+        "parse_amazon_relay_pdf",
+        lambda *_args, **_kwargs: {
+            "settlement_date": date(2026, 5, 3),
+            "week_start": date(2026, 4, 27),
+            "week_end": date(2026, 5, 3),
+            "gross_revenue": 100.0,
+            "expenses": 100.0,
+            "net_profit": 0.0,
+            "expense_categories": {},
+            "license_plate": None,
+            "block_ids": [],
+        },
+    )
+
+    truck = Truck(
+        tenant_id=1,
+        name="Zero Net Truck",
+        license_plate="ZERO-01",
+        vehicle_type="truck",
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.post(
+        "/api/settlements/upload",
+        data={"truck_id": str(truck.id)},
+        files={"file": ("zero-net.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        headers=tenant_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["truck_id"] == truck.id
+    assert float(data["net_profit"]) == pytest.approx(0.0)
+
+    journal_entries = (
+        db.query(JournalEntry)
+        .filter(
+            JournalEntry.reference_type == "settlement",
+            JournalEntry.reference_id == data["id"],
+        )
+        .all()
+    )
+    assert journal_entries == []
 
 
 def test_dashboard_reports_tolls_as_first_class_expense_category(

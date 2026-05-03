@@ -394,6 +394,26 @@ def create_settlement_journal_entry(
     
     # Ensure accounts exist
     ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting, auto_commit=auto_commit)
+
+    gross_revenue = Decimal(str(settlement.gross_revenue)) if settlement.gross_revenue else Decimal(0)
+    net_profit = Decimal(str(settlement.net_profit)) if settlement.net_profit else Decimal(0)
+    has_positive_expenses = False
+    has_reimbursement = False
+    if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
+        for category, amount in settlement.expense_categories.items():
+            amount_dec = Decimal(str(amount)) if amount else Decimal(0)
+            if category == "reimbursement":
+                if amount_dec > 0:
+                    has_reimbursement = True
+                continue
+            if amount_dec > 0:
+                has_positive_expenses = True
+
+    # Skip accounting side effects when a settlement produces nothing valid to post.
+    if not per_asset and net_profit <= 0:
+        return None
+    if per_asset and gross_revenue <= 0 and not has_positive_expenses and not has_reimbursement:
+        return None
     
     entry_date = settlement.settlement_date or settlement.created_at.date() if settlement.created_at else date.today()
     
@@ -414,7 +434,6 @@ def create_settlement_journal_entry(
     # For Elis Logistics: Simple entry with net_profit only
     if not per_asset:
         # Elis Logistics receives clean profit - simple entry
-        net_profit = Decimal(str(settlement.net_profit)) if settlement.net_profit else Decimal(0)
         if net_profit > 0:
             cash_account = get_or_create_account(db, get_cash_account_code(), "Cash", "Asset", tenant_id, truck_id=None, auto_commit=auto_commit)
             revenue_account = get_or_create_account(db, "4000", "Settlement Income", "Revenue", tenant_id, truck_id=None, auto_commit=auto_commit)
@@ -441,7 +460,6 @@ def create_settlement_journal_entry(
         ar_account = get_or_create_account(db, get_accounts_receivable_code(), "Accounts Receivable", "Asset", tenant_id, truck_id=truck_id_for_accounting, auto_commit=auto_commit)
         
         # Revenue side: Debit AR, Credit Revenue
-        gross_revenue = Decimal(str(settlement.gross_revenue)) if settlement.gross_revenue else Decimal(0)
         if gross_revenue > 0:
             lines.append({
                 "journal_entry_id": journal_entry.id,
