@@ -18,26 +18,31 @@ from app.services.diesel_price_service import EIA_API_KEY, maybe_populate_estima
 CHUNK_SIZE = 25
 
 
-def backfill(dry_run: bool = False) -> bool:
+def backfill(dry_run: bool = False, refresh_estimated: bool = False) -> bool:
     if not EIA_API_KEY:
         print("Backfill aborted: EIA_API_KEY is not configured.")
         return False
 
     db = SessionLocal()
     try:
-        candidates = (
+        candidate_query = (
             db.query(Settlement, Truck)
             .join(Truck, Truck.id == Settlement.truck_id)
             .filter(Truck.vehicle_type == "truck")
             .filter(Settlement.source_settlement_id.is_(None))
-            .filter(Settlement.miles_driven.is_(None))
             .order_by(Settlement.id.asc())
-            .all()
         )
+        if not refresh_estimated:
+            candidate_query = candidate_query.filter(Settlement.miles_driven.is_(None))
+        candidates = candidate_query.all()
 
         updated = 0
         skipped = 0
-        print(f"Checking {len(candidates)} truck settlements with missing miles")
+        print(
+            "Checking "
+            f"{len(candidates)} truck settlements "
+            f"({'missing miles or previously estimated miles' if refresh_estimated else 'with missing miles'})"
+        )
 
         for idx, (settlement, truck) in enumerate(candidates, start=1):
             settlement_data = {
@@ -53,6 +58,7 @@ def backfill(dry_run: bool = False) -> bool:
                 settlement_data,
                 mpg=float(truck.estimated_mpg or 6.5),
                 discount_per_gallon=float(truck.fuel_card_discount_per_gallon or 0.0),
+                overwrite_existing_estimate=refresh_estimated,
             )
             if not changed:
                 skipped += 1
@@ -95,8 +101,13 @@ def backfill(dry_run: bool = False) -> bool:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Print changes without committing")
+    parser.add_argument(
+        "--refresh-estimated",
+        action="store_true",
+        help="Recalculate rows that already have estimated miles stored in overview_amounts",
+    )
     args = parser.parse_args()
 
-    success = backfill(dry_run=args.dry_run)
+    success = backfill(dry_run=args.dry_run, refresh_estimated=args.refresh_estimated)
     if not success:
         sys.exit(1)

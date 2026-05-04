@@ -564,6 +564,7 @@ export interface TimeSeriesPeriod {
   loan_interest: number
   truck_parking: number
   custom: number
+  diesel_price_per_gallon?: number | null
   repairs?: number
   custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
   trucks?: Array<{ truck_id: number; truck_name: string }>
@@ -597,6 +598,7 @@ export interface TimeSeriesData {
     loan_interest: number
     truck_parking: number
     custom: number
+    diesel_price_per_gallon?: number | null
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
     settlement_types?: string[]
@@ -625,6 +627,7 @@ export interface TimeSeriesData {
     loan_interest: number
     truck_parking: number
     custom: number
+    diesel_price_per_gallon?: number | null
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>
     settlement_types?: string[]
@@ -663,6 +666,7 @@ export interface TimeSeriesData {
     loan_interest: number
     truck_parking: number
     custom: number
+    diesel_price_per_gallon?: number | null
     repairs?: number
     custom_descriptions?: { [key: string]: string }  // Descriptions for custom expense categories
     trucks: Array<{ truck_id: number; truck_name: string }>

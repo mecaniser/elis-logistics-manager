@@ -68,6 +68,22 @@ const formatMetricDelta = (value: number): string => {
   return `$${safeToLocaleString(Math.abs(value))}`
 }
 
+const formatMilesMetricDelta = (value: number): string => {
+  return `${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi`
+}
+
+const formatMilesMetricValue = (value: number): string => {
+  return `${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi`
+}
+
+const formatDieselMetricValue = (value: number): string => {
+  return `$${safeToLocaleString(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/gal`
+}
+
+const formatDieselMetricDelta = (value: number): string => {
+  return `$${safeToLocaleString(Math.abs(value), { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/gal`
+}
+
 function MetricLabelWithTooltip({ label, description }: { label: string; description: string }) {
   return (
     <div className="flex items-center gap-1">
@@ -85,11 +101,15 @@ function MetricSparkline({
   points,
   strokeColor,
   fillColor,
+  valueFormatter,
 }: {
   points: MetricTrendPoint[]
   strokeColor: string
   fillColor: string
+  valueFormatter: (value: number) => string
 }) {
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null)
+
   if (points.length < 2) {
     return <div className="mt-2 text-[10px] sm:text-xs text-gray-400">Not enough history for a trend line</div>
   }
@@ -117,10 +137,14 @@ function MetricSparkline({
     ...points.map((point, index) => `${padding + index * stepX},${toY(point.value)}`),
     `${padding + (points.length - 1) * stepX},${height - padding}`,
   ].join(' ')
+  const hoveredPoint = hoveredPointIndex != null ? points[hoveredPointIndex] : null
 
   return (
     <div className="mt-3">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-10 w-full overflow-visible" aria-hidden="true">
+      <div className="min-h-[1rem] text-[10px] sm:text-xs text-gray-500">
+        {hoveredPoint ? `${hoveredPoint.label}: ${valueFormatter(hoveredPoint.value)}` : '\u00A0'}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-10 w-full overflow-visible">
         <polygon points={areaPoints} fill={fillColor} />
         <polyline
           points={polylinePoints}
@@ -135,15 +159,24 @@ function MetricSparkline({
           const cy = toY(point.value)
           const radius = point.isCurrent ? 3.5 : point.isPrevious ? 3 : 2.5
           return (
-            <circle
-              key={`${point.label}-${index}`}
-              cx={cx}
-              cy={cy}
-              r={radius}
-              fill={point.isCurrent ? strokeColor : '#ffffff'}
-              stroke={strokeColor}
-              strokeWidth={point.isCurrent ? 2 : 1.5}
-            />
+            <g key={`${point.label}-${index}`}>
+              <circle
+                cx={cx}
+                cy={cy}
+                r={Math.max(radius + 6, 8)}
+                fill="transparent"
+                onMouseEnter={() => setHoveredPointIndex(index)}
+                onMouseLeave={() => setHoveredPointIndex((current) => (current === index ? null : current))}
+              />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={radius}
+                fill={point.isCurrent ? strokeColor : '#ffffff'}
+                stroke={strokeColor}
+                strokeWidth={point.isCurrent ? 2 : 1.5}
+              />
+            </g>
           )
         })}
       </svg>
@@ -936,6 +969,21 @@ export default function Dashboard() {
     return 'previous period'
   }
 
+  const getComparisonPeriodUnit = () => {
+    if (expenseAnalysisView === 'weekly') return 'week'
+    if (expenseAnalysisView === 'monthly') return 'month'
+    if (expenseAnalysisView === 'yearly') return 'year'
+    return 'period'
+  }
+
+  const getPeriodDisplayLabel = (periodData: any) => {
+    if (!periodData) return getComparisonPeriodLabel()
+    if (expenseAnalysisView === 'weekly') return periodData.week_label || periodData.week_key || getComparisonPeriodLabel()
+    if (expenseAnalysisView === 'monthly') return periodData.month_label || periodData.month_key || getComparisonPeriodLabel()
+    if (expenseAnalysisView === 'yearly') return periodData.year_label || periodData.year_key || getComparisonPeriodLabel()
+    return getComparisonPeriodLabel()
+  }
+
   const getPeriodComparisonSignature = (periodData: any) => {
     if (!periodData) return null
 
@@ -959,29 +1007,116 @@ export default function Dashboard() {
     })
   }
 
-  const getPreviousPeriodData = () => {
-    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return null
-    const periods = getSelectedPeriodsList()
-    const periodKey = getSelectedPeriodKey()
-    const selectedIndex = periods.findIndex((period: any) => period[periodKey] === selectedExpensePeriod)
-    if (selectedIndex <= 0) return null
-    return periods[selectedIndex - 1] as any
+  const getPeriodComparisonContext = (periodData: any) => {
+    if (!periodData) return null
+
+    const comparisonSignature = getPeriodComparisonSignature(periodData)
+    const truckIds = Array.isArray(periodData.trucks)
+      ? periodData.trucks
+          .map((truck: any) => Number(truck?.truck_id))
+          .filter((truckId: number) => Number.isFinite(truckId))
+          .sort((a: number, b: number) => a - b)
+      : []
+    const settlementTypes = Array.isArray(periodData.settlement_types)
+      ? periodData.settlement_types
+          .map((settlementType: any) => String(settlementType || '').trim())
+          .filter(Boolean)
+          .sort()
+      : []
+
+    return {
+      truckIds,
+      settlementTypes,
+      comparisonSignature,
+    }
   }
 
-  const previousPeriodData = getPreviousPeriodData()
-  const currentPeriodComparisonSignature = getPeriodComparisonSignature(selectedPeriodData)
-  const previousPeriodComparisonSignature = getPeriodComparisonSignature(previousPeriodData)
-  const comparisonContextMatches =
-    currentPeriodComparisonSignature != null &&
-    previousPeriodComparisonSignature != null &&
-    currentPeriodComparisonSignature === previousPeriodComparisonSignature
+  const isComparablePreviousPeriod = (currentPeriod: any, candidatePeriod: any) => {
+    const currentContext = getPeriodComparisonContext(currentPeriod)
+    const candidateContext = getPeriodComparisonContext(candidatePeriod)
+
+    if (!currentContext || !candidateContext) return false
+    if (currentContext.truckIds.length === 0 || candidateContext.truckIds.length === 0) return false
+
+    const shouldUseSingleTruckComparison = selectedTruck != null || currentContext.truckIds.length === 1
+    if (shouldUseSingleTruckComparison) {
+      if (candidateContext.truckIds.length !== 1 || candidateContext.truckIds[0] !== currentContext.truckIds[0]) {
+        return false
+      }
+
+      if (currentContext.settlementTypes.length === 1) {
+        return (
+          candidateContext.settlementTypes.length === 1 &&
+          candidateContext.settlementTypes[0] === currentContext.settlementTypes[0]
+        )
+      }
+
+      return true
+    }
+
+    return (
+      currentContext.comparisonSignature != null &&
+      currentContext.comparisonSignature === candidateContext.comparisonSignature
+    )
+  }
+
+  const selectedPeriods = getSelectedPeriodsList() as TimeSeriesPeriod[]
+  const selectedPeriodKey = getSelectedPeriodKey() as keyof TimeSeriesPeriod
+  const selectedPeriodIndex =
+    selectedExpensePeriod && selectedPeriodKey
+      ? selectedPeriods.findIndex((period) => period[selectedPeriodKey] === selectedExpensePeriod)
+      : -1
+
+  const getPreviousPeriodWithValue = (
+    valueGetter: (period: TimeSeriesPeriod) => number | null,
+  ) => {
+    if (selectedPeriodIndex <= 0) return null
+    for (let index = selectedPeriodIndex - 1; index >= 0; index -= 1) {
+      const candidatePeriod = selectedPeriods[index]
+      const value = valueGetter(candidatePeriod)
+      if (value != null && Number.isFinite(value)) {
+        return {
+          period: candidatePeriod,
+          index,
+          value,
+        }
+      }
+    }
+    return null
+  }
+
+  const getComparablePreviousPeriodInfo = () => {
+    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time' || !selectedPeriodData) return null
+    if (selectedPeriodIndex <= 0) return null
+
+    for (let index = selectedPeriodIndex - 1; index >= 0; index -= 1) {
+      const candidatePeriod = selectedPeriods[index]
+      if (isComparablePreviousPeriod(selectedPeriodData, candidatePeriod)) {
+        return {
+          period: candidatePeriod as any,
+          index,
+        }
+      }
+    }
+
+    return null
+  }
+
+  const previousComparablePeriodInfo = getComparablePreviousPeriodInfo()
+  const previousPeriodData = previousComparablePeriodInfo?.period ?? null
+  const hasAnyPriorPeriods = selectedPeriodIndex > 0
+  const comparisonReferenceLabel = previousComparablePeriodInfo
+    ? getPeriodDisplayLabel(previousComparablePeriodInfo.period)
+    : getComparisonPeriodLabel()
+  const singleTruckComparisonMode =
+    selectedTruck != null || (getPeriodComparisonContext(selectedPeriodData)?.truckIds.length || 0) === 1
   const shouldSuppressComparison =
     expenseAnalysisView !== 'all_time' &&
-    previousPeriodData != null &&
-    !comparisonContextMatches
-  const comparisonUnavailableMessage = selectedTruck
-    ? `Comparison unavailable. Settlement source changed vs ${getComparisonPeriodLabel()}.`
-    : `Comparison unavailable. Vehicle or settlement source mix changed vs ${getComparisonPeriodLabel()}.`
+    hasAnyPriorPeriods &&
+    previousComparablePeriodInfo == null
+  const comparisonUnavailableMessage = singleTruckComparisonMode
+    ? `Comparison unavailable. No comparable prior ${getComparisonPeriodUnit()} for this truck/source mix.`
+    : `Comparison unavailable. No comparable prior ${getComparisonPeriodUnit()} for this vehicle/source mix.`
 
   const getPeriodRepairCost = (periodData: any) => {
     if (!periodData) return 0
@@ -1015,6 +1150,13 @@ export default function Dashboard() {
   }
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
+  const previousDieselBenchmarkInfo = getPreviousPeriodWithValue((period) => {
+    const price = Number((period as any).diesel_price_per_gallon) || 0
+    return price > 0 ? price : null
+  })
+  const previousDieselBenchmarkLabel = previousDieselBenchmarkInfo
+    ? getPeriodDisplayLabel(previousDieselBenchmarkInfo.period)
+    : getComparisonPeriodLabel()
   const getTrendWindowLabel = () => {
     if (expenseAnalysisView === 'weekly') return 'Recent weeks'
     if (expenseAnalysisView === 'monthly') return 'Recent months'
@@ -1027,14 +1169,15 @@ export default function Dashboard() {
   ): MetricTrendPoint[] => {
     if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return []
 
-    const periods = getSelectedPeriodsList() as TimeSeriesPeriod[]
-    const periodKey = getSelectedPeriodKey() as keyof TimeSeriesPeriod
-    const selectedIndex = periods.findIndex((period) => period[periodKey] === selectedExpensePeriod)
-    if (selectedIndex < 0) return []
+    if (selectedPeriodIndex < 0) return []
 
-    const trendWindowStart = Math.max(0, selectedIndex - 5)
-    return periods
-      .slice(trendWindowStart, selectedIndex + 1)
+    const recentWindowStart = Math.max(0, selectedPeriodIndex - 5)
+    const comparisonIndex = previousComparablePeriodInfo?.index ?? selectedPeriodIndex - 1
+    const trendWindowStart =
+      comparisonIndex >= 0 ? Math.min(recentWindowStart, comparisonIndex) : recentWindowStart
+
+    return selectedPeriods
+      .slice(trendWindowStart, selectedPeriodIndex + 1)
       .map((period, index) => {
         const absoluteIndex = trendWindowStart + index
         const value = metricGetter(period)
@@ -1050,8 +1193,8 @@ export default function Dashboard() {
         return {
           label,
           value,
-          isCurrent: absoluteIndex === selectedIndex,
-          isPrevious: absoluteIndex === selectedIndex - 1,
+          isCurrent: absoluteIndex === selectedPeriodIndex,
+          isPrevious: absoluteIndex === comparisonIndex,
         }
       })
       .filter((point): point is MetricTrendPoint => point != null)
@@ -1104,18 +1247,12 @@ export default function Dashboard() {
     : Number((businessTrailerPeriod as any)?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
   const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
-  const businessTotalScopeLabel = expenseAnalysisView === 'all_time'
-    ? 'All time'
-    : expenseAnalysisView === 'weekly'
-    ? ((selectedPeriodData as any)?.week_label || 'Selected week')
-    : expenseAnalysisView === 'monthly'
-    ? ((selectedPeriodData as any)?.month_label || 'Selected month')
-    : ((selectedPeriodData as any)?.year_label || 'Selected year')
 
   const renderMetricTrend = (
     currentValue: number | null,
     previousValue: number | null,
     prefersLower: boolean,
+    deltaFormatter: (value: number) => string = formatMetricDelta,
   ) => {
     if (shouldSuppressComparison) {
       return <div className="text-[10px] sm:text-xs text-gray-400 mt-1">{comparisonUnavailableMessage}</div>
@@ -1142,7 +1279,7 @@ export default function Dashboard() {
 
     return (
       <div className={`text-[10px] sm:text-xs mt-1 ${colorClass}`}>
-        <span className="font-semibold">{arrow}</span> {movementLabel} {formatMetricDelta(difference)} vs {getComparisonPeriodLabel()}
+        <span className="font-semibold">{arrow}</span> {movementLabel} {deltaFormatter(difference)} vs {comparisonReferenceLabel}
       </div>
     )
   }
@@ -1151,14 +1288,45 @@ export default function Dashboard() {
     points: MetricTrendPoint[],
     strokeColor: string,
     fillColor: string,
+    valueFormatter: (value: number) => string,
   ) => {
     if (shouldSuppressComparison || expenseAnalysisView === 'all_time') return null
 
     return (
       <>
-        <MetricSparkline points={points} strokeColor={strokeColor} fillColor={fillColor} />
+        <MetricSparkline
+          points={points}
+          strokeColor={strokeColor}
+          fillColor={fillColor}
+          valueFormatter={valueFormatter}
+        />
         <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-gray-400">{getTrendWindowLabel()}</div>
       </>
+    )
+  }
+
+  const renderDieselBenchmarkTrend = (currentValue: number | null, previousValue: number | null) => {
+    if (expenseAnalysisView === 'all_time' || currentValue == null || previousValue == null) {
+      return <div className="text-[10px] sm:text-xs text-gray-400 mt-1">No prior comparison</div>
+    }
+
+    const difference = currentValue - previousValue
+    if (Math.abs(difference) < 0.0005) {
+      return (
+        <div className="text-[10px] sm:text-xs text-gray-500 mt-1">
+          <span className="font-semibold">→</span> Flat vs {previousDieselBenchmarkLabel}
+        </div>
+      )
+    }
+
+    const direction = difference > 0 ? 'up' : 'down'
+    const colorClass = difference > 0 ? 'text-red-600' : 'text-green-600'
+    const arrow = direction === 'up' ? '↑' : '↓'
+
+    return (
+      <div className={`text-[10px] sm:text-xs mt-1 ${colorClass}`}>
+        <span className="font-semibold">{arrow}</span> {direction} {formatDieselMetricDelta(difference)} vs {previousDieselBenchmarkLabel}
+      </div>
     )
   }
 
@@ -1183,40 +1351,39 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        <div className="mt-3 flex flex-col gap-1 text-xs font-medium text-gray-500">
-          <span>Scope: {businessTotalScopeLabel}</span>
-          <span>Showing all vehicles. Use the filter below for per-vehicle detail.</span>
-        </div>
-        <div className="mt-5">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{businessPeriodSectionLabel}</div>
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-              <div className="text-xs font-medium text-gray-600">Truck Profits</div>
-              <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                ${safeToLocaleString(truckNetProfitTotal)}
+        <div className="mt-5 xl:flex xl:items-stretch xl:gap-5">
+          <div className="flex-1">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{businessPeriodSectionLabel}</div>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <div className="text-xs font-medium text-gray-600">Truck Profits</div>
+                <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+                  ${safeToLocaleString(truckNetProfitTotal)}
+                </div>
               </div>
-            </div>
-            <div className="rounded-lg border border-purple-100 bg-purple-50 p-4">
-              <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
-              <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                ${safeToLocaleString(trailerNetProfitTotal)}
+              <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
+                <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
+                <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                  ${safeToLocaleString(trailerNetProfitTotal)}
+                </div>
               </div>
-            </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
-              <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
-              <div className="mt-1 text-xl font-bold text-amber-700">
-                ${safeToLocaleString(businessReserveDepositsThisPeriod)}
+              <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
+                <div className="mt-1 text-xl font-bold text-amber-700">
+                  ${safeToLocaleString(businessReserveDepositsThisPeriod)}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div className="mt-5">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Running Totals</div>
-          <div className="mt-3 grid grid-cols-1 gap-3 md:max-w-md">
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
-              <div className="text-xs font-medium text-gray-600">Reserve Balance (to date)</div>
-              <div className={`mt-1 text-xl font-bold ${summaryReserveBalance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                ${safeToLocaleString(summaryReserveBalance)}
+          <div className="my-5 hidden w-px bg-slate-200 xl:block" />
+          <div className="mt-5 xl:mt-0 xl:w-72 xl:flex-shrink-0">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Running Totals</div>
+            <div className="mt-3">
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                <div className="text-xs font-medium text-gray-600">Reserve Balance (to date)</div>
+                <div className={`mt-1 text-xl font-bold ${summaryReserveBalance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  ${safeToLocaleString(summaryReserveBalance)}
+                </div>
               </div>
             </div>
           </div>
@@ -1389,6 +1556,32 @@ export default function Dashboard() {
                     const rawGrossPerMile = rawGrossMilesDriven > 0 ? rawGrossRevenue / rawGrossMilesDriven : null
                     const settlementCostPerMile = milesDriven > 0 ? settlementExpenses / milesDriven : null
                     const allInCostPerMile = milesDriven > 0 ? (settlementExpenses + repairsForPeriod) / milesDriven : null
+                    const involvedTruckNames = Array.isArray(pd.trucks)
+                      ? Array.from(
+                          new Set(
+                            pd.trucks
+                              .map((truck: any) => String(truck?.truck_name || '').trim())
+                              .filter(Boolean)
+                          )
+                        )
+                      : []
+                    const dieselBenchmarkPrice = Number(pd.diesel_price_per_gallon) || 0
+                    const involvedTrucksLabel =
+                      expenseAnalysisView === 'weekly'
+                        ? 'Trucks included this week'
+                        : expenseAnalysisView === 'monthly'
+                        ? 'Trucks included this month'
+                        : expenseAnalysisView === 'yearly'
+                        ? 'Trucks included this year'
+                        : 'Included trucks'
+                    const dieselBenchmarkLabel =
+                      expenseAnalysisView === 'weekly'
+                        ? 'Avg diesel price this week'
+                        : expenseAnalysisView === 'monthly'
+                        ? 'Avg diesel price this month'
+                        : expenseAnalysisView === 'yearly'
+                        ? 'Avg diesel price this year'
+                        : 'Avg diesel price'
                     const showCostPerMileParityNote =
                       vehicleTypeFilter === 'trucks' &&
                       repairsForPeriod === 0 &&
@@ -1401,6 +1594,10 @@ export default function Dashboard() {
                     const totalMilesTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).totalMiles)
                     const revenuePerMileTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).revenuePerMile)
                     const settlementCostTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).settlementCostPerMile)
+                    const dieselBenchmarkTrendPoints = buildSelectedPeriodTrendPoints((period) => {
+                      const price = Number((period as any).diesel_price_per_gallon) || 0
+                      return price > 0 ? price : null
+                    })
                 
                 return (
                   <>
@@ -1480,6 +1677,49 @@ export default function Dashboard() {
                       )}
                     </div>
 
+                    {vehicleTypeFilter === 'trucks' && involvedTruckNames.length > 0 && (
+                      <div className="mb-4 sm:mb-6 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:px-4 sm:py-3">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div className="md:flex-1">
+                            <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              {involvedTrucksLabel}
+                            </div>
+                            <div className="mt-1 text-sm sm:text-base text-slate-700">
+                              {involvedTruckNames.join(', ')}
+                            </div>
+                          </div>
+                          {dieselBenchmarkPrice > 0 && (
+                            <div className="border-t border-slate-200 pt-3 md:w-72 md:flex-shrink-0 md:border-t-0 md:pt-0 md:pl-4 md:text-right">
+                              <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                {dieselBenchmarkLabel}
+                              </div>
+                              <div className="mt-1 text-sm sm:text-base font-medium text-slate-700">
+                                {formatDieselMetricValue(dieselBenchmarkPrice)}
+                              </div>
+                              <div className="mt-3 flex flex-col gap-3 md:items-end">
+                                {dieselBenchmarkTrendPoints.length > 1 && (
+                                  <div className="md:w-52">
+                                    <MetricSparkline
+                                      points={dieselBenchmarkTrendPoints}
+                                      strokeColor="#2563eb"
+                                      fillColor="rgba(59, 130, 246, 0.16)"
+                                      valueFormatter={formatDieselMetricValue}
+                                    />
+                                  </div>
+                                )}
+                                <div className="md:text-right">
+                                  {renderDieselBenchmarkTrend(
+                                    dieselBenchmarkPrice > 0 ? dieselBenchmarkPrice : null,
+                                    previousDieselBenchmarkInfo?.value ?? null,
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {vehicleTypeFilter === 'trucks' && <div className={`grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 mb-6 ${repairsForPeriod > 0 ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
 
                       <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200 md:min-h-[120px]">
@@ -1487,8 +1727,8 @@ export default function Dashboard() {
                         <div className="text-base sm:text-xl font-bold text-slate-700">
                           {milesDriven > 0 ? `${safeToLocaleString(milesDriven, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi` : '—'}
                         </div>
-                        {renderMetricTrendSparkline(totalMilesTrendPoints, '#475569', 'rgba(148, 163, 184, 0.18)')}
-                        {renderMetricTrend(milesDriven > 0 ? milesDriven : null, previousPeriodMetrics.totalMiles, false)}
+                        {renderMetricTrendSparkline(totalMilesTrendPoints, '#475569', 'rgba(148, 163, 184, 0.18)', formatMilesMetricValue)}
+                        {renderMetricTrend(milesDriven > 0 ? milesDriven : null, previousPeriodMetrics.totalMiles, false, formatMilesMetricDelta)}
                       </div>
                       <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200 md:min-h-[120px]">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
@@ -1500,7 +1740,7 @@ export default function Dashboard() {
                         <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
                           {revenuePerMileDescription}
                         </div>
-                        {renderMetricTrendSparkline(revenuePerMileTrendPoints, '#0891b2', 'rgba(34, 211, 238, 0.2)')}
+                        {renderMetricTrendSparkline(revenuePerMileTrendPoints, '#0891b2', 'rgba(34, 211, 238, 0.2)', formatCurrencyMetric)}
                         {renderMetricTrend(revenuePerMile, previousPeriodMetrics.revenuePerMile, false)}
                       </div>
                       <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200 md:min-h-[120px]">
@@ -1525,7 +1765,7 @@ export default function Dashboard() {
                         <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
                           {settlementCostPerMileDescription}
                         </div>
-                        {renderMetricTrendSparkline(settlementCostTrendPoints, '#d97706', 'rgba(251, 191, 36, 0.22)')}
+                        {renderMetricTrendSparkline(settlementCostTrendPoints, '#d97706', 'rgba(251, 191, 36, 0.22)', formatCurrencyMetric)}
                         {renderMetricTrend(settlementCostPerMile, previousPeriodMetrics.settlementCostPerMile, true)}
                       </div>
                       {repairsForPeriod > 0 && (

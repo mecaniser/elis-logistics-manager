@@ -9,6 +9,7 @@ from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.truck import Truck
 from app.dependencies import get_tenant_id
+from app.services.diesel_price_service import get_historical_diesel_price
 from app.services.loan_balance_service import calculate_loan_metrics_for_truck
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, date
@@ -1181,6 +1182,8 @@ def _get_time_series_impl(
         "custom": 0.0,
         "trucks": set(),
         "settlement_types": set(),
+        "diesel_price_weighted_sum": 0.0,
+        "diesel_price_weight": 0.0,
         "week_start": None,
         "week_end": None,
         "settlement_date": None,
@@ -1212,6 +1215,8 @@ def _get_time_series_impl(
         "repairs": 0.0,
         "trucks": set(),
         "settlement_types": set(),
+        "diesel_price_weighted_sum": 0.0,
+        "diesel_price_weight": 0.0,
         "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
@@ -1240,6 +1245,8 @@ def _get_time_series_impl(
         "repairs": 0.0,
         "trucks": set(),
         "settlement_types": set(),
+        "diesel_price_weighted_sum": 0.0,
+        "diesel_price_weight": 0.0,
         "custom_descriptions": {}  # Track custom category descriptions for this period
     })
     
@@ -1296,6 +1303,20 @@ def _get_time_series_impl(
         miles_driven = float(settlement.miles_driven) if settlement.miles_driven else 0.0
         raw_gross_revenue = _extract_raw_gross_amount(settlement)
         raw_gross_miles_driven = miles_driven if raw_gross_revenue > 0 else 0.0
+        diesel_price = None
+        diesel_price_weight = 0.0
+        reference_date = week_start or settlement.settlement_date
+        if reference_date:
+            benchmark_price = get_historical_diesel_price(reference_date)
+            if benchmark_price and benchmark_price > 0:
+                diesel_price = float(benchmark_price)
+                if settlement.overview_amounts and isinstance(settlement.overview_amounts, dict):
+                    try:
+                        diesel_price_weight = float(settlement.overview_amounts.get("estimated_gallons") or 0.0)
+                    except (TypeError, ValueError):
+                        diesel_price_weight = 0.0
+                if diesel_price_weight <= 0:
+                    diesel_price_weight = miles_driven if miles_driven > 0 else 1.0
 
         # Aggregate weekly data
         weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0
@@ -1309,6 +1330,9 @@ def _get_time_series_impl(
         weekly_data[week_key]["trucks"].add(settlement.truck_id)
         if settlement.settlement_type:
             weekly_data[week_key]["settlement_types"].add(settlement.settlement_type)
+        if diesel_price is not None and diesel_price_weight > 0:
+            weekly_data[week_key]["diesel_price_weighted_sum"] += diesel_price * diesel_price_weight
+            weekly_data[week_key]["diesel_price_weight"] += diesel_price_weight
         if not weekly_data[week_key]["week_start"]:
             weekly_data[week_key]["week_start"] = week_start
         if not weekly_data[week_key]["week_end"]:
@@ -1329,6 +1353,9 @@ def _get_time_series_impl(
             monthly_data[month_key]["trucks"].add(settlement.truck_id)
             if settlement.settlement_type:
                 monthly_data[month_key]["settlement_types"].add(settlement.settlement_type)
+            if diesel_price is not None and diesel_price_weight > 0:
+                monthly_data[month_key]["diesel_price_weighted_sum"] += diesel_price * diesel_price_weight
+                monthly_data[month_key]["diesel_price_weight"] += diesel_price_weight
         
         # Aggregate yearly data
         if year_key:
@@ -1343,6 +1370,9 @@ def _get_time_series_impl(
             yearly_data[year_key]["trucks"].add(settlement.truck_id)
             if settlement.settlement_type:
                 yearly_data[year_key]["settlement_types"].add(settlement.settlement_type)
+            if diesel_price is not None and diesel_price_weight > 0:
+                yearly_data[year_key]["diesel_price_weighted_sum"] += diesel_price * diesel_price_weight
+                yearly_data[year_key]["diesel_price_weight"] += diesel_price_weight
         
         # Process expense categories
         if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
@@ -1474,6 +1504,7 @@ def _get_time_series_impl(
             "loan_interest": round(week_data["loan_interest"], 2),
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
+            "diesel_price_per_gallon": round(week_data["diesel_price_weighted_sum"] / week_data["diesel_price_weight"], 3) if week_data["diesel_price_weight"] > 0 else None,
             "custom_descriptions": custom_descriptions_formatted,
             "trucks": truck_list,
             "settlement_types": sorted(week_data["settlement_types"])
@@ -1569,6 +1600,7 @@ def _get_time_series_impl(
             "loan_interest": round(month_data["loan_interest"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
+            "diesel_price_per_gallon": round(month_data["diesel_price_weighted_sum"] / month_data["diesel_price_weight"], 3) if month_data["diesel_price_weight"] > 0 else None,
             "custom_descriptions": custom_descriptions_formatted,
             "trucks": truck_list,
             "settlement_types": sorted(month_data["settlement_types"]),
@@ -1657,6 +1689,7 @@ def _get_time_series_impl(
             "loan_interest": round(year_data["loan_interest"], 2),
             "truck_parking": round(year_data["truck_parking"], 2),
             "custom": round(year_data["custom"], 2),
+            "diesel_price_per_gallon": round(year_data["diesel_price_weighted_sum"] / year_data["diesel_price_weight"], 3) if year_data["diesel_price_weight"] > 0 else None,
             "custom_descriptions": custom_descriptions_formatted,
             "repairs": round(year_data.get("repairs", 0.0), 2),
             "trucks": truck_list,

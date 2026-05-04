@@ -101,12 +101,20 @@ def maybe_populate_estimated_miles(
     *,
     mpg: float,
     discount_per_gallon: float = 0.0,
+    overwrite_existing_estimate: bool = False,
 ) -> bool:
     """Populate estimated miles on a settlement payload when fuel spend exists but miles do not."""
     existing_miles = settlement_data.get("miles_driven")
+    overview_amounts = settlement_data.get("overview_amounts")
     try:
         if existing_miles is not None and float(existing_miles) > 0:
-            return False
+            if not overwrite_existing_estimate:
+                return False
+            if not isinstance(overview_amounts, dict):
+                return False
+            estimated_miles = float(overview_amounts.get("estimated_miles_driven") or 0.0)
+            if estimated_miles <= 0:
+                return False
     except (TypeError, ValueError):
         return False
 
