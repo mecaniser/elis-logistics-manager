@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, ReserveBalance } from '../services/api'
+import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, TimeSeriesPeriod, ReserveBalance } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/TenantContext'
@@ -46,6 +46,13 @@ interface ExpenseData {
   custom: number[]
 }
 
+interface MetricTrendPoint {
+  label: string
+  value: number
+  isCurrent: boolean
+  isPrevious: boolean
+}
+
 // Helper function to safely format numbers (handles null/undefined)
 const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
   if (value == null || isNaN(value)) return '0.00'
@@ -70,6 +77,76 @@ function MetricLabelWithTooltip({ label, description }: { label: string; descrip
           <span className="sr-only">{label} description</span>
         </AccountingTooltip>
       </div>
+    </div>
+  )
+}
+
+function MetricSparkline({
+  points,
+  strokeColor,
+  fillColor,
+}: {
+  points: MetricTrendPoint[]
+  strokeColor: string
+  fillColor: string
+}) {
+  if (points.length < 2) {
+    return <div className="mt-2 text-[10px] sm:text-xs text-gray-400">Not enough history for a trend line</div>
+  }
+
+  const width = 160
+  const height = 40
+  const padding = 4
+  const values = points.map((point) => point.value)
+  const minValue = Math.min(...values)
+  const maxValue = Math.max(...values)
+  const valueRange = maxValue - minValue
+  const stepX = points.length === 1 ? 0 : (width - padding * 2) / (points.length - 1)
+
+  const toY = (value: number) => {
+    if (valueRange < 0.0001) return height / 2
+    return padding + ((maxValue - value) / valueRange) * (height - padding * 2)
+  }
+
+  const polylinePoints = points
+    .map((point, index) => `${padding + index * stepX},${toY(point.value)}`)
+    .join(' ')
+
+  const areaPoints = [
+    `${padding},${height - padding}`,
+    ...points.map((point, index) => `${padding + index * stepX},${toY(point.value)}`),
+    `${padding + (points.length - 1) * stepX},${height - padding}`,
+  ].join(' ')
+
+  return (
+    <div className="mt-3">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-10 w-full overflow-visible" aria-hidden="true">
+        <polygon points={areaPoints} fill={fillColor} />
+        <polyline
+          points={polylinePoints}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {points.map((point, index) => {
+          const cx = padding + index * stepX
+          const cy = toY(point.value)
+          const radius = point.isCurrent ? 3.5 : point.isPrevious ? 3 : 2.5
+          return (
+            <circle
+              key={`${point.label}-${index}`}
+              cx={cx}
+              cy={cy}
+              r={radius}
+              fill={point.isCurrent ? strokeColor : '#ffffff'}
+              stroke={strokeColor}
+              strokeWidth={point.isCurrent ? 2 : 1.5}
+            />
+          )
+        })}
+      </svg>
     </div>
   )
 }
@@ -914,6 +991,7 @@ export default function Dashboard() {
   const calculatePeriodMetrics = (periodData: any) => {
     if (!periodData) {
       return {
+        totalMiles: null,
         revenuePerMile: null,
         rawGrossPerMile: null,
         settlementCostPerMile: null,
@@ -928,6 +1006,7 @@ export default function Dashboard() {
     const repairsForPeriod = getPeriodRepairCost(periodData)
 
     return {
+      totalMiles: milesDriven > 0 ? milesDriven : null,
       revenuePerMile: milesDriven > 0 ? Number(periodData.gross_revenue) / milesDriven : null,
       rawGrossPerMile: rawGrossMilesDriven > 0 ? rawGrossRevenue / rawGrossMilesDriven : null,
       settlementCostPerMile: milesDriven > 0 ? settlementExpenses / milesDriven : null,
@@ -936,6 +1015,48 @@ export default function Dashboard() {
   }
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
+  const getTrendWindowLabel = () => {
+    if (expenseAnalysisView === 'weekly') return 'Recent weeks'
+    if (expenseAnalysisView === 'monthly') return 'Recent months'
+    if (expenseAnalysisView === 'yearly') return 'Recent years'
+    return 'Recent periods'
+  }
+
+  const buildSelectedPeriodTrendPoints = (
+    metricGetter: (period: TimeSeriesPeriod) => number | null,
+  ): MetricTrendPoint[] => {
+    if (!selectedExpensePeriod || expenseAnalysisView === 'all_time') return []
+
+    const periods = getSelectedPeriodsList() as TimeSeriesPeriod[]
+    const periodKey = getSelectedPeriodKey() as keyof TimeSeriesPeriod
+    const selectedIndex = periods.findIndex((period) => period[periodKey] === selectedExpensePeriod)
+    if (selectedIndex < 0) return []
+
+    const trendWindowStart = Math.max(0, selectedIndex - 5)
+    return periods
+      .slice(trendWindowStart, selectedIndex + 1)
+      .map((period, index) => {
+        const absoluteIndex = trendWindowStart + index
+        const value = metricGetter(period)
+        if (value == null || !Number.isFinite(value)) return null
+
+        const label =
+          expenseAnalysisView === 'weekly'
+            ? period.week_label || period.week_key || `Week ${absoluteIndex + 1}`
+            : expenseAnalysisView === 'monthly'
+            ? period.month_label || period.month_key || `Month ${absoluteIndex + 1}`
+            : period.year_label || period.year_key || `Year ${absoluteIndex + 1}`
+
+        return {
+          label,
+          value,
+          isCurrent: absoluteIndex === selectedIndex,
+          isPrevious: absoluteIndex === selectedIndex - 1,
+        }
+      })
+      .filter((point): point is MetricTrendPoint => point != null)
+  }
+
   const selectableVehicles = trucks.filter((truck) =>
     vehicleTypeFilter === 'trucks'
       ? truck.vehicle_type === 'truck'
@@ -1026,13 +1147,28 @@ export default function Dashboard() {
     )
   }
 
+  const renderMetricTrendSparkline = (
+    points: MetricTrendPoint[],
+    strokeColor: string,
+    fillColor: string,
+  ) => {
+    if (shouldSuppressComparison || expenseAnalysisView === 'all_time') return null
+
+    return (
+      <>
+        <MetricSparkline points={points} strokeColor={strokeColor} fillColor={fillColor} />
+        <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-gray-400">{getTrendWindowLabel()}</div>
+      </>
+    )
+  }
+
   return (
     <div>
       <div className="mb-4 sm:mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
       </div>
 
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      {vehicleTypeFilter !== 'trailers' && <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
@@ -1085,7 +1221,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Detailed Expense Analysis Section - First Chart */}
       {timeSeriesData && (
@@ -1238,10 +1374,13 @@ export default function Dashboard() {
                 const pd = selectedPeriodData as any
                 const repairsForPeriod = getRepairCostForSelectedPeriod(pd)
                 
-                    const customAmount = Number((selectedPeriodData as any).custom) || 0
                     const netProfitValue = Number(selectedPeriodData.net_profit) || 0
-                    const adjustedNetProfitValue = netProfitValue + customAmount
-                    const trueNetProfit = adjustedNetProfitValue - repairsForPeriod
+                    const loanInterestOuter = Number(pd.loan_interest) || 0
+                    const trailerSplitOuter = vehicleTypeFilter === 'trailers'
+                      ? Math.max(0, (Number(selectedPeriodData.gross_revenue) || 0) - netProfitValue)
+                      : Number(pd.trailer_income_split_amount) || 0
+                    const repairReserveOuter = Number(pd.repair_reserve_amount) || 0
+                    const grossSettlementProfit = netProfitValue + loanInterestOuter + trailerSplitOuter + repairReserveOuter
                     const milesDriven = Number(pd.miles_driven) || 0
                     const rawGrossRevenue = Number(pd.raw_gross_revenue) || 0
                     const rawGrossMilesDriven = Number(pd.raw_gross_miles_driven) || 0
@@ -1256,9 +1395,12 @@ export default function Dashboard() {
                       settlementCostPerMile != null &&
                       allInCostPerMile != null
                     const revenuePerMileDescription = 'Gross revenue divided by miles driven. This is revenue efficiency, not a cost metric.'
-                    const rawGrossPerMileDescription = 'Pre-dispatch 77 Cargo gross divided by miles from settlements that include raw-gross data.'
+                    const rawGrossPerMileDescription = 'Pre-dispatch gross divided by miles from settlements that include raw-gross data.'
                     const settlementCostPerMileDescription = 'Settlement expenses divided by miles driven. This is booked cost per mile before repairs.'
                     const allInCostPerMileDescription = 'Settlement expenses plus repairs for this period, divided by miles driven.'
+                    const totalMilesTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).totalMiles)
+                    const revenuePerMileTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).revenuePerMile)
+                    const settlementCostTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).settlementCostPerMile)
                 
                 return (
                   <>
@@ -1272,66 +1414,81 @@ export default function Dashboard() {
                         </div>
                         <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
                       </div>
-                      <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
-                          <span className="text-base sm:text-xl font-bold text-red-600">
-                            ${(() => {
-                              const customAmt = Number((selectedPeriodData as any).custom) || 0
-                              if (vehicleTypeFilter === 'trailers') {
-                                if (pd.expenses !== undefined && pd.expenses !== null) {
-                                  const settlementExpenses = Number(pd.expenses) || 0
-                                  const repairs = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                                  return Math.max(0, settlementExpenses + repairs - customAmt)
-                                }
-                                const trailerExpenses = (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                                return Math.max(0, trailerExpenses)
-                              }
-
-                              if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                                return Math.max(0, pd.total_expenses - customAmt)
-                              }
-
-                              const sum = (
-                                (Number(pd.fuel) || 0) +
-                                (Number(pd.tolls) || 0) +
-                                (Number(pd.dispatch_fee) || 0) +
-                                (Number(pd.deduct) || 0) +
-                                (Number(pd.insurance) || 0) +
-                                (Number(pd.safety) || 0) +
-                                (Number(pd.prepass) || 0) +
-                                (Number(pd.ifta) || 0) +
-                                (Number(pd.loan_interest) || 0) +
-                                (Number(pd.truck_parking) || 0) +
-                                (Number(pd.driver_pay) || 0) +
-                                (Number(pd.payroll_fee) || 0) +
-                                (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                              )
-                              return isNaN(sum) ? 0 : Math.max(0, sum - customAmt)
-                            })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                      </div>
-                      <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-xs sm:text-sm font-medium text-gray-600">Net Profit:</span>
-                          <span className={`text-base sm:text-xl font-bold ${
-                            trueNetProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            ${safeToLocaleString(trueNetProfit)}
-                          </span>
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
-                      </div>
+                      {vehicleTypeFilter === 'trailers' ? (
+                        <>
+                          <div className="bg-amber-50 p-2 sm:p-4 rounded-lg">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Depreciation Recoupment:</span>
+                              <span className="text-base sm:text-xl font-bold text-amber-600">
+                                ${safeToLocaleString(trailerSplitOuter)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-500">Earmarked — stays yours</div>
+                          </div>
+                          <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Take-Home Profit</span>
+                              <span className={`text-base sm:text-xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${safeToLocaleString(netProfitValue)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="bg-red-50 p-2 sm:p-4 rounded-lg">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
+                              <span className="text-base sm:text-xl font-bold text-red-600">
+                                ${(() => {
+                                  const customAmt = Number((selectedPeriodData as any).custom) || 0
+                                  if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
+                                    return Math.max(0, pd.total_expenses - customAmt)
+                                  }
+                                  const sum = (
+                                    (Number(pd.fuel) || 0) +
+                                    (Number(pd.tolls) || 0) +
+                                    (Number(pd.dispatch_fee) || 0) +
+                                    (Number(pd.deduct) || 0) +
+                                    (Number(pd.insurance) || 0) +
+                                    (Number(pd.safety) || 0) +
+                                    (Number(pd.prepass) || 0) +
+                                    (Number(pd.ifta) || 0) +
+                                    (Number(pd.loan_interest) || 0) +
+                                    (Number(pd.truck_parking) || 0) +
+                                    (Number(pd.driver_pay) || 0) +
+                                    (Number(pd.payroll_fee) || 0) +
+                                    (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
+                                  )
+                                  return isNaN(sum) ? 0 : Math.max(0, sum - customAmt)
+                                })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                          </div>
+                          <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Settlement Net Profit</span>
+                              <span className={`text-base sm:text-xl font-bold ${grossSettlementProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${safeToLocaleString(grossSettlementProfit)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] sm:text-xs text-gray-500">{expenseAnalysisView === 'all_time' ? 'All time cumulative' : `For this ${expenseAnalysisView === 'weekly' ? 'week' : expenseAnalysisView === 'monthly' ? 'month' : 'year'} only`}</div>
+                          </div>
+                        </>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4 mb-6">
+                    {vehicleTypeFilter === 'trucks' && <div className={`grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 mb-6 ${repairsForPeriod > 0 ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+
                       <div className="bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-200 md:min-h-[120px]">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Miles</div>
                         <div className="text-base sm:text-xl font-bold text-slate-700">
                           {milesDriven > 0 ? `${safeToLocaleString(milesDriven, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} mi` : '—'}
                         </div>
+                        {renderMetricTrendSparkline(totalMilesTrendPoints, '#475569', 'rgba(148, 163, 184, 0.18)')}
+                        {renderMetricTrend(milesDriven > 0 ? milesDriven : null, previousPeriodMetrics.totalMiles, false)}
                       </div>
                       <div className="bg-cyan-50 p-3 sm:p-4 rounded-lg border border-cyan-200 md:min-h-[120px]">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
@@ -1343,11 +1500,12 @@ export default function Dashboard() {
                         <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
                           {revenuePerMileDescription}
                         </div>
+                        {renderMetricTrendSparkline(revenuePerMileTrendPoints, '#0891b2', 'rgba(34, 211, 238, 0.2)')}
                         {renderMetricTrend(revenuePerMile, previousPeriodMetrics.revenuePerMile, false)}
                       </div>
                       <div className="bg-indigo-50 p-3 sm:p-4 rounded-lg border border-indigo-200 md:min-h-[120px]">
                         <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
-                          <MetricLabelWithTooltip label="77 Cargo Raw Gross / Mile" description={rawGrossPerMileDescription} />
+                          <MetricLabelWithTooltip label="Pre-Dispatch Gross / Mile" description={rawGrossPerMileDescription} />
                         </div>
                         <div className="text-base sm:text-xl font-bold text-indigo-700">
                           {formatCurrencyMetric(rawGrossPerMile)}
@@ -1367,21 +1525,24 @@ export default function Dashboard() {
                         <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
                           {settlementCostPerMileDescription}
                         </div>
+                        {renderMetricTrendSparkline(settlementCostTrendPoints, '#d97706', 'rgba(251, 191, 36, 0.22)')}
                         {renderMetricTrend(settlementCostPerMile, previousPeriodMetrics.settlementCostPerMile, true)}
                       </div>
-                      <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200 md:min-h-[120px]">
-                        <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
-                          <MetricLabelWithTooltip label="All-In Cost / Mile" description={allInCostPerMileDescription} />
+                      {repairsForPeriod > 0 && (
+                        <div className="bg-rose-50 p-3 sm:p-4 rounded-lg border border-rose-200 md:min-h-[120px]">
+                          <div className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                            <MetricLabelWithTooltip label="All-In Cost / Mile" description={allInCostPerMileDescription} />
+                          </div>
+                          <div className="text-base sm:text-xl font-bold text-rose-700">
+                            {formatCurrencyMetric(allInCostPerMile)}
+                          </div>
+                          <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
+                            {allInCostPerMileDescription}
+                          </div>
+                          {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
                         </div>
-                        <div className="text-base sm:text-xl font-bold text-rose-700">
-                          {formatCurrencyMetric(allInCostPerMile)}
-                        </div>
-                        <div className="mt-1 text-[10px] sm:text-xs text-gray-500 md:hidden">
-                          {allInCostPerMileDescription}
-                        </div>
-                        {renderMetricTrend(allInCostPerMile, previousPeriodMetrics.allInCostPerMile, true)}
-                      </div>
-                    </div>
+                      )}
+                    </div>}
                     {showCostPerMileParityNote && (
                       <div className="mb-6 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
                         No repairs in this period. Settlement and all-in cost per mile are equal.
@@ -1413,97 +1574,72 @@ export default function Dashboard() {
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
                 
                 const reserveFundedRepairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
-                const directRepairExpenses = 0
-                const trueNetProfitValue = netProfitValue - directRepairExpenses
-                const showTrueNetProfitParityNote =
-                  !selectedTruck &&
-                  Math.abs(truckNetProfitTotal - netProfitValue) < 0.005 &&
-                  Math.abs(netProfitValue - trueNetProfitValue) < 0.005
+                const takeHomeProfit = netProfitValue
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                      Net Profit Details - {periodLabel}
+                      Settlement Breakdown — {periodLabel}
                     </h3>
-                    
-                    {/* Net Profit Breakdown */}
+
                     <div className="mb-6 space-y-3">
-                      {/* Settlement Net Profit: profit from settlement BEFORE loan interest was deducted */}
+                      {/* Gross settlement profit before any internal deductions */}
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                        <span className="text-sm font-medium text-gray-700">Settlement Net Profit</span>
+                        <span className="text-sm font-medium text-gray-700">Gross Settlement Profit</span>
                         <span className="text-sm font-semibold text-gray-900">
                           ${safeToLocaleString(settlementNetProfitBeforeDeductions)}
                         </span>
                       </div>
 
-                      {trailerSplitThisPeriod > 0 && (
+                      {/* Loan interest: truly gone — financing cost */}
+                      {loanInterest > 0 && (
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Trailer Split (this period)</span>
-                          <span className="text-sm font-medium text-purple-600">
-                            -${safeToLocaleString(trailerSplitThisPeriod)}
+                          <span className="text-sm text-gray-600">Less: Loan Interest <span className="text-xs text-gray-400">(financing cost — gone)</span></span>
+                          <span className="text-sm font-medium text-red-600">
+                            −${safeToLocaleString(loanInterest)}
                           </span>
                         </div>
                       )}
 
+                      {/* Trailer recoupment: stays in your ledger */}
+                      {trailerSplitThisPeriod > 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Less: Trailer Depreciation Recoupment <span className="text-xs text-gray-400">(earmarked — stays yours)</span></span>
+                          <span className="text-sm font-medium text-purple-600">
+                            −${safeToLocaleString(trailerSplitThisPeriod)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Repair reserve: stays in your reserve fund */}
                       {repairReserveThisPeriod > 0 && (
                         <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Repair Reserve (this period)</span>
+                          <span className="text-sm text-gray-600">Less: Repair Reserve <span className="text-xs text-gray-400">(earmarked — stays yours)</span></span>
                           <span className="text-sm font-medium text-amber-600">
-                            -${safeToLocaleString(repairReserveThisPeriod)}
+                            −${safeToLocaleString(repairReserveThisPeriod)}
                           </span>
                         </div>
                       )}
-                      
-                      {/* Loan Interest: informative - already deducted in settlement */}
-                      {loanInterest > 0 && (
-                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Loan Interest (included in settlement)</span>
-                          <span className="text-sm font-medium text-red-600">
-                            -${safeToLocaleString(loanInterest)}
+
+                      {/* Take-Home Profit: reconciles to the Settlement Net Profit card */}
+                      <div className="pt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-base font-semibold text-gray-900">Take-Home Profit</span>
+                          <span className={`text-xl font-bold ${takeHomeProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${safeToLocaleString(takeHomeProfit)}
                           </span>
                         </div>
-                      )}
-                      
-                      {/* Net Profit After Interest = same as Net Profit card */}
-                      <div className="flex justify-between items-center py-2 border-b border-gray-200 bg-gray-50 -mx-2 px-2">
-                        <span className="text-sm font-medium text-gray-700">Net Profit (After Interest)</span>
-                        <span className={`text-sm font-semibold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${safeToLocaleString(netProfitValue)}
-                        </span>
+                        <div className="mt-1 text-xs text-gray-500">Reconciles to Settlement Net Profit above.</div>
                       </div>
-                      
-                      {/* Repair Expenses: separate from settlement, shown for context */}
+
+                      {/* Reserve-funded repairs: informational — repairs covered by reserve this period */}
                       {reserveFundedRepairs > 0 && (
-                        <div className="flex justify-between items-center py-2 border-b border-gray-200 bg-blue-50 -mx-2 px-2 rounded-sm">
-                          <span className="text-sm text-gray-700">Reserve-Funded Repairs (covered by reserve)</span>
+                        <div className="flex justify-between items-center py-2 mt-2 border-t border-gray-100 bg-blue-50 -mx-2 px-2 rounded-sm">
+                          <span className="text-sm text-gray-700">Reserve-Funded Repairs <span className="text-xs text-gray-400">(paid from reserve, not from take-home)</span></span>
                           <span className="text-sm font-medium text-blue-700">
                             ${safeToLocaleString(reserveFundedRepairs)}
                           </span>
                         </div>
                       )}
-
-                      {directRepairExpenses > 0 && (
-                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                          <span className="text-sm text-gray-600">Less: Direct Repair Expenses (not reserve-funded)</span>
-                          <span className="text-sm font-medium text-red-600">
-                            -${safeToLocaleString(directRepairExpenses)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* True Net Profit: direct business profit after reserve deposits and any non-reserve repairs */}
-                      <div className="pt-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-base font-semibold text-gray-900">True Net Profit</span>
-                          <span className={`text-xl font-bold ${trueNetProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ${safeToLocaleString(trueNetProfitValue)}
-                          </span>
-                        </div>
-                        {showTrueNetProfitParityNote && (
-                          <div className="mt-2 text-sm text-gray-500">
-                            Same as Net Profit and Truck Profits above. No additional deductions this period.
-                          </div>
-                        )}
-                      </div>
                     </div>
 
                     <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4">
@@ -1642,7 +1778,7 @@ export default function Dashboard() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
                                   <span className="text-base font-bold text-red-600">
-                                    ${safeToLocaleString(reserveFundedRepairs + directRepairExpenses)}
+                                    ${safeToLocaleString(reserveFundedRepairs)}
                                   </span>
                                 </div>
                               </div>

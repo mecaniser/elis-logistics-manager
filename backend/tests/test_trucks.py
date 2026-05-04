@@ -55,6 +55,24 @@ def test_create_truck_with_default_trailer_split(client: TestClient, db, tenant_
     assert float(data["default_repair_reserve_amount"]) == 500.0
 
 
+def test_create_truck_saves_fuel_estimation_settings(client: TestClient, tenant_headers):
+    response = client.post(
+        "/api/trucks",
+        json={
+            "name": "Estimated Miles Truck",
+            "vehicle_type": "truck",
+            "license_plate": "MPG-650",
+            "estimated_mpg": 6.75,
+            "fuel_card_discount_per_gallon": 0.325,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["estimated_mpg"]) == pytest.approx(6.75)
+    assert float(data["fuel_card_discount_per_gallon"]) == pytest.approx(0.325)
+
+
 def test_create_truck_normalizes_percent_interest_rate_input(client: TestClient, tenant_headers):
     """Truck creation should treat 6.5 as 6.5%, not 650%."""
     response = client.post(
@@ -202,6 +220,28 @@ def test_update_truck_normalizes_percent_interest_rate_input(client: TestClient,
     assert response.status_code == 200
     data = response.json()
     assert float(data["interest_rate"]) == 0.065
+
+
+def test_update_truck_saves_fuel_estimation_settings(client: TestClient, db, tenant_headers):
+    truck = Truck(
+        tenant_id=1,
+        name="Estimated Miles Update Truck",
+        vehicle_type="truck",
+        license_plate="MPG-651",
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.put(
+        f"/api/trucks/{truck.id}",
+        json={"estimated_mpg": 6.9, "fuel_card_discount_per_gallon": 0.41},
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["estimated_mpg"]) == pytest.approx(6.9)
+    assert float(data["fuel_card_discount_per_gallon"]) == pytest.approx(0.41)
 
 
 def test_vehicle_roi_reflects_updated_interest_rate(client: TestClient, db, tenant_headers):

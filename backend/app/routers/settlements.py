@@ -9,6 +9,9 @@ from app.database import get_db
 from app.dependencies import get_tenant_id
 from app.models.settlement import Settlement
 from app.models.truck import Truck
+from app.services.diesel_price_service import (
+    maybe_populate_estimated_miles,
+)
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementUpdate
 from app.utils.pdf_parser import parse_amazon_relay_pdf, parse_amazon_relay_pdf_multi_truck
 from app.utils.settlement_extractor import SettlementExtractor
@@ -161,6 +164,17 @@ def resolve_repair_reserve_input(
         float(source_vehicle.default_repair_reserve_amount)
         if source_vehicle.default_repair_reserve_amount is not None
         else None
+    )
+
+
+def maybe_estimate_miles_from_fuel_spend(settlement_data: dict, truck: Optional[Truck]) -> None:
+    """Backfill miles on ingest when a truck settlement has fuel spend but no reported miles."""
+    if not truck or truck.vehicle_type != "truck":
+        return
+    maybe_populate_estimated_miles(
+        settlement_data,
+        mpg=float(truck.estimated_mpg or 6.5),
+        discount_per_gallon=float(truck.fuel_card_discount_per_gallon or 0.0),
     )
 
 
@@ -535,6 +549,8 @@ async def upload_settlement_pdf(
                     revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                     settlement_data["net_profit"] = revenue - settlement_data["expenses"]
 
+            maybe_estimate_miles_from_fuel_spend(settlement_data, truck)
+
             resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
                 truck,
                 trailer_income_split_trailer_id,
@@ -802,6 +818,8 @@ async def upload_settlement_pdf_bulk(
                             revenue = float(settlement_data.get("gross_revenue", 0) or 0)
                             settlement_data["net_profit"] = revenue - settlement_data["expenses"]
 
+                    maybe_estimate_miles_from_fuel_spend(settlement_data, truck)
+
                     resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
                         truck,
                         settlement_data.get("trailer_income_split_trailer_id"),
@@ -1037,6 +1055,8 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
                 # Recalculate net profit
                 revenue = float(settlement_dict.get("gross_revenue", 0) or 0)
                 settlement_dict["net_profit"] = revenue - settlement_dict["expenses"]
+
+        maybe_estimate_miles_from_fuel_spend(settlement_dict, truck)
 
         resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
             truck,
@@ -1487,6 +1507,8 @@ def upload_consolidated_settlements(
                 "pdf_file_path": pdf_file_path,
                 "license_plate": license_plate,
             }
+
+            maybe_estimate_miles_from_fuel_spend(entry_data, truck)
 
             if trailer and split_amount > 0:
                 apply_trailer_income_split_to_source(entry_data, split_amount)
@@ -1948,6 +1970,8 @@ def upload_settlement_json(
                 "settlement_type": metadata.get("settlement_type") or data.get("settlement_type"),
                 "pdf_file_path": None  # No PDF stored
             }
+
+            maybe_estimate_miles_from_fuel_spend(settlement_data, truck)
 
             resolved_trailer_id, resolved_split_amount = resolve_trailer_income_split_inputs(
                 truck,

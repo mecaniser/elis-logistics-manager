@@ -13,6 +13,7 @@ from app.models.tenant import Tenant
 from app.models.truck import Truck
 from app.routers import settlements as settlements_router
 from app.services import accounting_service as accounting_service_module
+from app.services import diesel_price_service as diesel_price_service_module
 from app.services.accounting_service import create_settlement_journal_entry
 from app.utils import pdf_parser as pdf_parser_module
 from app.utils import settlement_extractor as settlement_extractor_module
@@ -378,6 +379,49 @@ def test_parse_277_paystub_populates_overview_amounts(patch_277_paystub_pdf):
         "dispatch_fee": 495.42,
         "gross_before_dispatch": 6688.18,
     }
+
+
+def test_upload_277_paystub_estimates_miles_from_fuel_spend(
+    client: TestClient,
+    tenant_headers,
+    patch_277_paystub_pdf,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settlements_router, "UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(settlements_router, "upload_pdf", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(diesel_price_service_module, "get_historical_diesel_price", lambda *_args, **_kwargs: 4.0)
+
+    truck_response = client.post(
+        "/api/trucks",
+        json={
+            "name": "Volvo 417",
+            "vehicle_type": "truck",
+            "license_plate": "VW9327",
+            "estimated_mpg": 6.5,
+            "fuel_card_discount_per_gallon": 0.25,
+        },
+        headers=tenant_headers,
+    )
+    assert truck_response.status_code == 200
+
+    response = client.post(
+        "/api/settlements/upload",
+        data={"settlement_type": "277 Logistics"},
+        files={"file": ("277-paystub.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        headers=tenant_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["license_plate"] == "VW9327"
+    assert float(data["miles_driven"]) == pytest.approx(2860.0)
+    assert float(data["overview_amounts"]["gross_before_dispatch"]) == pytest.approx(6688.18)
+    assert float(data["overview_amounts"]["estimated_miles_driven"]) == pytest.approx(2860.0)
+    assert float(data["overview_amounts"]["diesel_price_per_gallon"]) == pytest.approx(4.0)
+    assert float(data["overview_amounts"]["fuel_card_discount_per_gallon"]) == pytest.approx(0.25)
+    assert float(data["overview_amounts"]["effective_fuel_price_per_gallon"]) == pytest.approx(3.75)
+    assert float(data["overview_amounts"]["estimated_gallons"]) == pytest.approx(440.0)
 
 
 def test_77_cargo_detection_flows_through_extractor(patch_77_cargo_pdf):

@@ -97,6 +97,8 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   default_trailer_id: vehicle.default_trailer_id?.toString() || '',
   default_trailer_income_split_amount: vehicle.default_trailer_income_split_amount?.toString() || '',
   default_repair_reserve_amount: vehicle.default_repair_reserve_amount?.toString() || '',
+  estimated_mpg: vehicle.estimated_mpg != null ? Number(vehicle.estimated_mpg).toFixed(2) : '6.50',
+  fuel_card_discount_per_gallon: vehicle.fuel_card_discount_per_gallon != null ? Number(vehicle.fuel_card_discount_per_gallon).toFixed(3) : '0.000',
   license_plate: vehicle.license_plate || '',
   tag_number: vehicle.tag_number || '',
   cash_investment: vehicle.cash_investment?.toString() || '',
@@ -215,6 +217,8 @@ export default function Trucks() {
     default_trailer_id: '',
     default_trailer_income_split_amount: '',
     default_repair_reserve_amount: '',
+    estimated_mpg: '6.50',
+    fuel_card_discount_per_gallon: '0.000',
     license_plate: '',
     tag_number: '',
     cash_investment: '',
@@ -594,6 +598,12 @@ export default function Trucks() {
       const defaultRepairReserveAmount = formData.vehicle_type === 'truck' && formData.default_repair_reserve_amount
         ? parseNumeric(formData.default_repair_reserve_amount)
         : null
+      const estimatedMpg = formData.vehicle_type === 'truck'
+        ? parseNumeric(formData.estimated_mpg || '6.5')
+        : null
+      const fuelCardDiscountPerGallon = formData.vehicle_type === 'truck'
+        ? parseNumeric(formData.fuel_card_discount_per_gallon || '0')
+        : null
       
       // Calculate additional expenses total
       const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
@@ -670,6 +680,8 @@ export default function Trucks() {
           default_trailer_id: defaultTrailerId,
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
+          estimated_mpg: estimatedMpg,
+          fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
@@ -683,6 +695,8 @@ export default function Trucks() {
           default_trailer_id: defaultTrailerId,
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
+          estimated_mpg: estimatedMpg,
+          fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
           tag_number: formData.vehicle_type === 'trailer' ? (formData.tag_number || undefined) : undefined,
           ...investmentData
@@ -721,6 +735,8 @@ export default function Trucks() {
       default_trailer_id: '',
       default_trailer_income_split_amount: '',
       default_repair_reserve_amount: '',
+      estimated_mpg: '6.50',
+      fuel_card_discount_per_gallon: '0.000',
       license_plate: '',
       tag_number: '',
       cash_investment: '',
@@ -938,6 +954,8 @@ export default function Trucks() {
                     default_trailer_id: newType === 'truck' ? formData.default_trailer_id : '',
                     default_trailer_income_split_amount: newType === 'truck' ? formData.default_trailer_income_split_amount : '',
                     default_repair_reserve_amount: newType === 'truck' ? formData.default_repair_reserve_amount : '',
+                    estimated_mpg: newType === 'truck' ? formData.estimated_mpg : '6.50',
+                    fuel_card_discount_per_gallon: newType === 'truck' ? formData.fuel_card_discount_per_gallon : '0.000',
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
                           tag_number: (newType === 'truck' || newType === 'suv') ? '' : formData.tag_number
                   })
@@ -1115,6 +1133,76 @@ export default function Trucks() {
                             })
                           }}
                           placeholder="500.00"
+                          className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                          style={{ minWidth: '130px' }}
+                        />
+                      </div>
+                      <div className="flex items-center min-w-0">
+                        <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                          <label className="text-xs font-medium text-gray-500">Est. MPG</label>
+                        </div>
+                        <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={focusedFields.has('estimated_mpg') ? formData.estimated_mpg : formatCurrencyDisplay(formData.estimated_mpg)}
+                          onChange={(e) => {
+                            const inputValue = e.target.value
+                            if (isValidNumericInput(inputValue)) {
+                              const value = parseCurrency(inputValue)
+                              if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                                setFormData({ ...formData, estimated_mpg: value })
+                              }
+                            }
+                          }}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('estimated_mpg'))}
+                          onBlur={(e) => {
+                            const value = parseCurrency(e.target.value)
+                            if (value && !isNaN(parseFloat(value))) {
+                              setFormData({ ...formData, estimated_mpg: parseFloat(value).toFixed(2) })
+                            }
+                            setFocusedFields(prev => {
+                              const next = new Set(prev)
+                              next.delete('estimated_mpg')
+                              return next
+                            })
+                          }}
+                          placeholder="6.50"
+                          className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
+                          style={{ minWidth: '110px' }}
+                        />
+                      </div>
+                      <div className="flex items-center min-w-0">
+                        <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
+                          <label className="text-xs font-medium text-gray-500">Fuel Discount ($/gal)</label>
+                        </div>
+                        <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={focusedFields.has('fuel_card_discount_per_gallon') ? formData.fuel_card_discount_per_gallon : formData.fuel_card_discount_per_gallon}
+                          onChange={(e) => {
+                            const inputValue = e.target.value
+                            if (isValidNumericInput(inputValue)) {
+                              const value = parseCurrency(inputValue)
+                              if (value === '' || parseFloat(value) >= 0 || isNaN(parseFloat(value))) {
+                                setFormData({ ...formData, fuel_card_discount_per_gallon: value })
+                              }
+                            }
+                          }}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('fuel_card_discount_per_gallon'))}
+                          onBlur={(e) => {
+                            const value = parseCurrency(e.target.value)
+                            if (value && !isNaN(parseFloat(value))) {
+                              setFormData({ ...formData, fuel_card_discount_per_gallon: parseFloat(value).toFixed(3) })
+                            }
+                            setFocusedFields(prev => {
+                              const next = new Set(prev)
+                              next.delete('fuel_card_discount_per_gallon')
+                              return next
+                            })
+                          }}
+                          placeholder="0.000"
                           className="px-3 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0"
                           style={{ minWidth: '130px' }}
                         />

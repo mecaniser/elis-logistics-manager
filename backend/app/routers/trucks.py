@@ -162,6 +162,36 @@ def validate_default_repair_reserve(
     return normalized_amount or None
 
 
+def validate_fuel_estimation_settings(
+    vehicle_type: str,
+    estimated_mpg: Optional[float],
+    fuel_card_discount_per_gallon: Optional[float],
+) -> tuple[Optional[float], Optional[float]]:
+    """Validate truck-level settings used to estimate miles from fuel spend."""
+    normalized_mpg = None if estimated_mpg is None else round(float(estimated_mpg), 2)
+    normalized_discount = None if fuel_card_discount_per_gallon is None else round(float(fuel_card_discount_per_gallon), 3)
+
+    if vehicle_type != "truck":
+        if (normalized_mpg or 0) > 0 or (normalized_discount or 0) > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Fuel estimation settings can only be saved on trucks.",
+            )
+        return None, None
+
+    if normalized_mpg is None:
+        normalized_mpg = 6.5
+    if normalized_mpg <= 0:
+        raise HTTPException(status_code=400, detail="Estimated MPG must be greater than 0.")
+
+    if normalized_discount is None:
+        normalized_discount = 0.0
+    if normalized_discount < 0:
+        raise HTTPException(status_code=400, detail="Fuel-card discount per gallon cannot be negative.")
+
+    return normalized_mpg, normalized_discount
+
+
 def normalize_interest_rate(interest_rate: Optional[float]) -> Optional[float]:
     """Normalize user-entered interest rates to decimal form.
 
@@ -319,6 +349,11 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
         vehicle_type,
         truck.default_repair_reserve_amount,
     )
+    estimated_mpg, fuel_card_discount_per_gallon = validate_fuel_estimation_settings(
+        vehicle_type,
+        truck.estimated_mpg,
+        truck.fuel_card_discount_per_gallon,
+    )
 
     truck_dict = truck.model_dump()
     truck_dict['tenant_id'] = tenant_id
@@ -326,6 +361,8 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     truck_dict['default_trailer_id'] = default_trailer_id
     truck_dict['default_trailer_income_split_amount'] = default_trailer_amount
     truck_dict['default_repair_reserve_amount'] = default_repair_reserve_amount
+    truck_dict['estimated_mpg'] = estimated_mpg
+    truck_dict['fuel_card_discount_per_gallon'] = fuel_card_discount_per_gallon
     # Set default interest_rate if not provided
     if 'interest_rate' not in truck_dict or truck_dict['interest_rate'] is None:
         truck_dict['interest_rate'] = 0.07  # Default 7%
@@ -476,6 +513,14 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
             vehicle_type,
             update_data.get('default_repair_reserve_amount', truck.default_repair_reserve_amount),
         )
+    if any(field in update_data for field in ['estimated_mpg', 'fuel_card_discount_per_gallon', 'vehicle_type']):
+        estimated_mpg, fuel_card_discount_per_gallon = validate_fuel_estimation_settings(
+            vehicle_type,
+            update_data.get('estimated_mpg', truck.estimated_mpg),
+            update_data.get('fuel_card_discount_per_gallon', truck.fuel_card_discount_per_gallon),
+        )
+        update_data['estimated_mpg'] = estimated_mpg
+        update_data['fuel_card_discount_per_gallon'] = fuel_card_discount_per_gallon
     if 'interest_rate' in update_data:
         update_data['interest_rate'] = normalize_interest_rate(update_data['interest_rate'])
     

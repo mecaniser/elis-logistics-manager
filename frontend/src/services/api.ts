@@ -74,6 +74,8 @@ export interface Truck {
   default_trailer_id?: number | null
   default_trailer_income_split_amount?: number | null
   default_repair_reserve_amount?: number | null
+  estimated_mpg?: number | null
+  fuel_card_discount_per_gallon?: number | null
   license_plate_history?: string[]
   cash_investment?: number  // Cash invested in vehicle
   loan_amount?: number  // Loan amount (trucks only, null for trailers)
