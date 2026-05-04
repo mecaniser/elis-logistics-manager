@@ -61,15 +61,17 @@ const Login = () => {
                 autoComplete="current-password"
                 required
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                className="absolute inset-y-0 right-0 px-3 text-sm font-medium text-emerald-300 transition hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-inset rounded-r-lg"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                aria-pressed={showPassword}
-              >
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
+              {password && (
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded px-1 text-sm font-semibold text-white mix-blend-difference transition opacity-85 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              )}
             </div>
           </div>
           {error && (
