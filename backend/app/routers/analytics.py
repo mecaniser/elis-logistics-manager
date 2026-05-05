@@ -1088,6 +1088,7 @@ def get_time_series(
     group_by: Optional[str] = "week_start",
     truck_id: Optional[int] = None,
     vehicle_type: Optional[str] = None,
+    include_diesel: bool = False,
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_tenant_id)
 ):
@@ -1104,7 +1105,7 @@ def get_time_series(
     logger = logging.getLogger(__name__)
     
     try:
-        return _get_time_series_impl(group_by, truck_id, vehicle_type, db, tenant_id)
+        return _get_time_series_impl(group_by, truck_id, vehicle_type, include_diesel, db, tenant_id)
     except Exception as e:
         error_trace = traceback.format_exc()
         logger.error(f"Time-series error: {error_trace}")
@@ -1115,6 +1116,7 @@ def _get_time_series_impl(
     group_by: str,
     truck_id: Optional[int],
     vehicle_type: Optional[str],
+    include_diesel: bool,
     db: Session,
     tenant_id: int
 ):
@@ -1305,18 +1307,19 @@ def _get_time_series_impl(
         raw_gross_miles_driven = miles_driven if raw_gross_revenue > 0 else 0.0
         diesel_price = None
         diesel_price_weight = 0.0
-        reference_date = week_start or settlement.settlement_date
-        if reference_date:
-            benchmark_price = get_historical_diesel_price(reference_date)
-            if benchmark_price and benchmark_price > 0:
-                diesel_price = float(benchmark_price)
-                if settlement.overview_amounts and isinstance(settlement.overview_amounts, dict):
-                    try:
-                        diesel_price_weight = float(settlement.overview_amounts.get("estimated_gallons") or 0.0)
-                    except (TypeError, ValueError):
-                        diesel_price_weight = 0.0
-                if diesel_price_weight <= 0:
-                    diesel_price_weight = miles_driven if miles_driven > 0 else 1.0
+        if include_diesel:
+            reference_date = week_start or settlement.settlement_date
+            if reference_date:
+                benchmark_price = get_historical_diesel_price(reference_date)
+                if benchmark_price and benchmark_price > 0:
+                    diesel_price = float(benchmark_price)
+                    if settlement.overview_amounts and isinstance(settlement.overview_amounts, dict):
+                        try:
+                            diesel_price_weight = float(settlement.overview_amounts.get("estimated_gallons") or 0.0)
+                        except (TypeError, ValueError):
+                            diesel_price_weight = 0.0
+                    if diesel_price_weight <= 0:
+                        diesel_price_weight = miles_driven if miles_driven > 0 else 1.0
 
         # Aggregate weekly data
         weekly_data[week_key]["gross_revenue"] += float(settlement.gross_revenue) if settlement.gross_revenue else 0.0

@@ -694,12 +694,14 @@ export const analyticsApi = {
   getTimeSeries: (
     groupBy?: 'week_start' | 'settlement_date',
     truckId?: number,
-    vehicleType?: 'truck' | 'trailer'
+    vehicleType?: 'truck' | 'trailer',
+    includeDiesel?: boolean,
   ) => {
     const params: any = {}
     if (groupBy) params.group_by = groupBy
     if (truckId) params.truck_id = truckId
     if (vehicleType) params.vehicle_type = vehicleType
+    if (includeDiesel) params.include_diesel = true
     return api.get<TimeSeriesData>('/analytics/time-series', { params })
   },
   getPMStatus: () =>

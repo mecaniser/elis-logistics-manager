@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, TimeSeriesPeriod, ReserveBalance } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
@@ -198,6 +198,8 @@ export default function Dashboard() {
     trailer: null,
   })
   const [timeSeriesLoading, setTimeSeriesLoading] = useState(false)
+  const [dieselBenchmarkLoading, setDieselBenchmarkLoading] = useState(false)
+  const [timeSeriesReady, setTimeSeriesReady] = useState(false)
   const [reserveBalances, setReserveBalances] = useState<ReserveBalance[]>([])
   const [selectedTrailerContributionTotal, setSelectedTrailerContributionTotal] = useState(0)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('monthly')
@@ -213,6 +215,7 @@ export default function Dashboard() {
   const [repairExpensesExpanded, setRepairExpensesExpanded] = useState<boolean>(!isMobile) // Collapsed by default on mobile
   const [cumulativePositionExpanded, setCumulativePositionExpanded] = useState<boolean>(false)
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
+  const timeSeriesRequestRef = useRef(0)
 
   useEffect(() => {
     // Reset vehicle-scoped dashboard state when the tenant changes.
@@ -222,6 +225,10 @@ export default function Dashboard() {
     setReserveBalances([])
     setSelectedTrailerContributionTotal(0)
     setBusinessTimeSeries({ truck: null, trailer: null })
+    setTimeSeriesData(null)
+    setTimeSeriesReady(false)
+    setTimeSeriesLoading(false)
+    setDieselBenchmarkLoading(false)
 
     if (currentTenant?.business_type !== 'logistics') {
       setBusinessSummary(null)
@@ -458,27 +465,62 @@ export default function Dashboard() {
   }
 
   const loadTimeSeries = async () => {
+    const requestId = ++timeSeriesRequestRef.current
     try {
       setTimeSeriesLoading(true)
+      setTimeSeriesReady(false)
       // Map vehicle type filter to backend parameter
       const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
-      const response = await analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType)
-      // Ensure response.data has array properties
-      const data = response.data || {}
-      setTimeSeriesData({
-        by_week: Array.isArray(data.by_week) ? data.by_week : [],
-        by_month: Array.isArray(data.by_month) ? data.by_month : [],
-        by_year: Array.isArray(data.by_year) ? data.by_year : [],
-      })
+      const dieselRequest =
+        vehicleTypeFilter === 'trucks'
+          ? analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, true)
+          : null
+
+      if (dieselRequest) {
+        setDieselBenchmarkLoading(true)
+      } else {
+        setDieselBenchmarkLoading(false)
+      }
+
+      const response = await analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, false)
+      if (requestId !== timeSeriesRequestRef.current) return
+
+      const normalizedData = normalizeTimeSeries(response.data || {})
+      setTimeSeriesData(normalizedData)
+      setTimeSeriesReady(true)
+
+      if (dieselRequest) {
+        dieselRequest
+          .then((dieselResponse) => {
+            if (requestId !== timeSeriesRequestRef.current) return
+            const normalizedDieselData = normalizeTimeSeries(dieselResponse.data || {})
+            setTimeSeriesData((currentData) => mergeDieselBenchmarks(currentData || normalizedData, normalizedDieselData))
+          })
+          .catch((err) => {
+            console.error('Failed to load diesel benchmark time-series:', err)
+          })
+          .finally(() => {
+            if (requestId === timeSeriesRequestRef.current) {
+              setDieselBenchmarkLoading(false)
+            }
+          })
+      }
     } catch (err) {
       console.error('Failed to load time-series data:', err)
+      if (requestId !== timeSeriesRequestRef.current) return
       setTimeSeriesData({
         by_week: [],
         by_month: [],
         by_year: [],
       })
+      setTimeSeriesReady(true)
     } finally {
-      setTimeSeriesLoading(false)
+      if (requestId === timeSeriesRequestRef.current) {
+        setTimeSeriesLoading(false)
+        if (vehicleTypeFilter !== 'trucks') {
+          setDieselBenchmarkLoading(false)
+        }
+      }
     }
   }
 
@@ -487,6 +529,29 @@ export default function Dashboard() {
     by_month: Array.isArray(rawData?.by_month) ? rawData.by_month : [],
     by_year: Array.isArray(rawData?.by_year) ? rawData.by_year : [],
   })
+
+  const mergeDieselBenchmarks = (baseData: TimeSeriesData, dieselData: TimeSeriesData): TimeSeriesData => {
+    const mergePeriods = (
+      basePeriods: any[],
+      dieselPeriods: any[],
+      key: 'week_key' | 'month_key' | 'year_key',
+    ) => {
+      const dieselByKey = new Map(
+        dieselPeriods.map((period) => [period[key], period.diesel_price_per_gallon ?? null])
+      )
+
+      return basePeriods.map((period) => ({
+        ...period,
+        diesel_price_per_gallon: dieselByKey.has(period[key]) ? dieselByKey.get(period[key]) ?? null : period.diesel_price_per_gallon ?? null,
+      }))
+    }
+
+    return {
+      by_week: mergePeriods(baseData.by_week, dieselData.by_week, 'week_key'),
+      by_month: mergePeriods(baseData.by_month, dieselData.by_month, 'month_key'),
+      by_year: mergePeriods(baseData.by_year, dieselData.by_year, 'year_key'),
+    }
+  }
 
   const loadBusinessTimeSeries = async () => {
     try {
@@ -959,7 +1024,7 @@ export default function Dashboard() {
     (timeSeriesData?.by_month?.length || 0) > 0 ||
     (timeSeriesData?.by_year?.length || 0) > 0
   )
-  const isInitialTimeSeriesLoad = timeSeriesLoading && !timeSeriesData
+  const isTimeSeriesPending = !timeSeriesReady
   const getSelectedPeriodsList = () => {
     if (!timeSeriesData) return []
     if (expenseAnalysisView === 'weekly') return Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : []
@@ -1520,7 +1585,7 @@ export default function Dashboard() {
                   <select
                     value={selectedExpensePeriod}
                     onChange={(e) => setSelectedExpensePeriod(e.target.value)}
-                    disabled={isInitialTimeSeriesLoad || availableExpensePeriods.length === 0}
+                    disabled={isTimeSeriesPending || availableExpensePeriods.length === 0}
                     className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   >
                     {availableExpensePeriods.map((period: any) => {
@@ -1538,10 +1603,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {isInitialTimeSeriesLoad ? (
+          {isTimeSeriesPending ? (
             <div className="space-y-4">
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                Loading period metrics and the weekly diesel benchmark...
+                Loading detailed expense metrics...
               </div>
               <div className="grid grid-cols-1 gap-2 sm:gap-4 md:grid-cols-3">
                 {Array.from({ length: 3 }).map((_, index) => (
@@ -1712,34 +1777,43 @@ export default function Dashboard() {
                               {involvedTruckNames.join(', ')}
                             </div>
                           </div>
-                          {dieselBenchmarkPrice > 0 && (
-                            <div className="border-t border-slate-200 pt-3 md:w-72 md:flex-shrink-0 md:border-t-0 md:pt-0 md:pl-4 md:text-right">
-                              <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                {dieselBenchmarkLabel}
-                              </div>
-                              <div className="mt-1 text-sm sm:text-base font-medium text-slate-700">
-                                {formatDieselMetricValue(dieselBenchmarkPrice)}
-                              </div>
-                              <div className="mt-3 flex flex-col gap-3 md:items-end">
-                                {dieselBenchmarkTrendPoints.length > 1 && (
-                                  <div className="md:w-52">
-                                    <MetricSparkline
-                                      points={dieselBenchmarkTrendPoints}
-                                      strokeColor="#2563eb"
-                                      fillColor="rgba(59, 130, 246, 0.16)"
-                                      valueFormatter={formatDieselMetricValue}
-                                    />
-                                  </div>
-                                )}
-                                <div className="md:text-right">
-                                  {renderDieselBenchmarkTrend(
-                                    dieselBenchmarkPrice > 0 ? dieselBenchmarkPrice : null,
-                                    previousDieselBenchmarkInfo?.value ?? null,
-                                  )}
-                                </div>
-                              </div>
+                          <div className="border-t border-slate-200 pt-3 md:w-72 md:flex-shrink-0 md:border-t-0 md:pt-0 md:pl-4 md:text-right">
+                            <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              {dieselBenchmarkLabel}
                             </div>
-                          )}
+                            {dieselBenchmarkLoading && dieselBenchmarkPrice <= 0 ? (
+                              <div className="mt-2 space-y-2 md:ml-auto md:w-52">
+                                <div className="text-sm sm:text-base font-medium text-slate-500">Loading diesel benchmark...</div>
+                                <div className="h-10 animate-pulse rounded bg-slate-100" />
+                              </div>
+                            ) : dieselBenchmarkPrice > 0 ? (
+                              <>
+                                <div className="mt-1 text-sm sm:text-base font-medium text-slate-700">
+                                  {formatDieselMetricValue(dieselBenchmarkPrice)}
+                                </div>
+                                <div className="mt-3 flex flex-col gap-3 md:items-end">
+                                  {dieselBenchmarkTrendPoints.length > 1 && (
+                                    <div className="md:w-52">
+                                      <MetricSparkline
+                                        points={dieselBenchmarkTrendPoints}
+                                        strokeColor="#2563eb"
+                                        fillColor="rgba(59, 130, 246, 0.16)"
+                                        valueFormatter={formatDieselMetricValue}
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="md:text-right">
+                                    {renderDieselBenchmarkTrend(
+                                      dieselBenchmarkPrice > 0 ? dieselBenchmarkPrice : null,
+                                      previousDieselBenchmarkInfo?.value ?? null,
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="mt-2 text-sm text-slate-500">Diesel benchmark unavailable.</div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
