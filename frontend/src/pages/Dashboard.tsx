@@ -947,6 +947,19 @@ export default function Dashboard() {
   }
 
   const selectedPeriodData = getSelectedPeriodData()
+  const availableExpensePeriods = expenseAnalysisView === 'weekly'
+    ? (Array.isArray(timeSeriesData?.by_week) ? timeSeriesData.by_week : [])
+    : expenseAnalysisView === 'monthly'
+    ? (Array.isArray(timeSeriesData?.by_month) ? timeSeriesData.by_month : [])
+    : expenseAnalysisView === 'yearly'
+    ? (Array.isArray(timeSeriesData?.by_year) ? timeSeriesData.by_year : [])
+    : []
+  const hasAnyTimeSeriesPeriods = Boolean(
+    (timeSeriesData?.by_week?.length || 0) > 0 ||
+    (timeSeriesData?.by_month?.length || 0) > 0 ||
+    (timeSeriesData?.by_year?.length || 0) > 0
+  )
+  const isInitialTimeSeriesLoad = timeSeriesLoading && !timeSeriesData
   const getSelectedPeriodsList = () => {
     if (!timeSeriesData) return []
     if (expenseAnalysisView === 'weekly') return Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : []
@@ -1391,7 +1404,6 @@ export default function Dashboard() {
       </div>}
 
       {/* Detailed Expense Analysis Section - First Chart */}
-      {timeSeriesData && (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="flex flex-col mb-6 gap-4">
             <h2 className="text-2xl font-semibold text-gray-900">Detailed Expense Analysis</h2>
@@ -1508,14 +1520,10 @@ export default function Dashboard() {
                   <select
                     value={selectedExpensePeriod}
                     onChange={(e) => setSelectedExpensePeriod(e.target.value)}
-                    className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    disabled={isInitialTimeSeriesLoad || availableExpensePeriods.length === 0}
+                    className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    {(expenseAnalysisView === 'weekly'
-                      ? (timeSeriesData?.by_week || [])
-                      : expenseAnalysisView === 'monthly'
-                      ? (timeSeriesData?.by_month || [])
-                      : (timeSeriesData?.by_year || [])
-                    ).map((period: any) => {
+                    {availableExpensePeriods.map((period: any) => {
                       const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
                       const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
                       return (
@@ -1530,7 +1538,23 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {!timeSeriesData.by_week?.length && !timeSeriesData.by_month?.length ? (
+          {isInitialTimeSeriesLoad ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                Loading period metrics and the weekly diesel benchmark...
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:gap-4 md:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="h-20 animate-pulse rounded-lg bg-slate-100" />
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="h-32 animate-pulse rounded-lg bg-slate-100" />
+                ))}
+              </div>
+            </div>
+          ) : !hasAnyTimeSeriesPeriods ? (
             <div className="text-center py-8 text-gray-500">
               No time-series data available. Please ensure you have settlements with dates.
             </div>
@@ -2450,7 +2474,6 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      )}
 
       {/* Expenses by Category Pie Chart - Only show for trucks */}
       {vehicleTypeFilter === 'trucks' && (
