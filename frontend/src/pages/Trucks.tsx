@@ -97,6 +97,7 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   default_trailer_id: vehicle.default_trailer_id?.toString() || '',
   default_trailer_income_split_amount: vehicle.default_trailer_income_split_amount?.toString() || '',
   default_repair_reserve_amount: vehicle.default_repair_reserve_amount?.toString() || '',
+  trailer_depreciation_reserve_amount: vehicle.trailer_depreciation_reserve_amount != null ? Number(vehicle.trailer_depreciation_reserve_amount).toFixed(2) : '160.00',
   estimated_mpg: vehicle.estimated_mpg != null ? Number(vehicle.estimated_mpg).toFixed(2) : '6.50',
   fuel_card_discount_per_gallon: vehicle.fuel_card_discount_per_gallon != null ? Number(vehicle.fuel_card_discount_per_gallon).toFixed(3) : '0.000',
   license_plate: vehicle.license_plate || '',
@@ -218,6 +219,7 @@ export default function Trucks() {
     default_trailer_id: '',
     default_trailer_income_split_amount: '',
     default_repair_reserve_amount: '',
+    trailer_depreciation_reserve_amount: '160.00',
     estimated_mpg: '6.50',
     fuel_card_discount_per_gallon: '0.000',
     license_plate: '',
@@ -603,6 +605,9 @@ export default function Trucks() {
       const defaultRepairReserveAmount = formData.vehicle_type === 'truck' && formData.default_repair_reserve_amount
         ? parseNumeric(formData.default_repair_reserve_amount)
         : null
+      const trailerDepreciationReserveAmount = formData.vehicle_type === 'trailer'
+        ? parseNumeric(formData.trailer_depreciation_reserve_amount || '160')
+        : null
       const estimatedMpg = formData.vehicle_type === 'truck'
         ? parseNumeric(formData.estimated_mpg || '6.5')
         : null
@@ -680,6 +685,7 @@ export default function Trucks() {
           default_trailer_id: defaultTrailerId,
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
+          trailer_depreciation_reserve_amount: trailerDepreciationReserveAmount,
           estimated_mpg: estimatedMpg,
           fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
@@ -695,6 +701,7 @@ export default function Trucks() {
           default_trailer_id: defaultTrailerId,
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
+          trailer_depreciation_reserve_amount: trailerDepreciationReserveAmount,
           estimated_mpg: estimatedMpg,
           fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
@@ -735,6 +742,7 @@ export default function Trucks() {
       default_trailer_id: '',
       default_trailer_income_split_amount: '',
       default_repair_reserve_amount: '',
+      trailer_depreciation_reserve_amount: '160.00',
       estimated_mpg: '6.50',
       fuel_card_discount_per_gallon: '0.000',
       license_plate: '',
@@ -790,6 +798,28 @@ export default function Trucks() {
   })
 
   const allTrailers = trucks.filter(t => t.vehicle_type === 'trailer')
+  const selectedDefaultTrailer = allTrailers.find(
+    (trailer) => trailer.id === Number(formData.default_trailer_id)
+  )
+  const parsedDefaultTrailerSplitAmount = formData.default_trailer_income_split_amount
+    ? Number(parseCurrency(formData.default_trailer_income_split_amount))
+    : 0
+  const defaultTrailerSplitAmount = Number.isFinite(parsedDefaultTrailerSplitAmount)
+    ? parsedDefaultTrailerSplitAmount
+    : 0
+  const parsedSelectedTrailerReserveAmount = selectedDefaultTrailer
+    ? Number(selectedDefaultTrailer.trailer_depreciation_reserve_amount ?? 160)
+    : 0
+  const selectedTrailerReserveAmount = Number.isFinite(parsedSelectedTrailerReserveAmount)
+    ? parsedSelectedTrailerReserveAmount
+    : 160
+  const defaultTrailerFreeProfit = defaultTrailerSplitAmount - selectedTrailerReserveAmount
+  const showDefaultTrailerSplitBreakdown = formData.vehicle_type === 'truck' && Boolean(selectedDefaultTrailer) && defaultTrailerSplitAmount > 0
+  const defaultTrailerSplitOnlyCoversReserve = (
+    selectedTrailerReserveAmount > 0 &&
+    defaultTrailerSplitAmount > 0 &&
+    defaultTrailerSplitAmount <= selectedTrailerReserveAmount
+  )
   const trucksList = filteredTrucks.filter(t => t.vehicle_type === 'truck')
   const trailersList = filteredTrucks.filter(t => t.vehicle_type === 'trailer')
   const suvsList = filteredTrucks.filter(t => t.vehicle_type === 'suv')
@@ -955,6 +985,7 @@ export default function Trucks() {
                     default_trailer_id: newType === 'truck' ? formData.default_trailer_id : '',
                     default_trailer_income_split_amount: newType === 'truck' ? formData.default_trailer_income_split_amount : '',
                     default_repair_reserve_amount: newType === 'truck' ? formData.default_repair_reserve_amount : '',
+                    trailer_depreciation_reserve_amount: newType === 'trailer' ? (formData.trailer_depreciation_reserve_amount || '160.00') : '',
                     estimated_mpg: newType === 'truck' ? formData.estimated_mpg : '6.50',
                     fuel_card_discount_per_gallon: newType === 'truck' ? formData.fuel_card_discount_per_gallon : '0.000',
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
@@ -1138,6 +1169,35 @@ export default function Trucks() {
                           style={{ minWidth: '130px' }}
                         />
                       </div>
+                      {showDefaultTrailerSplitBreakdown && (
+                        <div className="basis-full max-w-3xl rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
+                          <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                            <div>
+                              <div className="text-xs font-medium text-gray-500">Trailer Revenue / Week</div>
+                              <div className="font-semibold text-blue-700">
+                                ${formatCurrencyDisplay(defaultTrailerSplitAmount.toFixed(2))}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-medium text-gray-500">Depreciation Reserve / Week</div>
+                              <div className="font-semibold text-emerald-700">
+                                ${formatCurrencyDisplay(selectedTrailerReserveAmount.toFixed(2))}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-medium text-gray-500">Free Profit / Week</div>
+                              <div className={`font-semibold ${defaultTrailerFreeProfit < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                                ${formatCurrencyDisplay(defaultTrailerFreeProfit.toFixed(2))}
+                              </div>
+                            </div>
+                          </div>
+                          {defaultTrailerSplitOnlyCoversReserve && (
+                            <div className="mt-2 text-xs font-medium text-amber-700">
+                              This split only covers the selected trailer reserve. Use $400.00 if the weekly trailer allocation should be $400.00 before the ${formatCurrencyDisplay(selectedTrailerReserveAmount.toFixed(2))} reserve.
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center min-w-0">
                         <div className="flex-shrink-0 flex items-center h-[38px] px-3 py-2 border border-gray-300 rounded-l-md border-r-0">
                           <label className="text-xs font-medium text-gray-500">Est. MPG</label>
@@ -1420,6 +1480,42 @@ export default function Trucks() {
                       )}
                   </>
                 )}
+                  {formData.vehicle_type === 'trailer' && (
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
+                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reserve ($/wk)</label>
+                      </div>
+                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={focusedFields.has('trailer_depreciation_reserve_amount') ? formData.trailer_depreciation_reserve_amount : formatCurrencyDisplay(formData.trailer_depreciation_reserve_amount)}
+                        onChange={(e) => {
+                          const inputValue = e.target.value
+                          if (isValidNumericInput(inputValue)) {
+                            const newValue = parseCurrency(inputValue)
+                            if (newValue === '' || parseFloat(newValue) >= 0 || isNaN(parseFloat(newValue))) {
+                              setFormData(prev => ({ ...prev, trailer_depreciation_reserve_amount: newValue }))
+                            }
+                          }
+                        }}
+                        onFocus={() => setFocusedFields(prev => new Set(prev).add('trailer_depreciation_reserve_amount'))}
+                        onBlur={(e) => {
+                          const value = parseCurrency(e.target.value)
+                          if (value && !isNaN(parseFloat(value))) {
+                            setFormData(prev => ({ ...prev, trailer_depreciation_reserve_amount: parseFloat(value).toFixed(2) }))
+                          }
+                          setFocusedFields(prev => {
+                            const next = new Set(prev)
+                            next.delete('trailer_depreciation_reserve_amount')
+                            return next
+                          })
+                        }}
+                        placeholder="160.00"
+                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[92px]"
+                      />
+                    </div>
+                  )}
                   <div className="flex items-center">
                     <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
                       <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reg. Fee ($)</label>

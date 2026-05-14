@@ -77,6 +77,7 @@ def main():
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
         ("migrate_add_default_trailer_split_to_trucks.py", "Add truck-level default trailer split settings"),
         ("migrate_add_repair_reserve_fields.py", "Add truck and settlement repair reserve fields"),
+        ("migrate_add_trailer_depreciation_reserve.py", "Add trailer depreciation reserve setting"),
         ("migrate_add_truck_fuel_estimation_fields.py", "Add truck-level MPG and fuel discount settings"),
         ("migrate_add_paid_from_reserve_to_repairs.py", "Add paid_from_reserve flag to repairs"),
         ("migrate_add_loan_paid_off_date.py", "Add loan_paid_off_date column"),

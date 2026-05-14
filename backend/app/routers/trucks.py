@@ -162,6 +162,28 @@ def validate_default_repair_reserve(
     return normalized_amount or None
 
 
+def validate_trailer_depreciation_reserve(
+    vehicle_type: str,
+    trailer_depreciation_reserve_amount: Optional[float],
+) -> Optional[float]:
+    """Validate the weekly replacement/depreciation reserve stored on a trailer."""
+    normalized_amount = None if trailer_depreciation_reserve_amount is None else round(float(trailer_depreciation_reserve_amount), 2)
+
+    if vehicle_type != "trailer":
+        if (normalized_amount or 0) > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Trailer depreciation reserve can only be saved on trailers.",
+            )
+        return None
+
+    if normalized_amount is None:
+        return 160.0
+    if normalized_amount < 0:
+        raise HTTPException(status_code=400, detail="Trailer depreciation reserve cannot be negative.")
+    return normalized_amount
+
+
 def validate_fuel_estimation_settings(
     vehicle_type: str,
     estimated_mpg: Optional[float],
@@ -346,6 +368,10 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
         vehicle_type,
         truck.default_repair_reserve_amount,
     )
+    trailer_depreciation_reserve_amount = validate_trailer_depreciation_reserve(
+        vehicle_type,
+        truck.trailer_depreciation_reserve_amount,
+    )
     estimated_mpg, fuel_card_discount_per_gallon = validate_fuel_estimation_settings(
         vehicle_type,
         truck.estimated_mpg,
@@ -358,6 +384,7 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
     truck_dict['default_trailer_id'] = default_trailer_id
     truck_dict['default_trailer_income_split_amount'] = default_trailer_amount
     truck_dict['default_repair_reserve_amount'] = default_repair_reserve_amount
+    truck_dict['trailer_depreciation_reserve_amount'] = trailer_depreciation_reserve_amount
     truck_dict['estimated_mpg'] = estimated_mpg
     truck_dict['fuel_card_discount_per_gallon'] = fuel_card_discount_per_gallon
     # Set default interest_rate if not provided
@@ -510,6 +537,11 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
         update_data['default_repair_reserve_amount'] = validate_default_repair_reserve(
             vehicle_type,
             update_data.get('default_repair_reserve_amount', truck.default_repair_reserve_amount),
+        )
+    if any(field in update_data for field in ['trailer_depreciation_reserve_amount', 'vehicle_type']):
+        update_data['trailer_depreciation_reserve_amount'] = validate_trailer_depreciation_reserve(
+            vehicle_type,
+            update_data.get('trailer_depreciation_reserve_amount', truck.trailer_depreciation_reserve_amount),
         )
     if any(field in update_data for field in ['estimated_mpg', 'fuel_card_discount_per_gallon', 'vehicle_type']):
         estimated_mpg, fuel_card_discount_per_gallon = validate_fuel_estimation_settings(

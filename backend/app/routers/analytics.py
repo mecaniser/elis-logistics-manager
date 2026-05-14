@@ -124,6 +124,11 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
     loan_amount = float(vehicle.loan_amount) if vehicle.loan_amount else None
     interest_rate = float(vehicle.interest_rate) if vehicle.interest_rate else 0.07  # Default 7%
     loan_term_months = int(vehicle.loan_term_months) if vehicle.loan_term_months else None
+    trailer_depreciation_reserve_amount = (
+        float(vehicle.trailer_depreciation_reserve_amount)
+        if vehicle.trailer_depreciation_reserve_amount is not None
+        else (160.0 if vehicle.vehicle_type == "trailer" else None)
+    )
     total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
     registration_fee = float(vehicle.registration_fee) if vehicle.registration_fee else None
     loan_metrics = calculate_loan_metrics_for_truck(db, vehicle)
@@ -186,6 +191,33 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         # This represents pure profit after all debts and investments are recovered
         total_recovered = (cash_investment or 0.0) + (loan_amount or 0.0)
         clean_cash_return = max(0.0, cumulative_net_profit - total_recovered)
+
+    trailer_settlement_count = 0
+    trailer_depreciation_reserve_total = None
+    trailer_free_profit = None
+    trailer_cash_position_total = None
+    trailer_break_even_sale_price = None
+    trailer_projected_three_year_reserve = None
+
+    if vehicle.vehicle_type == "trailer":
+        trailer_settlement_count = len([
+            settlement for settlement in settlements_list
+            if float(settlement.gross_revenue or 0) > 0
+        ])
+        weekly_reserve = float(trailer_depreciation_reserve_amount or 0.0)
+        trailer_depreciation_reserve_total = round(weekly_reserve * trailer_settlement_count, 2)
+        trailer_free_profit = round(cumulative_net_profit - trailer_depreciation_reserve_total, 2)
+        trailer_cash_position_total = round(trailer_depreciation_reserve_total + trailer_free_profit, 2)
+
+        current_balance_for_sale = calculated_loan_balance
+        if current_balance_for_sale is None:
+            current_balance_for_sale = loan_amount or 0.0
+        owner_cash_basis = max(0.0, (total_cost or 0.0) - (loan_amount or 0.0))
+        trailer_break_even_sale_price = round(
+            max(0.0, current_balance_for_sale + owner_cash_basis - cumulative_net_profit),
+            2,
+        )
+        trailer_projected_three_year_reserve = round(weekly_reserve * 156, 2)
     
     return {
         "vehicle_id": truck_id,
@@ -194,6 +226,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "cash_investment": cash_investment,
         "loan_amount": loan_amount,
         "loan_term_months": loan_term_months,
+        "trailer_depreciation_reserve_amount": trailer_depreciation_reserve_amount,
         "loan_payoff_date": loan_metrics["loan_payoff_date"],
         "projected_payoff_date": loan_metrics["projected_payoff_date"],
         "estimated_settlements_to_payoff": loan_metrics["estimated_settlements_to_payoff"],
@@ -209,6 +242,12 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "cumulative_repair_costs": float(repair_costs),
         "cumulative_loan_interest": round(cumulative_loan_interest, 2),
         "cumulative_net_profit": round(cumulative_net_profit, 2),
+        "trailer_settlement_count": trailer_settlement_count,
+        "trailer_depreciation_reserve_total": trailer_depreciation_reserve_total,
+        "trailer_free_profit": trailer_free_profit,
+        "trailer_cash_position_total": trailer_cash_position_total,
+        "trailer_break_even_sale_price": trailer_break_even_sale_price,
+        "trailer_projected_three_year_reserve": trailer_projected_three_year_reserve,
         "cash_recovery_percentage": round(cash_recovery_percentage, 2) if cash_recovery_percentage is not None else None,
         "cash_recovery_amount": round(cash_recovery_amount, 2) if cash_recovery_amount is not None else None,
         "cash_recovery_achieved": cash_recovery_achieved,

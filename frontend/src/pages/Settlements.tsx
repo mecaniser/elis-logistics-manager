@@ -311,6 +311,31 @@ export default function Settlements() {
     return truck ? truck.name : `Truck #${truckId}`
   }
 
+  const getVehicle = (truckId: number) => trucks.find((truck) => truck.id === truckId)
+
+  const getTrailerReserveBreakdown = (settlement: Settlement) => {
+    const vehicle = getVehicle(settlement.truck_id)
+    if (settlement.source_settlement_id == null || vehicle?.vehicle_type !== 'trailer') {
+      return null
+    }
+
+    const grossAllocation = Number(settlement.gross_revenue || 0)
+    const expenses = Number(settlement.expenses || 0)
+    const netProfit = settlement.net_profit != null
+      ? Number(settlement.net_profit)
+      : grossAllocation - expenses
+    const weeklyReserveTarget = Number(vehicle.trailer_depreciation_reserve_amount ?? 160)
+    const reserveSaved = Math.min(Math.max(netProfit, 0), weeklyReserveTarget)
+    const freeProfit = netProfit - reserveSaved
+
+    return {
+      grossAllocation,
+      weeklyReserveTarget,
+      reserveSaved,
+      freeProfit,
+    }
+  }
+
   // Filter settlements based on search term
   const filteredSettlements = useMemo(() => {
     if (!Array.isArray(settlements)) return []
@@ -1932,6 +1957,7 @@ export default function Settlements() {
                   ? 'bg-red-50 border-red-200'
                   : 'bg-green-50 border-green-200'
                 : 'bg-white border-gray-200'
+              const trailerReserveBreakdown = getTrailerReserveBreakdown(settlement)
               
               return (
               <div
@@ -1987,7 +2013,9 @@ export default function Settlements() {
                       {/* Show Revenue, Expenses, and True Net Profit */}
                       {settlement.gross_revenue != null && (
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Revenue:</span>
+                          <span className="text-gray-500">
+                            {trailerReserveBreakdown ? 'Revenue (Allocation):' : 'Revenue:'}
+                          </span>
                           <span className="font-medium text-blue-600">
                             ${(settlement.gross_revenue || 0).toLocaleString()}
                           </span>
@@ -2003,7 +2031,9 @@ export default function Settlements() {
                       )}
                       {settlement.gross_revenue != null && settlement.expenses != null && (
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Profit:</span>
+                          <span className="text-gray-500">
+                            {trailerReserveBreakdown ? 'Operating Profit:' : 'Profit:'}
+                          </span>
                           <span className={`font-medium ${
                             ((settlement.gross_revenue || 0) - (settlement.expenses || 0)) < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
@@ -2021,7 +2051,7 @@ export default function Settlements() {
                       )}
                       {settlement.trailer_income_split_amount != null && settlement.trailer_income_split_amount > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Trailer Split:</span>
+                          <span className="text-gray-500">Trailer Allocation:</span>
                           <span className="font-medium text-purple-600">
                             ${Number(settlement.trailer_income_split_amount).toLocaleString()}
                           </span>
@@ -2039,6 +2069,28 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Managed Allocation:</span>
                           <span className="font-medium text-purple-600">Trailer income</span>
+                        </div>
+                      )}
+                      {trailerReserveBreakdown && (
+                        <div className="rounded-md bg-white/70 border border-emerald-100 px-3 py-2 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Gross Allocation:</span>
+                            <span className="font-medium text-blue-600">
+                              ${trailerReserveBreakdown.grossAllocation.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Depreciation Reserve:</span>
+                            <span className="font-medium text-emerald-700">
+                              ${trailerReserveBreakdown.reserveSaved.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Free Profit:</span>
+                            <span className={`font-medium ${trailerReserveBreakdown.freeProfit < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              ${trailerReserveBreakdown.freeProfit.toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       )}
                       {/* Hide secondary fields on mobile, show on desktop */}

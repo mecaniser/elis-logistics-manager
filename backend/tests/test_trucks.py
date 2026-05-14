@@ -105,6 +105,7 @@ def test_create_trailer_accepts_loan_setup(client: TestClient, tenant_headers):
             "loan_amount": 9000,
             "loan_term_months": 60,
             "interest_rate": 6.5,
+            "trailer_depreciation_reserve_amount": 160,
             "registration_fee": 250,
             "total_cost": 10250,
         },
@@ -116,6 +117,7 @@ def test_create_trailer_accepts_loan_setup(client: TestClient, tenant_headers):
     assert data["loan_term_months"] == 60
     assert float(data["interest_rate"]) == 0.065
     assert float(data["current_loan_balance"]) == 9000.0
+    assert float(data["trailer_depreciation_reserve_amount"]) == 160.0
     assert float(data["total_cost"]) == 10250.0
 
 
@@ -559,6 +561,13 @@ def test_financed_trailer_split_accrues_interest_and_replays_payoff(client: Test
     assert data["loan_term_months"] == 24
     assert data["cumulative_revenue"] == 400.0
     assert data["cumulative_settlement_expenses"] == 5.0
+    assert data["trailer_settlement_count"] == 1
+    assert data["trailer_depreciation_reserve_amount"] == 160.0
+    assert data["trailer_depreciation_reserve_total"] == 160.0
+    assert data["trailer_free_profit"] == 235.0
+    assert data["trailer_cash_position_total"] == 395.0
+    assert data["trailer_break_even_sale_price"] == 0.0
+    assert data["trailer_projected_three_year_reserve"] == 24960.0
     assert data["current_loan_balance"] == 205.0
     assert data["principal_paid_from_excess"] == 295.0
     assert data["projected_payoff_date"] == "2024-01-28"

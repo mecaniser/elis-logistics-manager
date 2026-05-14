@@ -74,6 +74,7 @@ export interface Truck {
   default_trailer_id?: number | null
   default_trailer_income_split_amount?: number | null
   default_repair_reserve_amount?: number | null
+  trailer_depreciation_reserve_amount?: number | null
   estimated_mpg?: number | null
   fuel_card_discount_per_gallon?: number | null
   license_plate_history?: string[]
@@ -118,6 +119,7 @@ export interface VehicleROI {
   cash_investment: number | null
   loan_amount: number | null
   loan_term_months: number | null
+  trailer_depreciation_reserve_amount: number | null
   current_loan_balance: number | null
   loan_payoff_date: string | null
   projected_payoff_date: string | null
@@ -133,6 +135,12 @@ export interface VehicleROI {
   cumulative_repair_costs: number
   cumulative_loan_interest: number
   cumulative_net_profit: number
+  trailer_settlement_count: number
+  trailer_depreciation_reserve_total: number | null
+  trailer_free_profit: number | null
+  trailer_cash_position_total: number | null
+  trailer_break_even_sale_price: number | null
+  trailer_projected_three_year_reserve: number | null
   cash_recovery_percentage: number | null
   cash_recovery_amount: number | null
   cash_recovery_achieved: boolean

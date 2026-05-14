@@ -16,6 +16,7 @@ class TruckBase(BaseModel):
     default_trailer_id: Optional[int] = None
     default_trailer_income_split_amount: Optional[float] = None
     default_repair_reserve_amount: Optional[float] = None
+    trailer_depreciation_reserve_amount: Optional[float] = None
     estimated_mpg: Optional[float] = None
     fuel_card_discount_per_gallon: Optional[float] = None
     license_plate_history: Optional[List[str]] = None
@@ -46,6 +47,7 @@ class TruckUpdate(BaseModel):
     default_trailer_id: Optional[int] = None
     default_trailer_income_split_amount: Optional[float] = None
     default_repair_reserve_amount: Optional[float] = None
+    trailer_depreciation_reserve_amount: Optional[float] = None
     estimated_mpg: Optional[float] = None
     fuel_card_discount_per_gallon: Optional[float] = None
     license_plate_history: Optional[List[str]] = None

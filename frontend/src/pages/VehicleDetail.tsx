@@ -168,6 +168,11 @@ export default function VehicleDetail() {
     return normalizedRate
   })()
   const displayLoanAmount = vehicle.loan_amount ?? roiData.loan_amount ?? 0
+  const showTrailerReserveLayer = vehicle.vehicle_type === 'trailer' && (
+    (roiData.trailer_depreciation_reserve_amount || 0) > 0 ||
+    (roiData.trailer_depreciation_reserve_total || 0) > 0 ||
+    roiData.trailer_free_profit !== null
+  )
   const showReserveSummary = vehicle.vehicle_type === 'truck' && (
     reserveDeposits > 0 ||
     reserveWithdrawals > 0 ||
@@ -253,7 +258,7 @@ export default function VehicleDetail() {
       )}
 
       {/* ROI Metrics - Only for trucks and trailers (revenue-generating vehicles) */}
-      {vehicle.vehicle_type !== 'suv' && roiData.cash_investment && roiData.cash_investment > 0 && (
+      {vehicle.vehicle_type !== 'suv' && ((roiData.cash_investment && roiData.cash_investment > 0) || (roiData.loan_amount && roiData.loan_amount > 0)) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-900">ROI Metrics</h2>
 
@@ -423,6 +428,61 @@ export default function VehicleDetail() {
               </div>
             </div>
           </div>
+
+          {showTrailerReserveLayer && (
+            <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Trailer Cash Split</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Operating profit stays intact; the reserve is the part kept aside for trailer value/replacement, and free profit is what remains usable elsewhere.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-medium text-emerald-700">Weekly Reserve Target</div>
+                  <div className="text-2xl font-bold text-emerald-800">
+                    ${safeToLocaleString(roiData.trailer_depreciation_reserve_amount)}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Reserve Saved</div>
+                  <div className="text-xl font-bold mt-1 text-emerald-700">
+                    ${safeToLocaleString(roiData.trailer_depreciation_reserve_total)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {roiData.trailer_settlement_count} earning week{roiData.trailer_settlement_count === 1 ? '' : 's'} x ${safeToLocaleString(roiData.trailer_depreciation_reserve_amount)}.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Free Usable Profit</div>
+                  <div className={`text-xl font-bold mt-1 ${(roiData.trailer_free_profit || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    ${safeToLocaleString(roiData.trailer_free_profit)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Operating net profit after the reserve target.
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Break-Even Sale Price Today</div>
+                  <div className="text-xl font-bold mt-1 text-gray-900">
+                    ${safeToLocaleString(roiData.trailer_break_even_sale_price)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Sale price needed after accumulated trailer cash and remaining loan balance.
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-md bg-white border border-emerald-100 px-3 py-2 text-xs text-gray-600">
+                At the current weekly reserve target, three years is ${safeToLocaleString(roiData.trailer_projected_three_year_reserve)} reserved before considering sale value.
+              </div>
+            </div>
+          )}
 
           {/* Investment Recovery */}
           <div className="mb-6">
@@ -904,6 +964,15 @@ export default function VehicleDetail() {
                     </p>
                   </div>
                 </>
+              )}
+
+              {vehicle.vehicle_type === 'trailer' && (
+                <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
+                  <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Reserve / Week</span>
+                  <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
+                    ${safeToLocaleString(vehicle.trailer_depreciation_reserve_amount ?? roiData.trailer_depreciation_reserve_amount ?? 160)}
+                  </p>
+                </div>
               )}
               
               {/* Registration Fee */}

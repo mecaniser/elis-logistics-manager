@@ -19,6 +19,7 @@ class Truck(Base):
     default_trailer_id = Column(Integer, nullable=True)  # Default attached trailer used for settlement income splits
     default_trailer_income_split_amount = Column(Numeric(10, 2), nullable=True)  # Default weekly trailer income allocation
     default_repair_reserve_amount = Column(Numeric(10, 2), nullable=True)  # Default weekly repair/PM reserve allocation
+    trailer_depreciation_reserve_amount = Column(Numeric(10, 2), nullable=True)  # Weekly trailer replacement/depreciation reserve
     estimated_mpg = Column(Numeric(6, 2), nullable=True)  # MPG assumption used when settlement miles must be estimated from fuel spend
     fuel_card_discount_per_gallon = Column(Numeric(6, 3), nullable=True)  # Per-truck fuel-card discount applied against benchmark diesel pricing
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates
