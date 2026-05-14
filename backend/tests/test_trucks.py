@@ -1,9 +1,12 @@
 """
 Tests for trucks API endpoints
 """
+import importlib.util
 import pytest
 from fastapi.testclient import TestClient
 from datetime import date
+from pathlib import Path
+from sqlalchemy.orm import sessionmaker
 
 from app.models.settlement import Settlement
 from app.models.truck import Truck
@@ -620,6 +623,81 @@ def test_create_settlement_uses_truck_default_trailer_split(client: TestClient, 
     assert trailer_settlement.truck_id == trailer.id
     assert float(trailer_settlement.gross_revenue) == 400.0
     assert float(trailer_settlement.net_profit) == 400.0
+
+
+def test_backfill_trailer_income_splits_reapplies_current_truck_default(client: TestClient, db, tenant_headers, monkeypatch):
+    """Existing source and managed trailer settlements can be replayed to the current truck default split."""
+    script_path = Path(__file__).resolve().parents[1] / "backfill_trailer_income_splits.py"
+    spec = importlib.util.spec_from_file_location("backfill_trailer_income_splits", script_path)
+    script = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(script)
+
+    trailer = Truck(
+        tenant_id=1,
+        name="Replay Trailer",
+        vehicle_type="trailer",
+        tag_number="TRL-REPLAY",
+    )
+    db.add(trailer)
+    db.commit()
+    db.refresh(trailer)
+
+    truck = Truck(
+        tenant_id=1,
+        name="Replay Truck",
+        vehicle_type="truck",
+        license_plate="RPL-100",
+        default_trailer_id=trailer.id,
+        default_trailer_income_split_amount=160.0,
+    )
+    db.add(truck)
+    db.commit()
+    db.refresh(truck)
+
+    response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2026-05-11",
+            "gross_revenue": 1000.0,
+            "expenses": 100.0,
+            "net_profit": 900.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    source_id = response.json()["id"]
+
+    source = db.query(Settlement).filter(Settlement.id == source_id).first()
+    child = db.query(Settlement).filter(Settlement.source_settlement_id == source_id).first()
+    assert float(source.gross_revenue) == 840.0
+    assert float(source.net_profit) == 740.0
+    assert float(source.trailer_income_split_amount) == 160.0
+    assert child is not None
+    assert float(child.gross_revenue) == 160.0
+
+    truck.default_trailer_income_split_amount = 400.0
+    db.add(truck)
+    db.commit()
+
+    TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db.bind)
+    monkeypatch.setattr(script, "SessionLocal", TestSessionLocal)
+    monkeypatch.setattr(script, "create_settlement_journal_entry", lambda *args, **kwargs: None)
+    monkeypatch.setattr(script, "delete_settlement_journal_entry", lambda *args, **kwargs: None)
+
+    assert script.backfill(dry_run=False, from_date=date(2026, 1, 1), truck_id=truck.id) is True
+    db.expire_all()
+
+    refreshed_source = db.query(Settlement).filter(Settlement.id == source_id).first()
+    refreshed_child = db.query(Settlement).filter(Settlement.source_settlement_id == source_id).first()
+    assert float(refreshed_source.gross_revenue) == 600.0
+    assert float(refreshed_source.net_profit) == 500.0
+    assert float(refreshed_source.trailer_income_split_amount) == 400.0
+    assert refreshed_source.trailer_income_split_trailer_id == trailer.id
+    assert refreshed_child is not None
+    assert float(refreshed_child.gross_revenue) == 400.0
+    assert float(refreshed_child.net_profit) == 400.0
 
 
 def test_create_settlement_uses_truck_default_repair_reserve(client: TestClient, db, tenant_headers):
