@@ -25,6 +25,22 @@
   - `git diff --check -- ...` passed for touched files
   - Frontend dev server is running at `http://127.0.0.1:5173/`
 
+# Loan Term Migration SQLite Path Fix
+
+## Plan
+- [x] Reproduce the migration failure path from the reported `trucks.loan_term_months` missing-column error.
+- [x] Update the new migration to alter the SQLite database through `app.database.engine` instead of a hardcoded DB file path.
+- [x] Verify the single migration, loan-interest recalculation migration, backend tests, compile checks, and diff hygiene.
+
+## Review
+- Fixed [backend/migrate_add_loan_term_months.py](/Users/sergio/GitHub/elis-logistics-app/backend/migrate_add_loan_term_months.py:1) so SQLite migrations use the configured SQLAlchemy engine connection. This keeps the altered DB aligned with whatever `DATABASE_URL` and current working directory the migration runner is using.
+- Verification:
+  - `backend/venv/bin/python backend/migrate_add_loan_term_months.py` passed and added the column to `sqlite:///./elisgroup.db`
+  - `backend/venv/bin/python backend/migrate_recalculate_loan_interest_with_principal.py` passed after the fix
+  - `PYTHONPATH=backend backend/venv/bin/python - <<'PY' ...` confirmed `loan_term_months` exists on the active DB
+  - `PYTHONPATH=backend backend/venv/bin/pytest backend/tests/test_trucks.py -q` passed: `23 passed`
+  - `python3 -m compileall backend/app backend/migrate_add_loan_term_months.py backend/migrate_recalculate_loan_interest_with_principal.py backend/run_all_production_migrations.py` passed
+
 # Repair Reserve Ledger + Business Rollup
 
 ## Plan

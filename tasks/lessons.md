@@ -10,5 +10,6 @@
 - When a user says a repeated settlement workflow should auto-fill for a specific truck, prefer storing truck-level defaults in the data model and applying them in both backend write paths and frontend forms instead of hardcoding one screen.
 - Before telling the user a local migration has been applied, verify the migration script targets the same SQLite path as `app.database.DATABASE_URL`. Several legacy scripts still hardcode `backend/elisgroup.db`, while the app runs against `./elisgroup.db`.
 - When a runtime 500 appears immediately after model changes, test a direct ORM query against the active local DB first. A missing column on any selected model can break unrelated endpoints before business logic runs.
+- New SQLite migrations must alter the database through the configured SQLAlchemy `engine`, not a hardcoded path. Otherwise running migrations from different working directories can update `backend/elisgroup.db` while the runner immediately queries `./elisgroup.db` and fails on the new model column.
 
 - When a user asks for reserve or trailer context inside a selected dashboard period, do not mix period deductions with all-time repairs. Use stored period allocations for current-period lines and compute cumulative snapshots only up to the selected period boundary.
