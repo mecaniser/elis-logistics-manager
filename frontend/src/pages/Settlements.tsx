@@ -299,7 +299,7 @@ export default function Settlements() {
     return () => {
       cancelled = true
     }
-  }, [searchFilter, hasMore, loading, loadingMore, isSearchHydrating, selectedTruck, settlements])
+  }, [searchFilter, hasMore, loading, loadingMore, selectedTruck])
 
   useEffect(() => {
     if (!showUploadForm) return
