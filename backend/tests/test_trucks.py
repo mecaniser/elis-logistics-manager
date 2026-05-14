@@ -700,6 +700,86 @@ def test_backfill_trailer_income_splits_reapplies_current_truck_default(client: 
     assert float(refreshed_child.net_profit) == 400.0
 
 
+def test_cleanup_pre_attachment_trailer_splits_restores_source_and_keeps_manual_trailer_income(client: TestClient, db, tenant_headers, monkeypatch):
+    """Cleanup removes pre-cutoff managed trailer splits without deleting standalone trailer income."""
+    script_path = Path(__file__).resolve().parents[1] / "cleanup_pre_attachment_trailer_splits.py"
+    spec = importlib.util.spec_from_file_location("cleanup_pre_attachment_trailer_splits", script_path)
+    script = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(script)
+
+    trailer = Truck(
+        tenant_id=1,
+        name="Pre-Attachment Trailer",
+        vehicle_type="trailer",
+        tag_number="TRL-PRE",
+    )
+    truck = Truck(
+        tenant_id=1,
+        name="Pre-Attachment Truck",
+        vehicle_type="truck",
+        license_plate="PRE-100",
+    )
+    db.add_all([trailer, truck])
+    db.commit()
+    db.refresh(trailer)
+    db.refresh(truck)
+
+    source = Settlement(
+        truck_id=truck.id,
+        settlement_date=date(2026, 1, 17),
+        gross_revenue=600.0,
+        expenses=100.0,
+        net_profit=500.0,
+        trailer_income_split_trailer_id=trailer.id,
+        trailer_income_split_amount=400.0,
+    )
+    manual = Settlement(
+        truck_id=trailer.id,
+        settlement_date=date(2026, 1, 18),
+        gross_revenue=1600.0,
+        expenses=0.0,
+        net_profit=1600.0,
+        settlement_type="Manual Entry",
+    )
+    db.add_all([source, manual])
+    db.commit()
+    db.refresh(source)
+
+    child = Settlement(
+        truck_id=trailer.id,
+        settlement_date=date(2026, 1, 17),
+        gross_revenue=400.0,
+        expenses=0.0,
+        net_profit=400.0,
+        settlement_type="Trailer Income Split",
+        source_settlement_id=source.id,
+    )
+    db.add(child)
+    db.commit()
+    child_id = child.id
+
+    TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db.bind)
+    monkeypatch.setattr(script, "SessionLocal", TestSessionLocal)
+    monkeypatch.setattr(script, "create_settlement_journal_entry", lambda *args, **kwargs: None)
+    monkeypatch.setattr(script, "delete_settlement_journal_entry", lambda *args, **kwargs: None)
+
+    assert script.cleanup(trailer_id=trailer.id, before_date=date(2026, 4, 1), dry_run=False) is True
+    db.expire_all()
+
+    refreshed_source = db.query(Settlement).filter(Settlement.id == source.id).first()
+    refreshed_manual = db.query(Settlement).filter(Settlement.id == manual.id).first()
+    removed_child = db.query(Settlement).filter(Settlement.id == child_id).first()
+
+    assert float(refreshed_source.gross_revenue) == 1000.0
+    assert float(refreshed_source.net_profit) == 900.0
+    assert refreshed_source.trailer_income_split_trailer_id is None
+    assert refreshed_source.trailer_income_split_amount is None
+    assert refreshed_manual is not None
+    assert float(refreshed_manual.gross_revenue) == 1600.0
+    assert removed_child is None
+
+
 def test_create_settlement_uses_truck_default_repair_reserve(client: TestClient, db, tenant_headers):
     """Truck-level default repair reserve should reduce carried truck profit when split fields are omitted."""
     truck = Truck(
