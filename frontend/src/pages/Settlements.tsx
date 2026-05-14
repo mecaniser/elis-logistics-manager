@@ -108,8 +108,10 @@ export default function Settlements() {
     isVisible: false
   })
   const [searchFilter, setSearchFilter] = useState<string>('')
+  const [isSearchHydrating, setIsSearchHydrating] = useState(false)
   const [editPdfFile, setEditPdfFile] = useState<File | null>(null)
   const [showExtractor, setShowExtractor] = useState(false)
+  const settlementsRequestIdRef = useRef(0)
   const trailers = useMemo(() => trucks.filter((truck) => truck.vehicle_type === 'trailer'), [trucks])
 
   const getTruckDefaultTrailerSplit = (vehicleId?: number | null) => {
@@ -227,13 +229,77 @@ export default function Settlements() {
     setTrucks([])
     setSkip(0)
     setHasMore(true)
+    settlementsRequestIdRef.current += 1
+    setIsSearchHydrating(false)
     loadTrucks()
     loadSettlements(true)
   }, [currentTenant?.id])
 
   useEffect(() => {
+    settlementsRequestIdRef.current += 1
+    setIsSearchHydrating(false)
     loadSettlements(true)
   }, [selectedTruck])
+
+  useEffect(() => {
+    const trimmedSearch = searchFilter.trim()
+    if (!trimmedSearch || !hasMore || loading || loadingMore || isSearchHydrating) return
+
+    let cancelled = false
+    const requestId = ++settlementsRequestIdRef.current
+
+    const hydrateSearchResults = async () => {
+      setIsSearchHydrating(true)
+
+      try {
+        let aggregatedSettlements = [...settlements]
+        let currentSkip = aggregatedSettlements.length
+        let shouldContinue: boolean = hasMore
+
+        while (shouldContinue && !cancelled && settlementsRequestIdRef.current === requestId) {
+          const response = await settlementsApi.getAll(
+            selectedTruck || undefined,
+            currentSkip,
+            SETTLEMENTS_PER_PAGE
+          )
+          const nextBatch = Array.isArray(response.data) ? response.data : []
+
+          if (cancelled || settlementsRequestIdRef.current !== requestId) {
+            return
+          }
+
+          if (nextBatch.length === 0) {
+            shouldContinue = false
+            break
+          }
+
+          aggregatedSettlements = [...aggregatedSettlements, ...nextBatch]
+          currentSkip += nextBatch.length
+          shouldContinue = nextBatch.length === SETTLEMENTS_PER_PAGE
+        }
+
+        if (!cancelled && settlementsRequestIdRef.current === requestId) {
+          setSettlements(aggregatedSettlements)
+          setSkip(currentSkip)
+          setHasMore(shouldContinue)
+        }
+      } catch (err: any) {
+        if (!cancelled && settlementsRequestIdRef.current === requestId) {
+          setError(err.message || 'Failed to load search results')
+        }
+      } finally {
+        if (!cancelled && settlementsRequestIdRef.current === requestId) {
+          setIsSearchHydrating(false)
+        }
+      }
+    }
+
+    hydrateSearchResults()
+
+    return () => {
+      cancelled = true
+    }
+  }, [searchFilter, hasMore, loading, loadingMore, isSearchHydrating, selectedTruck, settlements])
 
   useEffect(() => {
     if (!showUploadForm) return
@@ -374,6 +440,7 @@ export default function Settlements() {
   }
 
   const loadSettlements = async (reset: boolean = false) => {
+    const requestId = ++settlementsRequestIdRef.current
     try {
       if (reset) {
         setLoading(true)
@@ -389,6 +456,9 @@ export default function Settlements() {
         currentSkip,
         SETTLEMENTS_PER_PAGE
       )
+      if (settlementsRequestIdRef.current !== requestId) {
+        return
+      }
       const newSettlements = Array.isArray(response.data) ? response.data : []
       
       if (reset) {
@@ -409,13 +479,18 @@ export default function Settlements() {
         setSelectedSettlements(new Set(validSelections))
       }
     } catch (err: any) {
+      if (settlementsRequestIdRef.current !== requestId) {
+        return
+      }
       setError(err.message || 'Failed to load settlements')
       if (reset) {
         setSettlements([])
       }
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
+      if (settlementsRequestIdRef.current === requestId) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
     }
   }
 
@@ -1315,6 +1390,11 @@ export default function Settlements() {
               </button>
             )}
           </div>
+          {searchFilter.trim() && isSearchHydrating && (
+            <div className="text-xs font-medium text-gray-500 whitespace-nowrap">
+              Loading more settlements...
+            </div>
+          )}
           {deleteMode ? (
             <>
               {selectedSettlements.size > 0 && (
