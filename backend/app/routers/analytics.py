@@ -123,6 +123,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
     cash_investment = float(vehicle.cash_investment) if vehicle.cash_investment else None
     loan_amount = float(vehicle.loan_amount) if vehicle.loan_amount else None
     interest_rate = float(vehicle.interest_rate) if vehicle.interest_rate else 0.07  # Default 7%
+    loan_term_months = int(vehicle.loan_term_months) if vehicle.loan_term_months else None
     total_cost = float(vehicle.total_cost) if vehicle.total_cost else None
     registration_fee = float(vehicle.registration_fee) if vehicle.registration_fee else None
     loan_metrics = calculate_loan_metrics_for_truck(db, vehicle)
@@ -159,7 +160,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
     principal_paid_from_excess = 0.0
     calculated_loan_balance = None
     
-    if vehicle.vehicle_type == 'truck' and loan_amount and loan_amount > 0:
+    if vehicle.vehicle_type in ['truck', 'trailer'] and loan_amount and loan_amount > 0:
         calculated_loan_balance = loan_metrics["current_loan_balance"]
         if calculated_loan_balance is None:
             calculated_loan_balance = loan_amount
@@ -192,6 +193,7 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "vehicle_type": vehicle.vehicle_type,
         "cash_investment": cash_investment,
         "loan_amount": loan_amount,
+        "loan_term_months": loan_term_months,
         "loan_payoff_date": loan_metrics["loan_payoff_date"],
         "projected_payoff_date": loan_metrics["projected_payoff_date"],
         "estimated_settlements_to_payoff": loan_metrics["estimated_settlements_to_payoff"],

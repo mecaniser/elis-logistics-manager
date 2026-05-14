@@ -20,10 +20,11 @@ class TruckBase(BaseModel):
     fuel_card_discount_per_gallon: Optional[float] = None
     license_plate_history: Optional[List[str]] = None
     cash_investment: Optional[float] = None  # Cash invested in vehicle
-    loan_amount: Optional[float] = None  # Loan amount (trucks only, null for trailers)
+    loan_amount: Optional[float] = None  # Loan amount for revenue vehicles
     current_loan_balance: Optional[float] = None  # Current loan balance (reduces as principal is paid)
+    loan_term_months: Optional[int] = None  # Original loan duration in months
     interest_rate: Optional[float] = 0.07  # Annual interest rate (default 7% = 0.07)
-    total_cost: Optional[float] = None  # Total purchase cost (cash + loan for trucks, cash only for trailers)
+    total_cost: Optional[float] = None  # Total purchase cost (cash + loan + fees)
     registration_fee: Optional[float] = None  # Registration fee for vehicle
     additional_expenses: Optional[List[Dict[str, Any]]] = None  # Additional expenses/fees: [{"description": "...", "amount": 100.00}, ...]
     # Depreciation fields
@@ -51,6 +52,7 @@ class TruckUpdate(BaseModel):
     cash_investment: Optional[float] = None
     loan_amount: Optional[float] = None
     current_loan_balance: Optional[float] = None
+    loan_term_months: Optional[int] = None
     interest_rate: Optional[float] = None
     total_cost: Optional[float] = None
     registration_fee: Optional[float] = None

@@ -103,6 +103,7 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   tag_number: vehicle.tag_number || '',
   cash_investment: vehicle.cash_investment?.toString() || '',
   loan_amount: vehicle.loan_amount?.toString() || '',
+  loan_term_months: vehicle.loan_term_months?.toString() || '',
   interest_rate: (() => {
     if (vehicle.interest_rate == null || Number.isNaN(Number(vehicle.interest_rate))) {
       return '7.00'
@@ -223,6 +224,7 @@ export default function Trucks() {
     tag_number: '',
     cash_investment: '',
     loan_amount: '',
+    loan_term_months: '',
     interest_rate: '7.00',
     total_cost: '',
     registration_fee: '',
@@ -316,7 +318,7 @@ export default function Trucks() {
     }
     
     const cash = parseNumeric(formData.cash_investment)
-    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
+    const loan = parseNumeric(formData.loan_amount)
     const registration = parseNumeric(formData.registration_fee)
     const additionalTotal = (formData.additional_expenses || []).reduce((sum, exp) => {
       if (!exp || !exp.amount) return sum
@@ -408,7 +410,7 @@ export default function Trucks() {
   // Auto-calculate total cost when investment fields change
   useEffect(() => {
     const cash = parseFloat(formData.cash_investment) || 0
-    const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (parseFloat(formData.loan_amount) || 0) : 0
+    const loan = parseFloat(formData.loan_amount) || 0
     const registration = parseFloat(formData.registration_fee) || 0
     const total = cash + loan + registration
     
@@ -561,8 +563,10 @@ export default function Trucks() {
       errors.name = 'Vehicle name is required'
       setExpandedFormSections(prev => new Set(prev).add('vehicle_info'))
     }
-    if (!formData.cash_investment || parseFloat(formData.cash_investment) <= 0) {
-      errors.cash_investment = 'Cash investment must be greater than 0'
+    const enteredCash = parseFloat(formData.cash_investment) || 0
+    const enteredLoan = parseFloat(formData.loan_amount) || 0
+    if (enteredCash <= 0 && enteredLoan <= 0) {
+      errors.cash_investment = 'Enter cash or loan amount'
       setExpandedFormSections(prev => new Set(prev).add('investment'))
     }
     
@@ -587,7 +591,8 @@ export default function Trucks() {
       
       const investmentData: any = {}
       const cash = parseNumeric(formData.cash_investment)
-      const loan = (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? parseNumeric(formData.loan_amount) : 0
+      const loan = parseNumeric(formData.loan_amount)
+      const loanTermMonths = formData.loan_term_months ? Math.round(parseNumeric(formData.loan_term_months)) : null
       const registration = parseNumeric(formData.registration_fee)
       const defaultTrailerId = formData.vehicle_type === 'truck' && formData.default_trailer_id
         ? parseInt(formData.default_trailer_id, 10)
@@ -614,21 +619,16 @@ export default function Trucks() {
       // Calculate total_cost on the fly to ensure it's always correct
       const calculatedTotal = cash + loan + registration + additionalTotal
       
-      if (cash > 0) {
-        investmentData.cash_investment = cash
-      }
-      if (formData.vehicle_type === 'trailer') {
+      investmentData.cash_investment = cash > 0 ? cash : null
+      if (loan > 0) {
+        investmentData.loan_amount = loan
+        investmentData.loan_term_months = loanTermMonths
+        const normalizedInterestRate = normalizeInterestRateDecimal(formData.interest_rate)
+        investmentData.interest_rate = normalizedInterestRate ?? 0.07
+      } else {
         investmentData.loan_amount = null
+        investmentData.loan_term_months = null
         investmentData.interest_rate = undefined
-      } else if (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') {
-        if (loan > 0) {
-          investmentData.loan_amount = loan
-          const normalizedInterestRate = normalizeInterestRateDecimal(formData.interest_rate)
-          investmentData.interest_rate = normalizedInterestRate ?? 0.07
-        } else {
-          investmentData.loan_amount = null
-          investmentData.interest_rate = undefined
-        }
       }
       if (calculatedTotal > 0) {
         investmentData.total_cost = calculatedTotal
@@ -741,6 +741,7 @@ export default function Trucks() {
       tag_number: '',
       cash_investment: '',
       loan_amount: '',
+      loan_term_months: '',
       interest_rate: '7.00',
       total_cost: '',
       registration_fee: '',
@@ -808,7 +809,7 @@ export default function Trucks() {
 
   const totalTrailersInvestment = trailersList.reduce((sum, trailer) => {
     const total = trailer.total_cost || 
-      ((trailer.cash_investment || 0) + (trailer.registration_fee || 0))
+      ((trailer.cash_investment || 0) + (trailer.loan_amount || 0) + (trailer.registration_fee || 0))
     return sum + total
   }, 0)
 
@@ -1289,7 +1290,7 @@ export default function Trucks() {
                     <p className="absolute top-full mt-1 text-xs text-red-600 whitespace-nowrap">{formErrors.cash_investment}</p>
                   )}
                 </div>
-                  {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') && (
+                  {(formData.vehicle_type === 'truck' || formData.vehicle_type === 'trailer' || formData.vehicle_type === 'suv') && (
                   <>
                       <div className="flex items-center">
                         <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
@@ -1334,67 +1335,88 @@ export default function Trucks() {
                       />
                     </div>
                       {formData.loan_amount && parseFloat(formData.loan_amount) > 0 && (
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
-                            <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Rate (%)</label>
+                        <>
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
+                              <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Term (mo)</label>
+                            </div>
+                            <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formData.loan_term_months}
+                              onChange={(e) => {
+                                const inputValue = e.target.value
+                                if (inputValue === '' || /^\d*$/.test(inputValue)) {
+                                  setFormData({ ...formData, loan_term_months: inputValue })
+                                }
+                              }}
+                              placeholder="60"
+                              className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[78px]"
+                            />
                           </div>
-                          <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
-                          <input
-                          type="text"
-                          inputMode="decimal"
-                          value={(() => {
-                            if (!formData.interest_rate || formData.interest_rate === '') {
-                              return ''
-                            }
-                            const percentValue = parseFloat(formData.interest_rate)
-                            if (isNaN(percentValue)) {
-                              return ''
-                            }
-                            return focusedFields.has('interest_rate') 
-                              ? formData.interest_rate
-                              : percentValue.toFixed(2)
-                          })()}
-                        onChange={(e) => {
-                            const inputValue = e.target.value
-                            // Allow empty string or valid numeric input
-                            if (inputValue === '' || isValidNumericInput(inputValue)) {
-                              if (inputValue === '') {
-                                setFormData({ ...formData, interest_rate: '' })
-                              } else {
-                                const value = parseCurrency(inputValue)
-                                if (value !== '') {
-                                  const percentValue = parseFloat(value)
-                                  if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
-                                    setFormData({ ...formData, interest_rate: value })
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
+                              <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Rate (%)</label>
+                            </div>
+                            <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                            <input
+                            type="text"
+                            inputMode="decimal"
+                            value={(() => {
+                              if (!formData.interest_rate || formData.interest_rate === '') {
+                                return ''
+                              }
+                              const percentValue = parseFloat(formData.interest_rate)
+                              if (isNaN(percentValue)) {
+                                return ''
+                              }
+                              return focusedFields.has('interest_rate')
+                                ? formData.interest_rate
+                                : percentValue.toFixed(2)
+                            })()}
+                          onChange={(e) => {
+                              const inputValue = e.target.value
+                              // Allow empty string or valid numeric input
+                              if (inputValue === '' || isValidNumericInput(inputValue)) {
+                                if (inputValue === '') {
+                                  setFormData({ ...formData, interest_rate: '' })
+                                } else {
+                                  const value = parseCurrency(inputValue)
+                                  if (value !== '') {
+                                    const percentValue = parseFloat(value)
+                                    if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
+                                      setFormData({ ...formData, interest_rate: value })
+                                    }
                                   }
                                 }
                               }
-                            }
-                        }}
-                        onFocus={() => setFocusedFields(prev => new Set(prev).add('interest_rate'))}
-                        onBlur={(e) => {
-                          const inputValue = e.target.value
-                          if (inputValue === '') {
-                            setFormData({ ...formData, interest_rate: '' })
-                          } else {
-                            const value = parseCurrency(inputValue)
-                            if (value !== '') {
-                              const percentValue = parseFloat(value)
-                              if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
-                                setFormData({ ...formData, interest_rate: percentValue.toFixed(2) })
+                          }}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('interest_rate'))}
+                          onBlur={(e) => {
+                            const inputValue = e.target.value
+                            if (inputValue === '') {
+                              setFormData({ ...formData, interest_rate: '' })
+                            } else {
+                              const value = parseCurrency(inputValue)
+                              if (value !== '') {
+                                const percentValue = parseFloat(value)
+                                if (!isNaN(percentValue) && percentValue >= 0 && percentValue <= 100) {
+                                  setFormData({ ...formData, interest_rate: percentValue.toFixed(2) })
+                                }
                               }
                             }
-                          }
-                          setFocusedFields(prev => {
-                            const next = new Set(prev)
-                            next.delete('interest_rate')
-                            return next
-                          })
-                        }}
-                        placeholder="7.00"
-                          className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[70px]"
-                      />
-                    </div>
+                            setFocusedFields(prev => {
+                              const next = new Set(prev)
+                              next.delete('interest_rate')
+                              return next
+                            })
+                          }}
+                          placeholder="7.00"
+                            className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[70px]"
+                        />
+                      </div>
+                    </>
                       )}
                   </>
                 )}
@@ -1450,9 +1472,7 @@ export default function Trucks() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-500">
-                  {formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv'
-                    ? 'Total Cost = Cash + Loan + Registration + Additional Expenses'
-                    : 'Total Cost = Cash + Registration + Additional Expenses'}
+                  Total Cost = Cash + Loan + Registration + Additional Expenses
                   </p>
                 </div>
                 </div>

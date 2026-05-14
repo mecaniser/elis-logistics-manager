@@ -462,7 +462,7 @@ export default function VehicleDetail() {
           )}
 
           {/* Loan Balance After Cash Recovery */}
-          {vehicle.vehicle_type === 'truck' && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
+          {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
             <div className={`mt-4 p-4 rounded-lg ${
               roiData.current_loan_balance === 0 ? 'bg-green-50 border-2 border-green-200' :
               roiData.current_loan_balance < roiData.loan_amount ? 'bg-orange-50 border-2 border-orange-200' :
@@ -851,14 +851,19 @@ export default function VehicleDetail() {
                 </p>
               </div>
               
-              {/* Loan Information - Only for trucks */}
-              {vehicle.vehicle_type === 'truck' && displayLoanAmount > 0 && (
+              {/* Loan Information */}
+              {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && displayLoanAmount > 0 && (
                 <>
                   <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                     <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Original Loan</span>
                     <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>
                       ${safeToLocaleString(displayLoanAmount)}
                     </p>
+                    {(vehicle.loan_term_months || roiData.loan_term_months) && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {vehicle.loan_term_months ?? roiData.loan_term_months} month term
+                      </p>
+                    )}
                   </div>
                   
                   {roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (

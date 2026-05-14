@@ -1,3 +1,30 @@
+# Trailer Loan Investment Option
+
+## Plan
+- [x] Inspect the existing investment form, truck API validation, loan replay service, settlement interest accrual, and ROI display to identify where trailers are excluded from loan handling.
+- [x] Add a stored loan duration field and allow trailers to carry `loan_amount`, `current_loan_balance`, `interest_rate`, and loan duration using the same revenue-vehicle rules as trucks.
+- [x] Update trailer settlement/ROI calculations so weekly trailer income can pay back cash first, then loan principal, while loan interest reduces trailer profit.
+- [x] Update the vehicle form and investment detail display so trailers can select a loan setup with amount, term, and interest, and total cost includes the loan.
+- [x] Add focused backend tests for trailer loan creation, payoff replay, and managed trailer-income split interest.
+- [x] Run backend tests, frontend typecheck, diff hygiene, and document the result below.
+
+## Review
+- Backend:
+  - Added `loan_term_months` to the vehicle model/schema/API contract and created [backend/migrate_add_loan_term_months.py](/Users/sergio/GitHub/elis-logistics-app/backend/migrate_add_loan_term_months.py:1), registered in both migration runners.
+  - Updated trailer validation so `total_cost = cash + loan + registration + additional expenses`, matching trucks/SUVs instead of rejecting trailer loans.
+  - Extended loan replay and current-balance sync to revenue vehicles (`truck` and `trailer`). If cash is zero, loan principal can start paying down from first net profit; if cash exists, cash still recovers first.
+  - Managed trailer split settlements now deduct trailer weekly loan interest from the trailer-side settlement expense categories and net profit.
+- Frontend:
+  - Trailer investment forms now expose `Loan ($)`, `Term (mo)`, and `Rate (%)`, and total trailer investment includes loans.
+  - Vehicle detail investment/ROI loan display now applies to trailers as well as trucks and shows the saved term.
+- Verification:
+  - `PYTHONPATH=backend backend/venv/bin/pytest backend/tests/test_trucks.py -q` passed: `23 passed`
+  - `cd frontend && npx tsc --noEmit --pretty false` passed
+  - `python3 -m compileall backend/app backend/migrate_add_loan_term_months.py backend/run_all_migrations.py backend/run_all_production_migrations.py` passed
+  - `backend/venv/bin/python backend/migrate_add_loan_term_months.py` applied the new local DB column
+  - `git diff --check -- ...` passed for touched files
+  - Frontend dev server is running at `http://127.0.0.1:5173/`
+
 # Repair Reserve Ledger + Business Rollup
 
 ## Plan

@@ -73,6 +73,7 @@ def main():
         ("migrate_add_investment_fields.py", "Add investment fields (cash_investment, loan_amount, total_cost)"),
         ("migrate_add_registration_fee.py", "Add registration_fee column"),
         ("migrate_add_interest_rate.py", "Add interest_rate column"),
+        ("migrate_add_loan_term_months.py", "Add loan duration column"),
         ("migrate_add_current_loan_balance.py", "Add current_loan_balance column"),
         ("migrate_add_default_trailer_split_to_trucks.py", "Add truck-level default trailer split settings"),
         ("migrate_add_repair_reserve_fields.py", "Add truck and settlement repair reserve fields"),

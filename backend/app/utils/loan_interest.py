@@ -81,11 +81,9 @@ def calculate_cumulative_principal_paid(
     Cash investment is recovered first. Only the remaining cumulative excess profit
     can reduce principal, capped at the original loan amount.
     """
-    if not cash_investment or cash_investment <= 0:
-        return 0.0
-
     if not loan_amount or loan_amount <= 0:
         return 0.0
 
-    excess_profit = max(0.0, cumulative_net_profit - cash_investment)
+    cash_recovery_threshold = max(0.0, float(cash_investment or 0.0))
+    excess_profit = max(0.0, cumulative_net_profit - cash_recovery_threshold)
     return round(min(excess_profit, float(loan_amount)), 2)

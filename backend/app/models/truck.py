@@ -23,11 +23,12 @@ class Truck(Base):
     fuel_card_discount_per_gallon = Column(Numeric(6, 3), nullable=True)  # Per-truck fuel-card discount applied against benchmark diesel pricing
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates
     cash_investment = Column(Numeric(10, 2), nullable=True)  # Cash invested in vehicle
-    loan_amount = Column(Numeric(10, 2), nullable=True)  # Loan amount (trucks only, null for trailers)
+    loan_amount = Column(Numeric(10, 2), nullable=True)  # Loan amount for revenue vehicles
     current_loan_balance = Column(Numeric(10, 2), nullable=True)  # Current loan balance (reduces as principal is paid)
     loan_paid_off_date = Column(Date, nullable=True)  # Legacy optional payoff date column; replay-based ROI ignores it
+    loan_term_months = Column(Integer, nullable=True)  # Original loan duration in months
     interest_rate = Column(Numeric(5, 4), nullable=True, default=0.07)  # Annual interest rate (default 7% = 0.07)
-    total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan for trucks, cash only for trailers)
+    total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan + fees)
     registration_fee = Column(Numeric(10, 2), nullable=True)  # Registration fee for vehicle
     additional_expenses = Column(JSON, nullable=True)  # Additional expenses/fees: [{"description": "...", "amount": 100.00}, ...]
     # Depreciation fields

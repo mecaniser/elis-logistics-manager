@@ -40,7 +40,7 @@ def update_loan_balance_after_settlement(truck_id: int, db: Session):
     even if settlements are created out of order.
     """
     truck = db.query(Truck).filter(Truck.id == truck_id).first()
-    if not truck or truck.vehicle_type != 'truck':
+    if not truck or truck.vehicle_type not in ['truck', 'trailer']:
         return
     
     sync_current_loan_balance(db, truck)
@@ -55,7 +55,7 @@ def get_effective_loan_balance(
     """
     Return the recalculated balance to use for interest accrual.
     """
-    if truck.vehicle_type != 'truck':
+    if truck.vehicle_type not in ['truck', 'trailer']:
         return None
     current_balance = calculate_current_loan_balance_for_truck(db, truck, settlement_date)
     if settlement_date is None:
@@ -270,6 +270,15 @@ def sync_trailer_income_split_settlement(
             ),
         )
 
+    trailer_loan_interest = 0.0
+    trailer_expense_categories = None
+    if trailer.loan_amount and float(trailer.loan_amount) > 0:
+        current_balance = get_effective_loan_balance(trailer, db, source_settlement.settlement_date)
+        interest_rate = float(trailer.interest_rate) if trailer.interest_rate else 0.07
+        trailer_loan_interest = calculate_weekly_loan_interest(current_balance, interest_rate)
+        if trailer_loan_interest > 0:
+            trailer_expense_categories = {"loan_interest": trailer_loan_interest}
+
     if not linked_settlement:
         linked_settlement = Settlement(
             truck_id=trailer.id,
@@ -277,8 +286,9 @@ def sync_trailer_income_split_settlement(
             week_start=source_settlement.week_start,
             week_end=source_settlement.week_end,
             gross_revenue=split_amount,
-            expenses=0,
-            net_profit=split_amount,
+            expenses=trailer_loan_interest,
+            expense_categories=trailer_expense_categories,
+            net_profit=round(split_amount - trailer_loan_interest, 2),
             pdf_file_path=source_settlement.pdf_file_path,
             settlement_type="Trailer Income Split",
             trailer_income_split_trailer_id=None,
@@ -292,8 +302,9 @@ def sync_trailer_income_split_settlement(
         linked_settlement.week_start = source_settlement.week_start
         linked_settlement.week_end = source_settlement.week_end
         linked_settlement.gross_revenue = split_amount
-        linked_settlement.expenses = 0
-        linked_settlement.net_profit = split_amount
+        linked_settlement.expenses = trailer_loan_interest
+        linked_settlement.expense_categories = trailer_expense_categories
+        linked_settlement.net_profit = round(split_amount - trailer_loan_interest, 2)
         linked_settlement.pdf_file_path = source_settlement.pdf_file_path
         linked_settlement.settlement_type = "Trailer Income Split"
         db.add(linked_settlement)
@@ -523,7 +534,7 @@ async def upload_settlement_pdf(
                 Truck.id == settlement_data["truck_id"],
                 Truck.tenant_id == tenant_id,
             ).first()
-            if truck and truck.vehicle_type == 'truck':
+            if truck and truck.vehicle_type in ['truck', 'trailer']:
                 current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
@@ -641,6 +652,11 @@ async def upload_settlement_pdf(
             db.refresh(settlement)
         for settlement in managed_child_settlements:
             db.refresh(settlement)
+        vehicle_ids_updated = set()
+        for settlement in created_settlements + managed_child_settlements:
+            if settlement.truck_id not in vehicle_ids_updated:
+                update_loan_balance_after_settlement(settlement.truck_id, db)
+                vehicle_ids_updated.add(settlement.truck_id)
         # Clean up local PDF file if it was uploaded to Cloudinary
         # (Only delete if all settlements were created successfully and PDF is in Cloudinary)
         if os.path.exists(file_path):
@@ -792,7 +808,7 @@ async def upload_settlement_pdf_bulk(
                         Truck.id == settlement_data["truck_id"],
                         Truck.tenant_id == tenant_id,
                     ).first()
-                    if truck and truck.vehicle_type == 'truck':
+                    if truck and truck.vehicle_type in ['truck', 'trailer']:
                         current_balance = get_effective_loan_balance(truck, db, settlement_data.get("settlement_date"))
                         interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                         
@@ -923,9 +939,9 @@ async def upload_settlement_pdf_bulk(
                     db.refresh(settlement)
                 for settlement in file_managed_settlements:
                     db.refresh(settlement)
-                # Update loan balances for trucks after settlements are created
+                # Update loan balances after settlements are created
                 truck_ids_updated = set()
-                for settlement in file_settlements:
+                for settlement in file_settlements + file_managed_settlements:
                     if settlement.truck_id not in truck_ids_updated:
                         update_loan_balance_after_settlement(settlement.truck_id, db)
                         truck_ids_updated.add(settlement.truck_id)
@@ -1030,7 +1046,7 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
             settlement_dict["duplicate_block_ids_warning"] = None
         
         # Calculate and add loan interest to expense_categories
-        if truck.vehicle_type == 'truck':
+        if truck.vehicle_type in ['truck', 'trailer']:
             current_balance = get_effective_loan_balance(truck, db, settlement.settlement_date)
             interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
             
@@ -1097,6 +1113,8 @@ def create_settlement(settlement: SettlementCreate, db: Session = Depends(get_db
         
         # Update loan balance if cash investment is recovered
         update_loan_balance_after_settlement(truck.id, db)
+        if linked_trailer_settlement:
+            update_loan_balance_after_settlement(linked_trailer_settlement.truck_id, db)
         db.refresh(db_settlement)
         return db_settlement
     except HTTPException:
@@ -1349,6 +1367,7 @@ def upload_consolidated_settlements(
             raise HTTPException(status_code=400, detail="JSON must be an array of settlement entries")
         
         created_settlements = []
+        managed_child_settlements = []
         updated_settlements = []
         managed_settlements = []
         removed_linked_ids = []
@@ -1453,7 +1472,7 @@ def upload_consolidated_settlements(
             # Calculate loan interest
             weekly_interest = 0.0
             truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-            if truck and truck.vehicle_type == 'truck':
+            if truck and truck.vehicle_type in ['truck', 'trailer']:
                 current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
@@ -1841,7 +1860,8 @@ def upload_settlement_json(
             raise HTTPException(status_code=400, detail="JSON must contain 'settlements' array")
         
         created_settlements = []
-        
+        managed_child_settlements = []
+
         for settlement_json in data["settlements"]:
             # Convert JSON structure to database format
             metadata = settlement_json.get("metadata", {})
@@ -1922,7 +1942,7 @@ def upload_settlement_json(
             
             # Calculate and add loan interest
             truck = db.query(Truck).filter(Truck.id == truck_id, Truck.tenant_id == tenant_id).first()
-            if truck and truck.vehicle_type == 'truck':
+            if truck and truck.vehicle_type in ['truck', 'trailer']:
                 current_balance = get_effective_loan_balance(truck, db, settlement_date)
                 interest_rate = float(truck.interest_rate) if truck.interest_rate else 0.07
                 
@@ -2025,6 +2045,7 @@ def upload_settlement_json(
             )
             created_settlements.append(db_settlement)
             if linked_trailer_settlement:
+                managed_child_settlements.append(linked_trailer_settlement)
                 create_settlement_journal_entry(db, linked_trailer_settlement, auto_commit=False)
         
         for settlement in created_settlements:
@@ -2034,9 +2055,11 @@ def upload_settlement_json(
         # Refresh all created settlements
         for settlement in created_settlements:
             db.refresh(settlement)
-        # Update loan balances for trucks after settlements are created
+        for settlement in managed_child_settlements:
+            db.refresh(settlement)
+        # Update loan balances after settlements are created
         truck_ids_updated = set()
-        for settlement in created_settlements:
+        for settlement in created_settlements + managed_child_settlements:
             if settlement.truck_id not in truck_ids_updated:
                 update_loan_balance_after_settlement(settlement.truck_id, db)
                 truck_ids_updated.add(settlement.truck_id)

@@ -93,6 +93,32 @@ def test_create_truck_normalizes_percent_interest_rate_input(client: TestClient,
     assert float(data["interest_rate"]) == 0.065
 
 
+def test_create_trailer_accepts_loan_setup(client: TestClient, tenant_headers):
+    """Trailers can be financed with loan amount, term, and interest rate."""
+    response = client.post(
+        "/api/trucks",
+        json={
+            "name": "Financed Trailer",
+            "vehicle_type": "trailer",
+            "tag_number": "TRL-LOAN",
+            "cash_investment": 1000,
+            "loan_amount": 9000,
+            "loan_term_months": 60,
+            "interest_rate": 6.5,
+            "registration_fee": 250,
+            "total_cost": 10250,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["loan_amount"]) == 9000.0
+    assert data["loan_term_months"] == 60
+    assert float(data["interest_rate"]) == 0.065
+    assert float(data["current_loan_balance"]) == 9000.0
+    assert float(data["total_cost"]) == 10250.0
+
+
 def test_get_trucks_empty(client: TestClient, tenant_headers):
     """Test getting trucks when none exist"""
     response = client.get("/api/trucks", headers=tenant_headers)
@@ -476,6 +502,66 @@ def test_create_settlement_with_trailer_income_split_creates_managed_trailer_set
     assert trailer_roi.status_code == 200
     assert truck_roi.json()["cumulative_revenue"] == 600.0
     assert trailer_roi.json()["cumulative_revenue"] == 400.0
+
+
+def test_financed_trailer_split_accrues_interest_and_replays_payoff(client: TestClient, db, tenant_headers):
+    """Managed trailer income should deduct trailer loan interest and reduce principal from net profit."""
+    truck = Truck(
+        tenant_id=1,
+        name="Truck With Financed Trailer",
+        vehicle_type="truck",
+        license_plate="VW9330",
+    )
+    trailer = Truck(
+        tenant_id=1,
+        name="Financed Trailer ROI",
+        vehicle_type="trailer",
+        tag_number="TRL-FIN",
+        cash_investment=100.0,
+        loan_amount=500.0,
+        current_loan_balance=500.0,
+        loan_term_months=24,
+        interest_rate=0.52,
+        total_cost=600.0,
+    )
+    db.add_all([truck, trailer])
+    db.commit()
+    db.refresh(truck)
+    db.refresh(trailer)
+
+    response = client.post(
+        "/api/settlements",
+        json={
+            "truck_id": truck.id,
+            "settlement_date": "2024-01-21",
+            "gross_revenue": 1000.0,
+            "expenses": 100.0,
+            "net_profit": 900.0,
+            "trailer_income_split_trailer_id": trailer.id,
+            "trailer_income_split_amount": 400.0,
+        },
+        headers=tenant_headers,
+    )
+    assert response.status_code == 200
+
+    trailer_settlement = db.query(Settlement).filter(
+        Settlement.source_settlement_id == response.json()["id"]
+    ).first()
+    assert trailer_settlement is not None
+    assert float(trailer_settlement.gross_revenue) == 400.0
+    assert float(trailer_settlement.expenses) == 5.0
+    assert trailer_settlement.expense_categories["loan_interest"] == 5.0
+    assert float(trailer_settlement.net_profit) == 395.0
+
+    roi_response = client.get(f"/api/analytics/vehicle/{trailer.id}/roi", headers=tenant_headers)
+    assert roi_response.status_code == 200
+    data = roi_response.json()
+    assert data["loan_term_months"] == 24
+    assert data["cumulative_revenue"] == 400.0
+    assert data["cumulative_settlement_expenses"] == 5.0
+    assert data["current_loan_balance"] == 205.0
+    assert data["principal_paid_from_excess"] == 295.0
+    assert data["projected_payoff_date"] == "2024-01-28"
 
 
 def test_create_settlement_uses_truck_default_trailer_split(client: TestClient, db, tenant_headers):

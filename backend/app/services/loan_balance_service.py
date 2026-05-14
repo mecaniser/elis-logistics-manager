@@ -48,7 +48,7 @@ def calculate_loan_metrics_for_truck(
         "principal_payment_count": 0,
     }
 
-    if not truck or truck.vehicle_type != "truck":
+    if not truck or truck.vehicle_type not in ["truck", "trailer"]:
         return metrics
 
     loan_amount = float(truck.loan_amount) if truck.loan_amount else None
@@ -57,10 +57,7 @@ def calculate_loan_metrics_for_truck(
 
     metrics["loan_amount"] = round(loan_amount, 2)
 
-    cash_investment = float(truck.cash_investment) if truck.cash_investment else None
-    if not cash_investment or cash_investment <= 0:
-        metrics["current_loan_balance"] = round(loan_amount, 2)
-        return metrics
+    cash_investment = max(0.0, float(truck.cash_investment or 0.0))
 
     settlements = (
         db.query(Settlement)

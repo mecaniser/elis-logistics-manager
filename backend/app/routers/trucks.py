@@ -214,6 +214,22 @@ def normalize_interest_rate(interest_rate: Optional[float]) -> Optional[float]:
     return round(normalized_rate, 4)
 
 
+def validate_loan_term_months(loan_term_months: Optional[int]) -> Optional[int]:
+    if loan_term_months in (None, ""):
+        return None
+
+    normalized_term = int(loan_term_months)
+    if normalized_term <= 0:
+        raise HTTPException(status_code=400, detail="Loan duration must be greater than 0 months.")
+    if normalized_term > 360:
+        raise HTTPException(status_code=400, detail="Loan duration cannot exceed 360 months.")
+    return normalized_term
+
+
+def is_revenue_vehicle(vehicle_type: str) -> bool:
+    return vehicle_type in ["truck", "trailer"]
+
+
 def resync_truck_default_repair_reserve(
     db: Session,
     truck: Truck,
@@ -292,33 +308,14 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
                 additional_expenses_total += float(expense['amount'])
     
     # Validate investment fields
-    if vehicle_type == 'trailer':
-        # Trailers should not have loans
-        if truck.loan_amount and truck.loan_amount > 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
-            )
-        # For trailers, total_cost should equal cash_investment + registration_fee + additional_expenses (if provided)
-        if truck.cash_investment is not None and truck.total_cost is not None:
-            cash = float(truck.cash_investment)
-            total = float(truck.total_cost)
-            registration = float(truck.registration_fee) if truck.registration_fee else 0.0
-            expected_total = cash + registration + additional_expenses_total
-            
-            if abs(total - expected_total) > 0.01:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
-                )
-    elif vehicle_type in ['truck', 'suv']:
-        # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee + additional_expenses (if all provided)
+    if vehicle_type in ['truck', 'trailer', 'suv']:
+        # Total cost is the purchase basis regardless of financing source.
         if truck.cash_investment is not None and truck.total_cost is not None:
             cash = float(truck.cash_investment)
             total = float(truck.total_cost)
             loan = float(truck.loan_amount) if truck.loan_amount else 0.0
             registration = float(truck.registration_fee) if truck.registration_fee else 0.0
-            
+
             expected_total = cash + loan + registration + additional_expenses_total
             if abs(total - expected_total) > 0.01:
                 raise HTTPException(
@@ -368,8 +365,9 @@ def create_truck(truck: TruckCreate, db: Session = Depends(get_db), tenant_id: i
         truck_dict['interest_rate'] = 0.07  # Default 7%
     else:
         truck_dict['interest_rate'] = normalize_interest_rate(truck_dict['interest_rate'])
-    # Initialize current_loan_balance = loan_amount for trucks and SUVs
-    if vehicle_type in ['truck', 'suv'] and truck_dict.get('loan_amount'):
+    truck_dict['loan_term_months'] = validate_loan_term_months(truck_dict.get('loan_term_months'))
+    # Initialize current_loan_balance = loan_amount for financed vehicles
+    if vehicle_type in ['truck', 'trailer', 'suv'] and truck_dict.get('loan_amount'):
         if 'current_loan_balance' not in truck_dict or truck_dict['current_loan_balance'] is None:
             truck_dict['current_loan_balance'] = truck_dict['loan_amount']
     db_truck = Truck(**truck_dict)
@@ -523,6 +521,8 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
         update_data['fuel_card_discount_per_gallon'] = fuel_card_discount_per_gallon
     if 'interest_rate' in update_data:
         update_data['interest_rate'] = normalize_interest_rate(update_data['interest_rate'])
+    if 'loan_term_months' in update_data:
+        update_data['loan_term_months'] = validate_loan_term_months(update_data['loan_term_months'])
     
     # Calculate additional expenses total
     additional_expenses_total = 0.0
@@ -541,34 +541,15 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
         loan_amount = update_data.get('loan_amount', truck.loan_amount)
         total_cost = update_data.get('total_cost', truck.total_cost)
         registration_fee = update_data.get('registration_fee', truck.registration_fee)
-        
-        if vehicle_type == 'trailer':
-            # Trailers should not have loans
-            if loan_amount and float(loan_amount) > 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Trailers cannot have loan amounts. Set loan_amount to 0 or null."
-                )
-            # For trailers, total_cost should equal cash_investment + registration_fee + additional_expenses (if provided)
-            if cash_investment is not None and total_cost is not None:
-                cash = float(cash_investment)
-                total = float(total_cost)
-                registration = float(registration_fee) if registration_fee else 0.0
-                expected_total = cash + registration + additional_expenses_total
-                
-                if abs(total - expected_total) > 0.01:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"For trailers, total_cost ({total}) must equal cash_investment ({cash}) + registration_fee ({registration}) + additional_expenses ({additional_expenses_total})"
-                    )
-        elif vehicle_type in ['truck', 'suv']:
-            # For trucks and SUVs, validate total_cost = cash_investment + loan_amount + registration_fee + additional_expenses (if all provided)
+
+        if vehicle_type in ['truck', 'trailer', 'suv']:
+            # Total cost is the purchase basis regardless of financing source.
             if cash_investment is not None and total_cost is not None:
                 cash = float(cash_investment)
                 total = float(total_cost)
                 loan = float(loan_amount) if loan_amount else 0.0
                 registration = float(registration_fee) if registration_fee else 0.0
-                
+
                 expected_total = cash + loan + registration + additional_expenses_total
                 if abs(total - expected_total) > 0.01:
                     raise HTTPException(
@@ -579,20 +560,19 @@ def update_truck(truck_id: int, truck_update: TruckUpdate, db: Session = Depends
     # Update current_loan_balance if loan_amount is being updated
     if 'loan_amount' in update_data:
         new_loan_amount = update_data['loan_amount']
-        if vehicle_type in ['truck', 'suv'] and new_loan_amount:
+        if vehicle_type in ['truck', 'trailer', 'suv'] and new_loan_amount:
             # If loan_amount is updated, reset current_loan_balance to new loan_amount
             # (unless it's being explicitly set in update_data)
             if 'current_loan_balance' not in update_data:
                 update_data['current_loan_balance'] = new_loan_amount
-        elif vehicle_type == 'trailer':
-            # Trailers shouldn't have loan balances
+        elif vehicle_type in ['truck', 'trailer', 'suv']:
             update_data['current_loan_balance'] = None
     
     for field, value in update_data.items():
         setattr(truck, field, value)
 
     should_resync_loan_balance = (
-        vehicle_type == 'truck'
+        is_revenue_vehicle(vehicle_type)
         and 'current_loan_balance' not in update_data
         and any(field in update_data for field in ['loan_amount', 'cash_investment', 'total_cost', 'registration_fee', 'additional_expenses'])
     )

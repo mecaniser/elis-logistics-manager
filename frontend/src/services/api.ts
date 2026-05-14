@@ -78,10 +78,11 @@ export interface Truck {
   fuel_card_discount_per_gallon?: number | null
   license_plate_history?: string[]
   cash_investment?: number  // Cash invested in vehicle
-  loan_amount?: number  // Loan amount (trucks only, null for trailers)
+  loan_amount?: number  // Loan amount for financed vehicles
   current_loan_balance?: number  // Current loan balance (reduces as principal is paid)
+  loan_term_months?: number | null  // Original loan duration in months
   interest_rate?: number  // Annual interest rate (default 0.07 = 7%)
-  total_cost?: number  // Total purchase cost (cash + loan for trucks, cash only for trailers)
+  total_cost?: number  // Total purchase cost (cash + loan + fees)
   registration_fee?: number  // Registration fee for vehicle
   // Depreciation fields
   purchase_date?: string  // Date vehicle was purchased/placed in service (ISO date string)
@@ -116,6 +117,7 @@ export interface VehicleROI {
   vehicle_type: 'truck' | 'trailer'
   cash_investment: number | null
   loan_amount: number | null
+  loan_term_months: number | null
   current_loan_balance: number | null
   loan_payoff_date: string | null
   projected_payoff_date: string | null
