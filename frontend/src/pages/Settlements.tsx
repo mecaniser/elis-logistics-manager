@@ -108,10 +108,11 @@ export default function Settlements() {
     isVisible: false
   })
   const [searchFilter, setSearchFilter] = useState<string>('')
-  const [isSearchHydrating, setIsSearchHydrating] = useState(false)
+  const [isSearchLoading, setIsSearchLoading] = useState(false)
   const [editPdfFile, setEditPdfFile] = useState<File | null>(null)
   const [showExtractor, setShowExtractor] = useState(false)
   const settlementsRequestIdRef = useRef(0)
+  const hadActiveSearchRef = useRef(false)
   const trailers = useMemo(() => trucks.filter((truck) => truck.vehicle_type === 'trailer'), [trucks])
 
   const getTruckDefaultTrailerSplit = (vehicleId?: number | null) => {
@@ -230,58 +231,50 @@ export default function Settlements() {
     setSkip(0)
     setHasMore(true)
     settlementsRequestIdRef.current += 1
-    setIsSearchHydrating(false)
+    setIsSearchLoading(false)
     loadTrucks()
     loadSettlements(true)
   }, [currentTenant?.id])
 
   useEffect(() => {
     settlementsRequestIdRef.current += 1
-    setIsSearchHydrating(false)
-    loadSettlements(true)
+    setIsSearchLoading(false)
+    if (!searchFilter.trim()) {
+      loadSettlements(true)
+    }
   }, [selectedTruck])
 
   useEffect(() => {
     const trimmedSearch = searchFilter.trim()
-    if (!trimmedSearch || !hasMore || loading || loadingMore || isSearchHydrating) return
+    if (!trimmedSearch) {
+      if (hadActiveSearchRef.current) {
+        hadActiveSearchRef.current = false
+        setIsSearchLoading(false)
+        loadSettlements(true)
+      }
+      return
+    }
+    hadActiveSearchRef.current = true
 
     let cancelled = false
     const requestId = ++settlementsRequestIdRef.current
 
-    const hydrateSearchResults = async () => {
-      setIsSearchHydrating(true)
+    const loadSearchResults = async () => {
+      setIsSearchLoading(true)
 
       try {
-        let aggregatedSettlements = [...settlements]
-        let currentSkip = aggregatedSettlements.length
-        let shouldContinue: boolean = hasMore
-
-        while (shouldContinue && !cancelled && settlementsRequestIdRef.current === requestId) {
-          const response = await settlementsApi.getAll(
-            selectedTruck || undefined,
-            currentSkip,
-            SETTLEMENTS_PER_PAGE
-          )
-          const nextBatch = Array.isArray(response.data) ? response.data : []
-
-          if (cancelled || settlementsRequestIdRef.current !== requestId) {
-            return
-          }
-
-          if (nextBatch.length === 0) {
-            shouldContinue = false
-            break
-          }
-
-          aggregatedSettlements = [...aggregatedSettlements, ...nextBatch]
-          currentSkip += nextBatch.length
-          shouldContinue = nextBatch.length === SETTLEMENTS_PER_PAGE
-        }
+        const response = await settlementsApi.getAll(
+          selectedTruck || undefined,
+          undefined,
+          undefined,
+          trimmedSearch
+        )
+        const matchingSettlements = Array.isArray(response.data) ? response.data : []
 
         if (!cancelled && settlementsRequestIdRef.current === requestId) {
-          setSettlements(aggregatedSettlements)
-          setSkip(currentSkip)
-          setHasMore(shouldContinue)
+          setSettlements(matchingSettlements)
+          setSkip(matchingSettlements.length)
+          setHasMore(false)
         }
       } catch (err: any) {
         if (!cancelled && settlementsRequestIdRef.current === requestId) {
@@ -289,17 +282,17 @@ export default function Settlements() {
         }
       } finally {
         if (!cancelled && settlementsRequestIdRef.current === requestId) {
-          setIsSearchHydrating(false)
+          setIsSearchLoading(false)
         }
       }
     }
 
-    hydrateSearchResults()
+    loadSearchResults()
 
     return () => {
       cancelled = true
     }
-  }, [searchFilter, hasMore, loading, loadingMore, selectedTruck])
+  }, [searchFilter, selectedTruck])
 
   useEffect(() => {
     if (!showUploadForm) return
@@ -1390,9 +1383,9 @@ export default function Settlements() {
               </button>
             )}
           </div>
-          {searchFilter.trim() && isSearchHydrating && (
+          {searchFilter.trim() && isSearchLoading && (
             <div className="text-xs font-medium text-gray-500 whitespace-nowrap">
-              Loading more settlements...
+              Searching settlements...
             </div>
           )}
           {deleteMode ? (

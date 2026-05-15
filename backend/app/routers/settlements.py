@@ -3,7 +3,7 @@ Settlements router
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, cast, String
 from typing import List, Optional
 from app.database import get_db
 from app.dependencies import get_tenant_id
@@ -375,6 +375,7 @@ def get_duplicate_block_ids(db: Session = Depends(get_db), tenant_id: int = Depe
 @router.get("/", response_model=List[SettlementResponse])
 def get_settlements(
     truck_id: Optional[int] = None,
+    search: Optional[str] = None,
     skip: Optional[int] = 0,
     limit: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -390,6 +391,21 @@ def get_settlements(
             if not truck:
                 raise HTTPException(status_code=404, detail="Truck not found")
             query = query.filter(Settlement.truck_id == truck_id)
+
+        if search and search.strip():
+            normalized_search = search.strip().lower()
+            like_pattern = f"%{normalized_search}%"
+            query = query.filter(
+                or_(
+                    func.lower(Truck.name).like(like_pattern),
+                    func.lower(func.coalesce(Settlement.settlement_type, "")).like(like_pattern),
+                    func.lower(cast(Settlement.settlement_date, String)).like(like_pattern),
+                    func.lower(cast(Settlement.truck_id, String)).like(like_pattern),
+                    func.lower(cast(Settlement.gross_revenue, String)).like(like_pattern),
+                    func.lower(cast(Settlement.net_profit, String)).like(like_pattern),
+                    func.lower(cast(Settlement.custom_expense_descriptions, String)).like(like_pattern),
+                )
+            )
         query = query.order_by(Settlement.settlement_date.desc())
         
         # Apply pagination

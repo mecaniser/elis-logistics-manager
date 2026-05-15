@@ -372,11 +372,12 @@ export const trucksApi = {
 
 // Settlement API
 export const settlementsApi = {
-  getAll: (truckId?: number, skip?: number, limit?: number) => {
+  getAll: (truckId?: number, skip?: number, limit?: number, search?: string) => {
     const params: any = {}
     if (truckId) params.truck_id = truckId
     if (skip !== undefined) params.skip = skip
     if (limit !== undefined) params.limit = limit
+    if (search && search.trim()) params.search = search.trim()
     return api.get<Settlement[]>('/settlements', { params })
   },
   getById: (id: number) => api.get<Settlement>(`/settlements/${id}`),
