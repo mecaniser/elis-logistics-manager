@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 const Login = () => {
-  const { login, loading } = useAuth()
+  const { authenticated, login, loading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -29,6 +29,14 @@ const Login = () => {
 
   if (loading) {
     return null
+  }
+
+  // Local development can deliberately run with backend authentication
+  // disabled.  When the auth check succeeds in that mode, do not leave the
+  // user on a login form that cannot submit credentials.
+  if (authenticated) {
+    const from = (location.state as any)?.from?.pathname || '/'
+    return <Navigate to={from} replace />
   }
 
   return (

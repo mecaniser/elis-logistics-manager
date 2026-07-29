@@ -78,6 +78,12 @@ async def me(request: Request):
     """
     Return authenticated user based on session cookie.
     """
+    # The API middleware deliberately allows unauthenticated local development
+    # when credentials have not been configured.  Return the same state here
+    # so the frontend does not strand local users on the login screen.
+    if not (os.getenv("APP_AUTH_USERNAME") and os.getenv("APP_AUTH_PASSWORD")):
+        return {"username": "local-dev", "authentication_enabled": False}
+
     token = request.cookies.get(SESSION_COOKIE_NAME)
     valid, username = verify_session_token(token) if token else (False, None)
 

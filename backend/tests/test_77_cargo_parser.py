@@ -167,6 +167,27 @@ ezLoads TMS and Driver App
 ezloads.net
 """
 
+PAGE_77_LAYOUT_VARIANT = """77 Cargo
+Settlement #2138
+Date: 05-02-2026
+Pay rate: 88%
+Load # Pickup Delivery Empty Loaded % Rate Amount
+2138 04-27-26 04-28-26 10 100 88 $1,000 $880
+Subtotal: 10 100 $1,000 $880
+Fuel card ending 8248
+Date Description Amount
+04/27/26 Sample Driver [Drv] Fuel -$100.00
+Subtotal -$100.00
+Tolls
+Subtotal: -$10.00
+Deductions
+Date Description Amount
+2138 04/27/26 Sample Driver [Drv] #2138 Route -$300.00
+- 05/02/26 Cargo and Liability Insurance Unit 603 -$50.00
+Subtotal -$350.00
+Settlement total: $420.00
+"""
+
 PAGE_277_INCOME = """OWNER OPERATOR INCOME SHEET
 COMPANY NAME: Date Submitted: 5/16/2025
 DRIVER NAME: ELIS LOGISTICS LLC / VW1503 #418 Date Period : 05/04-05/10/2025
@@ -348,6 +369,60 @@ def test_parse_77_cargo_pdf_handles_inline_route_text_in_load_rows(patch_77_carg
         "pay_rate_percent": 88.0,
     }
     assert parsed["deduction_details"] is None
+
+
+def test_parse_77_cargo_pdf_tolerates_header_and_date_layout_changes(monkeypatch):
+    """A small exporter change must not send this family through the wrong parser."""
+    monkeypatch.setattr(
+        pdf_parser_module.pdfplumber,
+        "open",
+        lambda *_args, **_kwargs: FakePDF([PAGE_77_LAYOUT_VARIANT]),
+    )
+
+    parsed = parse_amazon_relay_pdf("driver_settlement_2138_ELIS_LOGISTICS_LLC.pdf")
+
+    assert parsed["settlement_type"] == "77 Cargo LLC"
+    assert parsed["settlement_date"] == date(2026, 5, 2)
+    assert parsed["week_start"] == date(2026, 4, 27)
+    assert parsed["miles_driven"] == pytest.approx(110.0)
+    assert parsed["block_ids"] == [{"block_id": "2138", "delivery_date": "2026-04-28"}]
+    assert parsed["gross_revenue"] == pytest.approx(880.0)
+    assert parsed["expenses"] == pytest.approx(460.0)
+    assert parsed["net_profit"] == pytest.approx(420.0)
+    assert parsed["expense_categories"] == {
+        "fuel": 100.0,
+        "tolls": 10.0,
+        "insurance": 50.0,
+        "driver_pay": 300.0,
+    }
+
+
+def test_parse_77_cargo_pdf_rejoins_wrapped_deduction_rows(monkeypatch):
+    # Settlement 2271 has this layout when text is extracted: the date and
+    # amount of a long deduction are separated from its description.
+    wrapped_page = PAGE_77_LAYOUT_VARIANT.replace(
+        "Subtotal -$350.00\nSettlement total: $420.00",
+        "Balance In (Remove Negative Balance): Removing Negative Balance from Unit 609 -\n"
+        "- 05/03/26 -$99.00\n"
+        "Subtotal -$449.00\n"
+        "Settlement total: $321.00",
+    )
+    monkeypatch.setattr(
+        pdf_parser_module.pdfplumber,
+        "open",
+        lambda *_args, **_kwargs: FakePDF([wrapped_page]),
+    )
+
+    parsed = parse_amazon_relay_pdf("driver_settlement_2271_ELIS_LOGISTICS_LLC.pdf")
+
+    assert parsed["expenses"] == pytest.approx(460.0)
+    assert parsed["net_profit"] == pytest.approx(420.0)
+    assert parsed["cash_settlement_amount"] == pytest.approx(321.0)
+    assert parsed["cash_adjustments"] == [{
+        "type": "prior_balance_offset",
+        "description": "Balance In (Remove Negative Balance): Removing Negative Balance from Unit 609",
+        "amount": -99.0,
+    }]
 
 
 def test_parse_277_income_sheet_populates_overview_amounts(patch_277_income_pdf):

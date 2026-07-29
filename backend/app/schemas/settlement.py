@@ -63,6 +63,8 @@ class SettlementBase(BaseModel):
     reimbursement_details: Optional[List[Dict[str, Any]]] = None  # Reimbursement details: [{"description": "...", "amount": 100.00}]
     deduction_details: Optional[List[Dict[str, Any]]] = None  # Deduction details: [{"description": "...", "amount": 50.00}]
     net_profit: Optional[Decimal] = None
+    cash_settlement_amount: Optional[Decimal] = None
+    cash_adjustments: Optional[List[Dict[str, Any]]] = None
     license_plate: Optional[str] = None  # License plate from this settlement
     settlement_type: Optional[str] = None  # Type of settlement PDF
     duplicate_block_ids_warning: Optional[Dict[str, Any]] = None  # Warning about duplicate block IDs
@@ -92,6 +94,8 @@ class SettlementUpdate(BaseModel):
     reimbursement_details: Optional[List[Dict[str, Any]]] = None
     deduction_details: Optional[List[Dict[str, Any]]] = None
     net_profit: Optional[Decimal] = None
+    cash_settlement_amount: Optional[Decimal] = None
+    cash_adjustments: Optional[List[Dict[str, Any]]] = None
     license_plate: Optional[str] = None
     settlement_type: Optional[str] = None
     pdf_file_path: Optional[str] = None

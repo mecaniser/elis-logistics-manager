@@ -27,6 +27,8 @@ class Settlement(Base):
     reimbursement_details = Column(JSON, nullable=True)  # Reimbursement details: [{"description": "...", "amount": 100.00}]
     deduction_details = Column(JSON, nullable=True)  # Deduction details: [{"description": "...", "amount": 50.00}]
     net_profit = Column(Numeric(10, 2))
+    cash_settlement_amount = Column(Numeric(10, 2), nullable=True)  # Amount actually paid after non-operating offsets
+    cash_adjustments = Column(JSON, nullable=True)  # [{"type": "prior_balance_offset", "description": "...", "amount": +/-100.00}]
     pdf_file_path = Column(String(255))
     license_plate = Column(String(20), nullable=True)  # License plate from this settlement
     settlement_type = Column(String(50), nullable=True)  # Type of settlement PDF

@@ -9,6 +9,13 @@ import { useTenant } from '../contexts/TenantContext'
 
 const SETTLEMENTS_PER_PAGE = 20
 
+// API dates are calendar dates, not UTC timestamps. Appending a local time
+// prevents US timezones from displaying the prior calendar day.
+const formatSettlementDate = (value?: string | null) => {
+  if (!value) return 'No date'
+  return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString()
+}
+
 // Helper component for input with clear button - defined outside to prevent re-creation on render
 const InputWithClear = ({ 
   value, 
@@ -2080,10 +2087,10 @@ export default function Settlements() {
                       )}
                     </div>
                     <p className="text-sm text-gray-500 mb-3">
-                      {settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : 'No date'}
+                      {formatSettlementDate(settlement.settlement_date)}
                     </p>
                     <div className="space-y-2 text-sm mb-3">
-                      {/* Show Revenue, Expenses, and True Net Profit */}
+                      {/* Operating results stay separate from cash settlement offsets. */}
                       {settlement.gross_revenue != null && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">
@@ -2105,12 +2112,28 @@ export default function Settlements() {
                       {settlement.gross_revenue != null && settlement.expenses != null && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">
-                            {trailerReserveBreakdown ? 'Operating Profit:' : 'Profit:'}
+                            Operating Profit:
                           </span>
                           <span className={`font-medium ${
                             ((settlement.gross_revenue || 0) - (settlement.expenses || 0)) < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
                             ${((settlement.gross_revenue || 0) - (settlement.expenses || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.cash_adjustments && settlement.cash_adjustments.length > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Prior-balance adjustment:</span>
+                          <span className="font-medium text-purple-600">
+                            ${Number(settlement.cash_adjustments.reduce((sum, adjustment) => sum + Number(adjustment.amount || 0), 0)).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {settlement.cash_settlement_amount != null && (
+                        <div className="flex justify-between border-t pt-2 mt-2">
+                          <span className="text-gray-700 font-medium">Cash settlement:</span>
+                          <span className={`font-semibold ${Number(settlement.cash_settlement_amount) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            ${Number(settlement.cash_settlement_amount).toLocaleString()}
                           </span>
                         </div>
                       )}
@@ -2348,7 +2371,7 @@ export default function Settlements() {
                   <h3 className="text-sm sm:text-lg md:text-xl font-semibold text-gray-900 truncate">
                     <span className="hidden sm:inline">Edit Settlement - </span>
                     <span>{getTruckName(editingSettlement.truck_id)}</span>
-                    <span className="hidden md:inline"> - {editingSettlement.settlement_date ? new Date(editingSettlement.settlement_date).toLocaleDateString() : ''}</span>
+                    <span className="hidden md:inline"> - {formatSettlementDate(editingSettlement.settlement_date)}</span>
                   </h3>
                 </div>
                 <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-500 flex-shrink-0 ml-2">

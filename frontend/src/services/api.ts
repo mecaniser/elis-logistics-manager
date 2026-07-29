@@ -174,6 +174,8 @@ export interface Settlement {
   reimbursement_details?: Array<{ description: string; amount: number | null }> | null  // Reimbursement details from PDF
   deduction_details?: Array<{ description: string; amount: number | null }> | null  // Deduction details from PDF
   net_profit?: number | null
+  cash_settlement_amount?: number | null
+  cash_adjustments?: Array<{ type: string; description: string; amount: number | null }> | null
   pdf_file_path?: string | null
   settlement_type?: string | null
   license_plate?: string | null
