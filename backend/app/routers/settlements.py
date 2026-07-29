@@ -421,6 +421,51 @@ def get_settlements(
         error_detail = f"Error fetching settlements: {str(e)}\n{traceback.format_exc()}"
         raise HTTPException(status_code=500, detail=error_detail)
 
+@router.post("/preview")
+async def preview_settlement_pdf(
+    file: UploadFile = File(...),
+    settlement_type: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id),
+):
+    """Parse a PDF without creating a settlement, so a user can review it first."""
+    timestamp = datetime.now().timestamp()
+    file_path = os.path.join(UPLOAD_DIR, f"preview_{timestamp}_{file.filename}")
+    try:
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
+
+        parsed = parse_amazon_relay_pdf(file_path, settlement_type)
+        plate = parsed.get("license_plate")
+        suggested_truck = None
+        if plate:
+            plate_upper = plate.upper()
+            for truck in db.query(Truck).filter(Truck.tenant_id == tenant_id).all():
+                historic_plates = truck.license_plate_history if isinstance(truck.license_plate_history, list) else []
+                if (truck.license_plate and truck.license_plate.upper() == plate_upper) or any(
+                    historic_plate and historic_plate.upper() == plate_upper for historic_plate in historic_plates
+                ):
+                    suggested_truck = {"id": truck.id, "name": truck.name}
+                    break
+
+        warnings = []
+        if not plate:
+            warnings.append("No vehicle plate was found. Select the truck before importing.")
+        elif not suggested_truck:
+            warnings.append(f"Plate {plate} does not match a vehicle in this business. Select the truck before importing.")
+
+        return {
+            "parsed": parsed,
+            "suggested_truck": suggested_truck,
+            "warnings": warnings,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Unable to parse PDF for review: {exc}")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+
 @router.post("/upload", response_model=SettlementResponse)
 async def upload_settlement_pdf(
     file: UploadFile = File(...),

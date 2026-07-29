@@ -67,6 +67,7 @@ export default function Settlements() {
   const [selectedTruck] = useState<number | null>(null)
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadPreview, setUploadPreview] = useState<{ parsed: Partial<Settlement>; suggested_truck: { id: number; name: string } | null; warnings: string[] } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalTitle, setModalTitle] = useState('')
@@ -96,7 +97,6 @@ export default function Settlements() {
   const [originalFormData, setOriginalFormData] = useState<Partial<Settlement>>({})
   const [expenseCategoryInputs, setExpenseCategoryInputs] = useState<{ [key: string]: string }>({})
   const [categoryNameInputs, setCategoryNameInputs] = useState<{ [key: string]: string }>({})
-  const [dispatchFeePercent, setDispatchFeePercent] = useState<6 | 8 | 10>(6)
   // Track modified expense fields for visual feedback
   const [modifiedExpenseFields, setModifiedExpenseFields] = useState<Set<string>>(new Set())
   // Validation state - flash when expenses exceed revenue
@@ -154,6 +154,7 @@ export default function Settlements() {
     'ifta',
     'loan_interest',
     'truck_parking',
+    'fleet_manager_support',
     'service_on_truck'
   ]
 
@@ -174,7 +175,7 @@ export default function Settlements() {
     fixed: {
       label: 'Monthly Fixed',
       icon: '📅',
-      categories: ['insurance', 'prepass', 'ifta', 'safety', 'truck_parking', 'loan_interest']
+      categories: ['insurance', 'fleet_manager_support', 'prepass', 'ifta', 'safety', 'truck_parking', 'loan_interest']
     },
     maintenance: {
       label: 'Maintenance / Misc',
@@ -194,6 +195,7 @@ export default function Settlements() {
       safety: 'Safety',
       prepass: 'Prepass',
       ifta: 'IFTA',
+      fleet_manager_support: 'Fleet Manager Support',
       driver_pay: 'Driver Pay',
       payroll_fee: 'Payroll Fee',
       loan_interest: 'Loan Interest',
@@ -510,6 +512,16 @@ export default function Settlements() {
 
     try {
       setUploading(true)
+      if (!uploadPreview) {
+        const response = await settlementsApi.preview(uploadFile)
+        setUploadPreview(response.data)
+        if (response.data.suggested_truck) setSelectedTruckForUpload(response.data.suggested_truck.id)
+        return
+      }
+      if (!selectedTruckForUpload) {
+        showToast('Select the truck before importing this reviewed settlement.', 'error')
+        return
+      }
       const splitAmount = trailerSplitAmountForUpload.trim() ? Number(trailerSplitAmountForUpload) : undefined
       const repairReserveAmount = repairReserveAmountForUpload.trim() ? Number(repairReserveAmountForUpload) : undefined
       if (splitAmount !== undefined && Number.isNaN(splitAmount)) {
@@ -532,6 +544,7 @@ export default function Settlements() {
       showToast('Settlement uploaded successfully! PDF stored in Cloud and data imported.', 'success')
       
       setUploadFile(null)
+      setUploadPreview(null)
       setSelectedTruckForUpload(null)
       setSelectedTrailerForUpload(null)
       setTrailerSplitAmountForUpload('')
@@ -799,25 +812,6 @@ export default function Settlements() {
     setExpenseCategoryInputs(inputValues)
     setCategoryNameInputs(categoryNameValues)
     
-      // Initialize dispatch fee percentage based on existing dispatch fee
-      // If dispatch fee exists, try to determine percentage from gross revenue
-      if (categories.dispatch_fee && settlement.gross_revenue) {
-        const calculatedPercent = (categories.dispatch_fee / settlement.gross_revenue) * 100
-        // Round to nearest 6%, 8%, or 10%
-        const diff6 = Math.abs(calculatedPercent - 6)
-        const diff8 = Math.abs(calculatedPercent - 8)
-        const diff10 = Math.abs(calculatedPercent - 10)
-        if (diff6 <= diff8 && diff6 <= diff10) {
-          setDispatchFeePercent(6)
-        } else if (diff8 <= diff10) {
-          setDispatchFeePercent(8)
-        } else {
-          setDispatchFeePercent(10)
-        }
-      } else {
-        setDispatchFeePercent(6) // Default to 6%
-      }
-      
       // Initialize input values for gross revenue, expenses, and net profit
       setGrossRevenueInput(settlement.gross_revenue !== undefined && settlement.gross_revenue !== null ? formatCurrency(settlement.gross_revenue) : '')
       setTotalExpensesInput(settlement.expenses !== undefined && settlement.expenses !== null ? formatCurrency(settlement.expenses) : '')
@@ -850,51 +844,12 @@ export default function Settlements() {
     return cleaned
   }
 
-  // Calculate dispatch fee when percentage or gross revenue changes
-  const calculateDispatchFee = (grossRevenue: number | undefined, percent: 6 | 8 | 10) => {
-    if (!grossRevenue) return 0
-    return grossRevenue * (percent / 100)
-  }
-  
-  const handleDispatchFeePercentChange = (percent: 6 | 8 | 10) => {
-    setDispatchFeePercent(percent)
-    setEditFormData(prev => {
-      const grossRevenue = prev.gross_revenue
-      if (!grossRevenue) return prev
-      
-      const dispatchFee = calculateDispatchFee(grossRevenue, percent)
-      const updatedCategories = { ...(prev.expense_categories || {}) }
-      updatedCategories.dispatch_fee = dispatchFee
-      
-      // Recalculate total expenses
-      const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
-      const netProfit = grossRevenue && totalExpenses ? grossRevenue - totalExpenses : (grossRevenue ? grossRevenue : undefined)
-      
-      const updatedFormData = {
-        ...prev,
-        expense_categories: { ...updatedCategories },
-        expenses: totalExpenses,
-        net_profit: netProfit
-      }
-      
-      // Update input values
-      setExpenseCategoryInputs(prevInputs => ({ ...prevInputs, dispatch_fee: formatCurrency(dispatchFee) }))
-      setTotalExpensesInput(formatCurrency(totalExpenses))
-      if (netProfit !== undefined) {
-        setNetProfitInput(formatCurrency(netProfit))
-      }
-      
-      return updatedFormData
-    })
-  }
-
   const handleCancelEdit = () => {
     setEditingSettlement(null)
     setEditFormData({})
     setOriginalFormData({})
     setExpenseCategoryInputs({})
     setCategoryNameInputs({})
-    setDispatchFeePercent(6)
     setEditPdfFile(null)
     setGrossRevenueInput('')
     setTotalExpensesInput('')
@@ -1671,6 +1626,7 @@ export default function Settlements() {
                   const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf')
                   if (files.length > 0) {
                     setUploadFile(files[0])
+                    setUploadPreview(null)
                   }
                 }}
               >
@@ -1689,22 +1645,65 @@ export default function Settlements() {
                 <input
                   type="file"
                   accept=".pdf"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    setUploadFile(e.target.files?.[0] || null)
+                    setUploadPreview(null)
+                  }}
                   required
                   disabled={uploading}
                   className="hidden"
                 />
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                PDFs are automatically uploaded to Cloud storage and settlement data is extracted and imported to the database.
+                Review the extraction first; importing is a separate confirmation step.
               </p>
             </div>
+            {uploadPreview && (
+              <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                <p className="font-semibold">Review extracted settlement</p>
+                <p className="mt-1">{formatSettlementDate(uploadPreview.parsed.settlement_date)} · {uploadPreview.parsed.blocks_delivered ?? 'Unknown'} loads{uploadPreview.parsed.driver_name ? ` · Driver: ${uploadPreview.parsed.driver_name}` : ''}</p>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {uploadPreview.parsed.overview_amounts?.gross_before_dispatch != null && <div className="rounded bg-white/70 p-2">Carrier gross <strong className="float-right">{formatCurrency(uploadPreview.parsed.overview_amounts.gross_before_dispatch)}</strong></div>}
+                  {uploadPreview.parsed.overview_amounts?.dispatch_fee != null && <div className="rounded bg-white/70 p-2">Dispatch fee <strong className="float-right">{formatCurrency(uploadPreview.parsed.overview_amounts.dispatch_fee)}{uploadPreview.parsed.overview_amounts.pay_rate_percent != null ? ` (${100 - Number(uploadPreview.parsed.overview_amounts.pay_rate_percent)}%)` : ''}</strong></div>}
+                  <div className="rounded bg-white/70 p-2">Owner revenue after dispatch <strong className="float-right">{formatCurrency(uploadPreview.parsed.gross_revenue)}</strong></div>
+                  <div className="rounded bg-white/70 p-2">Operating expenses <strong className="float-right">{formatCurrency(uploadPreview.parsed.expenses)}</strong></div>
+                  <div className="rounded bg-white/70 p-2">Operating profit <strong className="float-right">{formatCurrency(uploadPreview.parsed.net_profit)}</strong></div>
+                  <div className="rounded bg-white/70 p-2">Cash settlement <strong className="float-right">{formatCurrency(uploadPreview.parsed.cash_settlement_amount ?? uploadPreview.parsed.net_profit)}</strong></div>
+                </div>
+                <div className="mt-3 rounded bg-white/70 p-3">
+                  <p className="font-medium">Parsed expense categories</p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {Object.entries(uploadPreview.parsed.expense_categories || {}).filter(([, amount]) => Number(amount) !== 0).map(([category, amount]) => (
+                      <div key={category} className="flex items-center justify-between rounded border border-blue-200 bg-white px-3 py-2">
+                        <span className="font-medium text-slate-700">{getCategoryDisplayName(category)}</span>
+                        <strong className="text-slate-900">{formatCurrency(amount)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {uploadPreview.parsed.deduction_details?.length && (
+                  <div className="mt-3 rounded bg-white/70 p-3">
+                    <p className="font-medium">Expense line details <span className="font-normal text-slate-500">(already included above)</span></p>
+                    {uploadPreview.parsed.deduction_details.map((item) => <p key={`${item.description}-${item.amount}`} className="mt-1 flex justify-between"><span>{item.description}</span><strong>{formatCurrency(item.amount)}</strong></p>)}
+                  </div>
+                )}
+                {(uploadPreview.parsed.cash_adjustments?.length || selectedTrailerForUpload || repairReserveAmountForUpload) && (
+                  <div className="mt-3 rounded bg-white/70 p-3">
+                    <p className="font-medium">Cash-only settlement adjustments <span className="font-normal text-slate-500">(not operating expenses)</span></p>
+                    {uploadPreview.parsed.cash_adjustments?.map((item) => <p key={`${item.type}-${item.description}`} className="mt-1 flex justify-between"><span>{item.description}</span><strong>{formatCurrency(item.amount)}</strong></p>)}
+                    {selectedTrailerForUpload && <p className="mt-1 flex justify-between"><span>Trailer weekly allocation</span><strong>{formatCurrency(trailerSplitAmountForUpload)}</strong></p>}
+                    {repairReserveAmountForUpload && <p className="mt-1 flex justify-between"><span>Repair reserve set aside</span><strong>{formatCurrency(repairReserveAmountForUpload)}</strong></p>}
+                  </div>
+                )}
+                {uploadPreview.warnings.map((warning) => <p key={warning} className="mt-2 text-amber-800">{warning}</p>)}
+              </div>
+            )}
             <button
               type="submit"
               disabled={uploading || !uploadFile}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {uploading ? 'Uploading...' : 'Upload'}
+              {uploading ? 'Working...' : uploadPreview ? 'Confirm & Import' : 'Review PDF'}
             </button>
           </form>
         </div>
@@ -2471,13 +2470,9 @@ export default function Settlements() {
                                 setGrossRevenueInput(e.target.value)
                                 const revenue = inputValue && inputValue !== '.' ? Number(inputValue) : null
                                 
-                                // Recalculate dispatch fee when gross revenue changes
-                                let updatedCategories = { ...editFormData.expense_categories }
-                                if (revenue) {
-                                  const dispatchFee = calculateDispatchFee(revenue, dispatchFeePercent)
-                                  updatedCategories.dispatch_fee = dispatchFee
-                                  setExpenseCategoryInputs(prev => ({ ...prev, dispatch_fee: formatCurrency(dispatchFee) }))
-                                }
+                                // Keep parsed expense rows intact.  Dispatch fees
+                                // must come from the settlement, never a UI default.
+                                const updatedCategories = { ...editFormData.expense_categories }
                                 
                                 // Recalculate total expenses
                                 const totalExpenses = Object.values(updatedCategories).reduce((sum, val) => sum + (val || 0), 0)
@@ -2666,45 +2661,6 @@ export default function Settlements() {
                         </div>
                       </div>
                     </div>
-                    
-                    {/* Dispatch Fee Percentage Toggle */}
-                    {editFormData.gross_revenue && (
-                      <div className="border-t pt-2 mt-2">
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm">
-                          <span className="text-gray-600 font-medium w-full sm:w-auto">Dispatch Fee:</span>
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="radio"
-                              name="dispatchFeePercent"
-                              checked={dispatchFeePercent === 6}
-                              onChange={() => handleDispatchFeePercentChange(6)}
-                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
-                            />
-                            <span className="ml-1.5 text-gray-700">6%</span>
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="radio"
-                              name="dispatchFeePercent"
-                              checked={dispatchFeePercent === 8}
-                              onChange={() => handleDispatchFeePercentChange(8)}
-                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
-                            />
-                            <span className="ml-1.5 text-gray-700">8%</span>
-                          </label>
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="radio"
-                              name="dispatchFeePercent"
-                              checked={dispatchFeePercent === 10}
-                              onChange={() => handleDispatchFeePercentChange(10)}
-                              className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300"
-                            />
-                            <span className="ml-1.5 text-gray-700">10%</span>
-                          </label>
-                        </div>
-                      </div>
-                    )}
                     
                     <div className={`border-t pt-4 transition-all duration-300 ${expenseValidationError ? 'bg-red-100 -mx-4 px-4 rounded-lg' : ''}`}>
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-2">

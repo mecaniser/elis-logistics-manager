@@ -335,7 +335,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     # Standard expense categories
     STANDARD_CATEGORIES = [
         "fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta",
-        "deduct",
+        "deduct", "fleet_manager_support",
         "driver_pay", "payroll_fee", "loan_interest", "truck_parking", "service_on_truck"
     ]
     
@@ -351,6 +351,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
             "prepass": 0.0,
             "ifta": 0.0,
             "deduct": 0.0,
+            "fleet_manager_support": 0.0,
             "driver_pay": 0.0,
             "payroll_fee": 0.0,
             "loan_interest": 0.0,
@@ -473,6 +474,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         "prepass": truck_expense_categories["prepass"] + trailer_expense_categories["prepass"],
         "ifta": truck_expense_categories["ifta"] + trailer_expense_categories["ifta"],
         "deduct": truck_expense_categories["deduct"] + trailer_expense_categories["deduct"],
+        "fleet_manager_support": truck_expense_categories["fleet_manager_support"] + trailer_expense_categories["fleet_manager_support"],
         "driver_pay": truck_expense_categories["driver_pay"] + trailer_expense_categories["driver_pay"],
         "payroll_fee": truck_expense_categories["payroll_fee"] + trailer_expense_categories["payroll_fee"],
         "loan_interest": truck_expense_categories["loan_interest"] + trailer_expense_categories["loan_interest"],
@@ -1198,7 +1200,7 @@ def _get_time_series_impl(
         return "Custom"
     
     # Standard expense categories
-    STANDARD_CATEGORIES = ["fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "deduct", "driver_pay", "payroll_fee", "loan_interest"]
+    STANDARD_CATEGORIES = ["fuel", "tolls", "dispatch_fee", "insurance", "safety", "prepass", "ifta", "truck_parking", "deduct", "fleet_manager_support", "driver_pay", "payroll_fee", "loan_interest"]
     
     # Initialize data structures
     weekly_data = defaultdict(lambda: {
@@ -1220,6 +1222,7 @@ def _get_time_series_impl(
         "prepass": 0.0,
         "ifta": 0.0,
         "deduct": 0.0,
+        "fleet_manager_support": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1252,6 +1255,7 @@ def _get_time_series_impl(
         "prepass": 0.0,
         "ifta": 0.0,
         "deduct": 0.0,
+        "fleet_manager_support": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1282,6 +1286,7 @@ def _get_time_series_impl(
         "prepass": 0.0,
         "ifta": 0.0,
         "deduct": 0.0,
+        "fleet_manager_support": 0.0,
         "loan_interest": 0.0,
         "truck_parking": 0.0,
         "custom": 0.0,
@@ -1545,6 +1550,7 @@ def _get_time_series_impl(
             "prepass": round(week_data["prepass"], 2),
             "ifta": round(week_data["ifta"], 2),
             "deduct": round(week_data["deduct"], 2),
+            "fleet_manager_support": round(week_data["fleet_manager_support"], 2),
             "loan_interest": round(week_data["loan_interest"], 2),
             "truck_parking": round(week_data["truck_parking"], 2),
             "custom": round(week_data["custom"], 2),
@@ -1641,6 +1647,7 @@ def _get_time_series_impl(
             "prepass": round(month_data["prepass"], 2),
             "ifta": round(month_data["ifta"], 2),
             "deduct": round(month_data["deduct"], 2),
+            "fleet_manager_support": round(month_data["fleet_manager_support"], 2),
             "loan_interest": round(month_data["loan_interest"], 2),
             "truck_parking": round(month_data["truck_parking"], 2),
             "custom": round(month_data["custom"], 2),
@@ -1730,6 +1737,7 @@ def _get_time_series_impl(
             "prepass": round(year_data["prepass"], 2),
             "ifta": round(year_data["ifta"], 2),
             "deduct": round(year_data["deduct"], 2),
+            "fleet_manager_support": round(year_data["fleet_manager_support"], 2),
             "loan_interest": round(year_data["loan_interest"], 2),
             "truck_parking": round(year_data["truck_parking"], 2),
             "custom": round(year_data["custom"], 2),

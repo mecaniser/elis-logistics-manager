@@ -155,6 +155,7 @@ export interface Settlement {
   id: number
   truck_id: number
   driver_id?: number | null
+  driver_name?: string | null
   trailer_income_split_trailer_id?: number | null
   trailer_income_split_amount?: number | null
   repair_reserve_amount?: number | null
@@ -246,6 +247,7 @@ export interface DashboardData {
     prepass: number
     ifta: number
     deduct: number
+    fleet_manager_support: number
     driver_pay: number
     payroll_fee: number
     truck_parking: number
@@ -398,6 +400,15 @@ export const settlementsApi = {
       formData.append('pdf_file', pdfFile)
     }
     return formDataApi.put<Settlement>(`/settlements/${id}`, formData)
+  },
+  preview: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return formDataApi.post<{
+      parsed: Partial<Settlement>
+      suggested_truck: { id: number; name: string } | null
+      warnings: string[]
+    }>('/settlements/preview', formData)
   },
   upload: (
     file: File,
@@ -570,6 +581,7 @@ export interface TimeSeriesPeriod {
   tolls: number
   dispatch_fee: number
   deduct: number
+  fleet_manager_support: number
   insurance: number
   safety: number
   prepass: number
@@ -604,6 +616,7 @@ export interface TimeSeriesData {
     tolls: number
     dispatch_fee: number
     deduct: number
+    fleet_manager_support: number
     insurance: number
     safety: number
     prepass: number
@@ -633,6 +646,7 @@ export interface TimeSeriesData {
     tolls: number
     dispatch_fee: number
     deduct: number
+    fleet_manager_support: number
     insurance: number
     safety: number
     prepass: number
@@ -672,6 +686,7 @@ export interface TimeSeriesData {
     tolls: number
     dispatch_fee: number
     deduct: number
+    fleet_manager_support: number
     insurance: number
     safety: number
     prepass: number

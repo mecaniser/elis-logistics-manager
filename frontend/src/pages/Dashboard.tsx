@@ -37,6 +37,7 @@ interface ExpenseData {
   tolls: number[]
   dispatch_fee: number[]
   deduct: number[]
+  fleet_manager_support: number[]
   insurance: number[]
   safety: number[]
   prepass: number[]
@@ -645,6 +646,7 @@ export default function Dashboard() {
       { name: 'Repairs', value: expenseCategories.repairs || 0, color: '#ef4444' },
       { name: 'Dispatch Fee', value: expenseCategories.dispatch_fee || 0, color: '#f59e0b' },
       { name: 'Deductions', value: expenseCategories.deduct || 0, color: '#6366f1' },
+      { name: 'Fleet Manager Support', value: expenseCategories.fleet_manager_support || 0, color: '#0f766e' },
       { name: 'Insurance', value: expenseCategories.insurance || 0, color: '#f97316' },
       { name: 'Safety', value: expenseCategories.safety || 0, color: '#eab308' },
       { name: 'Prepass', value: expenseCategories.prepass || 0, color: '#84cc16' },
@@ -789,7 +791,7 @@ export default function Dashboard() {
 
   const processWeeklyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_week) || data.by_week.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], fleet_manager_support: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_week.map((item) => item.week_label)
@@ -803,6 +805,7 @@ export default function Dashboard() {
       tolls: data.by_week.map((item) => (item as any).tolls || 0),
       dispatch_fee: data.by_week.map((item) => item.dispatch_fee),
       deduct: data.by_week.map((item) => item.deduct || 0),
+      fleet_manager_support: data.by_week.map((item) => item.fleet_manager_support || 0),
       insurance: data.by_week.map((item) => item.insurance),
       safety: data.by_week.map((item) => item.safety),
       prepass: data.by_week.map((item) => item.prepass),
@@ -817,7 +820,7 @@ export default function Dashboard() {
 
   const processMonthlyData = (data: TimeSeriesData | null): { labels: string[], grossRevenue: number[], netProfit: number[], driverPay: number[], payrollFee: number[], expenses: ExpenseData } => {
     if (!data || !Array.isArray(data.by_month) || data.by_month.length === 0) {
-      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
+      return { labels: [], grossRevenue: [], netProfit: [], driverPay: [], payrollFee: [], expenses: { fuel: [], tolls: [], dispatch_fee: [], deduct: [], fleet_manager_support: [], insurance: [], safety: [], prepass: [], ifta: [], loan_interest: [], truck_parking: [], custom: [] } }
     }
     
     const labels = data.by_month.map((item) => item.month_label)
@@ -831,6 +834,7 @@ export default function Dashboard() {
       tolls: data.by_month.map((item) => (item as any).tolls || 0),
       dispatch_fee: data.by_month.map((item) => item.dispatch_fee),
       deduct: data.by_month.map((item) => item.deduct || 0),
+      fleet_manager_support: data.by_month.map((item) => item.fleet_manager_support || 0),
       insurance: data.by_month.map((item) => item.insurance),
       safety: data.by_month.map((item) => item.safety),
       prepass: data.by_month.map((item) => item.prepass),
@@ -2232,6 +2236,7 @@ export default function Dashboard() {
                         { key: 'tolls', label: 'Tolls', value: (selectedPeriodData as any).tolls || 0 },
                         { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
                         { key: 'deduct', label: 'Deductions', value: (selectedPeriodData as any).deduct || 0 },
+                        { key: 'fleet_manager_support', label: 'Fleet Manager Support', value: (selectedPeriodData as any).fleet_manager_support || 0 },
                         { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
                         { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
                         { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },

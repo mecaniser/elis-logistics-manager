@@ -5,6 +5,7 @@ import pdfplumber
 import re
 from datetime import datetime
 from typing import Dict, List
+from app.services.settlement_expense_categories import category_for_deduction
 
 # Whitelist of valid license plates - only these plates will be accepted
 # Any other plates found in PDFs will be rejected
@@ -307,6 +308,7 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
     driver_pay_total = 0.0
     prepass_total = 0.0
     ifta_total = 0.0
+    fleet_manager_support_total = 0.0
     deduct_total = 0.0
     deductions_categorized_total = 0.0
 
@@ -361,6 +363,12 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
                 prepass_total += amount
             elif "ifta" in lower_description:
                 ifta_total += amount
+            elif category_for_deduction(normalized_description) == "fleet_manager_support":
+                fleet_manager_support_total += amount
+                deduction_details.append({
+                    "description": normalized_description,
+                    "amount": round(amount, 2),
+                })
             elif (
                 "form 2290" in lower_description
                 or "title fee" in lower_description
@@ -389,6 +397,8 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
         expense_categories["prepass"] = round(prepass_total, 2)
     if ifta_total:
         expense_categories["ifta"] = round(ifta_total, 2)
+    if fleet_manager_support_total:
+        expense_categories["fleet_manager_support"] = round(fleet_manager_support_total, 2)
     if driver_pay_total:
         expense_categories["driver_pay"] = round(driver_pay_total, 2)
     if deduct_total:
