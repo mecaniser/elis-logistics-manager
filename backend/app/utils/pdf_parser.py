@@ -94,17 +94,25 @@ def _normalize_77_cargo_description(description: str) -> str:
     return cleaned
 
 
-def _extract_77_cargo_section(text: str, heading: str) -> str:
-    """Return one accounting section, stopping at the next known heading."""
-    start = re.search(rf"(?im)^\s*{re.escape(heading)}\b.*$", text)
-    if not start:
-        return ""
-    remainder = text[start.end():]
-    end = re.search(
-        r"(?im)^\s*(?:Fuel|Tolls|Additions|Deductions|Settlement\s+total|Balance\s+due)\b",
-        remainder,
-    )
-    return remainder[:end.start()] if end else remainder
+def _extract_77_cargo_sections(text: str, heading: str) -> List[str]:
+    """Return every occurrence of an accounting section.
+
+    ezLoads can emit a manual fuel correction followed by a fuel-card section
+    in the same settlement. Both are real costs, so taking only the first
+    heading silently understates expenses.
+    """
+    heading_pattern = rf"(?im)^\s*{re.escape(heading)}\b.*$"
+    starts = list(re.finditer(heading_pattern, text))
+    if not starts:
+        return []
+
+    boundary_pattern = r"(?im)^\s*(?:Fuel|Tolls|Additions|Deductions|Settlement\s+total|Balance\s+due)\b"
+    sections = []
+    for start in starts:
+        remainder = text[start.end():]
+        end = re.search(boundary_pattern, remainder)
+        sections.append(remainder[:end.start()] if end else remainder)
+    return sections
 
 
 def _extract_77_cargo_section_subtotal(section: str):
@@ -251,14 +259,24 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
         if pay_rate_percent is not None:
             settlement_data["overview_amounts"]["pay_rate_percent"] = pay_rate_percent
 
-    fuel_section = _extract_77_cargo_section(text, "Fuel")
-    tolls_section = _extract_77_cargo_section(text, "Tolls")
-    additions_section = _extract_77_cargo_section(text, "Additions")
-    deductions_section = _extract_77_cargo_section(text, "Deductions")
-    fuel_total = _extract_77_cargo_section_subtotal(fuel_section)
-    tolls_total = _extract_77_cargo_section_subtotal(tolls_section)
-    additions_total = _extract_77_cargo_section_subtotal(additions_section)
-    deductions_total = _extract_77_cargo_section_subtotal(deductions_section)
+    fuel_sections = _extract_77_cargo_sections(text, "Fuel")
+    tolls_sections = _extract_77_cargo_sections(text, "Tolls")
+    additions_sections = _extract_77_cargo_sections(text, "Additions")
+    deductions_sections = _extract_77_cargo_sections(text, "Deductions")
+    fuel_section = "\n".join(fuel_sections)
+    tolls_section = "\n".join(tolls_sections)
+    additions_section = "\n".join(additions_sections)
+    deductions_section = "\n".join(deductions_sections)
+
+    def section_total(sections: List[str]):
+        totals = [_extract_77_cargo_section_subtotal(section) for section in sections]
+        values = [total for total in totals if total is not None]
+        return round(sum(values), 2) if values else None
+
+    fuel_total = section_total(fuel_sections)
+    tolls_total = section_total(tolls_sections)
+    additions_total = section_total(additions_sections)
+    deductions_total = section_total(deductions_sections)
     settlement_total_match = re.search(r"Settlement total:\s*\$([\d,]+\.\d{2})", text)
     balance_due_match = re.search(r"Balance due:\s*\$([\d,]+\.\d{2})", text)
 
