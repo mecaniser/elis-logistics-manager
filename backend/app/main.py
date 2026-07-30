@@ -10,11 +10,13 @@ from pathlib import Path
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine, Base
+from app.migration_runner import run_startup_migrations
 from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants, auth, repair_reserves
 from app.auth_utils import verify_session_token, SESSION_COOKIE_NAME
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+run_startup_migrations(engine)
 
 app = FastAPI(
     title="Elis Group Manager",
