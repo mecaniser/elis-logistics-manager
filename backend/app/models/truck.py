@@ -20,6 +20,8 @@ class Truck(Base):
     default_trailer_income_split_amount = Column(Numeric(10, 2), nullable=True)  # Default weekly trailer income allocation
     default_repair_reserve_amount = Column(Numeric(10, 2), nullable=True)  # Default weekly repair/PM reserve allocation
     trailer_depreciation_reserve_amount = Column(Numeric(10, 2), nullable=True)  # Weekly trailer replacement/depreciation reserve
+    expected_resale_value = Column(Numeric(10, 2), nullable=True)  # Expected gross sale proceeds at end of planned service
+    planned_service_weeks = Column(Integer, nullable=True)  # Planned earning weeks before sale/replacement
     estimated_mpg = Column(Numeric(6, 2), nullable=True)  # MPG assumption used when settlement miles must be estimated from fuel spend
     fuel_card_discount_per_gallon = Column(Numeric(6, 3), nullable=True)  # Per-truck fuel-card discount applied against benchmark diesel pricing
     license_plate_history = Column(JSON, nullable=True)  # List of historical license plates

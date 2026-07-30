@@ -75,6 +75,8 @@ export interface Truck {
   default_trailer_income_split_amount?: number | null
   default_repair_reserve_amount?: number | null
   trailer_depreciation_reserve_amount?: number | null
+  expected_resale_value?: number | null
+  planned_service_weeks?: number | null
   estimated_mpg?: number | null
   fuel_card_discount_per_gallon?: number | null
   license_plate_history?: string[]
@@ -137,6 +139,12 @@ export interface VehicleROI {
   cumulative_net_profit: number
   trailer_settlement_count: number
   trailer_depreciation_reserve_total: number | null
+  trailer_replacement_reserve_target: number | null
+  trailer_reserve_remaining: number | null
+  trailer_expected_resale_value: number | null
+  trailer_planned_service_weeks: number | null
+  trailer_net_sale_proceeds_today: number | null
+  trailer_cash_after_principal_and_reserve: number | null
   trailer_free_profit: number | null
   trailer_cash_position_total: number | null
   trailer_break_even_sale_price: number | null

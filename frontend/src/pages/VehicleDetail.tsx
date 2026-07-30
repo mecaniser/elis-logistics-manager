@@ -433,9 +433,9 @@ export default function VehicleDetail() {
             <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Trailer Cash Split</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">Trailer Replacement & Cash Waterfall</h3>
                   <p className="text-xs text-gray-600 mt-1">
-                    Operating profit stays intact; the reserve is the part kept aside for trailer value/replacement, and free profit is what remains usable elsewhere.
+                    The reserve is cash kept for replacement. Principal repayment and reserve deposits reduce available cash, but neither is an operating expense.
                   </p>
                 </div>
                 <div className="text-right">
@@ -448,12 +448,21 @@ export default function VehicleDetail() {
 
               <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
                 <div className="rounded-lg bg-white p-4 border border-gray-200">
+                  <div className="text-xs font-medium text-gray-500">Replacement Target</div>
+                  <div className="text-xl font-bold mt-1 text-gray-900">
+                    ${safeToLocaleString(roiData.trailer_replacement_reserve_target)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Cost less expected sale value of ${safeToLocaleString(roiData.trailer_expected_resale_value)} over {roiData.trailer_planned_service_weeks || 'the planned'} weeks.
+                  </div>
+                </div>
+                <div className="rounded-lg bg-white p-4 border border-gray-200">
                   <div className="text-xs font-medium text-gray-500">Reserve Saved</div>
                   <div className="text-xl font-bold mt-1 text-emerald-700">
                     ${safeToLocaleString(roiData.trailer_depreciation_reserve_total)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    {roiData.trailer_settlement_count} earning week{roiData.trailer_settlement_count === 1 ? '' : 's'} x ${safeToLocaleString(roiData.trailer_depreciation_reserve_amount)}.
+                    {roiData.trailer_settlement_count} earning week{roiData.trailer_settlement_count === 1 ? '' : 's'} x ${safeToLocaleString(roiData.trailer_depreciation_reserve_amount)}; ${safeToLocaleString(roiData.trailer_reserve_remaining)} remains.
                   </div>
                 </div>
 
@@ -463,7 +472,7 @@ export default function VehicleDetail() {
                     ${safeToLocaleString(roiData.trailer_free_profit)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Operating net profit after the reserve target.
+                    After principal repayment and reserve deposits: ${safeToLocaleString(roiData.trailer_cash_after_principal_and_reserve)}.
                   </div>
                 </div>
 
@@ -473,13 +482,13 @@ export default function VehicleDetail() {
                     ${safeToLocaleString(roiData.trailer_break_even_sale_price)}
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
-                    Sale price needed after accumulated trailer cash and remaining loan balance.
+                    Expected sale produces ${safeToLocaleString(roiData.trailer_net_sale_proceeds_today)} after the remaining loan payoff.
                   </div>
                 </div>
               </div>
 
               <div className="mt-3 rounded-md bg-white border border-emerald-100 px-3 py-2 text-xs text-gray-600">
-                At the current weekly reserve target, three years is ${safeToLocaleString(roiData.trailer_projected_three_year_reserve)} reserved before considering sale value.
+                This plan reserves ${safeToLocaleString(roiData.trailer_replacement_reserve_target)} and expects ${safeToLocaleString(roiData.trailer_expected_resale_value)} from sale; the two together recover the all-in trailer cost before operating profits.
               </div>
             </div>
           )}

@@ -194,6 +194,12 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
 
     trailer_settlement_count = 0
     trailer_depreciation_reserve_total = None
+    trailer_replacement_reserve_target = None
+    trailer_reserve_remaining = None
+    trailer_expected_resale_value = None
+    trailer_planned_service_weeks = None
+    trailer_net_sale_proceeds_today = None
+    trailer_cash_after_principal_and_reserve = None
     trailer_free_profit = None
     trailer_cash_position_total = None
     trailer_break_even_sale_price = None
@@ -204,20 +210,38 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
             settlement for settlement in settlements_list
             if float(settlement.gross_revenue or 0) > 0
         ])
-        weekly_reserve = float(trailer_depreciation_reserve_amount or 0.0)
-        trailer_depreciation_reserve_total = round(weekly_reserve * trailer_settlement_count, 2)
+        trailer_expected_resale_value = max(0.0, float(vehicle.expected_resale_value or 0.0))
+        trailer_planned_service_weeks = int(vehicle.planned_service_weeks or 0) or None
+        capital_cost = max(0.0, float(total_cost or 0.0))
+        trailer_replacement_reserve_target = max(0.0, capital_cost - trailer_expected_resale_value)
+        if trailer_planned_service_weeks and trailer_planned_service_weeks > 0:
+            weekly_reserve = trailer_replacement_reserve_target / trailer_planned_service_weeks
+        else:
+            # Existing trailers keep their saved manual weekly target until a
+            # resale plan is entered.
+            weekly_reserve = float(trailer_depreciation_reserve_amount or 0.0)
+        trailer_depreciation_reserve_amount = round(weekly_reserve, 2)
+        trailer_depreciation_reserve_total = round(
+            min(trailer_replacement_reserve_target, weekly_reserve * trailer_settlement_count)
+            if trailer_replacement_reserve_target > 0 else weekly_reserve * trailer_settlement_count,
+            2,
+        )
+        trailer_reserve_remaining = round(max(0.0, trailer_replacement_reserve_target - trailer_depreciation_reserve_total), 2)
         trailer_free_profit = round(cumulative_net_profit - trailer_depreciation_reserve_total, 2)
         trailer_cash_position_total = round(trailer_depreciation_reserve_total + trailer_free_profit, 2)
 
         current_balance_for_sale = calculated_loan_balance
         if current_balance_for_sale is None:
             current_balance_for_sale = loan_amount or 0.0
-        owner_cash_basis = max(0.0, (total_cost or 0.0) - (loan_amount or 0.0))
-        trailer_break_even_sale_price = round(
-            max(0.0, current_balance_for_sale + owner_cash_basis - cumulative_net_profit),
+        trailer_net_sale_proceeds_today = round(trailer_expected_resale_value - current_balance_for_sale, 2)
+        # This is the sale price needed to pay the lender and finish the
+        # remaining replacement reserve target. It is not operating profit.
+        trailer_break_even_sale_price = round(current_balance_for_sale + trailer_reserve_remaining, 2)
+        trailer_projected_three_year_reserve = round(min(trailer_replacement_reserve_target, weekly_reserve * 156), 2)
+        trailer_cash_after_principal_and_reserve = round(
+            cumulative_net_profit - principal_paid_from_excess - trailer_depreciation_reserve_total,
             2,
         )
-        trailer_projected_three_year_reserve = round(weekly_reserve * 156, 2)
     
     return {
         "vehicle_id": truck_id,
@@ -244,6 +268,12 @@ def get_vehicle_roi(truck_id: int, db: Session = Depends(get_db), tenant_id: int
         "cumulative_net_profit": round(cumulative_net_profit, 2),
         "trailer_settlement_count": trailer_settlement_count,
         "trailer_depreciation_reserve_total": trailer_depreciation_reserve_total,
+        "trailer_replacement_reserve_target": round(trailer_replacement_reserve_target, 2) if trailer_replacement_reserve_target is not None else None,
+        "trailer_reserve_remaining": trailer_reserve_remaining,
+        "trailer_expected_resale_value": round(trailer_expected_resale_value, 2) if trailer_expected_resale_value is not None else None,
+        "trailer_planned_service_weeks": trailer_planned_service_weeks,
+        "trailer_net_sale_proceeds_today": trailer_net_sale_proceeds_today,
+        "trailer_cash_after_principal_and_reserve": trailer_cash_after_principal_and_reserve,
         "trailer_free_profit": trailer_free_profit,
         "trailer_cash_position_total": trailer_cash_position_total,
         "trailer_break_even_sale_price": trailer_break_even_sale_price,

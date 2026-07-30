@@ -98,6 +98,8 @@ const buildVehicleFormData = (vehicle: Truck) => ({
   default_trailer_income_split_amount: vehicle.default_trailer_income_split_amount?.toString() || '',
   default_repair_reserve_amount: vehicle.default_repair_reserve_amount?.toString() || '',
   trailer_depreciation_reserve_amount: vehicle.trailer_depreciation_reserve_amount != null ? Number(vehicle.trailer_depreciation_reserve_amount).toFixed(2) : '160.00',
+  expected_resale_value: vehicle.expected_resale_value?.toString() || '',
+  planned_service_weeks: vehicle.planned_service_weeks?.toString() || '156',
   estimated_mpg: vehicle.estimated_mpg != null ? Number(vehicle.estimated_mpg).toFixed(2) : '6.50',
   fuel_card_discount_per_gallon: vehicle.fuel_card_discount_per_gallon != null ? Number(vehicle.fuel_card_discount_per_gallon).toFixed(3) : '0.000',
   license_plate: vehicle.license_plate || '',
@@ -220,6 +222,8 @@ export default function Trucks() {
     default_trailer_income_split_amount: '',
     default_repair_reserve_amount: '',
     trailer_depreciation_reserve_amount: '160.00',
+    expected_resale_value: '',
+    planned_service_weeks: '156',
     estimated_mpg: '6.50',
     fuel_card_discount_per_gallon: '0.000',
     license_plate: '',
@@ -608,6 +612,12 @@ export default function Trucks() {
       const trailerDepreciationReserveAmount = formData.vehicle_type === 'trailer'
         ? parseNumeric(formData.trailer_depreciation_reserve_amount || '160')
         : null
+      const expectedResaleValue = formData.vehicle_type === 'trailer'
+        ? parseNumeric(formData.expected_resale_value)
+        : null
+      const plannedServiceWeeks = formData.vehicle_type === 'trailer'
+        ? Math.max(0, Math.round(parseNumeric(formData.planned_service_weeks)))
+        : null
       const estimatedMpg = formData.vehicle_type === 'truck'
         ? parseNumeric(formData.estimated_mpg || '6.5')
         : null
@@ -686,6 +696,8 @@ export default function Trucks() {
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
           trailer_depreciation_reserve_amount: trailerDepreciationReserveAmount,
+          expected_resale_value: expectedResaleValue || null,
+          planned_service_weeks: plannedServiceWeeks || null,
           estimated_mpg: estimatedMpg,
           fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
@@ -702,6 +714,8 @@ export default function Trucks() {
           default_trailer_income_split_amount: defaultTrailerIncomeSplitAmount,
           default_repair_reserve_amount: defaultRepairReserveAmount,
           trailer_depreciation_reserve_amount: trailerDepreciationReserveAmount,
+          expected_resale_value: expectedResaleValue || null,
+          planned_service_weeks: plannedServiceWeeks || null,
           estimated_mpg: estimatedMpg,
           fuel_card_discount_per_gallon: fuelCardDiscountPerGallon,
           license_plate: (formData.vehicle_type === 'truck' || formData.vehicle_type === 'suv') ? (formData.license_plate || undefined) : undefined,
@@ -743,6 +757,8 @@ export default function Trucks() {
       default_trailer_income_split_amount: '',
       default_repair_reserve_amount: '',
       trailer_depreciation_reserve_amount: '160.00',
+      expected_resale_value: '',
+      planned_service_weeks: '156',
       estimated_mpg: '6.50',
       fuel_card_discount_per_gallon: '0.000',
       license_plate: '',
@@ -986,6 +1002,8 @@ export default function Trucks() {
                     default_trailer_income_split_amount: newType === 'truck' ? formData.default_trailer_income_split_amount : '',
                     default_repair_reserve_amount: newType === 'truck' ? formData.default_repair_reserve_amount : '',
                     trailer_depreciation_reserve_amount: newType === 'trailer' ? (formData.trailer_depreciation_reserve_amount || '160.00') : '',
+                    expected_resale_value: newType === 'trailer' ? formData.expected_resale_value : '',
+                    planned_service_weeks: newType === 'trailer' ? (formData.planned_service_weeks || '156') : '',
                     estimated_mpg: newType === 'truck' ? formData.estimated_mpg : '6.50',
                     fuel_card_discount_per_gallon: newType === 'truck' ? formData.fuel_card_discount_per_gallon : '0.000',
                     license_plate: newType === 'trailer' ? '' : formData.license_plate,
@@ -1481,9 +1499,10 @@ export default function Trucks() {
                   </>
                 )}
                   {formData.vehicle_type === 'trailer' && (
+                    <>
                     <div className="flex items-center">
                       <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
-                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reserve ($/wk)</label>
+                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reserve fallback ($/wk)</label>
                       </div>
                       <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
                       <input
@@ -1515,6 +1534,42 @@ export default function Trucks() {
                         className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[92px]"
                       />
                     </div>
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
+                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Expected Sale ($)</label>
+                      </div>
+                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.expected_resale_value}
+                        onChange={(e) => setFormData(prev => ({ ...prev, expected_resale_value: e.target.value }))}
+                        placeholder="50,000"
+                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[100px]"
+                      />
+                    </div>
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
+                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Service (wk)</label>
+                      </div>
+                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={formData.planned_service_weeks}
+                        onChange={(e) => setFormData(prev => ({ ...prev, planned_service_weeks: e.target.value }))}
+                        placeholder="156"
+                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[72px]"
+                      />
+                    </div>
+                    {Number(calculatedTotalCost || 0) > Number(formData.expected_resale_value || 0) && Number(formData.planned_service_weeks || 0) > 0 && (
+                      <div className="w-full text-xs text-emerald-700">
+                        Automatic reserve: ${((Number(calculatedTotalCost) - Number(formData.expected_resale_value || 0)) / Number(formData.planned_service_weeks)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/week from this resale plan. The fallback is used only when no plan is entered.
+                      </div>
+                    )}
+                    </>
                   )}
                   <div className="flex items-center">
                     <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
