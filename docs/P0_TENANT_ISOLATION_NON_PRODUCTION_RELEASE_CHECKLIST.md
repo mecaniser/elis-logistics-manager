@@ -8,6 +8,44 @@
 
 **Production status:** prohibited. This checklist does not authorize a merge, production deploy, production data access, database mutation, Railway link, or Railway configuration change.
 
+## Current gate status — candidate `cb77ce9`
+
+**Recorded:** 2026-08-11
+
+| Gate | Status | Evidence / remaining condition |
+|---|---|---|
+| Independent P0 tenant-isolation QA | **GO for `cb77ce9` only** | Auth-enabled focused suite `32/32`; auth-disabled focused suite `32/32`; canonical JSON `401` verified in a fresh process; 19 retained protected routes plus the separate reset tombstone; reset returns `410 ACCOUNT_RESET_UNAVAILABLE` with zero chart, journal-header, and journal-line changes |
+| Security exact-candidate review | **PENDING** | Security & Identity is reviewing `cb77ce9`; no `APPROVED` verdict has been issued for this SHA at the time of this status update |
+| Railway staging authorization | **NOT AUTHORIZED** | Requires Security `APPROVED` followed by explicit Product authorization naming the staging project/environment and immutable candidate SHA |
+| Staging configuration/canary | **NOT RUN** | No Railway access has occurred; Sections 4–10 remain required after authorization |
+| Broader backend suite | **NO-GO** | `87 passed, 12 failed`: 6 repair tests, 5 settlement tests, and 1 financed-trailer payoff test; failures are reported as unchanged baseline, not new P0 failures |
+| Broader release / production | **NO-GO** | Focused P0 QA GO does not authorize merge, deploy, or production access |
+
+The QA verdict is immutable-SHA scoped. Any code, test, configuration-default, dependency, or generated-artifact change after `cb77ce9` creates a new candidate and requires fresh QA and Security decisions.
+
+### Minimum remaining non-production prerequisites
+
+Before any Railway access or staging mutation:
+
+1. Security & Identity must issue **APPROVED** for the exact `cb77ce9` candidate after dispositioning every open security-review item. A prior approval or review of another SHA does not carry forward.
+2. Record the candidate's full 40-character commit hash and prove the staged build resolves to that immutable commit. The short SHA is not the final deployment identifier.
+3. Product & Delivery must explicitly authorize access to named staging project, environment, application-service, and database-service IDs after Security approval. Production identifiers remain forbidden.
+
+Before the P0 staging gate can become GO:
+
+4. Complete the secret/allowlist preflight without printing values; staging authentication must be enabled, fail closed, and use only the approved synthetic Tenant A membership.
+5. Prove staging database, domain, storage, logs, and outbound integrations are isolated from production.
+6. Execute the two-tenant staging matrix, export isolation, denial parity, zero-side-effect, audit/log-redaction, readiness, and reset `410` checks in Sections 5–9 against the deployed full SHA.
+7. Rehearse the Section 10 stop path. The known-vulnerable baseline is not an acceptable reachable rollback target; keep staging unavailable or roll forward to a Security-approved safe build.
+8. QA and Security must reconfirm the staging evidence against the deployed SHA. The local focused-suite GO does not substitute for staging evidence.
+
+Before the broader non-production release gate can become GO:
+
+9. Resolve the 12 full-suite failures and obtain a green full backend suite. The 11 repair/settlement failures must be updated to the required tenant-context contract rather than weakening fail-closed runtime behavior; the financed-trailer payoff failure requires an independently verified expected-value/business-rule disposition.
+10. Re-run the full backend suite and all P0 focused tests on the resulting new SHA, then obtain fresh QA and Security verdicts.
+
+Until these conditions are met, the only open lane is local review and correction of the isolated candidate. Railway and production remain closed.
+
 ## 1. Hard authorization boundary
 
 Do not link this worktree to Railway, inspect Railway variables, create or duplicate an environment, deploy, or change any Railway setting until all three conditions are recorded:
