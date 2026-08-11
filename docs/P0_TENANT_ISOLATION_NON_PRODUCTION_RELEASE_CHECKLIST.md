@@ -8,43 +8,47 @@
 
 **Production status:** prohibited. This checklist does not authorize a merge, production deploy, production data access, database mutation, Railway link, or Railway configuration change.
 
-## Current gate status — candidate `cb77ce9`
+## Current gate status — candidate `2b83f582f89b72fb334a8552d695991ec74efd86`
 
 **Recorded:** 2026-08-11
 
 | Gate | Status | Evidence / remaining condition |
 |---|---|---|
-| Independent P0 tenant-isolation QA | **GO for `cb77ce9` only** | Auth-enabled focused suite `32/32`; auth-disabled focused suite `32/32`; canonical JSON `401` verified in a fresh process; 19 retained protected routes plus the separate reset tombstone; reset returns `410 ACCOUNT_RESET_UNAVAILABLE` with zero chart, journal-header, and journal-line changes |
-| Security exact-candidate review | **PENDING** | Security & Identity is reviewing `cb77ce9`; no `APPROVED` verdict has been issued for this SHA at the time of this status update |
+| Candidate identity and delta | **VERIFIED LOCALLY** | Full SHA resolves. `cb77ce9..2b83f582f89b72fb334a8552d695991ec74efd86` changes exactly `backend/tests/test_repairs.py`, `backend/tests/test_settlements.py`, and `backend/tests/test_trucks.py`; no runtime file is in the delta |
+| Independent P0 tenant-isolation QA | **GO for current SHA** | Independent QA passed auth-enabled isolation `32/32`, verified the three-file test-only delta, and confirmed no runtime or frozen-authority change |
+| Independent backend automated regression | **GO for current SHA** | Independent QA passed targeted former failures `12/12` and full backend `99/99`; semantic expectation review passed without weakened assertions or business rules |
+| Security exact-candidate review | **PENDING for current SHA** | Security & Identity must review the test-only delta and the resulting full candidate; no `APPROVED` verdict is recorded for this SHA |
 | Railway staging authorization | **NOT AUTHORIZED** | Requires Security `APPROVED` followed by explicit Product authorization naming the staging project/environment and immutable candidate SHA |
 | Staging configuration/canary | **NOT RUN** | No Railway access has occurred; Sections 4–10 remain required after authorization |
-| Broader backend suite | **NO-GO** | `87 passed, 12 failed`: 6 repair tests, 5 settlement tests, and 1 financed-trailer payoff test; failures are reported as unchanged baseline, not new P0 failures |
-| Broader release / production | **NO-GO** | Focused P0 QA GO does not authorize merge, deploy, or production access |
+| Overall financial-reporting release | **NO-GO** | Separate accounting correctness, reconciliation, migration/recovery, staging, observability, and release-evidence gates remain open; automated backend GO is not financial-reporting release approval |
+| Production | **NO-GO** | Security exact-SHA approval, staging authorization/evidence, and the separate financial-reporting gates are outstanding |
 
-The QA verdict is immutable-SHA scoped. Any code, test, configuration-default, dependency, or generated-artifact change after `cb77ce9` creates a new candidate and requires fresh QA and Security decisions.
+The former `cb77ce9` QA GO remains valid historical evidence only and did not transfer automatically. Independent QA has now issued new SHA-bound GO decisions for `2b83f582f89b72fb334a8552d695991ec74efd86`. Any later code, test, configuration-default, dependency, or generated-artifact change creates another candidate and invalidates these decisions.
 
 ### Minimum remaining non-production prerequisites
 
 Before any Railway access or staging mutation:
 
-1. Security & Identity must issue **APPROVED** for the exact `cb77ce9` candidate after dispositioning every open security-review item. A prior approval or review of another SHA does not carry forward.
-2. Record the candidate's full 40-character commit hash and prove the staged build resolves to that immutable commit. The short SHA is not the final deployment identifier.
-3. Product & Delivery must explicitly authorize access to named staging project, environment, application-service, and database-service IDs after Security approval. Production identifiers remain forbidden.
+1. Security & Identity must issue **APPROVED** for exact SHA `2b83f582f89b72fb334a8552d695991ec74efd86` after reviewing the delta and dispositioning every open security-review item. A prior review of `cb77ce9` does not carry forward.
+2. Product & Delivery must explicitly authorize access to named staging project, environment, application-service, and database-service IDs after Security approval. Production identifiers remain forbidden.
 
 Before the P0 staging gate can become GO:
 
-4. Complete the secret/allowlist preflight without printing values; staging authentication must be enabled, fail closed, and use only the approved synthetic Tenant A membership.
-5. Prove staging database, domain, storage, logs, and outbound integrations are isolated from production.
-6. Execute the two-tenant staging matrix, export isolation, denial parity, zero-side-effect, audit/log-redaction, readiness, and reset `410` checks in Sections 5–9 against the deployed full SHA.
-7. Rehearse the Section 10 stop path. The known-vulnerable baseline is not an acceptable reachable rollback target; keep staging unavailable or roll forward to a Security-approved safe build.
-8. QA and Security must reconfirm the staging evidence against the deployed SHA. The local focused-suite GO does not substitute for staging evidence.
+3. Complete the secret/allowlist preflight without printing values; staging authentication must be enabled, fail closed, and use only the approved synthetic Tenant A membership.
+4. Prove staging database, domain, storage, logs, and outbound integrations are isolated from production.
+5. Execute the two-tenant staging matrix, export isolation, denial parity, zero-side-effect, audit/log-redaction, readiness, and reset `410` checks in Sections 5–9 against the deployed full SHA.
+6. Rehearse the Section 10 stop path. The known-vulnerable baseline is not an acceptable reachable rollback target; keep staging unavailable or roll forward to a Security-approved safe build.
+7. QA and Security must reconfirm the staging evidence against the deployed SHA. The local focused-suite GO does not substitute for staging evidence.
 
-Before the broader non-production release gate can become GO:
+Completed exact-SHA QA evidence:
 
-9. Resolve the 12 full-suite failures and obtain a green full backend suite. The 11 repair/settlement failures must be updated to the required tenant-context contract rather than weakening fail-closed runtime behavior; the financed-trailer payoff failure requires an independently verified expected-value/business-rule disposition.
-10. Re-run the full backend suite and all P0 focused tests on the resulting new SHA, then obtain fresh QA and Security verdicts.
+- [x] Candidate delta is exactly three backend test files with no runtime or frozen-authority change.
+- [x] Targeted former failures pass `12/12` independently.
+- [x] Full backend passes `99/99` independently.
+- [x] Auth-enabled tenant-isolation suite passes `32/32` independently.
+- [x] Semantic expectation review confirms the changed tests preserve the approved tenant and financed-trailer contracts.
 
-Until these conditions are met, the only open lane is local review and correction of the isolated candidate. Railway and production remain closed.
+Until Security approves the exact SHA and Product separately authorizes named staging resources, the only open lane is local review. Railway and production remain closed. Even after P0 staging succeeds, the overall financial-reporting release stays NO-GO until its accounting correctness, source-to-ledger reconciliation, migration/recovery, observability, and release-evidence gates pass independently.
 
 ## 1. Hard authorization boundary
 
