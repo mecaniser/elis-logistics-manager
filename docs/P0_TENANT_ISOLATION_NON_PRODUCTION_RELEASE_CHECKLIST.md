@@ -47,7 +47,7 @@ The staging candidate must preserve these decisions exactly:
 | Valid session without required permission | `403 PERMISSION_DENIED` |
 | Tenant absent, inactive, or outside server allowlist | `404 RESOURCE_NOT_FOUND` |
 | Object absent or owned by another tenant | Byte-equivalent `404 RESOURCE_NOT_FOUND` |
-| Chart-of-accounts reset | Absent or frozen `404/405 OPERATION_NOT_AVAILABLE` |
+| Authorized `DELETE /api/accounting/chart-of-accounts/reset` | `410 ACCOUNT_RESET_UNAVAILABLE`; zero row changes |
 
 `X-Tenant-ID` is a required selector only. The verified session plus the server-owned allowlist is authority. No wildcard, default tenant, default-all-active-tenants behavior, browser-storage authority, or request-supplied role/permission is allowed.
 
@@ -66,7 +66,7 @@ Before staging access:
   - `/api/accounting/export/balance-sheet`
   - `/api/accounting/export/income-statement`
   - `/api/accounting/export/trial-balance`
-- [ ] Reset is absent from the route table or permanently unavailable.
+- [ ] The legacy reset tombstone is outside the 19 retained protected-route count and returns `410 ACCOUNT_RESET_UNAVAILABLE` after tenant authority is established.
 - [ ] The candidate adds no production schema/data migration. If any migration appears, stop and return it to Release/Security for a separate review.
 - [ ] Staging has its own database, domain, storage, and outbound-integration configuration. No staging variable may reference production.
 - [ ] Staging contains only approved synthetic or specifically authorized sanitized data.
@@ -233,8 +233,12 @@ For every foreign-object case, compare status, stable code, message, content typ
 
 ### 6.6 Reset suppression
 
-- [ ] Route introspection shows reset absent, or all methods/principals/selectors receive frozen `404/405 OPERATION_NOT_AVAILABLE`.
-- [ ] Accounts, journal headers, and journal lines remain byte/count equivalent to baseline.
+- [ ] Route introspection shows exactly 19 retained protected routes plus the separate legacy `DELETE /api/accounting/chart-of-accounts/reset` tombstone; reset is not counted as a retained route.
+- [ ] With a valid session, authorized Tenant A selector, and any available role/permission set, reset returns `410 ACCOUNT_RESET_UNAVAILABLE` in the stable error envelope.
+- [ ] Tenant authority runs before the tombstone response: authentication/context failures retain their frozen `401/400/404` behavior, while an authorized tenant context receives `410` without entering reset logic.
+- [ ] No accounting-data query, delete, flush, commit, cache invalidation, file operation, or reinitialization occurs after tenant authority is established.
+- [ ] Accounts, journal headers, journal lines, snapshots, closed-period history, sources, and packages remain byte/count/checksum equivalent to baseline.
+- [ ] Repeating the reset request returns the same `410` response and leaves the same zero-change evidence.
 - [ ] No role, including a fully permitted compatibility principal, can activate bulk deletion.
 
 ## 7. Export-isolation gate
@@ -308,7 +312,7 @@ Staging is ready for the P0 canary only when:
 - [ ] Build and startup completed without secret/config dumps.
 - [ ] Database identity is staging-only and connectivity succeeds.
 - [ ] Authentication is enabled and the fail-closed allowlist validation passed.
-- [ ] Route introspection reports 19 protected routes and reset unavailable.
+- [ ] Route introspection reports 19 retained protected routes and the separate reset tombstone returns `410 ACCOUNT_RESET_UNAVAILABLE` with zero row changes.
 - [ ] The staging fixture is stable and baseline hashes/counts are recorded.
 - [ ] A database-aware readiness probe passes, or equivalent recorded checks prove process, database, candidate SHA, and authority configuration. `/api/health` alone is not readiness evidence.
 - [ ] No migration ran and no production service/database/storage reference exists.
@@ -326,7 +330,7 @@ Stop at once on any of these:
 - absent/invalid allowlist configuration fails open;
 - a denied write changes any row/hash/count;
 - a denied export invokes generation or leaves bytes/artifacts;
-- reset becomes operational;
+- reset returns anything other than the contracted `410 ACCOUNT_RESET_UNAVAILABLE` for an authorized tenant context, or changes any row/checksum;
 - response parity fails between foreign and nonexistent resources;
 - authentication, permission, or tenant context bleeds across concurrent requests;
 - a secret, cookie, connection string, allowlist value, or prohibited financial field appears in logs;
@@ -366,6 +370,7 @@ export_format_matrix_and_sentinel_scan:
 audit_log_redaction_result:
 readiness_result:
 rollback_rehearsal_result:
+reset_410_and_zero_change_result:
 open_findings:
 final_go_no_go:
 reviewers_and_timestamps:
@@ -379,4 +384,5 @@ Any failure or unavailable evidence is **NO-GO**. Product & Delivery alone decid
 
 - Security frozen contract: `SECURITY_P0_COMPATIBILITY_AUTHORITY_CONTRACT.md` in the Security & Identity worktree.
 - Backend patch specification: `docs/security-accounting-backend-patch-set.md` in the Backend Integration worktree.
+- Authoritative integrated reset contract: `docs/financial-reporting/api-contracts-v1.md` and `docs/financial-reporting/current-and-target-architecture-v1.md` in the Architecture/API worktree.
 - General release controls: `docs/RELEASE_RELIABILITY_RUNBOOK.md`.
