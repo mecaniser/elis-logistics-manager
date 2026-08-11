@@ -73,6 +73,14 @@ npm install
 npm run dev
 ```
 
+## Architecture Documentation
+
+- [Financial reporting current and target architecture v1](docs/financial-reporting/current-and-target-architecture-v1.md)
+- [Financial reporting API and schema contracts v1](docs/financial-reporting/api-contracts-v1.md)
+- [Financial reporting ADRs, dependencies, and Product Lead handoff](docs/financial-reporting/decisions-dependencies-handoff.md)
+
+The financial-reporting v1 documents are proposed target contracts. They do not describe deployed endpoints.
+
 ## API Endpoints
 
 ### Trucks
