@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { tenantsApi, Tenant, BankAccount } from '../services/api'
 import Toast from './Toast'
@@ -120,7 +120,7 @@ function CopyField({ label, value, sensitive, href, mono, onCopied }: CopyFieldP
             </button>
           </>
         ) : (
-          <span className="text-sm text-gray-400 italic">Not set</span>
+          <span className="text-sm text-gray-500 italic">Not set</span>
         )}
       </dd>
     </div>
@@ -144,6 +144,8 @@ interface BusinessInfoDrawerProps {
 }
 
 export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: BusinessInfoDrawerProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
   const [business, setBusiness] = useState<Tenant | null>(tenant)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; isVisible: boolean }>({
@@ -151,6 +153,18 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     type: 'success',
     isVisible: false,
   })
+
+  // Move focus into the drawer on open and hand it back to the opener on close,
+  // so the aria-modal declaration is actually true for keyboard users.
+  useEffect(() => {
+    if (isOpen) {
+      openerRef.current = document.activeElement as HTMLElement
+      closeButtonRef.current?.focus()
+    } else if (openerRef.current) {
+      openerRef.current.focus()
+      openerRef.current = null
+    }
+  }, [isOpen])
 
   // Lock body scroll while the drawer is open, matching Modal's behavior
   useEffect(() => {
@@ -245,8 +259,9 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
                 {business.is_active ? 'Active' : 'Inactive'}
               </span>
               <button
+                ref={closeButtonRef}
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                className="inline-flex items-center justify-center h-11 w-11 -mr-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <span className="sr-only">Close</span>
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
