@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { tenantsApi, Tenant, BankAccount } from '../services/api'
 import Toast from './Toast'
+import { tenantColor } from '../utils/tenantAppearance'
+import BusinessDetailsForm from './BusinessDetailsForm'
+import { useTenant } from '../contexts/TenantContext'
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
   logistics: 'Logistics (Transportation)',
@@ -144,6 +146,13 @@ interface BusinessInfoDrawerProps {
 }
 
 export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: BusinessInfoDrawerProps) {
+  const { loadTenants } = useTenant()
+  const [editing, setEditing] = useState(false)
+  const [formActions, setFormActions] = useState<{
+    saving: boolean
+    onSave: () => void
+    onCancel: () => void
+  } | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const [business, setBusiness] = useState<Tenant | null>(tenant)
@@ -191,6 +200,7 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     if (!isOpen || !tenant) return
 
     setBusiness(tenant)
+    setEditing(false)
     let cancelled = false
 
     const refresh = async () => {
@@ -244,11 +254,18 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
         >
           {/* Header */}
           <div className="flex items-start justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 flex-shrink-0">
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-gray-900 truncate">{business.name}</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {BUSINESS_TYPE_LABELS[business.business_type] || business.business_type}
-              </p>
+            <div className="flex items-start gap-2.5 min-w-0">
+              <span
+                aria-hidden="true"
+                className="h-5 w-5 rounded flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: tenantColor(business.id) }}
+              />
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-gray-900 truncate">{business.name}</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {BUSINESS_TYPE_LABELS[business.business_type] || business.business_type}
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <span
@@ -279,6 +296,22 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto min-h-0">
+            {editing ? (
+              <BusinessDetailsForm
+                business={business}
+                onSaved={async (updated) => {
+                  setBusiness(updated)
+                  setEditing(false)
+                  setToast({ message: 'Business details saved', type: 'success', isVisible: true })
+                  // Refresh the switcher so a renamed or retyped business updates there too
+                  await loadTenants()
+                }}
+                onCancel={() => setEditing(false)}
+                onError={(message) => setToast({ message, type: 'error', isVisible: true })}
+                renderActions={setFormActions}
+              />
+            ) : (
+            <>
             <Section title="Business Identity">
               <CopyField label="Business Name" value={business.name} onCopied={handleCopied} />
               <CopyField label="Legal Name" value={business.legal_name} onCopied={handleCopied} />
@@ -355,17 +388,40 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
                 <p className="py-2.5 text-sm text-gray-700 whitespace-pre-wrap">{business.notes}</p>
               </Section>
             )}
+            </>
+            )}
           </div>
 
           {/* Footer */}
           <div className="bg-gray-50 px-4 sm:px-6 py-3 border-t border-gray-200 flex-shrink-0">
-            <Link
-              to="/businesses"
-              onClick={onClose}
-              className="inline-flex items-center justify-center w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-            >
-              Edit details
-            </Link>
+            {editing ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => formActions?.onCancel()}
+                  disabled={formActions?.saving}
+                  className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => formActions?.onSave()}
+                  disabled={formActions?.saving}
+                  className="flex-1 inline-flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {formActions?.saving ? 'Saving...' : 'Save changes'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center justify-center w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Edit details
+              </button>
+            )}
           </div>
         </div>
       </div>
