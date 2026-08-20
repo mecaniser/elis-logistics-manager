@@ -19,14 +19,19 @@ const LOGISTICS_LINKS: NavLink[] = [
   { path: '/repairs', label: 'Maintenance & Repairs' },
 ]
 
-/** Nav links for a business type, in display order. */
+/**
+ * Nav links for a business type, in display order.
+ *
+ * Everything here is scoped to the *current* business. Managing the set of
+ * businesses is a different scope and lives in the switcher, under the list
+ * it operates on.
+ */
 export function getNavLinks(businessType?: string): NavLink[] {
   const links: NavLink[] = [{ path: '/', label: 'Dashboard' }]
   if (businessType === 'logistics') {
     links.push(...LOGISTICS_LINKS)
   }
   links.push({ path: '/accounting', label: 'Accounting' })
-  links.push({ path: '/businesses', label: 'Businesses' })
   return links
 }
 

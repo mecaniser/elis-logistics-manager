@@ -19,7 +19,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [showBusinessInfo, setShowBusinessInfo] = useState(false)
+  const [detailsTenant, setDetailsTenant] = useState<Tenant | null>(null)
   const [toast, setToast] = useState<{ message: string; isVisible: boolean }>({
     message: '',
     isVisible: false,
@@ -89,7 +89,7 @@ export default function Layout({ children }: LayoutProps) {
                   currentTenant={currentTenant}
                   tenants={tenants}
                   onSelect={handleSelectBusiness}
-                  onOpenDetails={() => setShowBusinessInfo(true)}
+                  onOpenDetails={(tenant) => setDetailsTenant(tenant)}
                 />
               )}
             </div>
@@ -153,9 +153,9 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       <BusinessInfoDrawer
-        isOpen={showBusinessInfo}
-        onClose={() => setShowBusinessInfo(false)}
-        tenant={currentTenant}
+        isOpen={!!detailsTenant}
+        onClose={() => setDetailsTenant(null)}
+        tenant={detailsTenant}
       />
 
       <Toast
