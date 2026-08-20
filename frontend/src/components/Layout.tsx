@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ReactNode, useState, useEffect, useRef } from 'react'
 import { useTenant } from '../contexts/TenantContext'
 import Breadcrumb from './Breadcrumb'
+import BusinessInfoDrawer from './BusinessInfoDrawer'
 import { useAuth } from '../contexts/AuthContext'
 
 interface LayoutProps {
@@ -13,6 +14,7 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showBusinessMenu, setShowBusinessMenu] = useState(false)
+  const [showBusinessInfo, setShowBusinessInfo] = useState(false)
   const { currentTenant, tenants, setCurrentTenant, loading } = useTenant()
   const businessMenuRef = useRef<HTMLDivElement>(null)
   const { logout } = useAuth()
@@ -37,7 +39,6 @@ export default function Layout({ children }: LayoutProps) {
   // Navigation links - only show logistics-specific links for logistics businesses
   const logisticsNavLinks = [
     { path: '/', label: 'Dashboard' },
-    { path: '/overview', label: 'Overview' },
     { path: '/trucks', label: 'Vehicles' },
     { path: '/settlements', label: 'Settlements' },
     { path: '/repairs', label: 'Maintenance & Repairs' },
@@ -46,7 +47,6 @@ export default function Layout({ children }: LayoutProps) {
   // For non-logistics businesses, show a simplified dashboard
   const generalNavLinks = [
     { path: '/', label: 'Dashboard' },
-    { path: '/overview', label: 'Overview' },
   ]
   
   // Determine which nav links to show based on business type
@@ -118,6 +118,18 @@ export default function Layout({ children }: LayoutProps) {
                         </button>
                       ))}
                       <div className="border-t border-gray-200 my-1"></div>
+                      <button
+                        onClick={() => {
+                          setShowBusinessMenu(false)
+                          setShowBusinessInfo(true)
+                        }}
+                        className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <svg className="inline-block mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Business Details
+                      </button>
                       <Link
                         to={businessesLink.path}
                         onClick={() => setShowBusinessMenu(false)}
@@ -265,6 +277,12 @@ export default function Layout({ children }: LayoutProps) {
         <Breadcrumb />
         {children}
       </main>
+
+      <BusinessInfoDrawer
+        isOpen={showBusinessInfo}
+        onClose={() => setShowBusinessInfo(false)}
+        tenant={currentTenant}
+      />
     </div>
   )
 }
