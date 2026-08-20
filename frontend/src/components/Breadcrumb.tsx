@@ -8,6 +8,7 @@ interface BreadcrumbItem {
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
+  '/overview': 'Overview',
   '/trucks': 'Vehicles',
   '/settlements': 'Settlements',
   '/repairs': 'Maintenance & Repairs',
