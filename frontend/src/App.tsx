@@ -17,6 +17,7 @@ import GeneralLedger from './pages/GeneralLedger'
 import TaxYearSummary from './pages/TaxYearSummary'
 import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
+import BusinessOverview from './pages/BusinessOverview'
 import Login from './pages/Login'
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
                   <Layout>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
+                      <Route path="/overview" element={<BusinessOverview />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
                       <Route path="/settlements" element={<Settlements />} />

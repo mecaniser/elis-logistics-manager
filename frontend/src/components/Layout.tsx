@@ -37,6 +37,7 @@ export default function Layout({ children }: LayoutProps) {
   // Navigation links - only show logistics-specific links for logistics businesses
   const logisticsNavLinks = [
     { path: '/', label: 'Dashboard' },
+    { path: '/overview', label: 'Overview' },
     { path: '/trucks', label: 'Vehicles' },
     { path: '/settlements', label: 'Settlements' },
     { path: '/repairs', label: 'Maintenance & Repairs' },
@@ -45,6 +46,7 @@ export default function Layout({ children }: LayoutProps) {
   // For non-logistics businesses, show a simplified dashboard
   const generalNavLinks = [
     { path: '/', label: 'Dashboard' },
+    { path: '/overview', label: 'Overview' },
   ]
   
   // Determine which nav links to show based on business type
