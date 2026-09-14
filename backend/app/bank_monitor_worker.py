@@ -41,7 +41,8 @@ def run_due(db, now, reader=read_balances):
             profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
             if not profile:
                 raise BankReadError('connection_required')
-            snapshot = reader(profile, rules)
+            snapshot = (reader(profile, rules, tenant_id=config.tenant_id)
+                        if reader is read_balances else reader(profile, rules))
             result = calculate(rules, snapshot, datetime.now(timezone.utc))
             run.status = result['status']
             run.result = result

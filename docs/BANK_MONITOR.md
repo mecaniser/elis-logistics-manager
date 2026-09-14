@@ -25,8 +25,11 @@ be reconciled before adding the worker. No Railway service was created or change
   `BANK_MONITOR_WORKER_ENABLED=true`; the image is disabled by default.
 - The web service needs `BANK_MONITOR_TENANT_IDS` plus its existing application
   authentication. Do not share bank login secrets with the frontend or web service.
-- Password-login secret names and a secure server MFA interface are not yet
-  implemented. Do not add unused bank passwords to Railway at this stage.
+- Password login reads `BANK_MONITOR_USERNAME_<tenant ID>` and
+  `BANK_MONITOR_PASSWORD_<tenant ID>` from the worker environment only. Add these
+  through the hosting provider secret settings, never chat or shell command text.
+  A secure server MFA interface is still unimplemented; keep the worker disabled
+  until operator recovery and a real server connection have been verified.
 
 The server entrypoint rejects an implicit/local SQLite database and stops cleanly
 on SIGTERM. Synthetic tests can still exercise the worker logic with SQLite;
@@ -71,12 +74,13 @@ comma-separated allowlist for the existing single application principal. This
 does not fix the repository's broader tenant-authority gaps in other routes.
 
 Do not put bank passwords in application forms, source control, logs, test data,
-or `VITE_*` variables. Protected runtime secrets can hold bank credentials for a
-future verified password-login adapter, but the current reader does not consume
-username/password variables. No bank credentials were added during implementation.
+or `VITE_*` variables. The reader now consumes tenant-specific username/password runtime secrets only
+when the saved session cannot show accounts. The login URL and field selectors
+were inspected on the actual Truliant login page. No bank credentials were added
+and no real credential submission was performed during implementation.
 
-The current reader expects a dedicated browser profile authenticated by the
-operator on the worker host. It does not extract cookies from Codex or personal
+The reader expects a dedicated, pre-provisioned private browser profile on the
+worker host. It can submit credentials once if its session has expired. It does not extract cookies from Codex or personal
 Chrome profiles. Profile storage contains sensitive session material; keep it
 outside the repository, restrict the directory to mode 0700, and restrict host
 access. MFA, CAPTCHA and expired sessions require user action, not bypasses.
@@ -129,3 +133,24 @@ DATABASE_URL=sqlite:////tmp/elis-bank-monitor-test.db python -m pytest tests/tes
 
 From the repository root, run `npm run build --prefix frontend` for TypeScript
 and the production bundle. No tests execute bank transfers or use bank passwords.
+
+## Login recovery guard
+
+Before filling credentials, the reader verifies the exact HTTPS login origin and
+path. It creates an empty private `.login-needs-review` file inside the profile
+before submitting. Only a successfully loaded account view clears that file.
+MFA, rejected credentials, timeouts and interrupted attempts leave it in place,
+preventing automatic password retries across restarts and subsequent daily runs.
+The marker contains no credentials or bank response text.
+
+`credentials_required` means worker secrets are missing; `mfa_required` means the
+observed MFA URL was reached; `login_review_required` means operator review is
+required before another attempt. These states do not complete MFA. No code-entry
+endpoint, remote browser access, CAPTCHA solver, or security-question automation
+is implemented. Do not clear the marker automatically. An operator must first
+resolve the sign-in on the dedicated server profile with the worker stopped, then
+remove the empty guard file if another credential attempt is appropriate.
+
+Validation: 21 synthetic tests pass across `tests/test_bank_monitor.py` and
+`tests/test_bank_login.py`. These verify durable retry blocking, origin checks,
+missing credentials, and simulated MFA/success, not real server authentication.
