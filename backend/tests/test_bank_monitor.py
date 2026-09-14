@@ -6,6 +6,7 @@ from app.services.truliant_reader import parse_card, BankReadError
 from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun
 from app.models.tenant import Tenant
 from app.bank_monitor_worker import run_due
+from app.bank_monitor_worker import main as worker_main
 from app.auth_utils import create_session_token, SESSION_COOKIE_NAME
 
 
@@ -89,6 +90,26 @@ def test_card_parser():
         parse_card('Checking 1111 Balance unavailable')
     with pytest.raises(ValueError):
         usd_cents('$1,23.45')
+
+
+def test_server_worker_disabled_by_default(monkeypatch):
+    monkeypatch.delenv('BANK_MONITOR_WORKER_ENABLED', raising=False)
+    assert worker_main() is None
+
+
+def test_server_worker_rejects_local_database(monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_WORKER_ENABLED', 'true')
+    monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
+    with pytest.raises(SystemExit, match='PostgreSQL'):
+        worker_main()
+
+
+def test_server_worker_requires_authorized_businesses(monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_WORKER_ENABLED', 'true')
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://example.invalid/test')
+    monkeypatch.delenv('BANK_MONITOR_TENANT_IDS', raising=False)
+    with pytest.raises(SystemExit, match='BANK_MONITOR_TENANT_IDS'):
+        worker_main()
 
 
 @pytest.fixture

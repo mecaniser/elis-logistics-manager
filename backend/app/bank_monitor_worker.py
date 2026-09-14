@@ -3,7 +3,8 @@
 No schedules start inside web workers. Every run is proposal-only.
 """
 import os
-import time
+import signal
+import threading
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
@@ -62,11 +63,20 @@ def run_due(db, now, reader=read_balances):
 
 def main():
     if os.getenv('BANK_MONITOR_WORKER_ENABLED') != 'true':
-        raise SystemExit('Set BANK_MONITOR_WORKER_ENABLED=true after connection setup.')
-    while True:
+        print('Bank monitor is disabled; no scheduled checks started.')
+        return
+    # Never silently start a server worker against a fallback SQLite database.
+    if not os.getenv('DATABASE_URL', '').startswith(('postgres://', 'postgresql://')):
+        raise SystemExit('Server worker requires an explicit PostgreSQL DATABASE_URL.')
+    if not os.getenv('BANK_MONITOR_TENANT_IDS', '').strip():
+        raise SystemExit('Server worker requires BANK_MONITOR_TENANT_IDS.')
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+    while not stop.is_set():
         with SessionLocal() as db:
             run_due(db, datetime.now(timezone.utc))
-        time.sleep(30)
+        stop.wait(30)
 
 
 if __name__ == '__main__':

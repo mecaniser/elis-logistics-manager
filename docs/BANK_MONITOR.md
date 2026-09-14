@@ -1,5 +1,46 @@
 # Bank Monitor: local implementation and remaining connection work
 
+Deployment decision: server only. The Mac/Codex browser is for development and
+inspection, not the scheduled runtime. No local scheduler or recurring Codex
+automation is installed.
+
+## Server deployment package
+
+Use a separate Railway service named `bank-monitor` in the ELIS application
+project. The CLI currently lists `Elis Pro Tech App` with existing `web` and
+`Postgres` services; the web service's source repository and active database must
+be reconciled before adding the worker. No Railway service was created or changed.
+
+- Service root: repository root.
+- Service configuration path: `/railway.bank-monitor.json` (set explicitly in
+  the new service; leave the existing web service's configuration unchanged).
+- Worker image: `Dockerfile.bank-monitor`, pinned Playwright and Chromium
+  installation, non-root UID 10001, one replica, no public domain or web port.
+- Persistent volume: `/data`. Provision each profile directory under
+  `/data/profiles/` with ownership UID 10001 and mode 0700. A deployment filesystem
+  alone does not preserve sessions across replacement containers.
+- Worker secrets: `DATABASE_URL` referencing the verified application database,
+  `BANK_MONITOR_TENANT_IDS`, and `BANK_MONITOR_PROFILE_<tenant ID>` pointing to the
+  corresponding profile path. Enable only after the connection is verified using
+  `BANK_MONITOR_WORKER_ENABLED=true`; the image is disabled by default.
+- The web service needs `BANK_MONITOR_TENANT_IDS` plus its existing application
+  authentication. Do not share bank login secrets with the frontend or web service.
+- Password-login secret names and a secure server MFA interface are not yet
+  implemented. Do not add unused bank passwords to Railway at this stage.
+
+The server entrypoint rejects an implicit/local SQLite database and stops cleanly
+on SIGTERM. Synthetic tests can still exercise the worker logic with SQLite;
+that does not install or enable a local scheduled process.
+
+The container configuration has not been built or deployed against Railway.
+Provisioning an authenticated session on a headless server is still a blocker:
+the interactive Codex session is not a server session. A protected server-side
+sign-in/MFA flow must be implemented and verified before this becomes unattended.
+
+References: [Railway configuration](https://docs.railway.com/config-as-code/reference),
+[Railway service filesystems](https://docs.railway.com/services),
+[Playwright browser installation](https://playwright.dev/python/docs/browsers).
+
 Status: proposal-only implementation. Not deployed, not connected to an unattended
 bank session, and not scheduled on a production host. No transfer execution code
 or endpoint exists. A completed check does not mean a shortfall has been funded.
