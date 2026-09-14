@@ -5,7 +5,8 @@ type Account = { nickname: string; last4: string }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string }
 const runtime = () => (window as any).chrome?.runtime
 const send = (extension: string, message: unknown): Promise<any> => new Promise((resolve, reject) => {
-  if (!/^[a-p]{32}$/.test(extension) || !runtime()?.sendMessage) return reject(new Error('Open ELIS in Chrome and enter the installed extension ID.'))
+  if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
+  if (!runtime()?.sendMessage) return reject(new Error('Chrome cannot see an enabled extension connection for this page. Reload ELIS Bank Form Assistant in chrome://extensions in this Chrome profile, then reload this page.'))
   runtime().sendMessage(extension, message, (response: any) => {
     if (runtime().lastError || !response) reject(new Error('Extension unavailable. Check installation and extension ID.'))
     else if (!response.ok) reject(new Error(response.error || 'Preparation stopped. Review the bank tab.'))
@@ -44,6 +45,15 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     } catch (e: any) { if (active.current) setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message || 'Unable to add draft.') }
     finally { if (active.current) setBusy(false) }
   }
+  const connect = async () => {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const response = await send(extension, { type: 'ELIS_PING' })
+      localStorage.setItem('elis-bank-extension-id', extension)
+      if (active.current) setNotice(`Chrome extension connected (${response.version || 'version unknown'}). No bank form opened or transfer prepared.`)
+    } catch (e: any) { if (active.current) setError(e.message) }
+    finally { if (active.current) setBusy(false) }
+  }
   const prepare = async (draft: Draft) => {
     setBusy(true); setError(''); setNotice('')
     let claimed = false
@@ -78,6 +88,7 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {notice && <p role="status" className="text-green-800">{notice}</p>}
     <label className="block text-sm">Chrome extension ID<input className="block border rounded p-2 w-full" value={extension} maxLength={32} onChange={e => setExtension(e.target.value.trim())} placeholder="From chrome://extensions after installation" /></label>
+    <button type="button" disabled={busy} onClick={connect} className="text-blue-700 underline disabled:opacity-50">Connect extension</button>
     <form onSubmit={create} className="space-y-3 border-t pt-4">
       <label className="block text-sm">Unique charge reference<input required maxLength={120} pattern="[A-Za-z0-9 .:_\-]+" className="block border rounded p-2 w-full" value={reference} onChange={e => { setReference(e.target.value); setReviewed(false) }} placeholder="Bank transaction reference, or date and bill identifier" /></label>
       <div className="flex flex-wrap gap-4">
