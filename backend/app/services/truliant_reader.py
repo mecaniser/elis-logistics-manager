@@ -74,6 +74,89 @@ def sign_in(page, profile, tenant_id):
     marker.unlink()  # Success is established by the authenticated account view.
 
 
+def pending_total(rows):
+    """Require explicit Pending -> Posted boundaries; never infer missing = zero."""
+    state = 'before'
+    total = 0
+    seen = set()
+    for row in rows:
+        section = row.get('section')
+        if section == 'pending transactions section':
+            if state != 'before':
+                raise BankReadError('pending_data_unavailable')
+            state = 'pending'
+        elif section == 'posted transactions section':
+            if state != 'pending':
+                raise BankReadError('pending_data_unavailable')
+            return total
+        elif state == 'pending':
+            key = row.get('id')
+            if not key or key in seen or not row.get('amount'):
+                raise BankReadError('pending_data_unavailable')
+            seen.add(key)
+            try:
+                amount = usd_cents(row['amount'])
+            except ValueError:
+                raise BankReadError('pending_data_unavailable') from None
+            total += max(0, -amount)  # Pending deposits cannot offset debits.
+    raise BankReadError('pending_data_unavailable')
+
+
+def read_pending(page, suffix):
+    frame = page.frame_locator('iframe#appContainer')
+    table = frame.get_by_role('table', name='account transactions', exact=True)
+    table.wait_for(state='visible', timeout=20000)
+    # The history heading exposes the full account number; compare in memory
+    # only, and never persist it or include it in exceptions/logging.
+    headings = frame.get_by_role('heading', level=2).all_text_contents()
+    if not any(re.search(r'(?<!\d)\d*' + re.escape(suffix) + r'\s*$', h) for h in headings):
+        raise BankReadError('account_identity_unverified')
+    rows = table.locator('tbody tr').evaluate_all("""rows => rows.map(row => {
+        const amount = row.querySelector('[id^="amount-value-cell-"]');
+        return {section: row.getAttribute('aria-label'),
+                id: amount ? amount.id : null,
+                amount: amount ? amount.innerText : null};
+    })""")
+    return pending_total(rows)
+
+
+def credit_details(rows):
+    values = {}
+    labels = {'Balance': 'outstanding_cents', 'Accrued Interest': 'accrued_interest_cents'}
+    for row in rows:
+        key = labels.get(row.get('label'))
+        if key:
+            if key in values:
+                raise BankReadError('credit_details_unavailable')
+            try:
+                value = usd_cents(row.get('amount', ''))
+            except ValueError:
+                raise BankReadError('credit_details_unavailable') from None
+            if value < 0:
+                raise BankReadError('credit_details_unavailable')
+            values[key] = value
+    if set(values) != set(labels.values()):
+        raise BankReadError('credit_details_unavailable')
+    # No payoff inference: accrued interest may have separate posting rules.
+    return values
+
+
+def read_credit_details(page, suffix):
+    frame = page.frame_locator('iframe#appContainer')
+    frame.get_by_role('button', name='Account Details', exact=True).click()
+    heading = frame.get_by_role('heading', level=1).filter(
+        has_text=re.compile(r'(?<!\d)\d*' + re.escape(suffix) + r'\s*$'))
+    heading.wait_for(state='visible', timeout=20000)
+    if heading.count() != 1:
+        raise BankReadError('account_identity_unverified')
+    rows = frame.locator('li[data-testid^="account-summary__detail-row__"]').evaluate_all(
+        """rows => rows.map(row => ({
+            label: row.querySelector('p')?.innerText.trim(),
+            amount: row.querySelector('h6')?.innerText.trim()
+        })).filter(row => ['Balance', 'Accrued Interest'].includes(row.label))""")
+    return credit_details(rows)
+
+
 def read_balances(profile_path, rules, tenant_id=None):
     # Imported lazily: the web application does not need a browser installation.
     try:
@@ -91,6 +174,7 @@ def read_balances(profile_path, rules, tenant_id=None):
         with sync_playwright() as p:
             context = p.chromium.launch_persistent_context(str(profile), headless=True)
             try:
+                observed_at = datetime.now(timezone.utc)
                 page = context.new_page()
                 page.goto(HOME, wait_until='domcontentloaded', timeout=45000)
                 frame = page.frame_locator('iframe#appContainer')
@@ -108,9 +192,37 @@ def read_balances(profile_path, rules, tenant_id=None):
                     suffix = re.search(r'\*{2,}(\d{4})\b', text)
                     if suffix and suffix.group(1) in needed:
                         accounts.append(parse_card(text))
-                # Pending extraction is deliberately not inferred from summary
-                # balances. Pending coverage fails closed until verified end-to-end.
-                return BalanceSnapshot(observed_at=datetime.now(timezone.utc), accounts=accounts)
+                if rules.basis == 'posted_and_pending' or rules.repayment.enabled:
+                    for checking in rules.checking:
+                        page.goto(HOME, wait_until='domcontentloaded', timeout=45000)
+                        cards.first.wait_for(state='visible', timeout=20000)
+                        matches = cards.filter(has_text=re.compile(r'\*{2,}' + re.escape(checking.last4) + r'\b'))
+                        if matches.count() != 1:
+                            raise BankReadError('account_identity_unverified')
+                        matches.click()
+                        try:
+                            pending = read_pending(page, checking.last4)
+                        except BankReadError:
+                            if rules.basis == 'posted_and_pending':
+                                raise
+                            continue  # Repayment remains blocked on missing evidence.
+                        for account in accounts:
+                            if account.last4 == checking.last4:
+                                account.pending_debits_cents = pending
+                if rules.repayment.enabled:
+                    for source in rules.sources:
+                        page.goto(HOME, wait_until='domcontentloaded', timeout=45000)
+                        cards.first.wait_for(state='visible', timeout=20000)
+                        matches = cards.filter(has_text=re.compile(r'\*{2,}' + re.escape(source.last4) + r'\b'))
+                        if matches.count() != 1:
+                            raise BankReadError('account_identity_unverified')
+                        matches.click()
+                        details = read_credit_details(page, source.last4)
+                        for account in accounts:
+                            if account.last4 == source.last4:
+                                for key, value in details.items():
+                                    setattr(account, key, value)
+                return BalanceSnapshot(observed_at=observed_at, accounts=accounts)
             finally:
                 context.close()
     except BankReadError:

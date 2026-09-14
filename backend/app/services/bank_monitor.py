@@ -59,6 +59,8 @@ class AccountBalance(StrictModel):
     eligible_income_cents: Optional[int] = Field(default=None, ge=0, strict=True)
     income_date: Optional[date] = None
     # Full amount owed, not amount due or available credit.
+    outstanding_cents: Optional[int] = Field(default=None, ge=0, strict=True)
+    accrued_interest_cents: Optional[int] = Field(default=None, ge=0, strict=True)
     payoff_cents: Optional[int] = Field(default=None, ge=0, strict=True)
     pending_debits_cents: Optional[int] = Field(default=None, ge=0, strict=True)
 
@@ -133,6 +135,7 @@ def calculate(rules: MonitorRules, snapshot: BalanceSnapshot, now: datetime):
     return {'status': 'insufficient_credit' if total_gap else ('review_required' if proposals else 'no_shortfall'),
             'accounts': accounts, 'proposals': proposals, 'uncovered_cents': total_gap,
             'observed_at': snapshot.observed_at.isoformat(), 'basis': rules.basis,
+            'credit_accounts': [{**balances[a.last4].model_dump(), 'nickname': a.nickname} for a in rules.sources],
             'repayment': calculate_repayment(rules, snapshot, now),
             'transfers_executed': False}
 

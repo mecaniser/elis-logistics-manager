@@ -190,3 +190,32 @@ Validation after this addition: 31 focused synthetic tests pass, frontend
 TypeScript/Vite build passes, and the local browser accepted and saved business
 credit first / HELOC second with repayment proposals enabled for the synthetic
 tenant. No production settings, bank credentials or banking balances changed.
+
+
+## Observed history adapter update
+
+The read-only adapter now follows configured checking cards into account history
+and collects pending debit amounts only between explicit Pending and Posted
+section boundaries. Pending credits never offset pending debits. Missing sections,
+truncated pending lists, duplicate transaction IDs and malformed amounts stop
+pending coverage; absence of a Pending section is not yet proof of zero. The app
+now exposes posted-plus-pending coverage as an explicit setting. The existing
+posted-only setting is preserved until changed.
+
+When repayment proposals are requested, the reader also opens each credit source's
+Account Details and collects separately labeled Balance and Accrued Interest.
+Neither Amount Due nor Balance plus Accrued Interest is assumed to be a payoff.
+The result and UI keep these observations separate from a verified payoff quote.
+No full account numbers or transaction descriptions are persisted by this adapter.
+Snapshot time starts before collection so slow navigation cannot make old balances
+appear fresh at the end of a run.
+
+The live bank UI and DOM structure were inspected. The underlying worker browser
+has not been authenticated or exercised on the server. Income classification,
+cash availability excluding overdraft credit, payoff verification and server MFA
+remain incomplete. Earlier descriptions saying pending extraction is entirely
+unimplemented are superseded by this section; production acceptance is still open.
+
+Validation: 42 focused tests pass. The new tests cover pending debit direction,
+explicit empty versus missing sections, malformed/duplicate/truncated rows, and
+keeping credit balance/interest separate from payoff. No banking mutations occurred.

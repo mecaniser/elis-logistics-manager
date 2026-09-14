@@ -6,6 +6,7 @@ type Account = { nickname: string; last4: string }
 type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number | null }
 type Rules = { repayment: Repayment; enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
 type Run = { id: number; scheduled_date: string; started_at: string; status: string; result: {
+  credit_accounts?: { last4: string; nickname: string; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
   repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
   observed_at?: string; uncovered_cents?: number; message?: string;
   accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents: number }[];
@@ -84,6 +85,11 @@ export default function BankMonitor() {
             <tbody>{latest.result.accounts.map(a => <tr key={a.last4} className="border-t"><td className="py-3">{a.nickname} · ••{a.last4}</td><td>{dollars(a.current_cents)}</td><td>{a.available_cents === null ? 'Unknown' : dollars(a.available_cents)}</td><td>{dollars(a.needed_cents)}</td></tr>)}</tbody>
           </table>}</div>
           {latest.result.proposals?.map((p, i) => <p key={i}>Proposed: {dollars(p.amount_cents)} from ••{p.from_last4} to ••{p.to_last4}</p>)}
+          {latest.result.credit_accounts?.some(a => a.outstanding_cents !== null) && <div className="border-t pt-3">
+            <h3 className="font-medium">Credit balances at last check</h3>
+            {latest.result.credit_accounts.map(a => <p key={a.last4}>{a.nickname} · ••{a.last4}: balance {a.outstanding_cents === null ? 'unknown' : dollars(a.outstanding_cents)}, accrued interest {a.accrued_interest_cents === null ? 'unknown' : dollars(a.accrued_interest_cents)}</p>)}
+            <p className="text-sm text-gray-600">These are reported balances, not verified payoff quotes.</p>
+          </div>}
           {latest.result.repayment && <div className="border-t pt-3">
             <h3 className="font-medium">Friday credit repayment</h3>
             <p className="capitalize">{label(latest.result.repayment.status)}</p>
@@ -108,11 +114,17 @@ export default function BankMonitor() {
           </div>)}
           <button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="text-blue-700 underline disabled:opacity-50" onClick={() => setRules({ ...rules, [group]: [...rules[group], { nickname: '', last4: '' }] })}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button>
         </fieldset>)}
-        <p className="text-sm text-gray-600">Calculation uses the current posted balance and a $0 target. Available balance is shown for context because it may include credit coverage. Pending debits are not yet included in scheduled proposals.</p>
+        <label className="block text-sm">Shortfall coverage
+          <select className="block border rounded p-2" value={rules.basis} onChange={e => setRules({ ...rules, basis: e.target.value })}>
+            <option value="posted">Posted balance only</option>
+            <option value="posted_and_pending">Posted balance plus verified pending debits</option>
+          </select>
+        </label>
+        <p className="text-sm text-gray-600">Pending coverage stops when pending transactions cannot be verified. Available balance may include credit coverage and is never treated as cash for repayment. The separate server reader still needs live verification.</p>
         <fieldset className="border-t pt-4 space-y-3">
           <legend className="font-medium">Friday income repayment</legend>
           <p className="text-sm text-gray-600">At the Friday 5:30 p.m. check, preserve pending debits in both checking accounts and propose repayment from verified cleared business or salary income. No extra reserve. Pay the business credit line first, then the HELOC after the business line is fully paid.</p>
-          <p className="text-sm text-amber-800">The bank connection does not yet collect the income and payoff details needed for these proposals. Missing information blocks repayment.</p>
+          <p className="text-sm text-amber-800">The bank reader can collect pending debits and credit balances, but cleared income, cash availability without borrowing, and payoff amounts still need verification. Missing information blocks repayment.</p>
           {[0, 1].map(index => <label key={index} className="block text-sm">{index === 0 ? 'Repay first: business credit line' : 'Repay second: HELOC'}
             <select className="block border rounded p-2" value={rules.repayment.priority[index] || ''} onChange={e => {
               const priority = [...rules.repayment.priority]; priority[index] = e.target.value
