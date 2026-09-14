@@ -39,3 +39,28 @@ No bank-monitor worker service exists. No bank-monitor changes are deployed.
 Next engineering milestone: production worker deployment and authenticated,
 read-only one-shot collection. Credentials and MFA require user participation;
 no production transfer is part of this milestone.
+
+
+## Assisted Chrome milestone — current local candidate
+
+Implemented: tenant-scoped reviewed whole-charge draft queue; Cvr memo validation;
+one-time atomic preparation claim; Chrome extension handoff; current-date,
+whole-charge credit-capacity and occupied-form checks; separate preparation status;
+posted source/destination matching with hashed evidence and reuse rejection.
+The extension never clicks transfer submission or scheduling controls.
+
+Verified: 42 existing backend tests passed before the new draft endpoints; all 9
+new endpoint tests now pass, as do 10 simulated extension tests. TypeScript/Vite
+build passes. The local synthetic browser saved a draft and displayed an actionable
+missing-extension error without claiming it. No real transfer was executed.
+
+Pending: user approval/installation in Google Chrome; production account
+configuration; installed-extension form-fill acceptance; user-submitted transfer
+and matching acceptance; safe reset/recovery UI; automatic bank-charge ingestion;
+server deployment and notification delivery. Current Chrome pilot uses a manually
+reviewed draft, not an automatically populated charge queue. A Chrome restart or
+lost tab requires operator review; do not bypass unresolved draft locks.
+
+Installation and precise permission scope are documented in
+browser-extension/elis-bank-assistant/README.md. Installation approval is pending
+in this conversation. No deployment or bank credential changes were made.

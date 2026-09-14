@@ -55,3 +55,112 @@ def save(rules: MonitorRules, request: Request, tenant_id: int = Depends(bank_te
     config.updated_at = datetime.now(timezone.utc)
     db.commit()
     return {'saved': True, 'rules': config.rules, 'mode': 'proposal_only'}
+
+
+# These endpoints prepare forms only. No bank submission endpoint exists.
+from uuid import uuid4
+from pydantic import Field
+from sqlalchemy.exc import IntegrityError
+from app.services.bank_monitor import StrictModel
+from app.models.bank_monitor import BankTransferDraft
+
+
+class DraftInput(StrictModel):
+    charge_reference: str = Field(min_length=3, max_length=120, pattern=r'^[A-Za-z0-9 .:_-]+$')
+    amount_cents: int = Field(gt=0, le=100000000, strict=True)
+    from_last4: str = Field(pattern=r'^[0-9]{4}$')
+    to_last4: str = Field(pattern=r'^[0-9]{4}$')
+    memo: str = Field(min_length=5, max_length=34, pattern=r'^Cvr [A-Za-z0-9 ._-]+$')
+
+
+def draft_json(d):
+    return {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status')}
+
+
+def draft_action(request):
+    if request.headers.get('x-bank-monitor-action') != 'reviewed-transfer':
+        raise HTTPException(403, 'Missing reviewed transfer action.')
+
+
+@router.get('/drafts')
+def list_drafts(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    return [draft_json(d) for d in db.query(BankTransferDraft).filter_by(tenant_id=tenant_id).order_by(BankTransferDraft.created_at.desc()).limit(100)]
+
+
+@router.post('/drafts')
+def create_draft(data: DraftInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        raise HTTPException(409, 'Configure bank accounts first.')
+    rules = MonitorRules.model_validate(config.rules)
+    if data.from_last4 not in {a.last4 for a in rules.sources} or data.to_last4 not in {a.last4 for a in rules.checking}:
+        raise HTTPException(422, 'Use a configured credit source and checking destination.')
+    draft = BankTransferDraft(id=str(uuid4()), tenant_id=tenant_id, **data.model_dump(),
+                              status='reviewed', created_at=datetime.now(timezone.utc))
+    db.add(draft)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'A draft already exists for this charge reference.') from None
+    return draft_json(draft)
+
+
+@router.post('/drafts/{draft_id}/prepare')
+def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    draft = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).first()
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not draft or not config:
+        raise HTTPException(409, 'Draft unavailable.')
+    rules = MonitorRules.model_validate(config.rules)
+    if draft.from_last4 not in {a.last4 for a in rules.sources} or draft.to_last4 not in {a.last4 for a in rules.checking}:
+        raise HTTPException(409, 'Configured accounts changed. Review the draft.')
+    # Reserve before browser dispatch; timeouts cannot silently reprepare a draft.
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').update({'status': 'preparation_requested'})
+    if not updated:
+        db.rollback()
+        raise HTTPException(409, 'Draft unavailable or already requested. Check bank history before another attempt.')
+    db.commit()
+    return draft_json(db.get(BankTransferDraft, draft_id))
+
+
+class DraftOutcome(StrictModel):
+    status: str = Field(pattern=r'^(prepared_awaiting_submission|preparation_failed)$')
+
+
+@router.post('/drafts/{draft_id}/outcome')
+def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='preparation_requested').update({'status': data.status})
+    if not updated:
+        db.rollback()
+        raise HTTPException(409, 'Draft state changed; refresh the queue.')
+    db.commit()
+    return {'status': data.status, 'transfers_executed': False}
+
+
+class HistoryEvidence(StrictModel):
+    source: str = Field(pattern=r'^[a-f0-9]{64}$')
+    destination: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@router.post('/drafts/{draft_id}/history-match')
+def history_match(draft_id: str, evidence: HistoryEvidence, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    if evidence.source == evidence.destination:
+        raise HTTPException(422, 'Separate source and destination history evidence is required.')
+    # Evidence is reported by the signed-in user's extension, not a server bank API.
+    try:
+        updated = db.query(BankTransferDraft).filter(BankTransferDraft.id == draft_id,
+            BankTransferDraft.tenant_id == tenant_id,
+            BankTransferDraft.status.in_(['preparation_requested', 'prepared_awaiting_submission', 'preparation_failed'])).update({'status': 'bank_history_matched', 'source_evidence': evidence.source, 'destination_evidence': evidence.destination})
+        if not updated:
+            db.rollback()
+            raise HTTPException(409, 'Draft is not awaiting verification.')
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'Bank evidence is already associated with another draft.') from None
+    return {'status': 'bank_history_matched', 'verification_source': 'user_browser_extension'}

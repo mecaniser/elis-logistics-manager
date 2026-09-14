@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
+import BankTransferQueue from './BankTransferQueue'
 import { useTenant } from '../contexts/TenantContext'
 
 type Account = { nickname: string; last4: string }
@@ -84,7 +85,7 @@ export default function BankMonitor() {
             <thead><tr><th className="py-2">Checking</th><th>Current</th><th>Available</th><th>Needed</th></tr></thead>
             <tbody>{latest.result.accounts.map(a => <tr key={a.last4} className="border-t"><td className="py-3">{a.nickname} · ••{a.last4}</td><td>{dollars(a.current_cents)}</td><td>{a.available_cents === null ? 'Unknown' : dollars(a.available_cents)}</td><td>{dollars(a.needed_cents)}</td></tr>)}</tbody>
           </table>}</div>
-          {latest.result.proposals?.map((p, i) => <p key={i}>Proposed: {dollars(p.amount_cents)} from ••{p.from_last4} to ••{p.to_last4}</p>)}
+          {!!latest.result.proposals?.length && <p className="text-sm text-gray-600">This historical run contains aggregate balance estimates. Prepare individual full-charge transfers in the queue below; these estimates are not executable drafts.</p>}
           {latest.result.credit_accounts?.some(a => a.outstanding_cents !== null) && <div className="border-t pt-3">
             <h3 className="font-medium">Credit balances at last check</h3>
             {latest.result.credit_accounts.map(a => <p key={a.last4}>{a.nickname} · ••{a.last4}: balance {a.outstanding_cents === null ? 'unknown' : dollars(a.outstanding_cents)}, accrued interest {a.accrued_interest_cents === null ? 'unknown' : dollars(a.accrued_interest_cents)}</p>)}
@@ -100,12 +101,13 @@ export default function BankMonitor() {
         </>}
         <a href="https://www.truliantfcuonline.org/dbank/live/app/home" target="_blank" rel="noreferrer" className="inline-block text-blue-700 underline">Open Truliant</a>
       </section>
+      <BankTransferQueue key={currentTenant!.id} tenantId={currentTenant!.id} checking={data.rules.checking} sources={data.rules.sources} />
       <form onSubmit={save} className="bg-white border rounded-lg p-5 space-y-5">
         <h2 className="text-lg font-semibold">Monitoring settings</h2>
         <p className="text-sm text-gray-600">Enter nicknames and last four digits only. Credentials are configured separately on the worker host.</p>
         {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3">
           <legend className="font-medium">{group === 'checking' ? 'Checking accounts' : 'Funding sources, in priority order'}</legend>
-          {group === 'sources' && <p className="text-sm text-gray-600">Add your HELOC first and Preferred Line of Credit second. If the first cannot cover the amount, the proposal uses the next source for the remainder.</p>}
+          {group === 'sources' && <p className="text-sm text-gray-600">Add your HELOC first and Preferred Line of Credit second. For a charge-level draft, use the first source that can cover the whole charge; do not split it.</p>}
           {rules[group].map((account, index) => <div key={index} className="flex flex-wrap items-end gap-3">
             <label className="text-sm flex-1">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`} nickname
               <input required maxLength={80} value={account.nickname} onChange={e => editAccount(group, index, 'nickname', e.target.value)} className="block border rounded p-2 w-full" /></label>
