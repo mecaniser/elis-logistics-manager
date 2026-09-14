@@ -18,6 +18,7 @@ import TaxYearSummary from './pages/TaxYearSummary'
 import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
 import Login from './pages/Login'
+import BankMonitor from './pages/BankMonitor'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
                   <Layout>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
+                      <Route path="/bank-monitor" element={<BankMonitor />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
                       <Route path="/settlements" element={<Settlements />} />

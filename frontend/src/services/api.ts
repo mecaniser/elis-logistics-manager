@@ -1001,3 +1001,8 @@ export const accountingApi = {
     return api.get('/accounting/export/tax-package', { params: { year }, responseType: 'blob' })
   },
 }
+
+export const bankMonitorApi = {
+  get: (tenantId: number) => axios.get('/api/bank-monitor', { withCredentials: true, headers: { 'X-Tenant-ID': String(tenantId) } }),
+  save: (tenantId: number, rules: unknown) => axios.put('/api/bank-monitor', rules, { withCredentials: true, headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'save-settings' } }),
+}

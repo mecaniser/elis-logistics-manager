@@ -31,7 +31,7 @@ export function getNavLinks(businessType?: string): NavLink[] {
   if (businessType === 'logistics') {
     links.push(...LOGISTICS_LINKS)
   }
-  links.push({ path: '/accounting', label: 'Accounting' })
+  links.push({ path: '/accounting', label: 'Accounting' }, { path: '/bank-monitor', label: 'Bank Monitor' })
   return links
 }
 
