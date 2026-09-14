@@ -1,13 +1,13 @@
-import {allowedSender, validDraft, TRANSFERS} from './contract.js';
+import {allowedSender, validDraft, boundDraft, TRANSFERS} from './contract.js';
 import {openAccount, findPostedEntry} from './history.js';
 import {fillForm} from './fill-form.js';
 let busy = false;
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
-  if(!allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
+  if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:'0.1.0'});return;}
   if(message?.type==='ELIS_ACK' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(async ({activeDraft})=>{
-      if(activeDraft?.id===message.id && activeDraft?.status==='matched') await chrome.storage.session.remove('activeDraft');
+      if(activeDraft?.id===message.id && activeDraft?.status==='matched' && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id) await chrome.storage.session.remove('activeDraft');
       reply({ok:true});
     }); return true;
   }
@@ -17,7 +17,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   (async()=>{
     const existing=await chrome.storage.session.get('activeDraft');
     if(message.type==='ELIS_VERIFY') {
-      if(!existing.activeDraft || existing.activeDraft.id!==message.draft.id || !existing.activeDraft.tabId)
+      if(!boundDraft(existing.activeDraft,message.draft,sender) || !existing.activeDraft.tabId)
         throw new Error('No active preparation for this draft.');
       const tabId=existing.activeDraft.tabId;
       const bankDate=existing.activeDraft.bankDate;
@@ -47,10 +47,11 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       return;
     }
     if(existing.activeDraft) throw new Error('A transfer is already awaiting review. Finish checking it before preparing another.');
+    await approvePreparation(message.draft);
     // Persist before opening/filling, including across service-worker restarts.
-    await chrome.storage.session.set({activeDraft:{id:message.draft.id,status:'requested'}});
+    await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'requested'}});
     const tab=await chrome.tabs.create({url:TRANSFERS,active:true});
-    await chrome.storage.session.set({activeDraft:{id:message.draft.id,tabId:tab.id,status:'requested'}});
+    await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:'requested'}});
     const end=Date.now()+25000;
     while(Date.now()<end) {
       const current=await chrome.tabs.get(tab.id);
@@ -59,8 +60,32 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     const results=await chrome.scripting.executeScript({target:{tabId:tab.id},func:fillForm,args:[message.draft]});
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
-    await chrome.storage.session.set({activeDraft:{id:message.draft.id,tabId:tab.id,status:result.ok?'prepared':'needs_review',bankDate:new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date())}});
+    await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:result.ok?'prepared':'needs_review',bankDate:new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date())}});
     reply(result);
   })().catch(()=>reply({ok:false,error:'Preparation stopped. Inspect the bank tab; do not assume completion or retry blindly.'})).finally(()=>{busy=false;});
   return true;
 });
+
+
+// A compromised ELIS page cannot authorize preparation by itself. Approval is
+// rendered on an extension-owned page, never in web-page HTML.
+async function approvePreparation(draft) {
+  const nonce = crypto.randomUUID();
+  await chrome.storage.session.set({approval:{nonce,draft}});
+  const tab = await chrome.tabs.create({url:chrome.runtime.getURL('approve.html'),active:true});
+  try {
+    await new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>finish(false),120000);
+      function finish(approved) {
+        clearTimeout(timeout); chrome.runtime.onMessage.removeListener(listener);
+        approved ? resolve() : reject(new Error('Preparation approval declined or expired.'));
+      }
+      function listener(message,sender,reply) {
+        if(sender.id!==chrome.runtime.id || sender.tab?.id!==tab.id || sender.url!==chrome.runtime.getURL('approve.html') || message?.nonce!==nonce) return;
+        if(!['approve','cancel'].includes(message.action)) return;
+        reply({ok:true}); finish(message.action==='approve');
+      }
+      chrome.runtime.onMessage.addListener(listener);
+    });
+  } finally { await chrome.storage.session.remove('approval'); await chrome.tabs.remove(tab.id).catch(()=>{}); }
+}

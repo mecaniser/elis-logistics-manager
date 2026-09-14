@@ -1,10 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "ELIS Bank Form Assistant",
-  "version": "0.1.0",
+  "name": "ELIS Bank Form Assistant \u2014 Local Pilot",
+  "version": "0.1.1",
   "description": "Prepare reviewed Truliant forms. Never submits or schedules transfers.",
-  "permissions": ["scripting", "storage"],
-  "host_permissions": ["https://www.truliantfcuonline.org/*"],
-  "externally_connectable": {"matches": ["https://www.elisprotech.com/*", "http://127.0.0.1/*"]},
-  "background": {"service_worker": "background.js", "type": "module"}
+  "permissions": [
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.truliantfcuonline.org/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://127.0.0.1/bank-monitor"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  }
 }

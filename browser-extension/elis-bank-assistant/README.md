@@ -1,6 +1,6 @@
 # ELIS Bank Form Assistant — Chrome pilot
 
-Status: implementation and simulated tests ready; not installed or live-accepted.
+Status: version 0.1.1 local pilot, targeted security hardening and simulated tests complete; not installed or live-accepted.
 No transfer submission, recurring payment, or scheduled-payment code exists.
 
 ## Install locally
@@ -15,10 +15,10 @@ No transfer submission, recurring payment, or scheduled-payment code exists.
    not a credential. Sign into Truliant in the same Chrome profile before testing.
 
 Permission scope: the extension can read and modify pages on
-`https://www.truliantfcuonline.org/*`, open a bank tab, and retain a draft ID/tab ID
+`https://www.truliantfcuonline.org/*`, open a bank tab, and retain the reviewed draft and tab binding
 in Chrome session storage. It does not read password fields or cookies and has
-no password storage. Only the ELIS bank-monitor page on the explicit production
-origin or local port 18081 can send requests. No third-party service receives
+no password storage. Only the local ELIS bank-monitor page on port 18081 can send requests. Production
+origin access is disabled in this pilot build. No third-party service receives
 bank data. Only hashed transaction references return to ELIS for matching.
 
 Do not confuse the synthetic preview tenant/accounts with real account setup.
@@ -32,7 +32,8 @@ An actual pilot requires the intended business/account configuration first.
   bank charge reference and a `Cvr` memo (34 ASCII characters maximum).
 - Choose a source that covers the WHOLE charge, HELOC first when sufficient;
   otherwise select Preferred Line of Credit. No splitting or sweeping credit.
-- Click **Prepare in Truliant**. The extension opens one dedicated bank tab,
+- Click **Prepare in Truliant**. Review the extension-owned screen and choose
+  **Approve form preparation**. The extension then opens one dedicated bank tab,
   validates source availability and today's date, and fills accounts/amount/memo.
   It refuses to overwrite an occupied form. It never clicks Make transfer.
 - The user reviews and submits in the bank, including any confirmation or MFA.
@@ -69,3 +70,22 @@ memos require review. Actual submitted transfer wording is not yet live-verified
 `npm test` in this folder runs simulated extension tests. Backend draft tests cover
 auth/tenant scope, account validation, repeated clicks, and evidence reuse.
 Passing them does not prove the installed Chrome-to-bank flow works.
+
+
+## Security review 0.1.1
+
+Verification is bound to the originally prepared amount, accounts, memo, origin,
+and ELIS tab. Subframe and other-extension requests are rejected. Preparation
+requires approval on an extension-owned page with a one-use request nonce and a
+two-minute expiry. Page text is rendered using textContent. Production callers
+are disabled; do not deploy this local-only build as a production extension.
+
+Residual risks: Truliant page-modification permission is powerful. A malicious
+change to the installed unpacked code or a compromised browser/host can defeat
+application-level safeguards. The server's history-match endpoint trusts the
+signed-in client and is not independent cryptographic proof of a bank transfer.
+The pilot must not be treated as an authoritative accounting feed. No independent
+security audit or installed-browser acceptance has been performed.
+
+The tool-driven installation attempt was blocked by browser URL security policy.
+The user must install manually using the steps above; no workaround was attempted.

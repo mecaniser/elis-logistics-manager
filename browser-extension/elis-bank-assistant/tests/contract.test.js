@@ -5,7 +5,7 @@ import {allowedSender,validDraft} from '../contract.js';
 import {fillForm} from '../fill-form.js';
 const draft={id:'12345678-1234-1234-1234-123456789012',amount_cents:11820,from_last4:'2222',to_last4:'1111',memo:'Cvr Utility 0914'};
 test('only exact ELIS origins and bank-monitor route may request preparation',()=>{
-  assert(allowedSender('https://www.elisprotech.com/bank-monitor'));
+  assert(!allowedSender('https://www.elisprotech.com/bank-monitor'));
   assert(allowedSender('http://127.0.0.1:18081/bank-monitor'));
   for(const url of ['https://evil.test/bank-monitor','https://www.elisprotech.com.evil.test/bank-monitor','http://127.0.0.1:9999/bank-monitor','https://www.elisprotech.com/']) assert(!allowedSender(url));
 });
@@ -42,4 +42,14 @@ test('whole-charge funding check stops before amount entry when credit is insuff
   const result=await fillForm(draft);
   assert.equal(result.ok,false); assert.match(result.error,/whole charge/);
   assert.equal(accountChosen,false); assert.equal(amount.value,''); assert.equal(memo.value,'');
+});
+
+
+test('verification is bound to the original draft, origin and ELIS tab', async()=>{
+  const {boundDraft}=await import('../contract.js');
+  const sender={url:'http://127.0.0.1:18081/bank-monitor',tab:{id:7}};
+  const active={draft,origin:'http://127.0.0.1:18081',elisTabId:7};
+  assert(boundDraft(active,draft,sender));
+  for(const change of [{memo:'Cvr Different'},{amount_cents:1},{from_last4:'9999'},{to_last4:'9999'}]) assert(!boundDraft(active,{...draft,...change},sender));
+  assert(!boundDraft(active,draft,{...sender,tab:{id:8}}));
 });
