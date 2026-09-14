@@ -3,8 +3,10 @@ import { bankMonitorApi } from '../services/api'
 import { useTenant } from '../contexts/TenantContext'
 
 type Account = { nickname: string; last4: string }
-type Rules = { enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
+type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number | null }
+type Rules = { repayment: Repayment; enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
 type Run = { id: number; scheduled_date: string; started_at: string; status: string; result: {
+  repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
   observed_at?: string; uncovered_cents?: number; message?: string;
   accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
@@ -12,7 +14,7 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
 type Dashboard = { rules: Rules; next_check: string; runs: Run[] }
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
-const defaults: Rules = { enabled: false, checking: [], sources: [], basis: 'posted', buffer_cents: 0 }
+const defaults: Rules = { repayment: { enabled: false, priority: [], reserve_cents: 0 }, enabled: false, checking: [], sources: [], basis: 'posted', buffer_cents: 0 }
 
 export default function BankMonitor() {
   const { currentTenant } = useTenant()
@@ -31,7 +33,7 @@ export default function BankMonitor() {
     let active = true
     setData(null); setError(''); setNotice(''); setLoading(true)
     bankMonitorApi.get(tenantId).then(({ data: value }) => {
-      if (active) { setData(value); setRules(value.rules); setLoadedTenant(tenantId) }
+      if (active) { setData(value); setRules({ ...value.rules, repayment: value.rules.repayment || defaults.repayment }); setLoadedTenant(tenantId) }
     }).catch((e) => {
       if (active) setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Unable to load bank monitoring.')
     }).finally(() => { if (active) setLoading(false) })
@@ -82,6 +84,12 @@ export default function BankMonitor() {
             <tbody>{latest.result.accounts.map(a => <tr key={a.last4} className="border-t"><td className="py-3">{a.nickname} · ••{a.last4}</td><td>{dollars(a.current_cents)}</td><td>{a.available_cents === null ? 'Unknown' : dollars(a.available_cents)}</td><td>{dollars(a.needed_cents)}</td></tr>)}</tbody>
           </table>}</div>
           {latest.result.proposals?.map((p, i) => <p key={i}>Proposed: {dollars(p.amount_cents)} from ••{p.from_last4} to ••{p.to_last4}</p>)}
+          {latest.result.repayment && <div className="border-t pt-3">
+            <h3 className="font-medium">Friday credit repayment</h3>
+            <p className="capitalize">{label(latest.result.repayment.status)}</p>
+            {latest.result.repayment.status === 'repayment_data_required' && <p>Verified cleared income, pending debits, cash available without borrowing, and full credit balances are required before proposing repayment.</p>}
+            {latest.result.repayment.proposals.map((p, i) => <p key={i}>Repayment proposed: {dollars(p.amount_cents)} from ••{p.from_last4} to ••{p.to_last4}</p>)}
+          </div>}
           {!!latest.result.uncovered_cents && <p className="text-red-700">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}. Listed credit cannot cover the full amount.</p>}
         </>}
         <a href="https://www.truliantfcuonline.org/dbank/live/app/home" target="_blank" rel="noreferrer" className="inline-block text-blue-700 underline">Open Truliant</a>
@@ -101,6 +109,20 @@ export default function BankMonitor() {
           <button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="text-blue-700 underline disabled:opacity-50" onClick={() => setRules({ ...rules, [group]: [...rules[group], { nickname: '', last4: '' }] })}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button>
         </fieldset>)}
         <p className="text-sm text-gray-600">Calculation uses the current posted balance and a $0 target. Available balance is shown for context because it may include credit coverage. Pending debits are not yet included in scheduled proposals.</p>
+        <fieldset className="border-t pt-4 space-y-3">
+          <legend className="font-medium">Friday income repayment</legend>
+          <p className="text-sm text-gray-600">At the Friday 5:30 p.m. check, preserve pending debits in both checking accounts and propose repayment from verified cleared business or salary income. No extra reserve. Pay the business credit line first, then the HELOC after the business line is fully paid.</p>
+          <p className="text-sm text-amber-800">The bank connection does not yet collect the income and payoff details needed for these proposals. Missing information blocks repayment.</p>
+          {[0, 1].map(index => <label key={index} className="block text-sm">{index === 0 ? 'Repay first: business credit line' : 'Repay second: HELOC'}
+            <select className="block border rounded p-2" value={rules.repayment.priority[index] || ''} onChange={e => {
+              const priority = [...rules.repayment.priority]; priority[index] = e.target.value
+              setRules({ ...rules, repayment: { ...rules.repayment, priority } })
+            }}>
+              <option value="">Select credit source</option>
+              {rules.sources.filter(a => /^[0-9]{4}$/.test(a.last4)).map(a => <option key={a.last4} value={a.last4}>{a.nickname} · ••{a.last4}</option>)}
+            </select></label>)}
+          <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.repayment.enabled} onChange={e => setRules({ ...rules, repayment: { ...rules.repayment, enabled: e.target.checked, reserve_cents: 0 } })} />Include Friday repayment proposals when all required data is verified</label>
+        </fieldset>
         <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.enabled} onChange={e => setRules({ ...rules, enabled: e.target.checked })} />Request daily checks at 5:30 p.m. Eastern, including weekends</label>
         <p className="text-sm text-gray-600">{rules.enabled ? `Next scheduled time: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York' })} Eastern. This is a schedule, not confirmation that a worker is connected.` : 'Schedule is paused.'}</p>
         <button disabled={saving} className="bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">{saving ? 'Saving…' : 'Save settings'}</button>

@@ -1,5 +1,5 @@
 """Balance monitoring and proposal calculation. This module cannot move money."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo
@@ -18,7 +18,14 @@ class AccountRule(StrictModel):
     last4: str = Field(pattern=r'^\d{4}$')
 
 
+class RepaymentRules(StrictModel):
+    enabled: bool = False
+    priority: List[str] = Field(default_factory=list, max_length=5)
+    reserve_cents: Optional[int] = Field(default=None, ge=0, le=100000000, strict=True)
+
+
 class MonitorRules(StrictModel):
+    repayment: RepaymentRules = Field(default_factory=RepaymentRules)
     enabled: bool = False
     checking: List[AccountRule] = Field(default_factory=list, max_length=10)
     # Ordered by the user; never infer funding authority from account ownership.
@@ -33,6 +40,11 @@ class MonitorRules(StrictModel):
             raise ValueError('Account suffixes must be unique across checking and funding sources.')
         if self.enabled and (not self.checking or not self.sources):
             raise ValueError('Choose checking accounts and funding sources before enabling checks.')
+        priority = self.repayment.priority
+        if len(priority) != len(set(priority)) or any(x not in {a.last4 for a in self.sources} for x in priority):
+            raise ValueError('Repayment priorities must be unique configured credit sources.')
+        if self.repayment.enabled and (not self.checking or not priority or self.repayment.reserve_cents is None):
+            raise ValueError('Repayment needs checking accounts, credit priority and an explicit reserve.')
         return self
 
 
@@ -41,6 +53,13 @@ class AccountBalance(StrictModel):
     current_cents: Optional[int] = Field(default=None, strict=True)
     available_cents: Optional[int] = Field(default=None, strict=True)
     available_credit_cents: Optional[int] = Field(default=None, ge=0, strict=True)
+    # Verified cash withdrawable without borrowing, after holds. Never use the
+    # bank's generic available balance as a substitute for this value.
+    settled_cash_cents: Optional[int] = Field(default=None, strict=True)
+    eligible_income_cents: Optional[int] = Field(default=None, ge=0, strict=True)
+    income_date: Optional[date] = None
+    # Full amount owed, not amount due or available credit.
+    payoff_cents: Optional[int] = Field(default=None, ge=0, strict=True)
     pending_debits_cents: Optional[int] = Field(default=None, ge=0, strict=True)
 
 
@@ -114,6 +133,7 @@ def calculate(rules: MonitorRules, snapshot: BalanceSnapshot, now: datetime):
     return {'status': 'insufficient_credit' if total_gap else ('review_required' if proposals else 'no_shortfall'),
             'accounts': accounts, 'proposals': proposals, 'uncovered_cents': total_gap,
             'observed_at': snapshot.observed_at.isoformat(), 'basis': rules.basis,
+            'repayment': calculate_repayment(rules, snapshot, now),
             'transfers_executed': False}
 
 
@@ -123,3 +143,50 @@ def usd_cents(text: str):
     if not re.fullmatch(r'-?\$(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}', value):
         raise ValueError('Unrecognized bank amount.')
     return int(Decimal(value.replace('$', '').replace(',', '')) * 100)
+
+
+def calculate_repayment(rules: MonitorRules, snapshot: BalanceSnapshot, now: datetime):
+    """Friday income sweep proposals; missing evidence always blocks repayment."""
+    def result(status, proposals=None):
+        return {'status': status, 'proposals': proposals or [], 'transfers_executed': False}
+    policy = rules.repayment
+    if not policy.enabled:
+        return result('disabled')
+    today = now.astimezone(EASTERN).date()
+    if today.weekday() != 4:
+        return result('not_friday')
+    if not -30 <= (now - snapshot.observed_at).total_seconds() <= 300:
+        return result('repayment_data_required')
+    balances = {a.last4: a for a in snapshot.accounts}
+    cash = {}
+    for checking in rules.checking:
+        account = balances.get(checking.last4)
+        if account is None or any(value is None for value in (
+                account.current_cents, account.pending_debits_cents,
+                account.settled_cash_cents, account.eligible_income_cents,
+                policy.reserve_cents)) or account.income_date != today:
+            return result('repayment_data_required')
+        # Protect ALL monitored checking accounts before proposing any repayment.
+        # Use min, not subtraction from available, to avoid counting holds twice.
+        free = min(account.current_cents - account.pending_debits_cents,
+                   account.settled_cash_cents)
+        reserve = max(policy.reserve_cents, rules.buffer_cents)
+        if free < reserve:
+            return result('checking_reserve_required')
+        cash[checking.last4] = min(free - reserve, account.eligible_income_cents)
+    debt = {}
+    for suffix in policy.priority:
+        account = balances.get(suffix)
+        if account is None or account.payoff_cents is None:
+            return result('repayment_data_required')
+        debt[suffix] = account.payoff_cents
+    proposals = []
+    for checking in rules.checking:
+        for suffix in policy.priority:
+            amount = min(cash[checking.last4], debt[suffix])
+            if amount:
+                proposals.append({'from_last4': checking.last4, 'to_last4': suffix,
+                                  'amount_cents': amount})
+                cash[checking.last4] -= amount
+                debt[suffix] -= amount
+    return result('review_required' if proposals else 'no_repayment_needed', proposals)

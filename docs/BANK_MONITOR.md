@@ -154,3 +154,39 @@ remove the empty guard file if another credential attempt is appropriate.
 Validation: 21 synthetic tests pass across `tests/test_bank_monitor.py` and
 `tests/test_bank_login.py`. These verify durable retry blocking, origin checks,
 missing credentials, and simulated MFA/success, not real server authentication.
+
+## Friday income repayment proposals
+
+The user selected no extra checking reserve beyond pending debits. The Friday
+17:30 Eastern daily run can now include a separate repayment proposal, with an
+explicit repayment order independent of the borrowing order: Preferred/business
+credit line first, then HELOC. Select the actual sources in the app; nicknames
+never establish account identity. Existing saved configurations default to
+repayment disabled. The local synthetic preview demonstrates the settings only.
+
+The calculation requires fresh verified evidence for every monitored checking
+account: current balance, pending debit total, cash withdrawable without credit
+coverage after holds, and eligible cleared business/salary income for that Friday.
+Transfers, credit draws, pending/unavailable deposits and older income must not be
+classified as eligible income. The reader does not yet supply these fields, so a
+live Friday run returns `repayment_data_required` rather than guessing.
+
+For each checking account, the repayment cap is the lesser of eligible income and
+(minimum of current balance minus pending debits and verified withdrawable cash)
+minus the reserve. Using the minimum avoids subtracting holds twice. Any checking
+account below its reserve blocks all repayments. A nonzero shortfall target set
+through the API is also preserved. Each credit source requires its full verified
+payoff amount; minimum payment/amount due and available credit cannot substitute.
+The remaining debt is shared across checking accounts, preventing overpayment.
+
+Proposals are saved within the existing unique tenant/date daily run and never
+move money. There is no executed-payment ledger or automatic retry. Deposits
+arriving after the Friday check are not automatically swept. Server connection,
+income identification, pending-debit extraction, payoff verification and any
+financial execution workflow remain unfinished. These proposals do not guarantee
+fee avoidance or reserve for bills the bank has not yet shown as pending.
+
+Validation after this addition: 31 focused synthetic tests pass, frontend
+TypeScript/Vite build passes, and the local browser accepted and saved business
+credit first / HELOC second with repayment proposals enabled for the synthetic
+tenant. No production settings, bank credentials or banking balances changed.
