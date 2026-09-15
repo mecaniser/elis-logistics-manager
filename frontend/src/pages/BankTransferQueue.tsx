@@ -32,6 +32,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [reviewed, setReviewed] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
   const [balanceCheck, setBalanceCheck] = useState<{ checked_at: string; accounts: { last4: string; current_cents: number | null; available_credit_cents: number | null }[] } | null>(null)
   const active = useRef(true)
   useEffect(() => {
@@ -57,10 +58,11 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
     setBusy(true); setError(''); setNotice('')
     try {
       if (!/^\d+\.\d{2}$/.test(amount)) throw new Error('Enter the full charge amount with two decimal places.')
+      if (!/^Cvr [A-Za-z0-9 ._-]{1,30}$/.test(memo)) throw new Error('Add what this transfer covers after “Cvr”, for example “Cvr Union County utilities”.')
       const [whole, fraction] = amount.split('.')
       await bankMonitorApi.createDraft(tenantId, { charge_reference: reference, amount_cents: Number(whole) * 100 + Number(fraction), from_last4: from, to_last4: to, memo })
       if (!active.current) return
-      await reload(); setNotice('Reviewed draft added. No bank form has been filled.'); setReviewed(false)
+      await reload(); setNotice('Reviewed draft added. No bank form has been filled.'); setReviewed(false); setManualOpen(false)
     } catch (e: any) { if (active.current) setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message || 'Unable to add draft.') }
     finally { if (active.current) setBusy(false) }
   }
@@ -193,7 +195,8 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
         </div>
       })()}
     </div>}
-    <form onSubmit={create} className="space-y-3 border-t pt-4">
+    {!manualOpen && <button type="button" onClick={() => { setManualOpen(true); setError('') }} className="text-sm text-blue-700 underline">Add a charge manually</button>}
+    {manualOpen && <form onSubmit={create} className="space-y-3 border-t pt-4">
       <h3 className="font-semibold">Add an individual charge manually</h3>
       <label className="block text-sm">Unique charge reference<input required maxLength={120} pattern="[A-Za-z0-9 .:_\-]+" className="block border rounded p-2 w-full" value={reference} onChange={e => { setReference(e.target.value); setReviewed(false) }} placeholder="Bank transaction reference, or date and bill identifier" /></label>
       <div className="flex flex-wrap gap-4">
@@ -203,8 +206,9 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
       </div>
       <label className="block text-sm">Memo (starts with Cvr, 34 characters maximum)<input required maxLength={34} className="block border rounded p-2 w-full" value={memo} onChange={e => { setMemo(e.target.value); setReviewed(false) }} /></label>
       <label className="flex gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />I checked bank history: this full charge needs funding and has no matching transfer or unresolved submission.</label>
-      <button disabled={busy || !reviewed} className="bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">Add reviewed transfer</button>
-    </form>
+      <div className="flex gap-4"><button disabled={busy || !reviewed} className="bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">Add reviewed transfer</button>
+      <button type="button" disabled={busy} onClick={() => { setManualOpen(false); setError('') }} className="text-gray-700 underline disabled:opacity-50">Cancel</button></div>
+    </form>}
     {drafts.length === 0 && <p>No reviewed transfer drafts yet.</p>}
     {drafts.map(d => <div key={d.id} className="border-t py-3 space-y-1">
       <p className="font-medium">${(d.amount_cents / 100).toFixed(2)} · {d.memo}</p>
