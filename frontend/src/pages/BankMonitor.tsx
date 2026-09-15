@@ -27,6 +27,8 @@ export default function BankMonitor() {
   const [rules, setRules] = useState<Rules>(defaults)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [settingsError, setSettingsError] = useState('')
+  const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   useEffect(() => {
@@ -45,17 +47,20 @@ export default function BankMonitor() {
     event.preventDefault();
     if (!currentTenant || loadedTenant !== currentTenant.id) return
     const tenantId = currentTenant.id
-    setSaving(true); setError(''); setNotice('')
+    setSaving(true); setSettingsError(''); setSettingsNotice('')
     try {
       await bankMonitorApi.save(tenantId, rules)
       if (tenantRef.current !== tenantId) return
       const response = await bankMonitorApi.get(tenantId)
       if (tenantRef.current !== tenantId) return
       setData(response.data)
-      setNotice('Settings saved. Transfers remain off. The worker must be connected and running for scheduled checks.')
+      setRules({ ...response.data.rules, repayment: response.data.rules.repayment || defaults.repayment })
+      setSettingsNotice(response.data.rules.enabled
+        ? 'Saved. Daily 5:30 p.m. checks are requested.'
+        : 'Saved. Scheduled checks are paused.')
     } catch (e: any) {
       if (tenantRef.current !== tenantId) return
-      setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Check account suffixes and ensure each account appears only once.')
+      setSettingsError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Check account suffixes and ensure each account appears only once.')
     } finally { setSaving(false) }
   }
   const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => {
@@ -75,6 +80,8 @@ export default function BankMonitor() {
   }
   const latest = data?.runs[0]
   const stale = latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000
+  const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
+  const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
   return <div className="max-w-5xl mx-auto space-y-6">
     <div><h1 className="text-2xl font-semibold text-gray-900">Bank Monitor</h1>
       <p className="text-gray-600 mt-1">Daily business checking review at 5:30 p.m. Eastern.</p></div>
@@ -147,11 +154,20 @@ export default function BankMonitor() {
               <option value="">Select credit source</option>
               {rules.sources.filter(a => /^[0-9]{4}$/.test(a.last4)).map(a => <option key={a.last4} value={a.last4}>{a.nickname} · ••{a.last4}</option>)}
             </select></label>)}
-          <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.repayment.enabled} onChange={e => setRules({ ...rules, repayment: { ...rules.repayment, enabled: e.target.checked, reserve_cents: 0 } })} />Include Friday repayment proposals when all required data is verified</label>
+          <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.repayment.enabled} onChange={e => { setSettingsNotice(''); setRules({ ...rules, repayment: { ...rules.repayment, enabled: e.target.checked, reserve_cents: 0 } }) }} />Include Friday repayment proposals when all required data is verified</label>
+          <p className="text-sm text-gray-600">This creates repayment proposals for your review. It never submits a bank transfer.</p>
         </fieldset>
-        <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.enabled} onChange={e => setRules({ ...rules, enabled: e.target.checked })} />Request daily checks at 5:30 p.m. Eastern, including weekends</label>
-        <p className="text-sm text-gray-600">{rules.enabled ? `Next scheduled time: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York' })} Eastern. This is a schedule, not confirmation that a worker is connected.` : 'Schedule is paused.'}</p>
-        <button disabled={saving} className="bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">{saving ? 'Saving…' : 'Save settings'}</button>
+        <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.enabled} onChange={e => { setSettingsNotice(''); setRules({ ...rules, enabled: e.target.checked }) }} />Request daily checks at 5:30 p.m. Eastern, including weekends</label>
+        {settingsDirty && <div role="status" className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">Unsaved changes. Nothing changes until you save.</div>}
+        {!settingsDirty && settingsNotice && <div role="status" className="rounded border border-green-200 bg-green-50 px-3 py-2 font-medium text-green-800">✓ {settingsNotice}</div>}
+        {settingsError && <div role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-800">{settingsError}</div>}
+        <p className="text-sm text-gray-600">{rules.enabled
+          ? `${settingsDirty ? 'After saving, the next requested check is' : 'Next requested check:'} ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York' })} Eastern.`
+          : settingsDirty ? 'After saving, scheduled checks will be paused.' : 'Scheduled checks are paused.'}</p>
+        <button disabled={saving || !settingsDirty} className="inline-flex items-center gap-2 bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">
+          {saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+          {saving ? 'Saving settings…' : settingsDirty ? (rules.enabled ? 'Save and request schedule' : 'Save and pause schedule') : 'Settings saved'}
+        </button>
       </form>
       <section className="bg-white border rounded-lg p-5"><h2 className="text-lg font-semibold mb-3">Run history</h2>
         {data.runs.length ? data.runs.map(run => <p key={run.id} className="py-2 border-t">{run.scheduled_date} · <span className="capitalize">{label(run.status)}</span> · No transfers executed</p>) : <p className="text-gray-600">No scheduled runs yet.</p>}
