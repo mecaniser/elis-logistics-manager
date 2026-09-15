@@ -1,6 +1,6 @@
 """Strictly authenticated, tenant-scoped settings and read-only run history."""
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
@@ -71,13 +71,16 @@ class DraftInput(StrictModel):
     from_last4: str = Field(pattern=r'^[0-9]{4}$')
     to_last4: str = Field(pattern=r'^[0-9]{4}$')
     memo: str = Field(min_length=5, max_length=34, pattern=r'^Cvr [A-Za-z0-9 ._-]+$')
+    bank_state: str | None = Field(default=None, pattern=r'^(posted|pending)$')
+    bank_effective_date: date | None = None
 
 
 def draft_json(d):
     created = d.created_at
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
-    result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status')}
+    result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status', 'bank_state')}
+    result['bank_effective_date'] = d.bank_effective_date.isoformat() if d.bank_effective_date else None
     result['bank_date'] = created.astimezone(EASTERN).date().isoformat()
     return result
 
@@ -137,6 +140,22 @@ class DraftOutcome(StrictModel):
 
 class DraftRetry(StrictModel):
     reason: str = Field(pattern=r'^signed_out_before_form$')
+
+
+class DraftBankDetails(StrictModel):
+    bank_state: str = Field(pattern=r'^(posted|pending)$')
+    bank_effective_date: date
+
+
+@router.put('/drafts/{draft_id}/bank-details')
+def update_draft_bank_details(draft_id: str, data: DraftBankDetails, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).update(data.model_dump())
+    if not updated:
+        db.rollback()
+        raise HTTPException(404, 'Draft unavailable.')
+    db.commit()
+    return {'saved': True, **data.model_dump(mode='json')}
 
 
 @router.post('/drafts/{draft_id}/outcome')

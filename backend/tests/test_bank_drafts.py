@@ -32,6 +32,19 @@ def test_duplicate_and_double_click_blocked(session):
     assert session.post(route+'/prepare', headers=H).status_code == 409
 
 
+def test_bank_status_and_effective_date_are_saved_and_refreshed(session):
+    created = session.post('/api/bank-monitor/drafts', headers=H, json={
+        **D, 'bank_state':'pending', 'bank_effective_date':'2026-09-15'}).json()
+    assert created['bank_state'] == 'pending'
+    assert created['bank_effective_date'] == '2026-09-15'
+    path = '/api/bank-monitor/drafts/' + created['id'] + '/bank-details'
+    updated = session.put(path, headers=H, json={'bank_state':'posted','bank_effective_date':'2026-09-16'})
+    assert updated.status_code == 200
+    refreshed = session.get('/api/bank-monitor/drafts', headers=H).json()[0]
+    assert refreshed['bank_state'] == 'posted'
+    assert refreshed['bank_effective_date'] == '2026-09-16'
+
+
 def test_tenant_auth_and_write_headers(session):
     assert session.post('/api/bank-monitor/drafts',headers={'X-Tenant-ID':'1'},json=D).status_code == 403
     assert session.get('/api/bank-monitor/drafts',headers={'X-Tenant-ID':'2'}).status_code == 404
