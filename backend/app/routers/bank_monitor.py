@@ -7,7 +7,7 @@ from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
 from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun
-from app.services.bank_monitor import MonitorRules, next_check
+from app.services.bank_monitor import EASTERN, MonitorRules, next_check
 
 router = APIRouter()
 
@@ -74,7 +74,12 @@ class DraftInput(StrictModel):
 
 
 def draft_json(d):
-    return {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status')}
+    created = d.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status')}
+    result['bank_date'] = created.astimezone(EASTERN).date().isoformat()
+    return result
 
 
 def draft_action(request):

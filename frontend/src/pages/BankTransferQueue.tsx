@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 
 type Account = { nickname: string; last4: string }
-type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string }
+type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 const runtime = () => (window as any).chrome?.runtime
 const send = (extension: string, message: unknown): Promise<any> => new Promise((resolve, reject) => {
   if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
@@ -85,7 +85,15 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
   const verify = async (draft: Draft) => {
     setBusy(true); setError(''); setNotice('')
     try {
-      const result = await send(extension, { type: 'ELIS_VERIFY', draft })
+      let result
+      try {
+        result = await send(extension, { type: 'ELIS_VERIFY', draft })
+      } catch (e: any) {
+        if (e.code !== 'VERIFICATION_REAUTH_REQUIRED') throw e
+        setNotice('The extension was reloaded. Approve the read-only verification window; it will not prepare or submit a transfer.')
+        await send(extension, { type: 'ELIS_REAUTHORIZE_VERIFY', draft })
+        result = await send(extension, { type: 'ELIS_VERIFY', draft })
+      }
       await bankMonitorApi.draftHistoryMatch(tenantId, draft.id, result.evidence)
       await send(extension, { type: 'ELIS_ACK', id: draft.id })
       if (active.current) setNotice('The extension found one matching posted entry in each account. Review the bank history if anything differs.')

@@ -36,3 +36,24 @@ test('unknown approval infrastructure failure stays locked', async () => {
   assert.equal(result.code,undefined);
   delete globalThis.chrome;
 });
+
+test('extension reload can reauthorize read-only verification without opening transfer form', async () => {
+  let external, internal, approval;
+  const created = [], stored = [];
+  globalThis.chrome = {
+    runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,getManifest:()=>({version:'test'}),
+      onMessageExternal:{addListener:f=>{external=f;}},
+      onMessage:{addListener:f=>{internal=f;},removeListener(){}}},
+    storage:{session:{get:async()=>({}),set:async value=>{stored.push(value);if(value.approval) approval=value.approval;},remove:async()=>{}}},
+    tabs:{create:async args=>{created.push(args);return {id:created.length+1};},remove:async()=>{}},
+    scripting:{executeScript:async()=>assert.fail('Reauthorization must not inspect history until ELIS_VERIFY')}
+  };
+  await import('../background.js?reauthorize-test');
+  const reauth = new Promise(resolve=>external({type:'ELIS_REAUTHORIZE_VERIFY',draft:{...draft,bank_date:'2026-09-14'}},sender,resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  internal({action:'approve',nonce:approval.nonce},{id:'test',tab:{id:2},url:'chrome-extension://test/approve.html'},()=>{});
+  assert.deepEqual(await reauth,{ok:true});
+  assert.deepEqual(created.map(item=>item.url),['chrome-extension://test/approve.html','https://www.truliantfcuonline.org/dbank/live/app/home']);
+  assert.equal(stored.at(-1).activeDraft.bankDate,'Sep 14, 2026');
+  delete globalThis.chrome;
+});

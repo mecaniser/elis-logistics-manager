@@ -11,12 +11,22 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       reply({ok:true});
     }); return true;
   }
-  if(!['ELIS_PREPARE','ELIS_VERIFY'].includes(message?.type)||!validDraft(message.draft)) {reply({ok:false,error:'Invalid reviewed transfer.'});return;}
+  if(!['ELIS_PREPARE','ELIS_VERIFY','ELIS_REAUTHORIZE_VERIFY'].includes(message?.type)||!validDraft(message.draft)) {reply({ok:false,error:'Invalid reviewed transfer.'});return;}
   if(busy) {reply({ok:false,error:'Another form is being prepared.'});return;}
   busy=true;
   (async()=>{
     const existing=await chrome.storage.session.get('activeDraft');
+    if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
+      if(existing.activeDraft) throw new Error('An active transfer review already exists.');
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
+      await approvePreparation(message.draft,'verify');
+      const tab=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
+      await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:'prepared',bankDate}});
+      reply({ok:true}); return;
+    }
     if(message.type==='ELIS_VERIFY') {
+      if(!existing.activeDraft) {reply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
       if(!boundDraft(existing.activeDraft,message.draft,sender) || !existing.activeDraft.tabId)
         throw new Error('No active preparation for this draft.');
       const tabId=existing.activeDraft.tabId;
@@ -48,7 +58,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     if(existing.activeDraft) throw new Error('A transfer is already awaiting review. Finish checking it before preparing another.');
     try {
-      await approvePreparation(message.draft);
+    await approvePreparation(message.draft,'prepare');
     } catch (error) {
       // This branch is before activeDraft persistence, bank-tab creation and
       // scripting. Never classify a later error as safe to retry.
@@ -88,9 +98,9 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
 
 // A compromised ELIS page cannot authorize preparation by itself. Approval is
 // rendered on an extension-owned page, never in web-page HTML.
-async function approvePreparation(draft) {
+async function approvePreparation(draft,mode) {
   const nonce = crypto.randomUUID();
-  await chrome.storage.session.set({approval:{nonce,draft}});
+  await chrome.storage.session.set({approval:{nonce,draft,mode}});
   const tab = await chrome.tabs.create({url:chrome.runtime.getURL('approve.html'),active:true});
   try {
     await new Promise((resolve,reject)=>{

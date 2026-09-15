@@ -80,3 +80,10 @@ in this conversation. No deployment or bank credential changes were made.
 - Extension 0.1.2 stopped during checking-history verification because Truliant rendered two identical responsive `h2` account headings. The verifier incorrectly treated duplicate renderings of one identity as conflicting accounts.
 - Extension 0.1.3 accepts repeated identical heading text while still rejecting missing or conflicting identities. Known verification errors are now returned to ELIS without exposing page data.
 - Validation: 15 extension tests pass, including identical-heading acceptance and conflicting-heading rejection. Live extension reload and final two-history match remain outstanding.
+
+### Extension reload verification recovery — 2026-09-14
+
+- Live pilot exposed that reloading the unpacked extension clears its session-only active-draft binding. ELIS retained the submitted draft as `prepared_awaiting_submission`, so verification correctly refused with `No active preparation for this draft.`
+- Extension 0.1.4 adds an extension-owned approval step that can rebind only read-only history verification. It opens the bank home page and never opens the transfer form or runs form preparation.
+- ELIS supplies the Eastern creation date for the same-day pilot draft and automatically resumes `ELIS_VERIFY` after the user approves reauthorization.
+- Validation: 16 extension tests, 10 draft API tests, and the TypeScript/Vite build pass. Live reauthorization and final history match remain outstanding.
