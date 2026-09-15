@@ -2,16 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankSelect from '../components/BankSelect'
 
-type Account = { nickname: string; last4: string }
+type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 type ExtensionResponse = { ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
 type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callback: (response?: ExtensionResponse) => void) => void; lastError?: unknown }
 type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }
-type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null }
-type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; error?: string | null }[] }
+type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
+type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
-const REQUIRED_EXTENSION_VERSION = '0.1.16'
+const REQUIRED_EXTENSION_VERSION = '0.1.17'
 const runtime = () => (window as Window & { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
@@ -24,7 +24,7 @@ const memoFor = (transaction: PostedDebit) => {
   const subject = clean.slice(0, available).trim().replace(/[ ._-]+$/, '') || 'posted charge'
   return `Cvr ${subject}${dateCode ? ` ${dateCode}` : ''}`
 }
-const coverageText = (value: string) => value.toLowerCase().replace(/^cvr\s+/, '').replace(/\s+\d{4}$/, '').replace(/[^a-z0-9]+/g, '')
+const coverageText = (value: string) => value.toLowerCase().replace(/^cvr\s+/, '').replace(/[^a-z0-9]+/g, '')
 const matchesExistingDraft = (draft: Draft, destination: Account, transaction: PostedDebit, reference: string, memo: string) => {
   if (draft.charge_reference === reference) return true
   if (draft.to_last4 !== destination.last4 || draft.amount_cents !== transaction.amount_cents) return false
@@ -63,7 +63,7 @@ const statusMeta = (status: string) => {
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
 
-export default function BankTransferQueue({ tenantId, checking, sources, onAccountsDiscovered }: { tenantId: number; checking: Account[]; sources: Account[]; onAccountsDiscovered: (accounts: Account[]) => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -158,61 +158,64 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
   const checkBalances = async () => {
-    setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Reading all balances and posted charges from Truliant…', started: Date.now() })
+    setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
     let bankRead = false
     try {
       if (!checking.length || !sources.length) throw new Error('Import and save the checking and credit accounts first.')
       const suffixes = [...checking, ...sources].map(account => account.last4)
-      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: checking.map(account => account.last4) })
+      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: checking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
       bankRead = true
       if (!active.current) return
       setConnected(true); setBalanceCheck(result)
-      setOperation({ message: 'Building the coverage queue from uncovered posted charges…', started: Date.now() })
+      setOperation({ message: 'Building the queue from uncovered posted and pending charges…', started: Date.now() })
       const existing = (await bankMonitorApi.drafts(tenantId)).data as Draft[]
       const accountBySuffix = new Map(result.accounts.map(account => [account.last4, account]))
-      const sourceBalances = sources.map(source => ({ source, balance: accountBySuffix.get(source.last4) }))
+      const sourceBalances = sources.map(source => ({ source, available: accountBySuffix.get(source.last4)?.available_credit_cents ?? null }))
       let created = 0
       let identified = 0
       const issues: string[] = []
       for (const destination of checking) {
         const balance = accountBySuffix.get(destination.last4)
-        if (balance?.current_cents == null || balance.current_cents >= 0) continue
+        if (balance?.current_cents == null) { issues.push(`Posted balance for ••${destination.last4} was unavailable.`); continue }
+        const history = result.coverage?.find(item => item.last4 === destination.last4)
+        if (!history || history.error) {
+          issues.push(history?.error || `Account history for ••${destination.last4} was unavailable.`)
+          continue
+        }
+        const pendingCandidates = history.transactions.filter(transaction => transaction.pending)
+        const postedCandidates = history.transactions.filter(transaction => !transaction.pending)
+        if (balance.current_cents >= 0 && !history.overdraft_detected && pendingCandidates.length === 0) continue
         const pending = existing.filter(draft => draft.to_last4 === destination.last4 && statusMeta(draft.status).action !== 'done')
           .reduce((sum, draft) => sum + draft.amount_cents, 0)
         let remaining = Math.max(0, -balance.current_cents - pending)
-        if (remaining === 0) continue
-        const history = result.coverage?.find(item => item.last4 === destination.last4)
-        if (!history || history.error) {
-          issues.push(history?.error || `Posted history for ••${destination.last4} was unavailable.`)
-          continue
-        }
-        const candidates = history.transactions.filter(transaction => transaction.balance_cents == null || transaction.balance_cents < 0)
+        const candidates = [...pendingCandidates, ...postedCandidates]
         for (const transaction of candidates) {
-          if (remaining <= 0) break
+          if (!transaction.pending && !history.overdraft_detected && remaining <= 0) break
           const chargeReference = draftReference(destination.last4, transaction)
           const transactionMemo = memoFor(transaction)
           if (existing.some(draft => matchesExistingDraft(draft, destination, transaction, chargeReference, transactionMemo))) continue
-          const source = sourceBalances.find(row => (row.balance?.available_credit_cents ?? -1) >= transaction.amount_cents)?.source
-          if (!source) {
+          const sourceRow = sourceBalances.find(row => (row.available ?? -1) >= transaction.amount_cents)
+          if (!sourceRow) {
             issues.push(`${money(transaction.amount_cents)} ${transaction.description} cannot be covered in full by one funding source.`)
             continue
           }
           identified += 1
           try {
-            await bankMonitorApi.createDraft(tenantId, { charge_reference: chargeReference, amount_cents: transaction.amount_cents, from_last4: source.last4, to_last4: destination.last4, memo: transactionMemo })
+            await bankMonitorApi.createDraft(tenantId, { charge_reference: chargeReference, amount_cents: transaction.amount_cents, from_last4: sourceRow.source.last4, to_last4: destination.last4, memo: transactionMemo })
             created += 1
+            sourceRow.available = (sourceRow.available ?? 0) - transaction.amount_cents
           } catch (error: unknown) {
             if ((error as { response?: { status?: number } })?.response?.status !== 409) throw error
           }
           remaining = Math.max(0, remaining - transaction.amount_cents)
         }
-        if (remaining > 0) issues.push(`${money(remaining)} of the negative balance in ••${destination.last4} could not be tied to an uncovered posted charge.`)
+        if (balance.current_cents < 0 && remaining > 0) issues.push(`${money(remaining)} of the negative balance in ••${destination.last4} could not be tied to an uncovered posted charge.`)
       }
       await reload()
       if (issues.length) setCoverageIssue(issues.join(' '))
       const negative = result.accounts.filter(account => checking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
-      if (!negative.length) setNotice('All configured accounts were checked. No checking coverage is needed.')
-      else if (created) setNotice(`${created} transfer draft${created === 1 ? '' : 's'} created from posted charges. Prepare each draft in the action queue.`)
+      if (!negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
+      else if (created) setNotice(`${created} coverage draft${created === 1 ? '' : 's'} created. Prepare each one in the action queue.`)
       else if (identified) setNotice('The coverage queue is already current for the posted charges found.')
       else if (!issues.length) setNotice('The negative balance is already covered by transfer drafts in the action queue.')
     } catch (error: unknown) {

@@ -4,7 +4,7 @@ import BankTransferQueue from './BankTransferQueue'
 import BankSelect from '../components/BankSelect'
 import { useTenant } from '../contexts/TenantContext'
 
-type Account = { nickname: string; last4: string }
+type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
 type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number | null }
 type Rules = { repayment: Repayment; enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
 type Run = { id: number; scheduled_date: string; started_at: string; status: string; result: {
@@ -104,8 +104,8 @@ export default function BankMonitor() {
   }
   const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => ({ ...current, [group]: current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account) }))
   const importAccounts = (accounts: Account[]) => {
-    const checking = accounts.filter(account => /checking/i.test(account.nickname))
-    const sources = accounts.filter(account => /(line of credit|heloc|home equity)/i.test(account.nickname))
+    const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname)))
+    const sources = accounts.filter(account => account.kind === 'credit' || (!account.kind && /(line of credit|heloc|home equity)/i.test(account.nickname)))
     setRules(current => ({ ...current, checking: checking.length ? checking : current.checking, sources: sources.length ? [...sources.filter(account => /(heloc|home equity)/i.test(account.nickname)), ...sources.filter(account => !/(heloc|home equity)/i.test(account.nickname))] : current.sources }))
   }
 
@@ -127,7 +127,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={currentTenantId} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
+        <BankTransferQueue key={currentTenantId} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} />
 
         {latest && <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">

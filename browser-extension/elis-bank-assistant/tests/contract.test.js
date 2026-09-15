@@ -11,8 +11,8 @@ test('only exact ELIS origins and bank-monitor route may request preparation',()
 });
 
 test('parse only explicitly labeled account-card balances', () => {
-  assert.deepEqual(parseAccountSummary('Main Business Checking **3304 Current Balance -$968.10 Available Balance -$968.10'), {last4:'3304',current_cents:-96810,available_cents:-96810,available_credit_cents:null});
-  assert.deepEqual(parseAccountSummary('Preferred Line of Credit **2829 Current Balance $311.25 Available Credit $4,688.75'), {last4:'2829',current_cents:31125,available_cents:null,available_credit_cents:468875});
+  assert.deepEqual(parseAccountSummary('Main Business Checking **3304 Current Balance -$968.10 Available Balance -$968.10'), {nickname:'Main Business Checking',last4:'3304',kind:'checking',current_cents:-96810,available_cents:-96810,available_credit_cents:null});
+  assert.deepEqual(parseAccountSummary('Preferred Line of Credit **2829 Current Balance $311.25 Available Credit $4,688.75'), {nickname:'Preferred Line of Credit',last4:'2829',kind:'credit',current_cents:31125,available_cents:null,available_credit_cents:468875});
   assert.equal(parseAccountSummary('Account without suffix Current Balance $1.00'), null);
 });
 test('reject malformed, fractional, same-account and oversized requests',()=>{
