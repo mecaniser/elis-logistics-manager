@@ -22,7 +22,53 @@
       findPosted(message.wanted).then(reply);
       return true;
     }
+    if (message?.type === 'ELIS_LIST_POSTED_DEBITS' && /^\d{4}$/.test(message.suffix || '')) {
+      if (!document.querySelector('table[aria-label="account transactions"]')) return;
+      listPostedDebits(message.suffix).then(reply);
+      return true;
+    }
   });
+
+  const parseMoney = value => {
+    const text = String(value || '').replace(/\s/g, '').trim();
+    const match = text.match(/^(?:-\$([\d,]+\.\d{2})|\$-([\d,]+\.\d{2})|\(([\d,]+\.\d{2})\)|\$([\d,]+\.\d{2}))$/);
+    if (!match) return null;
+    const digits = match[1] || match[2] || match[3] || match[4];
+    const cents = Math.round(Number(digits.replace(/,/g, '')) * 100);
+    return match[1] || match[2] || match[3] ? -cents : cents;
+  };
+
+  async function listPostedDebits(suffix) {
+    const table = document.querySelector('table[aria-label="account transactions"]');
+    const headings = [...document.querySelectorAll('h2')].map(element => element.textContent.trim())
+      .filter(text => new RegExp(`\\d*${suffix}$`).test(text));
+    if (!table || headings.length === 0) return {ready: true, error: 'Account identity could not be verified.'};
+    let posted = false;
+    const transactions = [];
+    for (const row of table.querySelectorAll('tbody tr')) {
+      if (row.getAttribute('aria-label') === 'posted transactions section') { posted = true; continue; }
+      if (!posted || transactions.length >= 50) continue;
+      const amountNode = row.querySelector('[id^="amount-value-cell-"]');
+      const descriptionNode = row.querySelector('[id^="description-value-cell-"]');
+      const dateNode = row.querySelector('[id^="transactionDate-value-cell-"]');
+      const balanceNode = row.querySelector('[id^="balance-value-cell-"]');
+      if (!amountNode || !descriptionNode || !dateNode) continue;
+      const amountCents = parseMoney(amountNode.textContent);
+      if (amountCents == null || amountCents >= 0) continue;
+      const description = normalized(descriptionNode.textContent);
+      if (/^(deposit|principal disbursement)\b/i.test(description) || /\b(overdraft|nsf|insufficient funds)\b|\bfee\b/i.test(description)) continue;
+      const identity = `${suffix}|${amountNode.id}|${dateNode.textContent.trim()}|${description}|${amountCents}`;
+      const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
+      transactions.push({
+        reference: [...new Uint8Array(bytes)].map(value => value.toString(16).padStart(2, '0')).join(''),
+        date: dateNode.textContent.trim(),
+        description,
+        amount_cents: Math.abs(amountCents),
+        balance_cents: balanceNode ? parseMoney(balanceNode.textContent) : null
+      });
+    }
+    return {ready: true, transactions};
+  }
 
   async function findPosted(wanted) {
     const table = document.querySelector('table[aria-label="account transactions"]');

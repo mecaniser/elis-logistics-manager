@@ -10,7 +10,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete') || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
@@ -30,12 +30,14 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   }
   if(message?.type==='ELIS_CHECK_BALANCES') {
     const suffixes=message.suffixes;
-    if(!Array.isArray(suffixes) || suffixes.length<1 || suffixes.length>15 || suffixes.some(value=>!/^\d{4}$/.test(value))) {reply({ok:false,error:'Configured accounts are invalid.'});return;}
+    const checkingSuffixes=message.checking_suffixes;
+    if(!Array.isArray(suffixes) || suffixes.length<1 || suffixes.length>15 || suffixes.some(value=>!/^\d{4}$/.test(value)) ||
+       !Array.isArray(checkingSuffixes) || checkingSuffixes.some(value=>!/^\d{4}$/.test(value) || !suffixes.includes(value))) {reply({ok:false,error:'Configured accounts are invalid.'});return;}
     if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete') || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
@@ -43,7 +45,36 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         const summaries=results.flatMap(result=>result.result||[]).map(parseAccountSummary).filter(Boolean)
           .filter(account=>suffixes.includes(account.last4));
         const accounts=[...new Map(summaries.map(account=>[account.last4,account])).values()];
-        if(accounts.length===suffixes.length) {reply({ok:true,checked_at:new Date().toISOString(),accounts});return;}
+        if(accounts.length===suffixes.length) {
+          const coverage=[];
+          const negative=accounts.filter(account=>checkingSuffixes.includes(account.last4) && account.current_cents != null && account.current_cents < 0);
+          for(const account of negative) {
+            const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
+            try {
+              const navigationEnd=Date.now()+25000;
+              while(Date.now()<navigationEnd) {
+                const current=await chrome.tabs.get(inspection.id);
+                if(current.status==='complete') break;
+                await new Promise(resolve=>setTimeout(resolve,200));
+              }
+              let selected=false;
+              for(let i=0;i<60;i++) {
+                await new Promise(resolve=>setTimeout(resolve,300));
+                const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix:account.last4}).catch(()=>null);
+                if(result?.opened) {selected=true;break;}
+              }
+              if(!selected) {coverage.push({last4:account.last4,transactions:[],error:`Could not open checking account ••${account.last4}.`});continue;}
+              let history=null;
+              for(let i=0;i<50;i++) {
+                await new Promise(resolve=>setTimeout(resolve,300));
+                history=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_LIST_POSTED_DEBITS',suffix:account.last4}).catch(()=>null);
+                if(history?.ready) break;
+              }
+              coverage.push({last4:account.last4,transactions:history?.transactions || [],error:history?.error || (history?.ready ? null : 'Posted history did not load.')});
+            } finally { await chrome.tabs.remove(inspection.id).catch(()=>{}); }
+          }
+          reply({ok:true,checked_at:new Date().toISOString(),accounts,coverage});return;
+        }
       }
       reply({ok:false,error:'Could not read every configured account. Open the signed-in Truliant home page and try again.'});
     })().catch(()=>reply({ok:false,error:'Balance check stopped. No bank information was changed.'})).finally(()=>{busy=false;});
