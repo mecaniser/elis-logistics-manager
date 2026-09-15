@@ -11,7 +11,7 @@ type PostedDebit = { reference: string; date: string; description: string; amoun
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
-const REQUIRED_EXTENSION_VERSION = '0.1.17'
+const REQUIRED_EXTENSION_VERSION = '0.1.18'
 const runtime = () => (window as Window & { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback

@@ -191,21 +191,25 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
 // rendered on an extension-owned page, never in web-page HTML.
 async function approvePreparation(draft,mode) {
   const nonce = crypto.randomUUID();
-  await chrome.storage.session.set({approval:{nonce,draft,mode}});
-  const tab = await chrome.tabs.create({url:chrome.runtime.getURL('approve.html'),active:true});
+  const expires_at=Date.now()+120000;
+  await chrome.storage.session.set({approval:{nonce,draft,mode,expires_at}});
+  const popup=await chrome.windows.create({url:chrome.runtime.getURL('approve.html'),type:'popup',focused:true,width:520,height:650});
+  const [tab]=popup.tabs?.length ? popup.tabs : await chrome.tabs.query({windowId:popup.id});
+  if(!tab?.id) throw new Error('Approval window could not be opened.');
   try {
     await new Promise((resolve,reject)=>{
       const timeout=setTimeout(()=>finish(false),120000);
       function finish(approved) {
-        clearTimeout(timeout); chrome.runtime.onMessage.removeListener(listener);
+        clearTimeout(timeout); chrome.runtime.onMessage.removeListener(listener); chrome.windows.onRemoved.removeListener(closed);
         approved ? resolve() : reject(Object.assign(new Error('Preparation approval declined or expired.'), {code:'APPROVAL_NOT_GRANTED'}));
       }
+      function closed(windowId) { if(windowId===popup.id) finish(false); }
       function listener(message,sender,reply) {
         if(sender.id!==chrome.runtime.id || sender.tab?.id!==tab.id || sender.url!==chrome.runtime.getURL('approve.html') || message?.nonce!==nonce) return;
         if(!['approve','cancel'].includes(message.action)) return;
         reply({ok:true}); finish(message.action==='approve');
       }
-      chrome.runtime.onMessage.addListener(listener);
+      chrome.runtime.onMessage.addListener(listener); chrome.windows.onRemoved.addListener(closed);
     });
-  } finally { await chrome.storage.session.remove('approval'); await chrome.tabs.remove(tab.id).catch(()=>{}); }
+  } finally { await chrome.storage.session.remove('approval'); await chrome.windows.remove(popup.id).catch(()=>{}); }
 }

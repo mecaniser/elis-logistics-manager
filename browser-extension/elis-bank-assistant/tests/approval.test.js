@@ -4,22 +4,28 @@ import assert from 'node:assert/strict';
 const draft = {id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', amount_cents:11820, from_last4:'2829',to_last4:'3304',memo:'Cvr Test'};
 const sender = {frameId:0,tab:{id:1},url:'http://127.0.0.1:18081/bank-monitor'};
 
-test('approval timeout reports no preparation and never opens or scripts a bank tab', async t => {
+test('approval timeout reports no preparation and opens only the dedicated review popup', async t => {
   let external;
-  const created = [], stored = [];
+  const created = [], removed = [], stored = [];
   t.mock.method(globalThis, 'setTimeout', fn => { queueMicrotask(fn); return 0; });
   globalThis.chrome = {
     runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,
       onMessageExternal:{addListener:f=>{external=f;}},onMessage:{addListener(){},removeListener(){}}},
     storage:{session:{get:async()=>({}),set:async v=>stored.push(v),remove:async()=>{}}},
-    tabs:{create:async args=>{created.push(args);return {id:2};},remove:async()=>{}},
+    tabs:{query:async()=>[]},
+    windows:{
+      create:async args=>{created.push(args);return {id:20,tabs:[{id:2}]};},
+      remove:async id=>removed.push(id),
+      onRemoved:{addListener(){},removeListener(){}}
+    },
     scripting:{executeScript:async()=>assert.fail('Must not script a bank tab before approval')}
   };
   await import('../background.js?timeout-test');
   const result = await new Promise(resolve=>external({type:'ELIS_PREPARE',draft},sender,resolve));
   assert.equal(result.code,'PREPARATION_NOT_STARTED');
   assert.equal(result.ok,false);
-  assert.deepEqual(created,[{url:'chrome-extension://test/approve.html',active:true}]);
+  assert.deepEqual(created,[{url:'chrome-extension://test/approve.html',type:'popup',focused:true,width:520,height:650}]);
+  assert.deepEqual(removed,[20]);
   assert.ok(stored.every(v=>!v.activeDraft));
   delete globalThis.chrome;
 });
@@ -45,7 +51,11 @@ test('extension reload can reauthorize read-only verification without opening a 
       onMessageExternal:{addListener:f=>{external=f;}},
       onMessage:{addListener:f=>{internal=f;},removeListener(){}}},
     storage:{session:{get:async()=>({}),set:async value=>{stored.push(value);if(value.approval) approval=value.approval;},remove:async()=>{}}},
-    tabs:{create:async args=>{created.push(args);return {id:created.length+1};},remove:async()=>{}},
+    tabs:{query:async()=>[]},
+    windows:{
+      create:async args=>{created.push(args);return {id:20,tabs:[{id:2}]};},
+      remove:async()=>{},onRemoved:{addListener(){},removeListener(){}}
+    },
     scripting:{executeScript:async()=>assert.fail('Reauthorization must not inspect history until ELIS_VERIFY')}
   };
   await import('../background.js?reauthorize-test');
@@ -53,7 +63,7 @@ test('extension reload can reauthorize read-only verification without opening a 
   await new Promise(resolve=>setImmediate(resolve));
   internal({action:'approve',nonce:approval.nonce},{id:'test',tab:{id:2},url:'chrome-extension://test/approve.html'},()=>{});
   assert.deepEqual(await reauth,{ok:true});
-  assert.deepEqual(created.map(item=>item.url),['chrome-extension://test/approve.html']);
+  assert.deepEqual(created.map(item=>item.type),['popup']);
   assert.equal(stored.at(-1).activeDraft.bankDate,'Sep 14, 2026');
   delete globalThis.chrome;
 });
