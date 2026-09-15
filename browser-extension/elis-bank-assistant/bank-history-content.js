@@ -29,7 +29,9 @@
     if (!table) return {ready: false};
     const headings = [...document.querySelectorAll('h2')].map(element => element.textContent.trim())
       .filter(text => new RegExp(`\\d*${wanted.suffix}$`).test(text));
-    if (new Set(headings).size !== 1) return {ready: true, error: 'Account identity could not be verified.'};
+    // Truliant renders masked and full-number variants of the same account
+    // heading. The configured identity boundary is the requested last four.
+    if (headings.length === 0) return {ready: true, error: 'Account identity could not be verified.'};
     let posted = false;
     const matches = [];
     for (const row of table.querySelectorAll('tbody tr')) {

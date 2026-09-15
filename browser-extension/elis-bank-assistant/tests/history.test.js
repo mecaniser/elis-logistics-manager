@@ -23,8 +23,12 @@ test('identical responsive account headings do not create false ambiguity',async
   setup([section('posted transactions section'),entry()],[heading,heading]);
   assert.match((await findPostedEntry(wanted)).match,/^[a-f0-9]{64}$/);
 });
-test('conflicting account headings still fail closed',async()=>{
-  setup([section('posted transactions section'),entry()],[{textContent:'Test account 00001111'},{textContent:'Other account 99991111'}]);
+test('masked and full-number headings for the requested last four identify the same account',async()=>{
+  setup([section('posted transactions section'),entry()],[{textContent:'Test account ********1111'},{textContent:'Test account 400043581111'}]);
+  assert.match((await findPostedEntry(wanted)).match,/^[a-f0-9]{64}$/);
+});
+test('missing requested account heading still fails closed',async()=>{
+  setup([section('posted transactions section'),entry()],[{textContent:'Other account 400043582222'}]);
   assert.equal((await findPostedEntry(wanted)).error,'Account identity could not be verified.');
 });
 test('duplicates, wrong date, wrong amount, and wrong memo stay unconfirmed',async()=>{

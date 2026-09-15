@@ -9,9 +9,9 @@ export async function findPostedEntry(wanted) {
   const table=document.querySelector('table[aria-label="account transactions"]');
   if(!table) return null;
   const headings=[...document.querySelectorAll('h2')].map(e=>e.textContent.trim()).filter(text=>new RegExp(`\\d*${wanted.suffix}$`).test(text));
-  // Truliant can render duplicate desktop/mobile headings for the same account.
-  // Accept identical copies, but fail closed for missing or conflicting identities.
-  if(new Set(headings).size!==1) return {error:'Account identity could not be verified.'};
+  // Truliant can render masked and full-number desktop/mobile headings for the
+  // same account. Each accepted heading is already bound to the requested last4.
+  if(headings.length===0) return {error:'Account identity could not be verified.'};
   let posted=false; const matches=[];
   const normalized=s=>s.replace(/\s*\/\s*/g,' ').replace(/\s+/g,' ').trim();
   for(const row of table.querySelectorAll('tbody tr')) {
