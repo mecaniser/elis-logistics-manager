@@ -1,6 +1,6 @@
 # ELIS Bank Form Assistant — Chrome pilot
 
-Status: version 0.1.1 local pilot, targeted security hardening and simulated tests complete; not installed or live-accepted.
+Status: version 0.1.9 local pilot. The full approval, reload recovery, two-account verification, evidence, and acknowledgement state machine has a deterministic acceptance harness. Live bank acceptance remains required after loading this version.
 No transfer submission, recurring payment, or scheduled-payment code exists.
 
 ## Install locally
