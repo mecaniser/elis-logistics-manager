@@ -87,3 +87,9 @@ in this conversation. No deployment or bank credential changes were made.
 - Extension 0.1.4 adds an extension-owned approval step that can rebind only read-only history verification. It opens the bank home page and never opens the transfer form or runs form preparation.
 - ELIS supplies the Eastern creation date for the same-day pilot draft and automatically resumes `ELIS_VERIFY` after the user approves reauthorization.
 - Validation: 16 extension tests, 10 draft API tests, and the TypeScript/Vite build pass. Live reauthorization and final history match remain outstanding.
+
+### Credit-source navigation timing — 2026-09-14
+
+- Live 0.1.4 reauthorization reached checking 3304 and visibly loaded its matching posted deposit, then stopped before opening credit line 2829 with `Sign in or open the bank account to verify.`
+- Extension 0.1.5 waits for the bank home navigation to complete before polling account cards and extends the iframe/card readiness window to 30 seconds. It remains read-only during verification.
+- Validation: all 16 extension tests pass. Live two-account verification remains outstanding.

@@ -34,9 +34,15 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       if(!bankDate) throw new Error('Preparation date unavailable.');
       async function inspect(suffix,source) {
         await chrome.tabs.update(tabId,{url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+        const navigationEnd=Date.now()+25000;
+        while(Date.now()<navigationEnd) {
+          const current=await chrome.tabs.get(tabId);
+          if(current.status==='complete') break;
+          await new Promise(r=>setTimeout(r,200));
+        }
         let selected=false;
-        for(let i=0;i<40;i++) {
-          await new Promise(r=>setTimeout(r,300));
+        for(let i=0;i<60;i++) {
+          await new Promise(r=>setTimeout(r,500));
           const results=await chrome.scripting.executeScript({target:{tabId,allFrames:true},func:openAccount,args:[suffix]}).catch(()=>[]);
           if(results.some(r=>r.result===true)) {selected=true;break;}
         }
