@@ -93,3 +93,9 @@ in this conversation. No deployment or bank credential changes were made.
 - Live 0.1.4 reauthorization reached checking 3304 and visibly loaded its matching posted deposit, then stopped before opening credit line 2829 with `Sign in or open the bank account to verify.`
 - Extension 0.1.5 waits for the bank home navigation to complete before polling account cards and extends the iframe/card readiness window to 30 seconds. It remains read-only during verification.
 - Validation: all 16 extension tests pass. Live two-account verification remains outstanding.
+
+### Isolated account-history tabs — 2026-09-14
+
+- Live 0.1.5 still stopped after checking 3304 because Truliant retained the first account route when the same tab was reused for credit line 2829.
+- Extension 0.1.6 opens a fresh bank-home tab for each read-only account inspection, closes it afterward, and reports the exact account suffix if an account card cannot be opened. Reauthorization itself opens no bank tab.
+- Validation: all 16 extension tests pass. Live two-account verification remains outstanding.

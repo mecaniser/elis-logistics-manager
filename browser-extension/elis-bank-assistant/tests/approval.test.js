@@ -37,7 +37,7 @@ test('unknown approval infrastructure failure stays locked', async () => {
   delete globalThis.chrome;
 });
 
-test('extension reload can reauthorize read-only verification without opening transfer form', async () => {
+test('extension reload can reauthorize read-only verification without opening a bank tab', async () => {
   let external, internal, approval;
   const created = [], stored = [];
   globalThis.chrome = {
@@ -53,7 +53,7 @@ test('extension reload can reauthorize read-only verification without opening tr
   await new Promise(resolve=>setImmediate(resolve));
   internal({action:'approve',nonce:approval.nonce},{id:'test',tab:{id:2},url:'chrome-extension://test/approve.html'},()=>{});
   assert.deepEqual(await reauth,{ok:true});
-  assert.deepEqual(created.map(item=>item.url),['chrome-extension://test/approve.html','https://www.truliantfcuonline.org/dbank/live/app/home']);
+  assert.deepEqual(created.map(item=>item.url),['chrome-extension://test/approve.html']);
   assert.equal(stored.at(-1).activeDraft.bankDate,'Sep 14, 2026');
   delete globalThis.chrome;
 });

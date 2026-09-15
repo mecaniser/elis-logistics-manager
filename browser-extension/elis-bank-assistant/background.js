@@ -20,41 +20,43 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       if(existing.activeDraft) throw new Error('An active transfer review already exists.');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
       await approvePreparation(message.draft,'verify');
-      const tab=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
-      await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:'prepared',bankDate}});
+      await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
       reply({ok:true}); return;
     }
     if(message.type==='ELIS_VERIFY') {
       if(!existing.activeDraft) {reply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
-      if(!boundDraft(existing.activeDraft,message.draft,sender) || !existing.activeDraft.tabId)
+      if(!boundDraft(existing.activeDraft,message.draft,sender))
         throw new Error('No active preparation for this draft.');
-      const tabId=existing.activeDraft.tabId;
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
       async function inspect(suffix,source) {
-        await chrome.tabs.update(tabId,{url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
-        const navigationEnd=Date.now()+25000;
-        while(Date.now()<navigationEnd) {
-          const current=await chrome.tabs.get(tabId);
-          if(current.status==='complete') break;
-          await new Promise(r=>setTimeout(r,200));
+        const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+        try {
+          const navigationEnd=Date.now()+25000;
+          while(Date.now()<navigationEnd) {
+            const current=await chrome.tabs.get(inspection.id);
+            if(current.status==='complete') break;
+            await new Promise(r=>setTimeout(r,200));
+          }
+          let selected=false;
+          for(let i=0;i<60;i++) {
+            await new Promise(r=>setTimeout(r,500));
+            const results=await chrome.scripting.executeScript({target:{tabId:inspection.id,allFrames:true},func:openAccount,args:[suffix]}).catch(()=>[]);
+            if(results.some(r=>r.result===true)) {selected=true;break;}
+          }
+          if(!selected) throw new Error(`Open account ••${suffix} failed. Sign in to Truliant in this Chrome profile.`);
+          for(let i=0;i<40;i++) {
+            await new Promise(r=>setTimeout(r,300));
+            const results=await chrome.scripting.executeScript({target:{tabId:inspection.id,allFrames:true},func:findPostedEntry,args:[{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}]}).catch(()=>[]);
+            const found=results.map(r=>r.result).find(Boolean);
+            if(found?.match) return found.match;
+            if(found?.error) throw new Error(found.error);
+          }
+          throw new Error('Bank history did not load.');
+        } finally {
+          await chrome.tabs.remove(inspection.id).catch(()=>{});
         }
-        let selected=false;
-        for(let i=0;i<60;i++) {
-          await new Promise(r=>setTimeout(r,500));
-          const results=await chrome.scripting.executeScript({target:{tabId,allFrames:true},func:openAccount,args:[suffix]}).catch(()=>[]);
-          if(results.some(r=>r.result===true)) {selected=true;break;}
-        }
-        if(!selected) throw new Error('Sign in or open the bank account to verify.');
-        for(let i=0;i<40;i++) {
-          await new Promise(r=>setTimeout(r,300));
-          const results=await chrome.scripting.executeScript({target:{tabId,allFrames:true},func:findPostedEntry,args:[{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}]}).catch(()=>[]);
-          const found=results.map(r=>r.result).find(Boolean);
-          if(found?.match) return found.match;
-          if(found?.error) throw new Error(found.error);
-        }
-        throw new Error('Bank history did not load.');
       }
       const destination=await inspect(message.draft.to_last4,false);
       const source=await inspect(message.draft.from_last4,true);
@@ -90,7 +92,8 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     const safe = new Set([
       'No active preparation for this draft.',
       'Preparation date unavailable.',
-      'Sign in or open the bank account to verify.',
+      'Open account ••3304 failed. Sign in to Truliant in this Chrome profile.',
+      'Open account ••2829 failed. Sign in to Truliant in this Chrome profile.',
       'Account identity could not be verified.',
       'No unique posted match found. It may not have posted yet.',
       'Multiple matching entries require review.',
