@@ -5,6 +5,29 @@ const stageError = (code, message) => Object.assign(new Error(message), {code});
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
+  if(message?.type==='ELIS_DISCOVER_ACCOUNTS') {
+    if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
+    busy=true;
+    (async()=>{
+      const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
+      const tab=open.find(item=>item.status==='complete') || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      for(let attempt=0;attempt<50;attempt++) {
+        await new Promise(resolve=>setTimeout(resolve,300));
+        const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
+          [...document.querySelectorAll('[id^="account-link-"]')].map(element=>{
+            const text=(element.textContent||'').replace(/\s+/g,' ').trim();
+            const match=text.match(/\*{2,}(\d{4})(?!\d)/);
+            if(!match) return null;
+            const nickname=text.slice(0,text.indexOf(match[0])).replace(/\s*(available|balance).*$/i,'').trim();
+            return {nickname:nickname||`Account ${match[1]}`,last4:match[1]};
+          }).filter(Boolean)}).catch(()=>[]);
+        const accounts=[...new Map(results.flatMap(result=>result.result||[]).map(account=>[account.last4,account])).values()];
+        if(accounts.length) {reply({ok:true,accounts});return;}
+      }
+      reply({ok:false,error:'Open and sign in to Truliant, then try account import again.'});
+    })().catch(()=>reply({ok:false,error:'Account import stopped. No bank information was changed.'})).finally(()=>{busy=false;});
+    return true;
+  }
   if(message?.type==='ELIS_STATUS' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(({activeDraft})=>{
       const allowed=activeDraft?.id===message.id && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id;

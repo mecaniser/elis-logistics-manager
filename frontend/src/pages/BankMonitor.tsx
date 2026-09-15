@@ -61,6 +61,18 @@ export default function BankMonitor() {
   const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => {
     setRules({ ...rules, [group]: rules[group].map((a, i) => i === index ? { ...a, [key]: value } : a) })
   }
+  const importAccounts = (accounts: Account[]) => {
+    const checking = accounts.filter(a => /checking/i.test(a.nickname))
+    const sources = accounts.filter(a => /(line of credit|heloc|home equity)/i.test(a.nickname))
+    setRules(current => ({
+      ...current,
+      checking: checking.length ? checking : current.checking,
+      sources: sources.length ? [
+        ...sources.filter(a => /(heloc|home equity)/i.test(a.nickname)),
+        ...sources.filter(a => !/(heloc|home equity)/i.test(a.nickname)),
+      ] : current.sources,
+    }))
+  }
   const latest = data?.runs[0]
   const stale = latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000
   return <div className="max-w-5xl mx-auto space-y-6">
@@ -101,10 +113,10 @@ export default function BankMonitor() {
         </>}
         <a href="https://www.truliantfcuonline.org/dbank/live/app/home" target="_blank" rel="noreferrer" className="inline-block text-blue-700 underline">Open Truliant</a>
       </section>
-      <BankTransferQueue key={currentTenant!.id} tenantId={currentTenant!.id} checking={data.rules.checking} sources={data.rules.sources} />
+      <BankTransferQueue key={currentTenant!.id} tenantId={currentTenant!.id} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
       <form onSubmit={save} className="bg-white border rounded-lg p-5 space-y-5">
         <h2 className="text-lg font-semibold">Monitoring settings</h2>
-        <p className="text-sm text-gray-600">Enter nicknames and last four digits only. Credentials are configured separately on the worker host.</p>
+        <p className="text-sm text-gray-600">Accounts are imported from Truliant when the bank assistant connects. Review the detected account types before saving.</p>
         {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3">
           <legend className="font-medium">{group === 'checking' ? 'Checking accounts' : 'Funding sources, in priority order'}</legend>
           {group === 'sources' && <p className="text-sm text-gray-600">Add your HELOC first and Preferred Line of Credit second. For a charge-level draft, use the first source that can cover the whole charge; do not split it.</p>}
