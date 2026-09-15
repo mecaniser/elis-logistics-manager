@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {allowedSender,validDraft} from '../contract.js';
+import {allowedSender,validDraft,parseAccountSummary} from '../contract.js';
 import {fillForm} from '../fill-form.js';
 const draft={id:'12345678-1234-1234-1234-123456789012',amount_cents:11820,from_last4:'2222',to_last4:'1111',memo:'Cvr Utility 0914'};
 test('only exact ELIS origins and bank-monitor route may request preparation',()=>{
   assert(allowedSender('https://www.elisprotech.com/bank-monitor'));
   assert(allowedSender('http://127.0.0.1:18081/bank-monitor'));
   for(const url of ['https://evil.test/bank-monitor','https://www.elisprotech.com.evil.test/bank-monitor','http://127.0.0.1:9999/bank-monitor','https://www.elisprotech.com/','https://elisprotech.com/bank-monitor']) assert(!allowedSender(url));
+});
+
+test('parse only explicitly labeled account-card balances', () => {
+  assert.deepEqual(parseAccountSummary('Main Business Checking **3304 Current Balance -$968.10 Available Balance -$968.10'), {last4:'3304',current_cents:-96810,available_credit_cents:null});
+  assert.deepEqual(parseAccountSummary('Preferred Line of Credit **2829 Current Balance $311.25 Available Credit $4,688.75'), {last4:'2829',current_cents:31125,available_credit_cents:468875});
+  assert.equal(parseAccountSummary('Account without suffix Current Balance $1.00'), null);
 });
 test('reject malformed, fractional, same-account and oversized requests',()=>{
   assert(validDraft(draft));

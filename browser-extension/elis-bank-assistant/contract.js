@@ -20,3 +20,14 @@ export function boundDraft(active, draft, sender) {
   return !!active && active.origin === new URL(sender.url).origin && active.elisTabId === sender.tab?.id &&
     ['id','amount_cents','from_last4','to_last4','memo'].every(k => active.draft?.[k] === draft?.[k]);
 }
+export function parseAccountSummary(text) {
+  const clean=String(text || '').replace(/\s+/g,' ').trim();
+  const suffix=clean.match(/\*{2,}(\d{4})(?!\d)/);
+  if(!suffix) return null;
+  const cents = label => {
+    const match=clean.match(new RegExp(`${label}\\s*\\**\\s*(-?\\$[\\d,]+\\.\\d{2})`,'i'));
+    if(!match) return null;
+    return Math.round(Number(match[1].replace(/[$,]/g,''))*100);
+  };
+  return {last4:suffix[1],current_cents:cents('Current Balance'),available_credit_cents:cents('Available Credit')};
+}
