@@ -5,6 +5,12 @@ const stageError = (code, message) => Object.assign(new Error(message), {code});
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
+  if(message?.type==='ELIS_RELOAD') {
+    if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
+    reply({ok:true,version:chrome.runtime.getManifest().version});
+    setTimeout(()=>chrome.runtime.reload(),100);
+    return;
+  }
   if(message?.type==='ELIS_DISCOVER_ACCOUNTS') {
     if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
     busy=true;

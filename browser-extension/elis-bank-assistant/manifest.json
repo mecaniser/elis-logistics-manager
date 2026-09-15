@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ELIS Bank Form Assistant",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Prepare reviewed Truliant forms. Never submits or schedules transfers.",
   "permissions": [
     "scripting",
