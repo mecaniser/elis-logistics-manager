@@ -94,6 +94,13 @@ in this conversation. No deployment or bank credential changes were made.
 - Extension 0.1.5 waits for the bank home navigation to complete before polling account cards and extends the iframe/card readiness window to 30 seconds. It remains read-only during verification.
 - Validation: all 16 extension tests pass. Live two-account verification remains outstanding.
 
+### Pilot operator cleanup — 2026-09-14
+
+- Chrome inspection confirmed the installed extension was still 0.1.5 when the user retried; the 0.1.6 isolated-tab fix had not loaded.
+- ELIS now refuses preparation and verification when the connected extension version differs from 0.1.6, with an explicit reload message. The submitted draft label now says `Transfer submitted; history verification pending`.
+- Removed the unrelated reviewed synthetic draft from the disposable local preview database so it cannot be mistaken for the real pilot transfer. No real draft or bank data was deleted.
+- Validation: frontend build and all 16 extension tests pass; browser-visible queue contains only the real Union County draft. Live 0.1.6 reload and two-account verification remain outstanding.
+
 ### Isolated account-history tabs — 2026-09-14
 
 - Live 0.1.5 still stopped after checking 3304 because Truliant retained the first account route when the same tab was reused for credit line 2829.

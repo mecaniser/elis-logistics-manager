@@ -4,6 +4,7 @@ import { bankMonitorApi } from '../services/api'
 type Account = { nickname: string; last4: string }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 const runtime = () => (window as any).chrome?.runtime
+const REQUIRED_EXTENSION_VERSION = '0.1.6'
 const send = (extension: string, message: unknown): Promise<any> => new Promise((resolve, reject) => {
   if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
   if (!runtime()?.sendMessage) return reject(new Error('Chrome cannot see an enabled extension connection for this page. Reload ELIS Bank Form Assistant in chrome://extensions in this Chrome profile, then reload this page.'))
@@ -50,7 +51,8 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     try {
       const response = await send(extension, { type: 'ELIS_PING' })
       localStorage.setItem('elis-bank-extension-id', extension)
-      if (active.current) setNotice(`Chrome extension connected (${response.version || 'version unknown'}). No bank form opened or transfer prepared.`)
+      if (response.version !== REQUIRED_EXTENSION_VERSION) throw new Error(`Chrome extension ${response.version || 'version unknown'} is loaded. Reload ELIS Bank Form Assistant ${REQUIRED_EXTENSION_VERSION} in this Chrome profile before continuing.`)
+      if (active.current) setNotice(`Chrome extension connected (${response.version}). No bank form opened or transfer prepared.`)
     } catch (e: any) { if (active.current) setError(e.message) }
     finally { if (active.current) setBusy(false) }
   }
@@ -58,7 +60,8 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     setBusy(true); setError(''); setNotice('')
     let claimed = false
     try {
-      await send(extension, { type: 'ELIS_PING' })
+      const ping = await send(extension, { type: 'ELIS_PING' })
+      if (ping.version !== REQUIRED_EXTENSION_VERSION) throw new Error(`Chrome extension ${ping.version || 'version unknown'} is loaded. Reload version ${REQUIRED_EXTENSION_VERSION} before preparing a form.`)
       localStorage.setItem('elis-bank-extension-id', extension)
       const result = await bankMonitorApi.prepareDraft(tenantId, draft.id)
       claimed = true
@@ -85,6 +88,8 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
   const verify = async (draft: Draft) => {
     setBusy(true); setError(''); setNotice('')
     try {
+      const ping = await send(extension, { type: 'ELIS_PING' })
+      if (ping.version !== REQUIRED_EXTENSION_VERSION) throw new Error(`Chrome extension ${ping.version || 'version unknown'} is loaded. Reload version ${REQUIRED_EXTENSION_VERSION} before checking histories.`)
       let result
       try {
         result = await send(extension, { type: 'ELIS_VERIFY', draft })
@@ -123,7 +128,7 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     {drafts.map(d => <div key={d.id} className="border-t py-3 space-y-1">
       <p className="font-medium">${(d.amount_cents / 100).toFixed(2)} · {d.memo}</p>
       <p className="text-sm">••{d.from_last4} → ••{d.to_last4} · {d.charge_reference}</p>
-      <p className="text-sm">{d.status === 'reviewed' ? 'Ready to prepare' : d.status.replace(/_/g, ' ')} · {d.status === 'bank_history_matched' ? 'Matched in both bank histories by extension' : 'Completion unconfirmed'}</p>
+      <p className="text-sm">{d.status === 'reviewed' ? 'Ready to prepare' : d.status === 'prepared_awaiting_submission' ? 'Transfer submitted; history verification pending' : d.status.replace(/_/g, ' ')} · {d.status === 'bank_history_matched' ? 'Matched in both bank histories by extension' : 'Completion unconfirmed'}</p>
       {d.status === 'reviewed' && <button disabled={busy} onClick={() => prepare(d)} className="text-blue-700 underline disabled:opacity-50">Prepare in Truliant</button>}
       {!['reviewed', 'bank_history_matched'].includes(d.status) && <button disabled={busy} onClick={() => verify(d)} className="text-blue-700 underline">I finished in Truliant — check both histories</button>}
       {!['reviewed', 'bank_history_matched'].includes(d.status) && <p className="text-sm text-amber-800">Check the bank tab and history before another attempt. This draft is locked to prevent duplicate preparation.</p>}
