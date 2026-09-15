@@ -135,6 +135,10 @@ class DraftOutcome(StrictModel):
     status: str = Field(pattern=r'^(prepared_awaiting_submission|preparation_failed|preparation_not_started)$')
 
 
+class DraftRetry(StrictModel):
+    reason: str = Field(pattern=r'^signed_out_before_form$')
+
+
 @router.post('/drafts/{draft_id}/outcome')
 def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
@@ -147,6 +151,18 @@ def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id
         raise HTTPException(409, 'Draft state changed; refresh the queue.')
     db.commit()
     return {'status': outcome, 'transfers_executed': False}
+
+
+@router.post('/drafts/{draft_id}/retry')
+def retry_draft(draft_id: str, data: DraftRetry, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    updated = db.query(BankTransferDraft).filter_by(
+        id=draft_id, tenant_id=tenant_id, status='preparation_failed').update({'status': 'reviewed'})
+    if not updated:
+        db.rollback()
+        raise HTTPException(409, 'Only a failed preparation can be resumed.')
+    db.commit()
+    return {'status': 'reviewed', 'reason': data.reason, 'transfers_executed': False}
 
 
 class HistoryEvidence(StrictModel):

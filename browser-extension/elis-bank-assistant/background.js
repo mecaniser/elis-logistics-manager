@@ -177,6 +177,11 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     const results=await chrome.scripting.executeScript({target:{tabId:tab.id},func:fillForm,args:[message.draft]});
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
+    if(result.code==='LOGIN_REQUIRED') {
+      await chrome.storage.session.remove('activeDraft');
+      finishReply({ok:false,code:'PREPARATION_NOT_STARTED',error:result.error});
+      return;
+    }
     await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:result.ok?'prepared':'needs_review',bankDate:new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date())}});
     finishReply(result);
   })().catch(error=>{

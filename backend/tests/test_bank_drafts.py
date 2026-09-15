@@ -70,3 +70,7 @@ def test_only_explicit_not_started_outcome_releases_requested_draft(session):
     assert session.post(path+'/outcome', headers=H, json={'status':'preparation_failed'}).status_code == 200
     assert session.post(path+'/outcome', headers=H, json={'status':'preparation_not_started'}).status_code == 409
     assert session.post(path+'/prepare', headers=H).status_code == 409
+    retry = session.post(path+'/retry', headers=H, json={'reason':'signed_out_before_form'})
+    assert retry.status_code == 200
+    assert retry.json() == {'status':'reviewed','reason':'signed_out_before_form','transfers_executed':False}
+    assert session.post(path+'/prepare', headers=H).status_code == 200

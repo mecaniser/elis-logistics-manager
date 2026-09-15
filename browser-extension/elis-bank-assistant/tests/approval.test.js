@@ -43,6 +43,30 @@ test('unknown approval infrastructure failure stays locked', async () => {
   delete globalThis.chrome;
 });
 
+test('login redirect releases the draft because the bank form was never reached', async () => {
+  let external, internal, approval;
+  const stored = [], removed = [];
+  globalThis.chrome = {
+    runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,
+      onMessageExternal:{addListener:f=>{external=f;}},onMessage:{addListener:f=>{internal=f;},removeListener(){}}},
+    storage:{session:{get:async()=>({}),set:async value=>{stored.push(value);if(value.approval) approval=value.approval;},remove:async key=>removed.push(key)}},
+    tabs:{query:async()=>[],create:async()=>({id:3}),get:async()=>({id:3,status:'complete'})},
+    windows:{
+      create:async()=>({id:20,tabs:[{id:2}]}),remove:async()=>{},
+      onRemoved:{addListener(){},removeListener(){}}
+    },
+    scripting:{executeScript:async()=>[{result:{ok:false,code:'LOGIN_REQUIRED',error:'Sign in to Truliant, then return to ELIS and resume this draft.'}}]}
+  };
+  await import('../background.js?login-redirect-test');
+  const preparation = new Promise(resolve=>external({type:'ELIS_PREPARE',draft},sender,resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  internal({action:'approve',nonce:approval.nonce},{id:'test',tab:{id:2},url:'chrome-extension://test/approve.html'},()=>{});
+  assert.deepEqual(await preparation,{ok:false,code:'PREPARATION_NOT_STARTED',error:'Sign in to Truliant, then return to ELIS and resume this draft.'});
+  assert.equal(stored.some(value=>value.activeDraft?.status==='requested'),true);
+  assert.equal(removed.includes('activeDraft'),true);
+  delete globalThis.chrome;
+});
+
 test('extension reload can reauthorize read-only verification without opening a bank tab', async () => {
   let external, internal, approval;
   const created = [], stored = [];

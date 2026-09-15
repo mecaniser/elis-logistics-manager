@@ -1,7 +1,7 @@
 // Runs in Chrome's isolated content-script world. No submit control is activated.
 export async function fillForm(draft) {
   if (location.origin !== 'https://www.truliantfcuonline.org' ||
-      location.pathname !== '/dbank/live/app/home/olb/transfers') return {ok:false, error:'Sign in to Truliant, then return to ELIS.'};
+      location.pathname !== '/dbank/live/app/home/olb/transfers') return {ok:false, code:'LOGIN_REQUIRED', error:'Sign in to Truliant, then return to ELIS and resume this draft.'};
   const visible = e => e && e.getClientRects().length > 0;
   async function until(fn) {
     const end = Date.now() + 12000;
