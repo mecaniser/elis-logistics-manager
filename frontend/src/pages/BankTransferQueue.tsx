@@ -12,6 +12,17 @@ type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: 
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
 const REQUIRED_EXTENSION_VERSION = '0.1.18'
+const SELF_RELOAD_VERSION = '0.1.19'
+const versionAtLeast = (current: string | undefined, minimum: string) => {
+  const parsed = (value: string | undefined) => String(value || '').split('.').map(part => Number(part))
+  const left = parsed(current); const right = parsed(minimum)
+  if (left.some(Number.isNaN) || right.some(Number.isNaN)) return false
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] || 0) - (right[index] || 0)
+    if (difference) return difference > 0
+  }
+  return true
+}
 const runtime = () => (window as Window & { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
@@ -92,7 +103,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     if (!extension) { if (active.current) setConnectionState('unconfigured'); return false }
     try {
       const response = await send<ExtensionResponse>(extension, { type: 'ELIS_PING' })
-      const valid = response.version === REQUIRED_EXTENSION_VERSION
+      const valid = versionAtLeast(response.version, REQUIRED_EXTENSION_VERSION)
       if (active.current) { setDetectedVersion(response.version || 'unknown'); setConnected(valid); setConnectionState(valid ? 'connected' : 'outdated') }
       return valid
     } catch {
@@ -141,7 +152,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     try {
       const candidate = draftExtension.trim()
       const response = await send<ExtensionResponse>(candidate, { type: 'ELIS_PING' })
-      if (response.version !== REQUIRED_EXTENSION_VERSION) throw new Error(`Extension ${response.version || 'version unknown'} is loaded. Reload version ${REQUIRED_EXTENSION_VERSION}.`)
+      if (!versionAtLeast(response.version, REQUIRED_EXTENSION_VERSION)) throw new Error(`Extension ${response.version || 'version unknown'} is loaded. Reload version ${REQUIRED_EXTENSION_VERSION} or newer.`)
       localStorage.setItem('elis-bank-extension-id', candidate)
       if (active.current) { setExtension(candidate); setDraftExtension(candidate); setConnected(true); setConnectionState('connected'); setDetectedVersion(response.version || ''); setEditingConnection(false) }
       const discovered = await send<ExtensionResponse>(candidate, { type: 'ELIS_DISCOVER_ACCOUNTS' })
@@ -157,6 +168,25 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       const accounts = discovered.accounts || []
       if (active.current) { setConnected(true); onAccountsDiscovered(accounts); setNotice(`Imported ${accounts.length} accounts. Review and save their roles in Settings.`) }
     } catch (error: unknown) { fail(error, 'Unable to import accounts.') }
+    finally { if (active.current) { setBusy(false); setOperation(null) } }
+  }
+  const reloadAssistant = async () => {
+    if (!versionAtLeast(detectedVersion, SELF_RELOAD_VERSION)) { void ping(); return }
+    setBusy(true); setError(''); setNotice(''); setOperation({ message: 'Reloading the saved bank assistant…', started: Date.now() })
+    try {
+      await send<ExtensionResponse>(extension, { type: 'ELIS_RELOAD' })
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 300))
+        try {
+          const response = await send<ExtensionResponse>(extension, { type: 'ELIS_PING' })
+          if (versionAtLeast(response.version, REQUIRED_EXTENSION_VERSION)) {
+            if (active.current) { setDetectedVersion(response.version || ''); setConnected(true); setConnectionState('connected'); setNotice('Bank assistant reloaded and reconnected. Your saved accounts were preserved.') }
+            return
+          }
+        } catch { /* The extension is briefly unavailable while Chrome reloads it. */ }
+      }
+      throw new Error('The extension reload started but did not reconnect. Reload it from chrome://extensions, then return here.')
+    } catch (error: unknown) { if (active.current) setError(errorMessage(error, 'Unable to reload the bank assistant.')) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
   const checkBalances = async () => {
@@ -302,7 +332,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
 
     {(error || notice || coverageIssue || operation) && <div className="space-y-2" aria-live="polite">{error && <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><Icon name="alert" className="h-5 w-5 shrink-0" /><span>{error}</span></div>}{coverageIssue && <div role="alert" className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><Icon name="alert" className="h-5 w-5 shrink-0" /><span><strong>Coverage needs review.</strong> {coverageIssue}</span></div>}{notice && <div role="status" className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><Icon name="check" className="h-5 w-5 shrink-0" /><span>{notice}</span></div>}{operation && <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" /><span>{operation.message} <span className="tabular-nums text-blue-700">{Math.max(0, Math.floor((clock - operation.started) / 1000))}s</span></span></div>}</div>}
 
-    {!connected && extension && !editingConnection && connectionState !== 'checking' && <section className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-amber-700 ring-1 ring-amber-200"><Icon name="refresh" /></span><div><h2 className="font-semibold text-amber-950">{connectionState === 'outdated' ? 'Reload the saved bank assistant' : 'Bank assistant did not respond'}</h2><p className="mt-1 text-sm leading-6 text-amber-900">{connectionState === 'outdated' ? `Chrome still has version ${detectedVersion}; ELIS needs ${REQUIRED_EXTENSION_VERSION}. Your extension ID and imported accounts remain saved. Reload the extension once, then return here.` : 'The saved extension ID and account setup remain intact. Chrome may still be restarting the extension.'}</p></div></div><div className="flex shrink-0 gap-2"><button type="button" onClick={() => void ping()} className="min-h-11 rounded-xl bg-amber-900 px-4 text-sm font-semibold text-white hover:bg-amber-800">Check again</button><button type="button" onClick={() => setEditingConnection(true)} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100">Change extension</button></div></section>}
+    {!connected && extension && !editingConnection && connectionState !== 'checking' && <section className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-amber-700 ring-1 ring-amber-200"><Icon name="refresh" /></span><div><h2 className="font-semibold text-amber-950">{connectionState === 'outdated' ? 'Reload the saved bank assistant' : 'Bank assistant did not respond'}</h2><p className="mt-1 text-sm leading-6 text-amber-900">{connectionState === 'outdated' ? versionAtLeast(detectedVersion, SELF_RELOAD_VERSION) ? `Chrome has version ${detectedVersion}; ELIS needs ${REQUIRED_EXTENSION_VERSION}. Reload it here without changing the saved extension ID or accounts.` : `Chrome still has version ${detectedVersion}. Open chrome://extensions, reload ELIS Bank Form Assistant once, then return here. Your extension ID and imported accounts remain saved.` : 'The saved extension ID and account setup remain intact. Chrome may still be restarting the extension.'}</p></div></div><div className="flex shrink-0 gap-2"><button type="button" disabled={busy} onClick={() => connectionState === 'outdated' ? void reloadAssistant() : void ping()} className="min-h-11 rounded-xl bg-amber-900 px-4 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50">{connectionState === 'outdated' ? versionAtLeast(detectedVersion, SELF_RELOAD_VERSION) ? 'Reload assistant now' : 'Check after reload' : 'Try reconnecting'}</button><button type="button" onClick={() => setEditingConnection(true)} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100">Change extension</button></div></section>}
 
     {(editingConnection || !extension) && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="link" /></span><div><h2 className="font-semibold text-slate-950">{extension ? 'Change bank assistant' : 'Connect bank assistant'}</h2><p className="mt-1 text-sm text-slate-600">The extension ID is saved in this Chrome profile. Account import runs only when you connect a new extension.</p></div></div><label className="mt-4 block text-sm font-medium text-slate-700">Chrome extension ID<input className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" value={draftExtension} maxLength={32} onChange={e => setDraftExtension(e.target.value.trim())} placeholder="32-letter extension ID" /></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button type="button" disabled={busy || !/^[a-p]{32}$/.test(draftExtension)} onClick={connect} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:opacity-45 motion-reduce:transition-none">{busy ? 'Connecting…' : extension ? 'Save replacement' : 'Connect and import'}</button>{extension && <button type="button" disabled={busy} onClick={() => { setDraftExtension(extension); setEditingConnection(false); setError('') }} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button>}</div></section>}
 
