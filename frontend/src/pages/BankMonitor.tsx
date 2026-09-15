@@ -26,7 +26,7 @@ const apiError = (error: unknown, fallback: string) => {
   return fallback
 }
 
-function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause'; className?: string }) {
+function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause' | 'close'; className?: string }) {
   const paths = {
     calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></>,
     shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />,
@@ -34,6 +34,7 @@ function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | '
     history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
     check: <path d="m5 12 4 4L19 6" />,
     pause: <><path d="M9 5v14M15 5v14" /></>,
+    close: <><path d="m6 6 12 12" /><path d="M18 6 6 18" /></>,
   }
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name]}</svg>
 }
@@ -51,6 +52,25 @@ export default function BankMonitor() {
   const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!settingsOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSettingsOpen(false)
+        window.setTimeout(() => settingsButtonRef.current?.focus(), 0)
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [settingsOpen])
 
   useEffect(() => {
     if (!currentTenantId) return
@@ -137,9 +157,18 @@ export default function BankMonitor() {
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
 
-        <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm" open={!accountsConfigured}>
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="settings" /></span><span><span className="block font-semibold text-slate-950">Monitoring settings</span><span className="block text-xs text-slate-500">Accounts, rules and schedule</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">Edit</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Close</span></summary>
-          <form onSubmit={save} className="space-y-6 border-t border-slate-200 p-5">
+        <button ref={settingsButtonRef} type="button" aria-expanded={settingsOpen} aria-controls="monitoring-settings-drawer" onClick={() => setSettingsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md active:scale-[0.99] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="settings" /></span><span><span className="block font-semibold text-slate-950">Monitoring settings</span><span className="block text-xs text-slate-500">Accounts, rules and schedule</span></span></span><span className="text-sm font-semibold text-blue-700">Edit</span>
+        </button>
+
+        {settingsOpen && <>
+          <button type="button" aria-label="Close monitoring settings" onClick={() => setSettingsOpen(false)} className="fixed inset-0 z-40 cursor-default bg-slate-950/45 backdrop-blur-[1px]" />
+          <section id="monitoring-settings-drawer" role="dialog" aria-modal="true" aria-labelledby="monitoring-settings-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+              <div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Bank Monitor</p><h2 id="monitoring-settings-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Monitoring settings</h2><p className="mt-1 text-sm text-slate-600">Manage accounts, coverage rules, repayment priority, and schedule.</p></div>
+              <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
+            </header>
+          <form onSubmit={save} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
             {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3"><legend className="text-sm font-semibold text-slate-950">{group === 'checking' ? 'Checking accounts' : 'Funding priority'}</legend>{rules[group].map((account, index) => <div key={`${group}-${account.last4 || 'new'}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`}<input required maxLength={80} value={account.nickname} onChange={event => editAccount(group, index, 'nickname', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><div className="mt-2 flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium text-slate-600">Last four<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={event => editAccount(group, index, 'last4', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><button type="button" className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => setRules(current => ({ ...current, [group]: current[group].filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`Remove ${account.nickname || group}`}>Remove</button></div></div>)}<button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45" onClick={() => setRules(current => ({ ...current, [group]: [...current[group], { nickname: '', last4: '' }] }))}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button></fieldset>)}
 
             <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Coverage rule</legend><label className="block text-xs font-medium text-slate-600">Calculate from<select className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" value={rules.basis} onChange={event => setRules(current => ({ ...current, basis: event.target.value }))}><option value="posted">Posted balance only</option><option value="posted_and_pending">Posted plus verified pending debits</option></select></label></fieldset>
@@ -153,7 +182,8 @@ export default function BankMonitor() {
             {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
             <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
           </form>
-        </details>
+          </section>
+        </>}
       </aside>
     </div>}
   </div>
