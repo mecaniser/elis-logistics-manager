@@ -14,6 +14,7 @@ function listenerFor(links) {
       querySelector: () => null,
       querySelectorAll: selector => selector === '[id^="account-link-"]' ? links : []
     },
+    setTimeout,
     chrome: {runtime: {onMessage: {addListener: fn => { listener = fn; }}}}
   };
   context.window.top = {};
@@ -28,7 +29,7 @@ test('empty Truliant child frames stay silent during account selection', () => {
   assert.equal(replied, false);
 });
 
-test('only the child frame containing account cards answers and opens the exact suffix', () => {
+test('only the child frame containing account cards answers and opens the exact suffix', async () => {
   let clicked = false;
   const link = {textContent:'Main Business Checking********3304Available Balance$0.00',click:()=>{clicked=true;}};
   const listener = listenerFor([link]);
@@ -36,5 +37,6 @@ test('only the child frame containing account cards answers and opens the exact 
   listener({type:'ELIS_OPEN_ACCOUNT',suffix:'3304'}, {}, value => { response = value; });
   assert.equal(response.ready, true);
   assert.equal(response.opened, true);
+  await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(clicked, true);
 });

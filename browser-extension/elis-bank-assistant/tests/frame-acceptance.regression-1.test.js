@@ -16,6 +16,7 @@ function frame(links) {
       querySelector:()=>null,
       querySelectorAll:selector=>selector==='[id^="account-link-"]' ? links : []
     },
+    setTimeout,
     chrome:{runtime:{onMessage:{addListener:value=>{listener=value;}}}}
   };
   context.window.top={};
@@ -27,7 +28,7 @@ function frame(links) {
   };
 }
 
-test('multi-frame account selection waits through empty frames and delayed account cards', () => {
+test('multi-frame account selection waits through empty frames and delayed account cards', async () => {
   const emptyFrame=frame([]);
   const unrelatedFrame=frame([{textContent:'Advertisement',click:()=>assert.fail('unrelated frame clicked')}]);
   const delayedLinks=[];
@@ -42,5 +43,6 @@ test('multi-frame account selection waits through empty frames and delayed accou
   delayedLinks.push({textContent:'Main Business Checking ********3304 Available -$968.10',click:()=>{clicked++;}});
   const broadcast=[emptyFrame(message),unrelatedFrame(message),accountFrame(message)].filter(Boolean);
   assert.equal(broadcast.filter(value=>value.opened).length,1);
+  await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(clicked,1);
 });
