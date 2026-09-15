@@ -14,39 +14,60 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
 } }
 type Dashboard = { rules: Rules; next_check: string; runs: Run[] }
+
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
 const defaults: Rules = { repayment: { enabled: false, priority: [], reserve_cents: 0 }, enabled: false, checking: [], sources: [], basis: 'posted', buffer_cents: 0 }
+const apiError = (error: unknown, fallback: string) => {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown } } }).response
+    if (typeof response?.data?.detail === 'string') return response.data.detail
+  }
+  return fallback
+}
+
+function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause'; className?: string }) {
+  const paths = {
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></>,
+    shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    pause: <><path d="M9 5v14M15 5v14" /></>,
+  }
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name]}</svg>
+}
 
 export default function BankMonitor() {
   const { currentTenant } = useTenant()
-  const tenantRef = useRef(currentTenant?.id)
-  tenantRef.current = currentTenant?.id
+  const currentTenantId = currentTenant?.id
+  const tenantRef = useRef(currentTenantId)
+  tenantRef.current = currentTenantId
   const [loadedTenant, setLoadedTenant] = useState<number | null>(null)
   const [data, setData] = useState<Dashboard | null>(null)
   const [rules, setRules] = useState<Rules>(defaults)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [settingsError, setSettingsError] = useState('')
   const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    if (!currentTenant) return
-    const tenantId = currentTenant.id
+    if (!currentTenantId) return
+    const tenantId = currentTenantId
     let active = true
-    setData(null); setError(''); setNotice(''); setLoading(true)
+    setData(null); setError(''); setLoading(true)
     bankMonitorApi.get(tenantId).then(({ data: value }) => {
       if (active) { setData(value); setRules({ ...value.rules, repayment: value.rules.repayment || defaults.repayment }); setLoadedTenant(tenantId) }
-    }).catch((e) => {
-      if (active) setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Unable to load bank monitoring.')
-    }).finally(() => { if (active) setLoading(false) })
+    }).catch(error => { if (active) setError(apiError(error, 'Unable to load bank monitoring.')) })
+      .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [currentTenant?.id])
+  }, [currentTenantId])
+
   const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!currentTenant || loadedTenant !== currentTenant.id) return
-    const tenantId = currentTenant.id
+    event.preventDefault()
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
     setSaving(true); setSettingsError(''); setSettingsNotice('')
     try {
       await bankMonitorApi.save(tenantId, rules)
@@ -55,131 +76,85 @@ export default function BankMonitor() {
       if (tenantRef.current !== tenantId) return
       setData(response.data)
       setRules({ ...response.data.rules, repayment: response.data.rules.repayment || defaults.repayment })
-      setSettingsNotice(response.data.rules.enabled
-        ? 'Saved. Daily 5:30 p.m. checks are requested.'
-        : 'Saved. Scheduled checks are paused.')
-    } catch (e: any) {
-      if (tenantRef.current !== tenantId) return
-      setSettingsError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Check account suffixes and ensure each account appears only once.')
+      setSettingsNotice(response.data.rules.enabled ? 'Settings saved. Daily checks are scheduled.' : 'Settings saved. Scheduled checks are paused.')
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setSettingsError(apiError(error, 'Check the account suffixes and ensure each account appears only once.'))
     } finally { setSaving(false) }
   }
-  const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => {
-    setRules({ ...rules, [group]: rules[group].map((a, i) => i === index ? { ...a, [key]: value } : a) })
-  }
+  const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => ({ ...current, [group]: current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account) }))
   const importAccounts = (accounts: Account[]) => {
-    const checking = accounts.filter(a => /checking/i.test(a.nickname))
-    const sources = accounts.filter(a => /(line of credit|heloc|home equity)/i.test(a.nickname))
-    setRules(current => ({
-      ...current,
-      checking: checking.length ? checking : current.checking,
-      sources: sources.length ? [
-        ...sources.filter(a => /(heloc|home equity)/i.test(a.nickname)),
-        ...sources.filter(a => !/(heloc|home equity)/i.test(a.nickname)),
-      ] : current.sources,
-    }))
+    const checking = accounts.filter(account => /checking/i.test(account.nickname))
+    const sources = accounts.filter(account => /(line of credit|heloc|home equity)/i.test(account.nickname))
+    setRules(current => ({ ...current, checking: checking.length ? checking : current.checking, sources: sources.length ? [...sources.filter(account => /(heloc|home equity)/i.test(account.nickname)), ...sources.filter(account => !/(heloc|home equity)/i.test(account.nickname))] : current.sources }))
   }
+
   const latest = data?.runs[0]
-  const stale = latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000
+  const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
   const accountsConfigured = savedRules.checking.length > 0 && savedRules.sources.length > 0
-  return <div className="max-w-5xl mx-auto space-y-6">
-    <div><h1 className="text-2xl font-semibold text-gray-900">Bank Monitor</h1>
-      <p className="text-gray-600 mt-1">Daily business checking review at 5:30 p.m. Eastern.</p></div>
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <p className="font-medium text-amber-900">Transfer proposals only · No money moves automatically</p>
-      <p className="text-sm text-amber-900 mt-1">Checks calculate the amount needed to cover a shortfall. Complete any transfer in Truliant yourself. Fee avoidance and same-day posting have not been verified.</p>
-    </div>
-    {error && <p role="alert" className="text-red-700">{error}</p>}
-    {notice && <p role="status" className="text-green-800">{notice}</p>}
-    {loading && <p role="status">Loading bank monitoring…</p>}
-    {data && loadedTenant === currentTenant?.id && <>
-      <section className="bg-white border rounded-lg p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Automated 5:30 p.m. balance check</h2>
-        {!latest ? <div className="rounded border border-amber-200 bg-amber-50 p-3 space-y-1">
-          <p className="font-medium text-amber-900">{!accountsConfigured ? 'Account setup required' : !savedRules.enabled ? 'Schedule paused' : 'Waiting for secure server login'}</p>
-          <p className="text-sm text-amber-900">{!accountsConfigured
-            ? 'Connect the bank assistant and save the imported checking and credit accounts below.'
-            : !savedRules.enabled
-              ? 'Turn on daily checks in Monitoring settings and save.'
-              : 'Your accounts and requested schedule are saved. The server worker still needs its one-time Truliant sign-in before the first automatic check can run.'}</p>
-        </div> : <>
-          <p className="text-sm font-medium text-gray-600">Latest result</p>
-          <p className="font-medium capitalize">{label(latest.status)} · {latest.scheduled_date}</p>
-          {latest.status === 'running' && <p>The check has not completed. If this persists, inspect the worker; no outcome is confirmed.</p>}
-          {stale && <p className="text-amber-800">Historical snapshot. Recheck balances in Truliant before making a transfer.</p>}
-          {latest.result.message && <p>{latest.result.message}</p>}
-          <div className="overflow-x-auto">{latest.result.accounts && <table className="w-full text-sm text-left">
-            <thead><tr><th className="py-2">Checking</th><th>Current</th><th>Available</th><th>Needed</th></tr></thead>
-            <tbody>{latest.result.accounts.map(a => <tr key={a.last4} className="border-t"><td className="py-3">{a.nickname} · ••{a.last4}</td><td>{dollars(a.current_cents)}</td><td>{a.available_cents === null ? 'Unknown' : dollars(a.available_cents)}</td><td>{dollars(a.needed_cents)}</td></tr>)}</tbody>
-          </table>}</div>
-          {!!latest.result.proposals?.length && <p className="text-sm text-gray-600">This historical run contains aggregate balance estimates. Prepare individual full-charge transfers in the queue below; these estimates are not executable drafts.</p>}
-          {latest.result.credit_accounts?.some(a => a.outstanding_cents !== null) && <div className="border-t pt-3">
-            <h3 className="font-medium">Credit balances at last check</h3>
-            {latest.result.credit_accounts.map(a => <p key={a.last4}>{a.nickname} · ••{a.last4}: balance {a.outstanding_cents === null ? 'unknown' : dollars(a.outstanding_cents)}, accrued interest {a.accrued_interest_cents === null ? 'unknown' : dollars(a.accrued_interest_cents)}</p>)}
-            <p className="text-sm text-gray-600">These are reported balances, not verified payoff quotes.</p>
-          </div>}
-          {latest.result.repayment && <div className="border-t pt-3">
-            <h3 className="font-medium">Friday credit repayment</h3>
-            <p className="capitalize">{label(latest.result.repayment.status)}</p>
-            {latest.result.repayment.status === 'repayment_data_required' && <p>Verified cleared income, pending debits, cash available without borrowing, and full credit balances are required before proposing repayment.</p>}
-            {latest.result.repayment.proposals.map((p, i) => <p key={i}>Repayment proposed: {dollars(p.amount_cents)} from ••{p.from_last4} to ••{p.to_last4}</p>)}
-          </div>}
-          {!!latest.result.uncovered_cents && <p className="text-red-700">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}. Listed credit cannot cover the full amount.</p>}
-        </>}
-      </section>
-      <BankTransferQueue key={currentTenant!.id} tenantId={currentTenant!.id} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
-      <form onSubmit={save} className="bg-white border rounded-lg p-5 space-y-5">
-        <h2 className="text-lg font-semibold">Monitoring settings</h2>
-        <p className="text-sm text-gray-600">Accounts are imported from Truliant when the bank assistant connects. Review the detected account types before saving.</p>
-        {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3">
-          <legend className="font-medium">{group === 'checking' ? 'Checking accounts' : 'Funding sources, in priority order'}</legend>
-          {group === 'sources' && <p className="text-sm text-gray-600">Add your HELOC first and Preferred Line of Credit second. For a charge-level draft, use the first source that can cover the whole charge; do not split it.</p>}
-          {rules[group].map((account, index) => <div key={index} className="flex flex-wrap items-end gap-3">
-            <label className="text-sm flex-1">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`} nickname
-              <input required maxLength={80} value={account.nickname} onChange={e => editAccount(group, index, 'nickname', e.target.value)} className="block border rounded p-2 w-full" /></label>
-            <label className="text-sm">Last four digits<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={e => editAccount(group, index, 'last4', e.target.value)} className="block border rounded p-2 w-28" /></label>
-            <button type="button" className="text-red-700 p-2" onClick={() => setRules({ ...rules, [group]: rules[group].filter((_, i) => i !== index) })} aria-label={`Remove ${group} ${index + 1}`}>Remove</button>
-          </div>)}
-          <button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="text-blue-700 underline disabled:opacity-50" onClick={() => setRules({ ...rules, [group]: [...rules[group], { nickname: '', last4: '' }] })}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button>
-        </fieldset>)}
-        <label className="block text-sm">Shortfall coverage
-          <select className="block border rounded p-2" value={rules.basis} onChange={e => setRules({ ...rules, basis: e.target.value })}>
-            <option value="posted">Posted balance only</option>
-            <option value="posted_and_pending">Posted balance plus verified pending debits</option>
-          </select>
-        </label>
-        <p className="text-sm text-gray-600">Pending coverage stops when pending transactions cannot be verified. Available balance may include credit coverage and is never treated as cash for repayment. The separate server reader still needs live verification.</p>
-        <fieldset className="border-t pt-4 space-y-3">
-          <legend className="font-medium">Friday income repayment</legend>
-          <p className="text-sm text-gray-600">At the Friday 5:30 p.m. check, preserve pending debits in both checking accounts and propose repayment from verified cleared business or salary income. No extra reserve. Pay the business credit line first, then the HELOC after the business line is fully paid.</p>
-          <p className="text-sm text-amber-800">The bank reader can collect pending debits and credit balances, but cleared income, cash availability without borrowing, and payoff amounts still need verification. Missing information blocks repayment.</p>
-          {[0, 1].map(index => <label key={index} className="block text-sm">{index === 0 ? 'Repay first: business credit line' : 'Repay second: HELOC'}
-            <select className="block border rounded p-2" value={rules.repayment.priority[index] || ''} onChange={e => {
-              const priority = [...rules.repayment.priority]; priority[index] = e.target.value
-              setRules({ ...rules, repayment: { ...rules.repayment, priority } })
-            }}>
-              <option value="">Select credit source</option>
-              {rules.sources.filter(a => /^[0-9]{4}$/.test(a.last4)).map(a => <option key={a.last4} value={a.last4}>{a.nickname} · ••{a.last4}</option>)}
-            </select></label>)}
-          <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.repayment.enabled} onChange={e => { setSettingsNotice(''); setRules({ ...rules, repayment: { ...rules.repayment, enabled: e.target.checked, reserve_cents: 0 } }) }} />Include Friday repayment proposals when all required data is verified</label>
-          <p className="text-sm text-gray-600">This creates repayment proposals for your review. It never submits a bank transfer.</p>
-        </fieldset>
-        <label className="flex gap-2 items-center"><input type="checkbox" checked={rules.enabled} onChange={e => { setSettingsNotice(''); setRules({ ...rules, enabled: e.target.checked }) }} />Request daily checks at 5:30 p.m. Eastern, including weekends</label>
-        {settingsDirty && <div role="status" className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">Unsaved changes. Nothing changes until you save.</div>}
-        {!settingsDirty && settingsNotice && <div role="status" className="rounded border border-green-200 bg-green-50 px-3 py-2 font-medium text-green-800">✓ {settingsNotice}</div>}
-        {settingsError && <div role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-800">{settingsError}</div>}
-        <p className="text-sm text-gray-600">{rules.enabled
-          ? `${settingsDirty ? 'After saving, the next requested check is' : 'Next requested check:'} ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York' })} Eastern.`
-          : settingsDirty ? 'After saving, scheduled checks will be paused.' : 'Scheduled checks are paused.'}</p>
-        <button disabled={saving || !settingsDirty} className="inline-flex items-center gap-2 bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">
-          {saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-          {saving ? 'Saving settings…' : settingsDirty ? (rules.enabled ? 'Save and request schedule' : 'Save and pause schedule') : 'Settings saved'}
-        </button>
-      </form>
-      <section className="bg-white border rounded-lg p-5"><h2 className="text-lg font-semibold mb-3">Run history</h2>
-        {data.runs.length ? data.runs.map(run => <p key={run.id} className="py-2 border-t">{run.scheduled_date} · <span className="capitalize">{label(run.status)}</span> · No transfers executed</p>) : <p className="text-gray-600">No scheduled runs yet.</p>}
-      </section>
-    </>}
+  const scheduleActive = savedRules.enabled && accountsConfigured
+
+  return <div className="mx-auto max-w-7xl space-y-6 pb-12">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div><p className="text-sm font-semibold text-blue-700">Cash protection</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Bank Monitor</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Check business balances, prepare exact coverage transfers, and verify each result.</p></div>
+      <div className="flex items-center gap-2 text-sm text-slate-600"><Icon name="shield" className="h-4 w-4 text-emerald-700" /><span>You approve every transfer in Truliant</span></div>
+    </header>
+
+    {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">{error}</div>}
+    {loading && <div role="status" className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" />Loading bank monitor…</div>}
+
+    {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <main className="min-w-0 space-y-6">
+        <BankTransferQueue key={currentTenantId} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
+
+        {latest && <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+            <span className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span className="min-w-0"><span className="block font-semibold text-slate-950">Latest scheduled check</span><span className="block truncate text-sm capitalize text-slate-500">{latest.scheduled_date} · {label(latest.status)}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View details</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide details</span>
+          </summary>
+          <div className="space-y-5 border-t border-slate-200 p-5">
+            {latest.status === 'running' && <p className="text-sm text-amber-800">This check is still running. No outcome is confirmed.</p>}
+            {stale && <p className="text-sm text-amber-800">Historical snapshot. Use Check bank now before preparing a transfer.</p>}
+            {latest.result.message && <p className="text-sm text-slate-700">{latest.result.message}</p>}
+            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
+            {latest.result.credit_accounts?.some(account => account.outstanding_cents !== null) && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Credit balances</h3>{latest.result.credit_accounts.map(account => <p key={account.last4} className="mt-2 text-sm text-slate-700">{account.nickname} · ••{account.last4}: {account.outstanding_cents === null ? 'unknown' : dollars(account.outstanding_cents)}</p>)}</div>}
+            {latest.result.repayment && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Friday repayment</h3><p className="mt-1 text-sm capitalize text-slate-700">{label(latest.result.repayment.status)}</p>{latest.result.repayment.proposals.map((proposal, index) => <p key={`${proposal.from_last4}-${proposal.to_last4}-${index}`} className="mt-2 text-sm text-slate-700">{dollars(proposal.amount_cents)} from ••{proposal.from_last4} to ••{proposal.to_last4}</p>)}</div>}
+            {!!latest.result.uncovered_cents && <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-800">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}</p>}
+          </div>
+        </details>}
+
+        <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span><span className="block font-semibold text-slate-950">Run history</span><span className="block text-sm text-slate-500">{data.runs.length} scheduled {data.runs.length === 1 ? 'run' : 'runs'}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide</span></summary>
+          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.runs.length ? data.runs.map(run => <div key={run.id} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date}</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>) : <p className="px-5 py-6 text-sm text-slate-600">No scheduled runs yet.</p>}</div>
+        </details>
+      </main>
+
+      <aside className="space-y-5 xl:sticky xl:top-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{scheduleActive ? 'Scheduled' : 'Setup needed'}</span></div>
+          <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. check</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : `Next requested check: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
+        </section>
+
+        <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm" open={!accountsConfigured}>
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="settings" /></span><span><span className="block font-semibold text-slate-950">Monitoring settings</span><span className="block text-xs text-slate-500">Accounts, rules and schedule</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">Edit</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Close</span></summary>
+          <form onSubmit={save} className="space-y-6 border-t border-slate-200 p-5">
+            {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3"><legend className="text-sm font-semibold text-slate-950">{group === 'checking' ? 'Checking accounts' : 'Funding priority'}</legend>{rules[group].map((account, index) => <div key={`${group}-${account.last4 || 'new'}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`}<input required maxLength={80} value={account.nickname} onChange={event => editAccount(group, index, 'nickname', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><div className="mt-2 flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium text-slate-600">Last four<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={event => editAccount(group, index, 'last4', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><button type="button" className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => setRules(current => ({ ...current, [group]: current[group].filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`Remove ${account.nickname || group}`}>Remove</button></div></div>)}<button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45" onClick={() => setRules(current => ({ ...current, [group]: [...current[group], { nickname: '', last4: '' }] }))}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button></fieldset>)}
+
+            <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Coverage rule</legend><label className="block text-xs font-medium text-slate-600">Calculate from<select className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" value={rules.basis} onChange={event => setRules(current => ({ ...current, basis: event.target.value }))}><option value="posted">Posted balance only</option><option value="posted_and_pending">Posted plus verified pending debits</option></select></label></fieldset>
+
+            <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Friday repayment</legend>{[0, 1].map(index => <label key={index} className="block text-xs font-medium text-slate-600">{index === 0 ? 'Repay first' : 'Repay second'}<select className="mt-1 block min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" value={rules.repayment.priority[index] || ''} onChange={event => { const priority = [...rules.repayment.priority]; priority[index] = event.target.value; setRules(current => ({ ...current, repayment: { ...current.repayment, priority } })) }}><option value="">Select source</option>{rules.sources.filter(account => /^[0-9]{4}$/.test(account.last4)).map(account => <option key={account.last4} value={account.last4}>{account.nickname} · ••{account.last4}</option>)}</select></label>)}<label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.repayment.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, repayment: { ...current.repayment, enabled: event.target.checked, reserve_cents: 0 } })) }} /><span>Include verified Friday income repayment proposals</span></label></fieldset>
+
+            <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Schedule</legend><label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, enabled: event.target.checked })) }} /><span>Run daily at 5:30 p.m. Eastern, including weekends</span></label></fieldset>
+
+            {settingsDirty && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Unsaved changes</div>}
+            {!settingsDirty && settingsNotice && <div role="status" className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon name="check" className="h-4 w-4 shrink-0" />{settingsNotice}</div>}
+            {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
+            <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
+          </form>
+        </details>
+      </aside>
+    </div>}
   </div>
 }

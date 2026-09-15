@@ -15,6 +15,23 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+::selection {
+  background: #bfdbfe;
+  color: #0f172a;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-in {
+    animation: none;
+  }
 }
 
 #root {
@@ -41,4 +58,3 @@ code {
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
-
