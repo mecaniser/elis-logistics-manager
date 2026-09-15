@@ -108,6 +108,13 @@ in this conversation. No deployment or bank credential changes were made.
 - Form preparation remains unchanged in the top-level bank transfer page. Verification still opens isolated read-only tabs and never clicks a transfer control.
 - Validation: manifest parses, frontend build passes, and all 16 extension tests pass. Live 0.1.7 reload and two-account verification remain outstanding.
 
+### Multiple child-frame response race — 2026-09-14
+
+- Live 0.1.7 still failed opening checking 3304 even though a separate controlled Chrome tab confirmed the same authenticated profile and exact account-card selector matched 3304.
+- Root cause: Truliant has multiple child frames. An empty frame could answer `tabs.sendMessage` before the account frame, causing a false not-found response.
+- Extension 0.1.8 keeps unrelated frames silent. Only a frame containing account cards may answer account-selection messages, and only a frame containing the transaction table may answer history-match messages.
+- Validation: frontend build passes and all 18 extension tests pass, including explicit empty-frame silence and exact account-frame response tests. Live 0.1.8 verification remains outstanding.
+
 ### Isolated account-history tabs — 2026-09-14
 
 - Live 0.1.5 still stopped after checking 3304 because Truliant retained the first account route when the same tab was reused for credit line 2829.

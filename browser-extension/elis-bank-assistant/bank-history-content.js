@@ -5,12 +5,16 @@
   chrome.runtime.onMessage.addListener((message, _sender, reply) => {
     if (message?.type === 'ELIS_OPEN_ACCOUNT' && /^\d{4}$/.test(message.suffix || '')) {
       const links = [...document.querySelectorAll('[id^="account-link-"]')];
+      // Other Truliant child frames must remain silent so they cannot win the
+      // one-response tabs.sendMessage race before the account frame replies.
+      if (links.length === 0) return;
       const matches = links.filter(element => new RegExp(`\\*{2,}${message.suffix}(?!\\d)`).test(element.textContent));
       if (matches.length === 1) matches[0].click();
-      reply({ready: links.length > 0, opened: matches.length === 1});
+      reply({ready: true, opened: matches.length === 1});
       return;
     }
     if (message?.type === 'ELIS_FIND_POSTED') {
+      if (!document.querySelector('table[aria-label="account transactions"]')) return;
       findPosted(message.wanted).then(reply);
       return true;
     }
