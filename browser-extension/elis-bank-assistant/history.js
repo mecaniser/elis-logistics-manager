@@ -8,8 +8,10 @@ export async function findPostedEntry(wanted) {
   if(location.origin!=='https://www.truliantfcuonline.org') return null;
   const table=document.querySelector('table[aria-label="account transactions"]');
   if(!table) return null;
-  const headings=[...document.querySelectorAll('h2')].filter(e=>new RegExp(`\\d*${wanted.suffix}$`).test(e.textContent.trim()));
-  if(headings.length!==1) return {error:'Account identity could not be verified.'};
+  const headings=[...document.querySelectorAll('h2')].map(e=>e.textContent.trim()).filter(text=>new RegExp(`\\d*${wanted.suffix}$`).test(text));
+  // Truliant can render duplicate desktop/mobile headings for the same account.
+  // Accept identical copies, but fail closed for missing or conflicting identities.
+  if(new Set(headings).size!==1) return {error:'Account identity could not be verified.'};
   let posted=false; const matches=[];
   const normalized=s=>s.replace(/\s*\/\s*/g,' ').replace(/\s+/g,' ').trim();
   for(const row of table.querySelectorAll('tbody tr')) {

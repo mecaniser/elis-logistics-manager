@@ -73,3 +73,10 @@ in this conversation. No deployment or bank credential changes were made.
 - Validation: 13 extension tests, 10 draft API tests, TypeScript/Vite build passed. Local preview restarted and the real draft visibly shows Ready to prepare.
 - Outstanding: user must reload installed extension to 0.1.2, then live form-preparation acceptance and user-submitted transfer/history verification. Server deployment and scheduled worker remain incomplete.
 - Trust limit: not-started outcome remains authenticated client-reported, not cryptographically attested. Extension active-draft locking still rejects another preparation if a bank operation was already started.
+
+### Live history verification finding — 2026-09-14
+
+- The user submitted the prepared $118.20 Union County transfer and supplied visible posted entries in checking 3304 and Preferred Line of Credit 2829 with the expected amount and memo.
+- Extension 0.1.2 stopped during checking-history verification because Truliant rendered two identical responsive `h2` account headings. The verifier incorrectly treated duplicate renderings of one identity as conflicting accounts.
+- Extension 0.1.3 accepts repeated identical heading text while still rejecting missing or conflicting identities. Known verification errors are now returned to ELIS without exposing page data.
+- Validation: 15 extension tests pass, including identical-heading acceptance and conflicting-heading rejection. Live extension reload and final two-history match remain outstanding.

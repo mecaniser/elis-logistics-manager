@@ -70,7 +70,18 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
     await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:result.ok?'prepared':'needs_review',bankDate:new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date())}});
     reply(result);
-  })().catch(()=>reply({ok:false,error:'Preparation stopped. Inspect the bank tab; do not assume completion or retry blindly.'})).finally(()=>{busy=false;});
+  })().catch(error=>{
+    const safe = new Set([
+      'No active preparation for this draft.',
+      'Preparation date unavailable.',
+      'Sign in or open the bank account to verify.',
+      'Account identity could not be verified.',
+      'No unique posted match found. It may not have posted yet.',
+      'Multiple matching entries require review.',
+      'Bank history did not load.'
+    ]);
+    reply({ok:false,error:safe.has(error?.message) ? error.message : 'Preparation stopped. Inspect the bank tab; do not assume completion or retry blindly.'});
+  }).finally(()=>{busy=false;});
   return true;
 });
 
