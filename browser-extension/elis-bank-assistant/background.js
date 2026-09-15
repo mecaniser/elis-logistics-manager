@@ -1,6 +1,7 @@
 import {allowedSender, validDraft, boundDraft, TRANSFERS} from './contract.js';
 import {fillForm} from './fill-form.js';
 let busy = false;
+const stageError = (code, message) => Object.assign(new Error(message), {code});
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
@@ -13,6 +14,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(!['ELIS_PREPARE','ELIS_VERIFY','ELIS_REAUTHORIZE_VERIFY'].includes(message?.type)||!validDraft(message.draft)) {reply({ok:false,error:'Invalid reviewed transfer.'});return;}
   if(busy) {reply({ok:false,error:'Another form is being prepared.'});return;}
   busy=true;
+  const finishReply = value => { busy=false; reply(value); };
   (async()=>{
     const existing=await chrome.storage.session.get('activeDraft');
     if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
@@ -21,10 +23,10 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       await approvePreparation(message.draft,'verify');
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
       await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
-      reply({ok:true}); return;
+      finishReply({ok:true}); return;
     }
     if(message.type==='ELIS_VERIFY') {
-      if(!existing.activeDraft) {reply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
+      if(!existing.activeDraft) {finishReply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
       if(!boundDraft(existing.activeDraft,message.draft,sender))
         throw new Error('No active preparation for this draft.');
       const bankDate=existing.activeDraft.bankDate;
@@ -44,14 +46,18 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
             const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
             if(result?.opened) {selected=true;break;}
           }
-          if(!selected) throw new Error(`Open account ••${suffix} failed. Sign in to Truliant in this Chrome profile.`);
+          if(!selected) throw stageError(
+            source ? 'SOURCE_ACCOUNT_NOT_FOUND' : 'DESTINATION_ACCOUNT_NOT_FOUND',
+            `Could not open ${source ? 'funding source' : 'checking account'} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
+          );
           for(let i=0;i<40;i++) {
             await new Promise(r=>setTimeout(r,300));
             const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
             if(found?.match) return found.match;
-            if(found?.error) throw new Error(found.error);
+            if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
           }
-          throw new Error('Bank history did not load.');
+          throw stageError(source ? 'SOURCE_HISTORY_NOT_LOADED' : 'DESTINATION_HISTORY_NOT_LOADED',
+            `${source ? 'Funding source' : 'Checking account'} history did not load.`);
         } finally {
           await chrome.tabs.remove(inspection.id).catch(()=>{});
         }
@@ -59,7 +65,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       const destination=await inspect(message.draft.to_last4,false);
       const source=await inspect(message.draft.from_last4,true);
       await chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'matched'}});
-      reply({ok:true,evidence:{source,destination}});
+      finishReply({ok:true,evidence:{source,destination}});
       return;
     }
     if(existing.activeDraft) throw new Error('A transfer is already awaiting review. Finish checking it before preparing another.');
@@ -69,7 +75,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       // This branch is before activeDraft persistence, bank-tab creation and
       // scripting. Never classify a later error as safe to retry.
       if (error?.code !== 'APPROVAL_NOT_GRANTED') throw error;
-      reply({ok:false,code:'PREPARATION_NOT_STARTED',error:'Preparation approval expired or was canceled. No bank form was opened. You can prepare this draft again.'});
+      finishReply({ok:false,code:'PREPARATION_NOT_STARTED',error:'Preparation approval expired or was canceled. No bank form was opened. You can prepare this draft again.'});
       return;
     }
     // Persist before opening/filling, including across service-worker restarts.
@@ -85,19 +91,16 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     const results=await chrome.scripting.executeScript({target:{tabId:tab.id},func:fillForm,args:[message.draft]});
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
     await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,tabId:tab.id,status:result.ok?'prepared':'needs_review',bankDate:new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date())}});
-    reply(result);
+    finishReply(result);
   })().catch(error=>{
-    const safe = new Set([
-      'No active preparation for this draft.',
-      'Preparation date unavailable.',
-      'Open account ••3304 failed. Sign in to Truliant in this Chrome profile.',
-      'Open account ••2829 failed. Sign in to Truliant in this Chrome profile.',
-      'Account identity could not be verified.',
-      'No unique posted match found. It may not have posted yet.',
-      'Multiple matching entries require review.',
-      'Bank history did not load.'
+    const safeCodes = new Set([
+      'SOURCE_ACCOUNT_NOT_FOUND', 'DESTINATION_ACCOUNT_NOT_FOUND',
+      'SOURCE_HISTORY_NO_MATCH', 'DESTINATION_HISTORY_NO_MATCH',
+      'SOURCE_HISTORY_NOT_LOADED', 'DESTINATION_HISTORY_NOT_LOADED'
     ]);
-    reply({ok:false,error:safe.has(error?.message) ? error.message : 'Preparation stopped. Inspect the bank tab; do not assume completion or retry blindly.'});
+    const safeMessages = new Set(['No active preparation for this draft.', 'Preparation date unavailable.']);
+    const safe = safeCodes.has(error?.code) || safeMessages.has(error?.message);
+    finishReply({ok:false,code:safe ? error?.code : undefined,error:safe ? error.message : 'Preparation stopped. Inspect the bank tab; do not assume completion or retry blindly.'});
   }).finally(()=>{busy=false;});
   return true;
 });
