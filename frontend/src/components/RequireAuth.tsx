@@ -15,7 +15,7 @@ const RequireAuth = ({ children }: { children: ReactNode }) => {
   }
 
   if (!authenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return <Navigate to="/login" state={{ from: location, reason: 'session-required' }} replace />
   }
 
   return <>{children}</>
