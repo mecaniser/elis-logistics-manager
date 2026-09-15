@@ -4,7 +4,7 @@ import {fillForm} from './fill-form.js';
 let busy = false;
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
-  if(message?.type==='ELIS_PING') {reply({ok:true,version:'0.1.0'});return;}
+  if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
   if(message?.type==='ELIS_ACK' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(async ({activeDraft})=>{
       if(activeDraft?.id===message.id && activeDraft?.status==='matched' && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id) await chrome.storage.session.remove('activeDraft');
@@ -47,7 +47,15 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       return;
     }
     if(existing.activeDraft) throw new Error('A transfer is already awaiting review. Finish checking it before preparing another.');
-    await approvePreparation(message.draft);
+    try {
+      await approvePreparation(message.draft);
+    } catch (error) {
+      // This branch is before activeDraft persistence, bank-tab creation and
+      // scripting. Never classify a later error as safe to retry.
+      if (error?.code !== 'APPROVAL_NOT_GRANTED') throw error;
+      reply({ok:false,code:'PREPARATION_NOT_STARTED',error:'Preparation approval expired or was canceled. No bank form was opened. You can prepare this draft again.'});
+      return;
+    }
     // Persist before opening/filling, including across service-worker restarts.
     await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'requested'}});
     const tab=await chrome.tabs.create({url:TRANSFERS,active:true});
@@ -78,7 +86,7 @@ async function approvePreparation(draft) {
       const timeout=setTimeout(()=>finish(false),120000);
       function finish(approved) {
         clearTimeout(timeout); chrome.runtime.onMessage.removeListener(listener);
-        approved ? resolve() : reject(new Error('Preparation approval declined or expired.'));
+        approved ? resolve() : reject(Object.assign(new Error('Preparation approval declined or expired.'), {code:'APPROVAL_NOT_GRANTED'}));
       }
       function listener(message,sender,reply) {
         if(sender.id!==chrome.runtime.id || sender.tab?.id!==tab.id || sender.url!==chrome.runtime.getURL('approve.html') || message?.nonce!==nonce) return;

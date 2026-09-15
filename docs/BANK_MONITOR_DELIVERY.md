@@ -64,3 +64,12 @@ lost tab requires operator review; do not bypass unresolved draft locks.
 Installation and precise permission scope are documented in
 browser-extension/elis-bank-assistant/README.md. Installation approval is pending
 in this conversation. No deployment or bank credential changes were made.
+
+### Approval expiry recovery — 2026-09-14
+
+- Live pilot: correct Chrome profile connected; actual account suffixes configured locally. Union County draft reached extension approval, but the user confirmed the approval tab disappeared before they clicked. No successful form preparation or transfer is established.
+- Local fix: extension 0.1.2 returns PREPARATION_NOT_STARTED only for explicit approval timeout/cancel before bank-tab creation. ELIS returns that requested draft to reviewed; unknown failures remain locked. Ping now reports manifest version. The UI explains the two-minute deadline.
+- One-time local recovery: restored only charge reference `3304-20260914-UNION-COUNTY-11820` from preparation_failed to reviewed after user confirmation, unchanged bank balances, and no prepared bank tab. No production data or banking action performed.
+- Validation: 13 extension tests, 10 draft API tests, TypeScript/Vite build passed. Local preview restarted and the real draft visibly shows Ready to prepare.
+- Outstanding: user must reload installed extension to 0.1.2, then live form-preparation acceptance and user-submitted transfer/history verification. Server deployment and scheduled worker remain incomplete.
+- Trust limit: not-started outcome remains authenticated client-reported, not cryptographically attested. Extension active-draft locking still rejects another preparation if a bank operation was already started.

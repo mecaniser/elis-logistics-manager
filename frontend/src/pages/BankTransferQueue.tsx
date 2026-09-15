@@ -9,7 +9,7 @@ const send = (extension: string, message: unknown): Promise<any> => new Promise(
   if (!runtime()?.sendMessage) return reject(new Error('Chrome cannot see an enabled extension connection for this page. Reload ELIS Bank Form Assistant in chrome://extensions in this Chrome profile, then reload this page.'))
   runtime().sendMessage(extension, message, (response: any) => {
     if (runtime().lastError || !response) reject(new Error('Extension unavailable. Check installation and extension ID.'))
-    else if (!response.ok) reject(new Error(response.error || 'Preparation stopped. Review the bank tab.'))
+    else if (!response.ok) reject(Object.assign(new Error(response.error || 'Preparation stopped. Review the bank tab.'), {code: response.code}))
     else resolve(response)
   })
 })
@@ -63,12 +63,23 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
       const result = await bankMonitorApi.prepareDraft(tenantId, draft.id)
       claimed = true
       if (!active.current) throw new Error('Business changed. Preparation stopped.')
+      setNotice('Open the extension review tab and approve preparation within two minutes. No bank form opens until you approve.')
       await send(extension, { type: 'ELIS_PREPARE', draft: result.data })
       await bankMonitorApi.draftOutcome(tenantId, draft.id, 'prepared_awaiting_submission')
       if (active.current) setNotice('Form prepared in Chrome. Review and submit in Truliant. ELIS has not confirmed a transfer.')
     } catch (e: any) {
-      if (claimed) await bankMonitorApi.draftOutcome(tenantId, draft.id, 'preparation_failed').catch(() => {})
-      if (active.current) setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message)
+      const notStarted = claimed && e.code === 'PREPARATION_NOT_STARTED'
+      let restored = false
+      if (claimed) {
+        try {
+          await bankMonitorApi.draftOutcome(tenantId, draft.id, notStarted ? 'preparation_not_started' : 'preparation_failed')
+          restored = notStarted
+        } catch { /* Keep the claim locked when its outcome cannot be saved. */ }
+      }
+      if (active.current) {
+        setNotice(restored ? 'Approval expired or was canceled. No bank form opened. This draft is ready to prepare again.' : '')
+        if (!restored) setError(notStarted ? 'No bank form opened, but ELIS could not restore the draft. Refresh before continuing.' : typeof e.response?.data?.detail === 'string' ? e.response.data.detail : e.message)
+      }
     } finally { if (active.current) { await reload().catch(() => {}); setBusy(false) } }
   }
   const verify = async (draft: Draft) => {
@@ -104,7 +115,7 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
     {drafts.map(d => <div key={d.id} className="border-t py-3 space-y-1">
       <p className="font-medium">${(d.amount_cents / 100).toFixed(2)} · {d.memo}</p>
       <p className="text-sm">••{d.from_last4} → ••{d.to_last4} · {d.charge_reference}</p>
-      <p className="text-sm">{d.status.replace(/_/g, ' ')} · {d.status === 'bank_history_matched' ? 'Matched in both bank histories by extension' : 'Completion unconfirmed'}</p>
+      <p className="text-sm">{d.status === 'reviewed' ? 'Ready to prepare' : d.status.replace(/_/g, ' ')} · {d.status === 'bank_history_matched' ? 'Matched in both bank histories by extension' : 'Completion unconfirmed'}</p>
       {d.status === 'reviewed' && <button disabled={busy} onClick={() => prepare(d)} className="text-blue-700 underline disabled:opacity-50">Prepare in Truliant</button>}
       {!['reviewed', 'bank_history_matched'].includes(d.status) && <button disabled={busy} onClick={() => verify(d)} className="text-blue-700 underline">I finished in Truliant — check both histories</button>}
       {!['reviewed', 'bank_history_matched'].includes(d.status) && <p className="text-sm text-amber-800">Check the bank tab and history before another attempt. This draft is locked to prevent duplicate preparation.</p>}

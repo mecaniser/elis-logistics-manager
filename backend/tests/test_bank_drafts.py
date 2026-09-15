@@ -57,3 +57,16 @@ def test_both_history_entries_required_and_cannot_be_reused(session):
     path2='/api/bank-monitor/drafts/'+second['id']
     session.post(path2+'/prepare',headers=H)
     assert session.post(path2+'/history-match',headers=H,json=evidence).status_code == 409
+
+
+def test_only_explicit_not_started_outcome_releases_requested_draft(session):
+    draft = session.post('/api/bank-monitor/drafts', headers=H, json=D).json()
+    path = '/api/bank-monitor/drafts/' + draft['id']
+    assert session.post(path+'/prepare', headers=H).status_code == 200
+    result = session.post(path+'/outcome', headers=H, json={'status':'preparation_not_started'})
+    assert result.status_code == 200
+    assert result.json()['status'] == 'reviewed'
+    assert session.post(path+'/prepare', headers=H).status_code == 200
+    assert session.post(path+'/outcome', headers=H, json={'status':'preparation_failed'}).status_code == 200
+    assert session.post(path+'/outcome', headers=H, json={'status':'preparation_not_started'}).status_code == 409
+    assert session.post(path+'/prepare', headers=H).status_code == 409
