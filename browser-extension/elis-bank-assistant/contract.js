@@ -24,13 +24,16 @@ export function parseAccountSummary(text) {
   const clean=String(text || '').replace(/\s+/g,' ').trim();
   const suffix=clean.match(/\*{2,}(\d{4})(?!\d)/);
   if(!suffix) return null;
+  const nickname=clean.slice(0,clean.indexOf(suffix[0])).trim() || `Account ${suffix[1]}`;
   const cents = label => {
     const match=clean.match(new RegExp(`${label}\\s*\\**\\s*(-?\\$[\\d,]+\\.\\d{2})`,'i'));
     if(!match) return null;
     return Math.round(Number(match[1].replace(/[$,]/g,''))*100);
   };
   return {
+    nickname,
     last4:suffix[1],
+    kind:/Available Credit/i.test(clean) ? 'credit' : /Available Balance/i.test(clean) && /Current Balance/i.test(clean) ? 'checking' : 'other',
     current_cents:cents('Current Balance'),
     available_cents:cents('Available Balance'),
     available_credit_cents:cents('Available Credit')

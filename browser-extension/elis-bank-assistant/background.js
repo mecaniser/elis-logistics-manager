@@ -14,14 +14,9 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
-          [...document.querySelectorAll('[id^="account-link-"]')].map(element=>{
-            const text=(element.textContent||'').replace(/\s+/g,' ').trim();
-            const match=text.match(/\*{2,}(\d{4})(?!\d)/);
-            if(!match) return null;
-            const nickname=text.slice(0,text.indexOf(match[0])).replace(/\s*(available|balance).*$/i,'').trim();
-            return {nickname:nickname||`Account ${match[1]}`,last4:match[1]};
-          }).filter(Boolean)}).catch(()=>[]);
-        const accounts=[...new Map(results.flatMap(result=>result.result||[]).map(account=>[account.last4,account])).values()];
+          [...document.querySelectorAll('[id^="account-link-"]')].map(element=>(element.textContent||'').replace(/\s+/g,' ').trim())}).catch(()=>[]);
+        const accounts=[...new Map(results.flatMap(result=>result.result||[]).map(parseAccountSummary).filter(Boolean)
+          .map(account=>[account.last4,{nickname:account.nickname,last4:account.last4,kind:account.kind}])).values()];
         if(accounts.length) {reply({ok:true,accounts});return;}
       }
       reply({ok:false,error:'Open and sign in to Truliant, then try account import again.'});
@@ -31,6 +26,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(message?.type==='ELIS_CHECK_BALANCES') {
     const suffixes=message.suffixes;
     const checkingSuffixes=message.checking_suffixes;
+    const includePending=message.include_pending === true;
     if(!Array.isArray(suffixes) || suffixes.length<1 || suffixes.length>15 || suffixes.some(value=>!/^\d{4}$/.test(value)) ||
        !Array.isArray(checkingSuffixes) || checkingSuffixes.some(value=>!/^\d{4}$/.test(value) || !suffixes.includes(value))) {reply({ok:false,error:'Configured accounts are invalid.'});return;}
     if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
@@ -47,8 +43,8 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         const accounts=[...new Map(summaries.map(account=>[account.last4,account])).values()];
         if(accounts.length===suffixes.length) {
           const coverage=[];
-          const negative=accounts.filter(account=>checkingSuffixes.includes(account.last4) && account.current_cents != null && account.current_cents < 0);
-          for(const account of negative) {
+          const checking=accounts.filter(account=>checkingSuffixes.includes(account.last4));
+          for(const account of checking) {
             const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
             try {
               const navigationEnd=Date.now()+25000;
@@ -67,10 +63,10 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
               let history=null;
               for(let i=0;i<50;i++) {
                 await new Promise(resolve=>setTimeout(resolve,300));
-                history=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_LIST_POSTED_DEBITS',suffix:account.last4}).catch(()=>null);
+                history=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_LIST_COVERAGE_DEBITS',suffix:account.last4,include_pending:includePending}).catch(()=>null);
                 if(history?.ready) break;
               }
-              coverage.push({last4:account.last4,transactions:history?.transactions || [],error:history?.error || (history?.ready ? null : 'Posted history did not load.')});
+              coverage.push({last4:account.last4,transactions:history?.transactions || [],overdraft_detected:history?.overdraft_detected === true,error:history?.error || (history?.ready ? null : 'Account history did not load.')});
             } finally { await chrome.tabs.remove(inspection.id).catch(()=>{}); }
           }
           reply({ok:true,checked_at:new Date().toISOString(),accounts,coverage});return;

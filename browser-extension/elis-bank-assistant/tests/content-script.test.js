@@ -42,7 +42,7 @@ test('only the child frame containing account cards answers and opens the exact 
   assert.equal(clicked, true);
 });
 
-test('lists only underlying posted debits with stable references and row balances', async () => {
+test('reconstructs the latest overdraft incident, removes covered charges, and includes pending debits', async () => {
   let listener;
   const cell = (id, textContent) => ({id, textContent});
   const row = ({amount, description, date='Sep 14, 2026', balance='-$968.10', id='charge-1'}) => ({
@@ -50,14 +50,19 @@ test('lists only underlying posted debits with stable references and row balance
     querySelector: selector => selector.includes('amount-') ? cell(id, amount) :
       selector.includes('description-') ? cell('description', description) :
       selector.includes('transactionDate-') ? cell('date', date) :
-      selector.includes('balance-') ? cell('balance', balance) : null
+      selector.includes('ledgerBalance-') || selector.includes('balance-') ? cell('balance', balance) : null
   });
-  const section = {getAttribute: () => 'posted transactions section', querySelector: () => null};
-  const rows = [section,
-    row({amount:'-$118.20',description:'Union County / utilities',id:'charge-1'}),
-    row({amount:'-$35.00',description:'Overdraft Fee',id:'fee'}),
-    row({amount:'$118.20',description:'Deposit Cvr Union County utilities 0914',id:'deposit'}),
-    row({amount:'-$42.15',description:'Fuel stop',balance:'$10.00',id:'old-positive'})
+  const pendingSection = {getAttribute: () => 'pending transactions section', querySelector: () => null};
+  const postedSection = {getAttribute: () => 'posted transactions section', querySelector: () => null};
+  const rows = [pendingSection,
+    row({amount:'-$989.06',description:'FREEDOM 0607 MTG PYMTS',date:'Sep 15, 2026',balance:'',id:'pending-mortgage'}),
+    postedSection,
+    row({amount:'$968.10',description:'Overdraft Service Deposit',balance:'$0.00',id:'overdraft-deposit'}),
+    row({amount:'$118.20',description:'Deposit Cvr Union County utilities 0914',balance:'-$968.10',id:'coverage-union'}),
+    row({amount:'-$889.18',description:'PAYPAL INST XFER',balance:'-$1,137.06',id:'paypal'}),
+    row({amount:'-$166.48',description:'AT&T PAYMENT',balance:'-$247.88',id:'att'}),
+    row({amount:'-$118.20',description:'Union County utilities',balance:'-$81.40',id:'union'}),
+    row({amount:'-$50.76',description:'Older student loan',balance:'$36.80',id:'old-positive'})
   ];
   const table = {querySelectorAll: selector => selector === 'tbody tr' ? rows : []};
   const context = {
@@ -71,11 +76,13 @@ test('lists only underlying posted debits with stable references and row balance
   };
   context.window.top = {};
   vm.runInNewContext(source, context);
-  const result = await new Promise(resolve => listener({type:'ELIS_LIST_POSTED_DEBITS',suffix:'3304'}, {}, resolve));
+  const result = await new Promise(resolve => listener({type:'ELIS_LIST_COVERAGE_DEBITS',suffix:'3304',include_pending:true}, {}, resolve));
   assert.equal(result.ready, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.transactions.map(item => ({description:item.description,amount:item.amount_cents,balance:item.balance_cents})))), [
-    {description:'Union County utilities',amount:11820,balance:-96810},
-    {description:'Fuel stop',amount:4215,balance:1000}
+  assert.equal(result.overdraft_detected, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.transactions.map(item => ({description:item.description,amount:item.amount_cents,pending:item.pending})))), [
+    {description:'FREEDOM 0607 MTG PYMTS',amount:98906,pending:true},
+    {description:'PAYPAL INST XFER',amount:88918,pending:false},
+    {description:'AT&T PAYMENT',amount:16648,pending:false}
   ]);
   assert.match(result.transactions[0].reference,/^[a-f0-9]{64}$/);
 });

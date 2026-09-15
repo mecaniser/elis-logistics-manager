@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 const sender = {frameId:0,tab:{id:81},url:'http://127.0.0.1:18081/bank-monitor'};
 
-test('balance check returns every account and posted debits for negative checking only', async t => {
+test('balance check inspects every checking account including a zero balance masked by overdraft coverage', async t => {
   t.mock.method(globalThis,'setTimeout',(callback)=>{queueMicrotask(callback);return 1;});
   let external;
   const removed=[];
@@ -20,7 +20,7 @@ test('balance check returns every account and posted debits for negative checkin
       get:async()=>({id:100,status:'complete'}),
       remove:async id=>{removed.push(id);},
       sendMessage:async(_id,message)=>message.type==='ELIS_OPEN_ACCOUNT' ? {opened:true} :
-        message.type==='ELIS_LIST_POSTED_DEBITS' ? {ready:true,transactions:[{reference:'a'.repeat(64),date:'Sep 14, 2026',description:'Utility',amount_cents:11820,balance_cents:-96810}]} : null
+        message.type==='ELIS_LIST_COVERAGE_DEBITS' ? {ready:true,overdraft_detected:true,transactions:[{reference:'a'.repeat(64),date:'Sep 14, 2026',description:'Utility',amount_cents:11820,balance_cents:-96810}]} : null
     },
     scripting:{executeScript:async()=>[{result:[
       'Main Business Checking **3304 Current Balance -$968.10 Available Balance -$968.10',
@@ -34,8 +34,9 @@ test('balance check returns every account and posted debits for negative checkin
   assert.equal(response.ok,true);
   assert.deepEqual(response.accounts.map(account=>account.last4),['3304','1111','3062','2829']);
   assert.equal(response.accounts.find(account=>account.last4==='3062').available_credit_cents,2629);
-  assert.deepEqual(response.coverage.map(item=>item.last4),['3304']);
+  assert.deepEqual(response.coverage.map(item=>item.last4),['3304','1111']);
+  assert.equal(response.coverage[0].overdraft_detected,true);
   assert.equal(response.coverage[0].transactions[0].description,'Utility');
-  assert.deepEqual(removed,[100]);
+  assert.deepEqual(removed,[100,100]);
   delete globalThis.chrome;
 });
