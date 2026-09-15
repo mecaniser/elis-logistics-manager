@@ -43,11 +43,24 @@ def _add_trailer_resale_plan(engine: Engine) -> None:
             connection.execute(text(statement))
 
 
+def _add_bank_draft_transaction_details(engine: Engine) -> None:
+    columns = {column["name"] for column in inspect(engine).get_columns("bank_transfer_drafts")}
+    statements = []
+    if "bank_state" not in columns:
+        statements.append("ALTER TABLE bank_transfer_drafts ADD COLUMN bank_state VARCHAR(12)")
+    if "bank_effective_date" not in columns:
+        statements.append("ALTER TABLE bank_transfer_drafts ADD COLUMN bank_effective_date DATE")
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 # Keep this ordered. New migrations must be additive/idempotent and be added
 # here in the same change that introduces their schema or data dependency.
 MIGRATIONS: List[Migration] = [
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),
     ("2026_07_30_trailer_resale_plan", _add_trailer_resale_plan),
+    ("2026_09_15_bank_draft_transaction_details", _add_bank_draft_transaction_details),
 ]
 
 

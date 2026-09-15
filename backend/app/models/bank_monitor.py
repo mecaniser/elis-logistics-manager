@@ -34,5 +34,7 @@ class BankTransferDraft(Base):
     from_last4 = Column(String(4), nullable=False)
     to_last4 = Column(String(4), nullable=False)
     memo = Column(String(34), nullable=False)
+    bank_state = Column(String(12))
+    bank_effective_date = Column(Date)
     status = Column(String(40), nullable=False, default='reviewed')
     created_at = Column(DateTime(timezone=True), nullable=False)
