@@ -9,6 +9,9 @@
       // one-response tabs.sendMessage race before the account frame replies.
       if (links.length === 0) return;
       const matches = links.filter(element => new RegExp(`\\*{2,}${message.suffix}(?!\\d)`).test(element.textContent));
+      // A different account-card frame must also stay silent. Only the frame
+      // containing the requested account may answer the tab-wide message.
+      if (matches.length === 0) return;
       if (matches.length === 1) matches[0].click();
       reply({ready: true, opened: matches.length === 1});
       return;
