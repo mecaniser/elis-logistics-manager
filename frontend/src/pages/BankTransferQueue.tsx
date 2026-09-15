@@ -13,6 +13,10 @@ type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceC
 
 const REQUIRED_EXTENSION_VERSION = '0.1.21'
 const SELF_RELOAD_VERSION = '0.1.19'
+const ASSISTANT_UNREACHABLE_ERRORS = new Set([
+  'Chrome cannot reach the bank assistant. Reload the extension and this page.',
+  'Bank assistant unavailable. Check that the extension is enabled in this Chrome profile.',
+])
 const versionAtLeast = (current: string | undefined, minimum: string) => {
   const parsed = (value: string | undefined) => String(value || '').split('.').map(part => Number(part))
   const left = parsed(current); const right = parsed(minimum)
@@ -113,7 +117,12 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     try {
       const response = await send<ExtensionResponse>(extension, { type: 'ELIS_PING' })
       const valid = versionAtLeast(response.version, REQUIRED_EXTENSION_VERSION)
-      if (active.current) { setDetectedVersion(response.version || 'unknown'); setConnected(valid); setConnectionState(valid ? 'connected' : 'outdated') }
+      if (active.current) {
+        setDetectedVersion(response.version || 'unknown')
+        setConnected(valid)
+        setConnectionState(valid ? 'connected' : 'outdated')
+        if (valid) setError(current => ASSISTANT_UNREACHABLE_ERRORS.has(current) ? '' : current)
+      }
       return valid
     } catch {
       if (active.current) markDisconnected()
