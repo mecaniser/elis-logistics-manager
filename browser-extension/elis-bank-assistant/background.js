@@ -117,7 +117,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
       async function inspect(suffix,source) {
         await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
-        const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+        const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
         try {
           const navigationEnd=Date.now()+25000;
           while(Date.now()<navigationEnd) {

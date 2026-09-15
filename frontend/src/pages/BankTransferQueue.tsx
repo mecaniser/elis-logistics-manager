@@ -11,7 +11,7 @@ type PostedDebit = { reference: string; date: string; description: string; amoun
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
-const REQUIRED_EXTENSION_VERSION = '0.1.20'
+const REQUIRED_EXTENSION_VERSION = '0.1.21'
 const SELF_RELOAD_VERSION = '0.1.19'
 const versionAtLeast = (current: string | undefined, minimum: string) => {
   const parsed = (value: string | undefined) => String(value || '').split('.').map(part => Number(part))
@@ -96,7 +96,10 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const [manualOpen, setManualOpen] = useState(false)
   const [balanceCheck, setBalanceCheck] = useState<BalanceCheck | null>(null)
   const [coverageIssue, setCoverageIssue] = useState('')
+  const [waitingForPosting, setWaitingForPosting] = useState<Set<string>>(new Set())
   const active = useRef(true)
+  const autoVerification = useRef<{ returnedFromBank: boolean; armed: Set<string> }>({ returnedFromBank: false, armed: new Set() })
+  const verifyRef = useRef<(draft: Draft, automatic?: boolean) => Promise<void>>(async () => undefined)
 
   const markDisconnected = useCallback(() => { setConnected(false); setConnectionState(extension ? 'unavailable' : 'unconfigured') }, [extension])
   const ping = useCallback(async () => {
@@ -267,7 +270,8 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       await send<ExtensionResponse>(extension, { type: 'ELIS_PREPARE', draft: result.data })
       setOperation({ message: 'Saving the prepared-form status…', started: Date.now() })
       await bankMonitorApi.draftOutcome(tenantId, draft.id, 'prepared_awaiting_submission')
-      if (active.current) setNotice('Form prepared in Chrome. Review and submit it in Truliant; ELIS has not confirmed a transfer.')
+      autoVerification.current.armed.add(draft.id)
+      if (active.current) setNotice('Form prepared in Chrome. Review and submit it in Truliant. When you return, ELIS will verify it automatically.')
     } catch (error: unknown) {
       const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined
       const notStarted = claimed && code === 'PREPARATION_NOT_STARTED'
@@ -285,7 +289,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     } catch (error: unknown) { if (active.current) setError(errorMessage(error,'Unable to resume this draft.')) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
-  const verify = async (draft: Draft) => {
+  const verify = async (draft: Draft, automatic = false) => {
     setBusy(true); setError(''); setNotice(''); setOperation({ message: 'Checking both account histories…', started: Date.now() })
     let polling = true
     const poll = async () => {
@@ -301,6 +305,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       catch (error: unknown) {
         const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined
         if (code !== 'VERIFICATION_REAUTH_REQUIRED') throw error
+        if (automatic) throw Object.assign(new Error('Automatic verification needs authorization because the extension restarted. Select Check posting now.'), { code: 'VERIFICATION_REAUTH_REQUIRED' })
         setNotice('Approve the read-only history window. It cannot prepare or submit a transfer.')
         setOperation({ message: 'Waiting for read-only approval…', started: Date.now() })
         await send<ExtensionResponse>(extension, { type: 'ELIS_REAUTHORIZE_VERIFY', draft })
@@ -309,10 +314,33 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       setOperation({ message: 'Saving the matched entries in ELIS…', started: Date.now() })
       await bankMonitorApi.draftHistoryMatch(tenantId, draft.id, result.evidence)
       await send<ExtensionResponse>(extension, { type: 'ELIS_ACK', id: draft.id })
-      if (active.current) setNotice('Confirmed: one matching posted entry was found in each account history.')
-    } catch (error: unknown) { fail(error, 'Bank verification failed. Completion remains unconfirmed.') }
+      if (active.current) { setWaitingForPosting(current => { const next = new Set(current); next.delete(draft.id); return next }); setNotice('Transfer confirmed automatically in both posted account histories.') }
+    } catch (error: unknown) {
+      const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined
+      if (code === 'DESTINATION_HISTORY_NO_MATCH' || code === 'SOURCE_HISTORY_NO_MATCH') {
+        autoVerification.current.armed.add(draft.id)
+        if (active.current) { setWaitingForPosting(current => new Set(current).add(draft.id)); setNotice('The transfer is not posted in both histories yet. ELIS will check again when you return to this page, or you can check now.') }
+      } else if (active.current) setError(errorMessage(error, 'Bank verification stopped. Completion remains unconfirmed.'))
+    }
     finally { polling = false; if (active.current) { await reload().catch(() => undefined); setBusy(false); setOperation(null) } }
   }
+  verifyRef.current = verify
+
+  useEffect(() => {
+    const checkAfterReturn = () => {
+      if (document.visibilityState === 'hidden') { autoVerification.current.returnedFromBank = true; return }
+      if (!autoVerification.current.returnedFromBank || busy || !connected) return
+      const draft = drafts.find(item => item.status === 'prepared_awaiting_submission' && autoVerification.current.armed.has(item.id))
+      if (!draft) return
+      autoVerification.current.returnedFromBank = false
+      autoVerification.current.armed.delete(draft.id)
+      void verifyRef.current(draft, true)
+    }
+    checkAfterReturn()
+    window.addEventListener('focus', checkAfterReturn)
+    document.addEventListener('visibilitychange', checkAfterReturn)
+    return () => { window.removeEventListener('focus', checkAfterReturn); document.removeEventListener('visibilitychange', checkAfterReturn) }
+  }, [busy, connected, drafts])
 
   const checkedRows = balanceCheck ? checking.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const fundingRows = balanceCheck ? sources.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
@@ -347,7 +375,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
 
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Action queue</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Transfers to prepare</h2><p className="mt-1 text-sm text-slate-600">{actionableDrafts.length ? `${actionableDrafts.length} transfer${actionableDrafts.length === 1 ? '' : 's'} need attention.` : 'No transfers need attention.'}</p></div><button type="button" disabled={busy || !connected} onClick={discoverAccounts} className="min-h-11 self-start rounded-xl px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-blue-300 disabled:hover:bg-transparent">Refresh accounts</button></div>
-      <div className="divide-y divide-slate-200">{actionableDrafts.length === 0 && <div className="p-8 text-center"><span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-emerald-700"><Icon name="check" /></span><p className="mt-3 font-medium text-slate-900">Queue is clear</p><p className="mt-1 text-sm text-slate-600">New reviewed charges will appear here.</p></div>}{actionableDrafts.map(draft => { const meta = statusMeta(draft.status); return <article key={draft.id} className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-lg font-semibold tabular-nums text-slate-950">{money(draft.amount_cents)}</p><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${meta.tone}`}>{meta.label}</span></div><p className="mt-1 truncate font-medium text-slate-800">{draft.memo}</p><p className="mt-1 text-sm text-slate-500">••{draft.from_last4} <span aria-hidden="true">→</span> ••{draft.to_last4} · {draft.charge_reference}</p></div>{meta.action === 'prepare' && <button disabled={busy || !connected} onClick={() => prepare(draft)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto">Prepare in Truliant <Icon name="arrow" className="h-4 w-4" /></button>}{meta.action === 'verify' && <button disabled={busy || !connected} onClick={() => verify(draft)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto">Verify bank histories <Icon name="arrow" className="h-4 w-4" /></button>}{meta.action === 'retry' && <div className="max-w-xs text-right"><button disabled={busy || !connected} onClick={() => retryPreparation(draft)} className="min-h-11 rounded-xl border border-amber-300 bg-amber-50 px-4 font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">Resume after sign-in</button><p className="mt-2 text-xs leading-5 text-slate-500">Use when Truliant required login before the form opened.</p></div>}</article> })}</div>
+      <div className="divide-y divide-slate-200">{actionableDrafts.length === 0 && <div className="p-8 text-center"><span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-emerald-700"><Icon name="check" /></span><p className="mt-3 font-medium text-slate-900">Queue is clear</p><p className="mt-1 text-sm text-slate-600">New reviewed charges will appear here.</p></div>}{actionableDrafts.map(draft => { const baseMeta = statusMeta(draft.status); const meta = waitingForPosting.has(draft.id) && baseMeta.action === 'verify' ? { ...baseMeta, label: 'Waiting for bank posting' } : baseMeta; return <article key={draft.id} className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-lg font-semibold tabular-nums text-slate-950">{money(draft.amount_cents)}</p><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${meta.tone}`}>{meta.label}</span></div><p className="mt-1 truncate font-medium text-slate-800">{draft.memo}</p><p className="mt-1 text-sm text-slate-500">••{draft.from_last4} <span aria-hidden="true">→</span> ••{draft.to_last4} · {draft.charge_reference}</p></div>{meta.action === 'prepare' && <button disabled={busy || !connected} onClick={() => prepare(draft)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto">Prepare in Truliant <Icon name="arrow" className="h-4 w-4" /></button>}{meta.action === 'verify' && <button disabled={busy || !connected} onClick={() => verify(draft)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto">{waitingForPosting.has(draft.id) ? 'Check posting now' : 'Check transfer status'} <Icon name="arrow" className="h-4 w-4" /></button>}{meta.action === 'retry' && <div className="max-w-xs text-right"><button disabled={busy || !connected} onClick={() => retryPreparation(draft)} className="min-h-11 rounded-xl border border-amber-300 bg-amber-50 px-4 font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">Resume after sign-in</button><p className="mt-2 text-xs leading-5 text-slate-500">Use when Truliant required login before the form opened.</p></div>}</article> })}</div>
       <div className="border-t border-slate-200 p-4"><button type="button" onClick={() => { setManualOpen(value => !value); setError('') }} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">{manualOpen ? 'Close manual entry' : 'Add a charge manually'}</button></div>
       {manualOpen && <form onSubmit={create} className="border-t border-slate-200 bg-slate-50/70 p-5"><div className="mb-5"><h3 className="font-semibold text-slate-950">Add an individual charge</h3><p className="mt-1 text-sm text-slate-600">Use one draft for one full posted charge. No transfer is submitted when you add it.</p></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-3">Unique charge reference<input required maxLength={120} pattern="[A-Za-z0-9 .:_\-]+" className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" value={reference} onChange={e => { setReference(e.target.value); setReviewed(false) }} /></label><label className="text-sm font-medium text-slate-700">Full amount<input required inputMode="decimal" className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" placeholder="118.20" value={amount} onChange={e => { setAmount(e.target.value); setReviewed(false) }} /></label><label className="min-w-0 text-sm font-medium text-slate-700">From<BankSelect required ariaLabel="Funding source" value={from} options={[{ value: '', label: 'Select source' }, ...sources.map(a => ({ value: a.last4, label: `${a.nickname} · ••${a.last4}` }))]} onChange={value => { setFrom(value); setReviewed(false) }} /></label><label className="min-w-0 text-sm font-medium text-slate-700">To<BankSelect required ariaLabel="Checking destination" value={to} options={[{ value: '', label: 'Select checking' }, ...checking.map(a => ({ value: a.last4, label: `${a.nickname} · ••${a.last4}` }))]} onChange={value => { setTo(value); setReviewed(false) }} /></label><label className="text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-3">Memo<input required maxLength={34} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" value={memo} onChange={e => { setMemo(e.target.value); setReviewed(false) }} /><span className="mt-1 block text-xs font-normal text-slate-500">Starts with Cvr · 34 characters maximum</span></label></div><label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={reviewed} onChange={e => setReviewed(e.target.checked)} /><span>I checked the bank history. This charge needs funding and has no matching transfer or unresolved submission.</span></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button disabled={busy || !reviewed} className="min-h-11 rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">Add reviewed transfer</button><button type="button" disabled={busy} onClick={() => { setManualOpen(false); setError('') }} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-200">Cancel</button></div></form>}
       {completedDrafts.length > 0 && <details className="border-t border-slate-200"><summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">Completed transfers ({completedDrafts.length})</summary><div className="divide-y divide-slate-200 border-t border-slate-200">{completedDrafts.map(draft => <div key={draft.id} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{money(draft.amount_cents)} · {draft.memo}</span><span className="text-emerald-700">Matched in both histories</span></div>)}</div></details>}
