@@ -15,6 +15,7 @@ function installChrome({findSource=true, findDestination=true, openSource=true, 
   let nextTab = 100;
   const tabs = new Map();
   const removed = [];
+  const removedWindows = [];
   const inspections = [];
   const session = {};
   globalThis.chrome = {
@@ -33,6 +34,11 @@ function installChrome({findSource=true, findDestination=true, openSource=true, 
       set:async values=>{Object.assign(session, values); if(values.approval) approval=values.approval;},
       remove:async key=>{delete session[key];}
     }},
+    windows:{
+      create:async options=>{const tab={id:nextTab++,status:'complete',url:options.url};tabs.set(tab.id,tab);return {id:500,tabs:[tab]};},
+      remove:async id=>{removedWindows.push(id);},
+      onRemoved:{addListener(){},removeListener(){}}
+    },
     tabs:{
       create:async options=>{const tab={id:nextTab++, status:'complete', url:options.url};tabs.set(tab.id,tab);return tab;},
       get:async id=>tabs.get(id),
@@ -57,7 +63,7 @@ function installChrome({findSource=true, findDestination=true, openSource=true, 
   };
   return {
     get external(){return external;}, get approval(){return approval;}, get approvalListener(){return approvalListener;},
-    session, inspections, removed
+    session, inspections, removed, removedWindows
   };
 }
 
@@ -94,7 +100,8 @@ test('full reauthorization and two-account verification flow returns separate ev
 
   assert.deepEqual(await call(harness.external,{type:'ELIS_ACK',id:draft.id}),{ok:true});
   assert.equal(harness.session.activeDraft,undefined);
-  assert.equal(harness.removed.length,3,'approval and both temporary history tabs are closed');
+  assert.equal(harness.removed.length,2,'both temporary history tabs are closed');
+  assert.deepEqual(harness.removedWindows,[500],'the approval popup is closed');
   delete globalThis.chrome;
 });
 
