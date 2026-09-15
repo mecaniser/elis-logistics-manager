@@ -210,10 +210,12 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
   const checkBalances = async () => {
-    setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
+    setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Confirming your ELIS session…', started: Date.now() })
     let bankRead = false
     try {
       if (!checking.length || !sources.length) throw new Error('Import and save the checking and credit accounts first.')
+      await bankMonitorApi.drafts(tenantId)
+      if (active.current) setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
       const suffixes = [...checking, ...sources].map(account => account.last4)
       const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: checking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
       bankRead = true
@@ -282,6 +284,10 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       else if (identified) setNotice('The coverage queue is already current for the posted charges found.')
       else if (!issues.length) setNotice('The negative balance is already covered by transfer drafts in the action queue.')
     } catch (error: unknown) {
+      if ((error as { response?: { status?: number } })?.response?.status === 401) {
+        if (active.current) setError('Your ELIS session expired. Sign in again to return to Bank Monitor.')
+        return
+      }
       if (bankRead) { if (active.current) setError(errorMessage(error, 'Balances were read, but the coverage queue could not be updated.')) }
       else fail(error, 'Unable to check balances.')
     }
