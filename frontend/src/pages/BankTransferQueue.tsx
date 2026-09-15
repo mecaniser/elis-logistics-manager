@@ -4,7 +4,7 @@ import { bankMonitorApi } from '../services/api'
 type Account = { nickname: string; last4: string }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 const runtime = () => (window as any).chrome?.runtime
-const REQUIRED_EXTENSION_VERSION = '0.1.14'
+const REQUIRED_EXTENSION_VERSION = '0.1.15'
 const send = (extension: string, message: unknown): Promise<any> => new Promise((resolve, reject) => {
   if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
   if (!runtime()?.sendMessage) return reject(new Error('Chrome cannot see an enabled extension connection for this page. Reload ELIS Bank Form Assistant in chrome://extensions in this Chrome profile, then reload this page.'))
@@ -32,6 +32,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [reviewed, setReviewed] = useState(false)
+  const [balanceCheck, setBalanceCheck] = useState<{ checked_at: string; accounts: { last4: string; current_cents: number | null; available_credit_cents: number | null }[] } | null>(null)
   const active = useRef(true)
   useEffect(() => {
     active.current = true
@@ -85,6 +86,17 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
       if (active.current) { onAccountsDiscovered(discovered.accounts); setNotice(`${discovered.accounts.length} Truliant accounts imported. Review the detected types below, then save.`) }
     } catch (e: any) { if (active.current) setError(e.message) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
+  }
+  const checkBalances = async () => {
+    setBusy(true); setError(''); setNotice('')
+    setOperation({ message: 'Checking current balances in Truliant…', started: Date.now() })
+    try {
+      const suffixes=[...checking,...sources].map(account=>account.last4)
+      if(!checking.length || !sources.length) throw new Error('Import and save the checking and credit accounts first.')
+      const result=await send(extension,{type:'ELIS_CHECK_BALANCES',suffixes})
+      if(active.current) setBalanceCheck(result)
+    } catch(e:any) { if(active.current) setError(e.message) }
+    finally { if(active.current) { setBusy(false); setOperation(null) } }
   }
   const prepare = async (draft: Draft) => {
     setBusy(true); setError(''); setNotice('')
@@ -169,7 +181,20 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
         {connected && <button type="button" disabled={busy} onClick={() => { setDraftExtension(extension); setEditingConnection(false); setError('') }} className="text-gray-700 underline disabled:opacity-50">Cancel</button>}
       </div>
     </div>}
+    {connected && <div className="rounded border p-4 space-y-2">
+      <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Current funding status</h3><button type="button" disabled={busy} onClick={checkBalances} className="rounded bg-blue-700 px-3 py-2 text-sm text-white disabled:opacity-50">{busy ? 'Checking…' : 'Check bank now'}</button></div>
+      {!balanceCheck ? <p className="text-sm text-gray-600">Run a read-only check to see whether either checking account needs funding.</p> : (()=>{
+        const rows=checking.map(account=>({account,balance:balanceCheck.accounts.find(item=>item.last4===account.last4)}))
+        const total=rows.reduce((sum,row)=>sum+Math.max(0,-(row.balance?.current_cents ?? 0)),0)
+        return <div role="status" className={total ? 'text-red-800' : 'text-green-800'}>
+          <p className="font-semibold">{total ? `Funding needed: $${(total/100).toFixed(2)}` : '✓ All monitored checking accounts are currently positive'}</p>
+          {rows.map(({account,balance})=><p key={account.last4} className="text-sm">{account.nickname} · ••{account.last4}: {balance?.current_cents == null ? 'balance unavailable' : `$${(balance.current_cents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`}</p>)}
+          <p className="mt-1 text-xs text-gray-600">Checked {new Date(balanceCheck.checked_at).toLocaleTimeString()}. No transfer was submitted.</p>
+        </div>
+      })()}
+    </div>}
     <form onSubmit={create} className="space-y-3 border-t pt-4">
+      <h3 className="font-semibold">Add an individual charge manually</h3>
       <label className="block text-sm">Unique charge reference<input required maxLength={120} pattern="[A-Za-z0-9 .:_\-]+" className="block border rounded p-2 w-full" value={reference} onChange={e => { setReference(e.target.value); setReviewed(false) }} placeholder="Bank transaction reference, or date and bill identifier" /></label>
       <div className="flex flex-wrap gap-4">
         <label className="text-sm">Full charge amount ($)<input required inputMode="decimal" className="block border rounded p-2" placeholder="118.20" value={amount} onChange={e => { setAmount(e.target.value); setReviewed(false) }} /></label>

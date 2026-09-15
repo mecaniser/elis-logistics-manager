@@ -1,4 +1,4 @@
-import {allowedSender, validDraft, boundDraft, TRANSFERS} from './contract.js';
+import {allowedSender, validDraft, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
 import {fillForm} from './fill-form.js';
 let busy = false;
 const stageError = (code, message) => Object.assign(new Error(message), {code});
@@ -26,6 +26,27 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       }
       reply({ok:false,error:'Open and sign in to Truliant, then try account import again.'});
     })().catch(()=>reply({ok:false,error:'Account import stopped. No bank information was changed.'})).finally(()=>{busy=false;});
+    return true;
+  }
+  if(message?.type==='ELIS_CHECK_BALANCES') {
+    const suffixes=message.suffixes;
+    if(!Array.isArray(suffixes) || suffixes.length<1 || suffixes.length>15 || suffixes.some(value=>!/^\d{4}$/.test(value))) {reply({ok:false,error:'Configured accounts are invalid.'});return;}
+    if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
+    busy=true;
+    (async()=>{
+      const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
+      const tab=open.find(item=>item.status==='complete') || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      for(let attempt=0;attempt<50;attempt++) {
+        await new Promise(resolve=>setTimeout(resolve,300));
+        const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
+          [...document.querySelectorAll('[id^="account-link-"]')].map(element=>(element.textContent||'').replace(/\s+/g,' ').trim())}).catch(()=>[]);
+        const summaries=results.flatMap(result=>result.result||[]).map(parseAccountSummary).filter(Boolean)
+          .filter(account=>suffixes.includes(account.last4));
+        const accounts=[...new Map(summaries.map(account=>[account.last4,account])).values()];
+        if(accounts.length===suffixes.length) {reply({ok:true,checked_at:new Date().toISOString(),accounts});return;}
+      }
+      reply({ok:false,error:'Could not read every configured account. Open the signed-in Truliant home page and try again.'});
+    })().catch(()=>reply({ok:false,error:'Balance check stopped. No bank information was changed.'})).finally(()=>{busy=false;});
     return true;
   }
   if(message?.type==='ELIS_STATUS' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
