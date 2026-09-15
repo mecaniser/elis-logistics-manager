@@ -130,7 +130,7 @@ export default function BankTransferQueue({ tenantId, checking, sources }: { ten
   return <section className="bg-white border rounded-lg p-5 space-y-4">
     <h2 className="text-lg font-semibold">Transfers for individual charges</h2>
     <p className="text-sm text-gray-600">Each draft covers one full charge. Choose HELOC only when it can cover the entire amount; otherwise choose the business credit line. The Chrome extension fills the form; you submit in Truliant.</p>
-    <p className="text-sm text-amber-800">First integration preview: charge matching is reviewed manually. After submitting in the bank, check both account histories using the extension. This matching logic still needs a live acceptance test.</p>
+    <p className="text-sm text-amber-800">Pilot workflow: charge matching is reviewed manually. After submitting in the bank, use the extension to verify one exact posted entry in both account histories.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {notice && <p role="status" className="text-green-800">{notice}</p>}
     {operation && <div role="status" aria-live="polite" className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 p-3 text-blue-900">
