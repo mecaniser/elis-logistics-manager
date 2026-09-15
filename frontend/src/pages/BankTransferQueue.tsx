@@ -4,7 +4,7 @@ import { bankMonitorApi } from '../services/api'
 type Account = { nickname: string; last4: string }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 const runtime = () => (window as any).chrome?.runtime
-const REQUIRED_EXTENSION_VERSION = '0.1.9'
+const REQUIRED_EXTENSION_VERSION = '0.1.10'
 const send = (extension: string, message: unknown): Promise<any> => new Promise((resolve, reject) => {
   if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
   if (!runtime()?.sendMessage) return reject(new Error('Chrome cannot see an enabled extension connection for this page. Reload ELIS Bank Form Assistant in chrome://extensions in this Chrome profile, then reload this page.'))
