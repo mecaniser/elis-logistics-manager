@@ -1009,6 +1009,7 @@ export const bankMonitorApi = {
   createDraft: (tenantId: number, draft: unknown) => axios.post('/api/bank-monitor/drafts', draft, draftHeaders(tenantId)),
   prepareDraft: (tenantId: number, id: string) => axios.post(`/api/bank-monitor/drafts/${id}/prepare`, {}, draftHeaders(tenantId)),
   draftOutcome: (tenantId: number, id: string, status: string) => axios.post(`/api/bank-monitor/drafts/${id}/outcome`, { status }, draftHeaders(tenantId)),
+  retryDraft: (tenantId: number, id: string) => axios.post(`/api/bank-monitor/drafts/${id}/retry`, { reason: 'signed_out_before_form' }, draftHeaders(tenantId)),
   get: (tenantId: number) => axios.get('/api/bank-monitor', { withCredentials: true, headers: { 'X-Tenant-ID': String(tenantId) } }),
   save: (tenantId: number, rules: unknown) => axios.put('/api/bank-monitor', rules, { withCredentials: true, headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'save-settings' } }),
 }

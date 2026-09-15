@@ -21,7 +21,7 @@ test('reject malformed, fractional, same-account and oversized requests',()=>{
 });
 test('signed-out page receives no form writes',async()=>{
   globalThis.location={origin:'https://www.truliantfcuonline.org',pathname:'/dbank/live/app/login/consumer'};
-  assert.equal((await fillForm(draft)).ok,false);
+  assert.deepEqual(await fillForm(draft),{ok:false,code:'LOGIN_REQUIRED',error:'Sign in to Truliant, then return to ELIS and resume this draft.'});
 });
 test('extension never receives cookies or broad host access',()=>{
   const manifest=JSON.parse(fs.readFileSync(new URL('../manifest.json',import.meta.url)));
