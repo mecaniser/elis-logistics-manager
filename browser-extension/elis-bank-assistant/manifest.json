@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "ELIS Bank Form Assistant \u2014 Local Pilot",
-  "version": "0.1.12",
+  "name": "ELIS Bank Form Assistant",
+  "version": "0.1.13",
   "description": "Prepare reviewed Truliant forms. Never submits or schedules transfers.",
   "permissions": [
     "scripting",
@@ -12,7 +12,8 @@
   ],
   "externally_connectable": {
     "matches": [
-      "http://127.0.0.1/bank-monitor"
+      "http://127.0.0.1/bank-monitor",
+      "https://www.elisprotech.com/bank-monitor"
     ]
   },
   "background": {

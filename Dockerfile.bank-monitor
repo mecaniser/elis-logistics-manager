@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
     BANK_MONITOR_WORKER_ENABLED=false
 WORKDIR /app/backend
-RUN apt-get update && apt-get install -y --no-install-recommends gcc tini \
+RUN apt-get update && apt-get install -y --no-install-recommends gcc tini util-linux \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt backend/requirements-bank-monitor.txt ./
 RUN pip install --no-cache-dir -r requirements-bank-monitor.txt \
@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements-bank-monitor.txt \
     && chmod -R a+rX /opt/playwright \
     && useradd --uid 10001 --create-home bankworker
 COPY --chown=bankworker:bankworker backend/app ./app
-USER bankworker
-ENTRYPOINT ["/usr/bin/tini", "--"]
+COPY backend/bank-monitor-entrypoint.sh /usr/local/bin/bank-monitor-entrypoint
+RUN chmod 0755 /usr/local/bin/bank-monitor-entrypoint
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/bank-monitor-entrypoint"]
 CMD ["python", "-m", "app.bank_monitor_worker"]

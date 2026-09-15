@@ -1,6 +1,6 @@
 # ELIS Bank Form Assistant — Chrome pilot
 
-Status: version 0.1.12 local pilot. ELIS receives live, read-only verification stages from the extension. The full approval, reload recovery, two-account verification, evidence, and acknowledgement state machine passed deterministic tests and live acceptance against the posted $118.20 transfer on 2026-09-14.
+Status: version 0.1.13 production candidate. ELIS receives live, read-only verification stages from the extension. The full approval, reload recovery, two-account verification, evidence, and acknowledgement state machine passed deterministic tests and live acceptance against the posted $118.20 transfer on 2026-09-14. The extension accepts the exact local development and production ELIS Bank Monitor pages.
 No transfer submission, recurring payment, or scheduled-payment code exists.
 
 ## Install locally

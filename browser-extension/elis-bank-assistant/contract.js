@@ -3,7 +3,11 @@ export const TRANSFERS = `${BANK}/dbank/live/app/home/olb/transfers`;
 export function allowedSender(url) {
   try {
     const u = new URL(url);
-    return u.origin === 'http://127.0.0.1:18081' && u.pathname === '/bank-monitor';
+    const allowedOrigins = new Set([
+      'http://127.0.0.1:18081',
+      'https://www.elisprotech.com',
+    ]);
+    return allowedOrigins.has(u.origin) && u.pathname === '/bank-monitor';
   } catch { return false; }
 }
 export function validDraft(d) {
