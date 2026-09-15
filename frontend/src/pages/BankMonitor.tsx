@@ -104,7 +104,7 @@ export default function BankMonitor() {
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">{error}</div>}
     {loading && <div role="status" className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" />Loading bank monitor…</div>}
 
-    {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+    {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
         <BankTransferQueue key={currentTenantId} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
 
@@ -129,7 +129,7 @@ export default function BankMonitor() {
         </details>
       </main>
 
-      <aside className="space-y-5 xl:sticky xl:top-5">
+      <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{scheduleActive ? 'Scheduled' : 'Setup needed'}</span></div>
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. check</h2>
