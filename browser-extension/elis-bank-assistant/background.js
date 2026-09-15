@@ -1,5 +1,4 @@
 import {allowedSender, validDraft, boundDraft, TRANSFERS} from './contract.js';
-import {openAccount, findPostedEntry} from './history.js';
 import {fillForm} from './fill-form.js';
 let busy = false;
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
@@ -42,14 +41,13 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
           let selected=false;
           for(let i=0;i<60;i++) {
             await new Promise(r=>setTimeout(r,500));
-            const results=await chrome.scripting.executeScript({target:{tabId:inspection.id,allFrames:true},func:openAccount,args:[suffix]}).catch(()=>[]);
-            if(results.some(r=>r.result===true)) {selected=true;break;}
+            const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
+            if(result?.opened) {selected=true;break;}
           }
           if(!selected) throw new Error(`Open account ••${suffix} failed. Sign in to Truliant in this Chrome profile.`);
           for(let i=0;i<40;i++) {
             await new Promise(r=>setTimeout(r,300));
-            const results=await chrome.scripting.executeScript({target:{tabId:inspection.id,allFrames:true},func:findPostedEntry,args:[{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}]}).catch(()=>[]);
-            const found=results.map(r=>r.result).find(Boolean);
+            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
             if(found?.match) return found.match;
             if(found?.error) throw new Error(found.error);
           }

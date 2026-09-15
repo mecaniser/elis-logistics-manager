@@ -101,6 +101,13 @@ in this conversation. No deployment or bank credential changes were made.
 - Removed the unrelated reviewed synthetic draft from the disposable local preview database so it cannot be mistaken for the real pilot transfer. No real draft or bank data was deleted.
 - Validation: frontend build and all 16 extension tests pass; browser-visible queue contains only the real Union County draft. Live 0.1.6 reload and two-account verification remain outstanding.
 
+### Embedded bank-frame messaging — 2026-09-14
+
+- Live 0.1.6 confirmed the Chrome session was authenticated and a separately opened fresh bank-home tab rendered all configured account cards, while one-off `chrome.scripting.executeScript(... allFrames)` still failed to reach the embedded account frame.
+- Extension 0.1.7 replaces one-off history-frame injection with a manifest-declared content script restricted to `https://www.truliantfcuonline.org/*`, running only in child frames. Background verification exchanges only account suffixes and exact-match inputs/results with that script.
+- Form preparation remains unchanged in the top-level bank transfer page. Verification still opens isolated read-only tabs and never clicks a transfer control.
+- Validation: manifest parses, frontend build passes, and all 16 extension tests pass. Live 0.1.7 reload and two-account verification remain outstanding.
+
 ### Isolated account-history tabs — 2026-09-14
 
 - Live 0.1.5 still stopped after checking 3304 because Truliant retained the first account route when the same tab was reused for credit line 2829.
