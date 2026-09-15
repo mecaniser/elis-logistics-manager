@@ -82,6 +82,7 @@ export default function BankMonitor() {
   const stale = latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
+  const accountsConfigured = savedRules.checking.length > 0 && savedRules.sources.length > 0
   return <div className="max-w-5xl mx-auto space-y-6">
     <div><h1 className="text-2xl font-semibold text-gray-900">Bank Monitor</h1>
       <p className="text-gray-600 mt-1">Daily business checking review at 5:30 p.m. Eastern.</p></div>
@@ -94,8 +95,16 @@ export default function BankMonitor() {
     {loading && <p role="status">Loading bank monitoring…</p>}
     {data && loadedTenant === currentTenant?.id && <>
       <section className="bg-white border rounded-lg p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Latest check</h2>
-        {!latest ? <p className="text-gray-600">No checks recorded. Configure accounts, then connect the bank worker.</p> : <>
+        <h2 className="text-lg font-semibold">Automated 5:30 p.m. balance check</h2>
+        {!latest ? <div className="rounded border border-amber-200 bg-amber-50 p-3 space-y-1">
+          <p className="font-medium text-amber-900">{!accountsConfigured ? 'Account setup required' : !savedRules.enabled ? 'Schedule paused' : 'Waiting for secure server login'}</p>
+          <p className="text-sm text-amber-900">{!accountsConfigured
+            ? 'Connect the bank assistant and save the imported checking and credit accounts below.'
+            : !savedRules.enabled
+              ? 'Turn on daily checks in Monitoring settings and save.'
+              : 'Your accounts and requested schedule are saved. The server worker still needs its one-time Truliant sign-in before the first automatic check can run.'}</p>
+        </div> : <>
+          <p className="text-sm font-medium text-gray-600">Latest result</p>
           <p className="font-medium capitalize">{label(latest.status)} · {latest.scheduled_date}</p>
           {latest.status === 'running' && <p>The check has not completed. If this persists, inspect the worker; no outcome is confirmed.</p>}
           {stale && <p className="text-amber-800">Historical snapshot. Recheck balances in Truliant before making a transfer.</p>}
@@ -118,7 +127,6 @@ export default function BankMonitor() {
           </div>}
           {!!latest.result.uncovered_cents && <p className="text-red-700">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}. Listed credit cannot cover the full amount.</p>}
         </>}
-        <a href="https://www.truliantfcuonline.org/dbank/live/app/home" target="_blank" rel="noreferrer" className="inline-block text-blue-700 underline">Open Truliant</a>
       </section>
       <BankTransferQueue key={currentTenant!.id} tenantId={currentTenant!.id} checking={rules.checking} sources={rules.sources} onAccountsDiscovered={importAccounts} />
       <form onSubmit={save} className="bg-white border rounded-lg p-5 space-y-5">
