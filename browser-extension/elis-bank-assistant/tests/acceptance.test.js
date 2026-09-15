@@ -81,6 +81,7 @@ test('full reauthorization and two-account verification flow returns separate ev
   await waitForApproval(harness);
   approve(harness);
   assert.deepEqual(await reauthorization,{ok:true});
+  assert.deepEqual(await call(harness.external,{type:'ELIS_STATUS',id:draft.id}),{ok:true,progress:null});
 
   const verified=await call(harness.external,{type:'ELIS_VERIFY',draft});
   assert.deepEqual(verified,{ok:true,evidence:{source:'a'.repeat(64),destination:'b'.repeat(64)}});
@@ -88,6 +89,7 @@ test('full reauthorization and two-account verification flow returns separate ev
     ['3304',false,'Sep 14, 2026'], ['2829',true,'Sep 14, 2026']
   ]);
   assert.equal(harness.session.activeDraft.status,'matched');
+  assert.equal(harness.session.activeDraft.progress.stage,'matched');
   assert.equal(harness.inspections.every(item=>item.wanted.amount_cents===11820 && item.wanted.memo===draft.memo),true);
 
   assert.deepEqual(await call(harness.external,{type:'ELIS_ACK',id:draft.id}),{ok:true});

@@ -5,6 +5,12 @@ const stageError = (code, message) => Object.assign(new Error(message), {code});
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
+  if(message?.type==='ELIS_STATUS' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
+    chrome.storage.session.get('activeDraft').then(({activeDraft})=>{
+      const allowed=activeDraft?.id===message.id && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id;
+      reply({ok:true,progress:allowed ? activeDraft.progress || null : null});
+    }); return true;
+  }
   if(message?.type==='ELIS_ACK' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(async ({activeDraft})=>{
       if(activeDraft?.id===message.id && activeDraft?.status==='matched' && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id) await chrome.storage.session.remove('activeDraft');
@@ -31,7 +37,9 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         throw new Error('No active preparation for this draft.');
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
+      const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
       async function inspect(suffix,source) {
+        await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
         const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
         try {
           const navigationEnd=Date.now()+25000;
@@ -50,6 +58,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
             source ? 'SOURCE_ACCOUNT_NOT_FOUND' : 'DESTINATION_ACCOUNT_NOT_FOUND',
             `Could not open ${source ? 'funding source' : 'checking account'} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
           );
+          await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${source ? 'principal disbursements' : 'deposits'} in account ••${suffix}…`);
           for(let i=0;i<40;i++) {
             await new Promise(r=>setTimeout(r,300));
             const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
@@ -63,8 +72,9 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         }
       }
       const destination=await inspect(message.draft.to_last4,false);
+      await progress('checking_matched', `Checking account ••${message.draft.to_last4} matched. Opening funding source ••${message.draft.from_last4}…`);
       const source=await inspect(message.draft.from_last4,true);
-      await chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'matched'}});
+      await chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'matched',progress:{stage:'matched',message:'Both posted bank entries matched. Saving verification in ELIS…',at:Date.now()}}});
       finishReply({ok:true,evidence:{source,destination}});
       return;
     }
