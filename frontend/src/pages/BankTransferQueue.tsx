@@ -5,13 +5,33 @@ type Account = { nickname: string; last4: string }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string }
 type ExtensionResponse = { ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
 type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callback: (response?: ExtensionResponse) => void) => void; lastError?: unknown }
-type BalanceCheck = { checked_at: string; accounts: { last4: string; current_cents: number | null; available_credit_cents: number | null }[] }
+type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }
+type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null }
+type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; error?: string | null }[] }
+type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
-const REQUIRED_EXTENSION_VERSION = '0.1.15'
+const REQUIRED_EXTENSION_VERSION = '0.1.16'
 const runtime = () => (window as Window & { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
-const send = <T extends ExtensionResponse>(extension: string, message: unknown): Promise<T> => new Promise((resolve, reject) => {
+const draftReference = (last4: string, transaction: PostedDebit) => `bank-${last4}-${transaction.reference.slice(0, 32)}`
+const memoFor = (transaction: PostedDebit) => {
+  const clean = transaction.description.replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const parsed = new Date(transaction.date)
+  const dateCode = Number.isNaN(parsed.valueOf()) ? '' : `${String(parsed.getMonth() + 1).padStart(2, '0')}${String(parsed.getDate()).padStart(2, '0')}`
+  const available = dateCode ? 25 : 30
+  const subject = clean.slice(0, available).trim().replace(/[ ._-]+$/, '') || 'posted charge'
+  return `Cvr ${subject}${dateCode ? ` ${dateCode}` : ''}`
+}
+const coverageText = (value: string) => value.toLowerCase().replace(/^cvr\s+/, '').replace(/\s+\d{4}$/, '').replace(/[^a-z0-9]+/g, '')
+const matchesExistingDraft = (draft: Draft, destination: Account, transaction: PostedDebit, reference: string, memo: string) => {
+  if (draft.charge_reference === reference) return true
+  if (draft.to_last4 !== destination.last4 || draft.amount_cents !== transaction.amount_cents) return false
+  const existing = coverageText(draft.memo)
+  const proposed = coverageText(memo)
+  return existing.length >= 5 && proposed.length >= 5 && (existing.startsWith(proposed) || proposed.startsWith(existing))
+}
+const send = <T extends { ok: boolean; error?: string; code?: string }>(extension: string, message: unknown): Promise<T> => new Promise((resolve, reject) => {
   if (!/^[a-p]{32}$/.test(extension)) return reject(new Error('Enter the 32-letter Chrome extension ID.'))
   const chromeRuntime = runtime()
   if (!chromeRuntime?.sendMessage) return reject(new Error('Chrome cannot reach the bank assistant. Reload the extension and this page.'))
@@ -61,6 +81,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
   const [reviewed, setReviewed] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [balanceCheck, setBalanceCheck] = useState<BalanceCheck | null>(null)
+  const [coverageIssue, setCoverageIssue] = useState('')
   const active = useRef(true)
 
   const markDisconnected = useCallback(() => setConnected(false), [])
@@ -135,13 +156,67 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
   const checkBalances = async () => {
-    setBusy(true); setError(''); setNotice(''); setOperation({ message: 'Reading current balances from Truliant…', started: Date.now() })
+    setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Reading all balances and posted charges from Truliant…', started: Date.now() })
+    let bankRead = false
     try {
       if (!checking.length || !sources.length) throw new Error('Import and save the checking and credit accounts first.')
       const suffixes = [...checking, ...sources].map(account => account.last4)
-      const result = await send<ExtensionResponse & BalanceCheck>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes })
-      if (active.current) { setConnected(true); setBalanceCheck(result) }
-    } catch (error: unknown) { fail(error, 'Unable to check balances.') }
+      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: checking.map(account => account.last4) })
+      bankRead = true
+      if (!active.current) return
+      setConnected(true); setBalanceCheck(result)
+      setOperation({ message: 'Building the coverage queue from uncovered posted charges…', started: Date.now() })
+      const existing = (await bankMonitorApi.drafts(tenantId)).data as Draft[]
+      const accountBySuffix = new Map(result.accounts.map(account => [account.last4, account]))
+      const sourceBalances = sources.map(source => ({ source, balance: accountBySuffix.get(source.last4) }))
+      let created = 0
+      let identified = 0
+      const issues: string[] = []
+      for (const destination of checking) {
+        const balance = accountBySuffix.get(destination.last4)
+        if (balance?.current_cents == null || balance.current_cents >= 0) continue
+        const pending = existing.filter(draft => draft.to_last4 === destination.last4 && statusMeta(draft.status).action !== 'done')
+          .reduce((sum, draft) => sum + draft.amount_cents, 0)
+        let remaining = Math.max(0, -balance.current_cents - pending)
+        if (remaining === 0) continue
+        const history = result.coverage?.find(item => item.last4 === destination.last4)
+        if (!history || history.error) {
+          issues.push(history?.error || `Posted history for ••${destination.last4} was unavailable.`)
+          continue
+        }
+        const candidates = history.transactions.filter(transaction => transaction.balance_cents == null || transaction.balance_cents < 0)
+        for (const transaction of candidates) {
+          if (remaining <= 0) break
+          const chargeReference = draftReference(destination.last4, transaction)
+          const transactionMemo = memoFor(transaction)
+          if (existing.some(draft => matchesExistingDraft(draft, destination, transaction, chargeReference, transactionMemo))) continue
+          const source = sourceBalances.find(row => (row.balance?.available_credit_cents ?? -1) >= transaction.amount_cents)?.source
+          if (!source) {
+            issues.push(`${money(transaction.amount_cents)} ${transaction.description} cannot be covered in full by one funding source.`)
+            continue
+          }
+          identified += 1
+          try {
+            await bankMonitorApi.createDraft(tenantId, { charge_reference: chargeReference, amount_cents: transaction.amount_cents, from_last4: source.last4, to_last4: destination.last4, memo: transactionMemo })
+            created += 1
+          } catch (error: unknown) {
+            if ((error as { response?: { status?: number } })?.response?.status !== 409) throw error
+          }
+          remaining = Math.max(0, remaining - transaction.amount_cents)
+        }
+        if (remaining > 0) issues.push(`${money(remaining)} of the negative balance in ••${destination.last4} could not be tied to an uncovered posted charge.`)
+      }
+      await reload()
+      if (issues.length) setCoverageIssue(issues.join(' '))
+      const negative = result.accounts.filter(account => checking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
+      if (!negative.length) setNotice('All configured accounts were checked. No checking coverage is needed.')
+      else if (created) setNotice(`${created} transfer draft${created === 1 ? '' : 's'} created from posted charges. Prepare each draft in the action queue.`)
+      else if (identified) setNotice('The coverage queue is already current for the posted charges found.')
+      else if (!issues.length) setNotice('The negative balance is already covered by transfer drafts in the action queue.')
+    } catch (error: unknown) {
+      if (bankRead) { if (active.current) setError(errorMessage(error, 'Balances were read, but the coverage queue could not be updated.')) }
+      else fail(error, 'Unable to check balances.')
+    }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
   const prepare = async (draft: Draft) => {
@@ -194,6 +269,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
   }
 
   const checkedRows = balanceCheck ? checking.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
+  const fundingRows = balanceCheck ? sources.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const negativePosted = checkedRows.reduce((sum, row) => sum + Math.max(0, -(row.balance?.current_cents ?? 0)), 0)
   const actionableDrafts = drafts.filter(draft => statusMeta(draft.status).action !== 'done')
   const completedDrafts = drafts.filter(draft => statusMeta(draft.status).action === 'done')
@@ -203,17 +279,20 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
       <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
           <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300"><Icon name="clock" className="h-4 w-4" /> Current funding status</div>
-          {!balanceCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Run a read-only check for the current posted balance in each monitored checking account.</p></> : <>
+          {!balanceCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <>
             <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">Checked {new Date(balanceCheck.checked_at).toLocaleString()} · Read-only; no transfer submitted.</p></div></div>
-            <div className="mt-6 grid gap-2 sm:grid-cols-2">{checkedRows.map(({ account, balance }) => <div key={account.last4} className="rounded-xl bg-white/5 px-4 py-3 ring-1 ring-white/10"><p className="truncate text-sm text-slate-300">{account.nickname} · ••{account.last4}</p><p className={`mt-1 text-xl font-semibold tabular-nums ${balance?.current_cents != null && balance.current_cents < 0 ? 'text-red-300' : 'text-white'}`}>{balance?.current_cents == null ? 'Unavailable' : money(balance.current_cents)}</p></div>)}</div>
+            <div className="mt-6 grid gap-5 xl:grid-cols-2">
+              <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Checking</p><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{checkedRows.map(({ account, balance }) => <div key={account.last4} className="rounded-xl bg-white/5 px-4 py-3 ring-1 ring-white/10"><p className="truncate text-sm text-slate-300">{account.nickname} · ••{account.last4}</p><p className={`mt-1 text-xl font-semibold tabular-nums ${balance?.current_cents != null && balance.current_cents < 0 ? 'text-red-300' : 'text-white'}`}>{balance?.current_cents == null ? 'Unavailable' : money(balance.current_cents)}</p><p className="mt-1 text-xs text-slate-400">Posted balance{balance?.available_cents != null && balance.available_cents !== balance.current_cents ? ` · ${money(balance.available_cents)} available` : ''}</p></div>)}</div></div>
+              <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Funding sources</p><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{fundingRows.map(({ account, balance }) => <div key={account.last4} className="rounded-xl bg-white/5 px-4 py-3 ring-1 ring-white/10"><p className="truncate text-sm text-slate-300">{account.nickname} · ••{account.last4}</p><p className="mt-1 text-xl font-semibold tabular-nums text-white">{balance?.available_credit_cents == null ? 'Unavailable' : money(balance.available_credit_cents)}</p><p className="mt-1 text-xs text-slate-400">Available credit{balance?.current_cents != null ? ` · ${money(balance.current_cents)} outstanding` : ''}</p></div>)}</div></div>
+            </div>
           </>}
         </div>
-        <button type="button" disabled={busy || !connected} onClick={checkBalances} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading current') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading current') ? 'Checking bank…' : 'Check bank now'}</button>
+        <button type="button" disabled={busy || !connected} onClick={checkBalances} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading all') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading all') ? 'Checking bank…' : 'Check bank now'}</button>
       </div>
       <div className="flex flex-col gap-3 border-t border-white/10 bg-white/[0.03] px-5 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-7"><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400'}`} /><span className="text-slate-300">{connected ? 'Bank assistant connected' : 'Connect the bank assistant to check balances'}</span></div>{!connected && <button type="button" onClick={() => setEditingConnection(true)} className="min-h-11 self-start font-medium text-blue-300 hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 sm:min-h-0">Connect assistant</button>}</div>
     </section>
 
-    {(error || notice || operation) && <div className="space-y-2" aria-live="polite">{error && <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><Icon name="alert" className="h-5 w-5 shrink-0" /><span>{error}</span></div>}{notice && <div role="status" className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><Icon name="check" className="h-5 w-5 shrink-0" /><span>{notice}</span></div>}{operation && <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" /><span>{operation.message} <span className="tabular-nums text-blue-700">{Math.max(0, Math.floor((clock - operation.started) / 1000))}s</span></span></div>}</div>}
+    {(error || notice || coverageIssue || operation) && <div className="space-y-2" aria-live="polite">{error && <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><Icon name="alert" className="h-5 w-5 shrink-0" /><span>{error}</span></div>}{coverageIssue && <div role="alert" className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><Icon name="alert" className="h-5 w-5 shrink-0" /><span><strong>Coverage needs review.</strong> {coverageIssue}</span></div>}{notice && <div role="status" className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><Icon name="check" className="h-5 w-5 shrink-0" /><span>{notice}</span></div>}{operation && <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" /><span>{operation.message} <span className="tabular-nums text-blue-700">{Math.max(0, Math.floor((clock - operation.started) / 1000))}s</span></span></div>}</div>}
 
     {(editingConnection || (!connected && !extension)) && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="link" /></span><div><h2 className="font-semibold text-slate-950">Connect bank assistant</h2><p className="mt-1 text-sm text-slate-600">Saved only in this Chrome profile. Connecting also imports account names and masked last four digits.</p></div></div><label className="mt-4 block text-sm font-medium text-slate-700">Chrome extension ID<input className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" value={draftExtension} maxLength={32} onChange={e => setDraftExtension(e.target.value.trim())} placeholder="32-letter extension ID" /></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button type="button" disabled={busy || !/^[a-p]{32}$/.test(draftExtension)} onClick={connect} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:opacity-45 motion-reduce:transition-none">{busy ? 'Connecting…' : connected ? 'Save replacement' : 'Connect and import'}</button>{connected && <button type="button" disabled={busy} onClick={() => { setDraftExtension(extension); setEditingConnection(false); setError('') }} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button>}</div></section>}
 

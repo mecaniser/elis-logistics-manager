@@ -29,5 +29,10 @@ export function parseAccountSummary(text) {
     if(!match) return null;
     return Math.round(Number(match[1].replace(/[$,]/g,''))*100);
   };
-  return {last4:suffix[1],current_cents:cents('Current Balance'),available_credit_cents:cents('Available Credit')};
+  return {
+    last4:suffix[1],
+    current_cents:cents('Current Balance'),
+    available_cents:cents('Available Balance'),
+    available_credit_cents:cents('Available Credit')
+  };
 }
