@@ -109,6 +109,8 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const [waitingForPosting, setWaitingForPosting] = useState<Set<string>>(new Set())
   const active = useRef(true)
   const autoVerification = useRef<{ returnedFromBank: boolean; armed: Set<string> }>({ returnedFromBank: false, armed: new Set() })
+  const automaticVerificationAttempts = useRef(new Set<string>())
+  const automaticVerificationRunning = useRef(false)
   const verifyRef = useRef<(draft: Draft, automatic?: boolean) => Promise<void>>(async () => undefined)
 
   const markDisconnected = useCallback(() => { setConnected(false); setConnectionState(extension ? 'unavailable' : 'unconfigured') }, [extension])
@@ -355,12 +357,16 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   useEffect(() => {
     const checkAfterReturn = () => {
       if (document.visibilityState === 'hidden') { autoVerification.current.returnedFromBank = true; return }
-      if (!autoVerification.current.returnedFromBank || busy || !connected) return
-      const draft = drafts.find(item => item.status === 'prepared_awaiting_submission' && autoVerification.current.armed.has(item.id))
+      if (busy || !connected || automaticVerificationRunning.current) return
+      const draft = drafts.find(item => item.status === 'prepared_awaiting_submission'
+        && !automaticVerificationAttempts.current.has(item.id)
+        && (autoVerification.current.returnedFromBank || !autoVerification.current.armed.has(item.id)))
       if (!draft) return
       autoVerification.current.returnedFromBank = false
       autoVerification.current.armed.delete(draft.id)
-      void verifyRef.current(draft, true)
+      automaticVerificationAttempts.current.add(draft.id)
+      automaticVerificationRunning.current = true
+      void verifyRef.current(draft, true).finally(() => { automaticVerificationRunning.current = false })
     }
     checkAfterReturn()
     window.addEventListener('focus', checkAfterReturn)
