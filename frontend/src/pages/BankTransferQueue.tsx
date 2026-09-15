@@ -18,6 +18,7 @@ const send = (extension: string, message: unknown): Promise<any> => new Promise(
 export default function BankTransferQueue({ tenantId, checking, sources, onAccountsDiscovered }: { tenantId: number; checking: Account[]; sources: Account[]; onAccountsDiscovered: (accounts: Account[]) => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
+  const [draftExtension, setDraftExtension] = useState(extension)
   const [connected, setConnected] = useState(false)
   const [editingConnection, setEditingConnection] = useState(false)
   const [error, setError] = useState('')
@@ -66,11 +67,12 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
     setBusy(true); setError(''); setNotice('')
     setOperation({ message: 'Connecting to the Chrome extension…', started: Date.now() })
     try {
-      const response = await send(extension, { type: 'ELIS_PING' })
-      localStorage.setItem('elis-bank-extension-id', extension)
+      const candidate = draftExtension.trim()
+      const response = await send(candidate, { type: 'ELIS_PING' })
       if (response.version !== REQUIRED_EXTENSION_VERSION) throw new Error(`Chrome extension ${response.version || 'version unknown'} is loaded. Reload ELIS Bank Form Assistant ${REQUIRED_EXTENSION_VERSION} in this Chrome profile before continuing.`)
-      if (active.current) { setConnected(true); setEditingConnection(false); setNotice('Bank assistant connected.') }
-      const discovered = await send(extension, { type: 'ELIS_DISCOVER_ACCOUNTS' })
+      localStorage.setItem('elis-bank-extension-id', candidate)
+      if (active.current) { setExtension(candidate); setDraftExtension(candidate); setConnected(true); setEditingConnection(false); setNotice('Bank assistant connected.') }
+      const discovered = await send(candidate, { type: 'ELIS_DISCOVER_ACCOUNTS' })
       if (active.current) { onAccountsDiscovered(discovered.accounts); setNotice(`${discovered.accounts.length} Truliant accounts imported. Review the detected account types below, then save settings.`) }
     } catch (e: any) { if (active.current) setError(e.message) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
@@ -159,10 +161,13 @@ export default function BankTransferQueue({ tenantId, checking, sources, onAccou
     {connected && !editingConnection ? <div className="flex items-center justify-between rounded border border-green-200 bg-green-50 px-3 py-2">
       <span className="font-medium text-green-800">✓ Bank assistant connected</span>
       <span className="flex gap-4"><button type="button" disabled={busy} onClick={discoverAccounts} className="text-sm text-blue-700 underline disabled:opacity-50">Import accounts</button>
-      <button type="button" onClick={() => setEditingConnection(true)} className="text-sm text-blue-700 underline">Change</button></span>
+      <button type="button" onClick={() => { setDraftExtension(extension); setEditingConnection(true) }} className="text-sm text-blue-700 underline">Change</button></span>
     </div> : <div className="space-y-2">
-      <label className="block text-sm">Chrome extension ID<input className="block border rounded p-2 w-full" value={extension} maxLength={32} onChange={e => { setExtension(e.target.value.trim()); setConnected(false) }} placeholder="From chrome://extensions after installation" /></label>
-      <button type="button" disabled={busy || connected} onClick={connect} className="text-blue-700 underline disabled:opacity-50">{busy ? 'Connecting…' : 'Connect and import accounts'}</button>
+      <label className="block text-sm">Chrome extension ID<input className="block border rounded p-2 w-full" value={draftExtension} maxLength={32} onChange={e => setDraftExtension(e.target.value.trim())} placeholder="From chrome://extensions after installation" /></label>
+      <div className="flex gap-4">
+        <button type="button" disabled={busy || !/^[a-p]{32}$/.test(draftExtension)} onClick={connect} className="text-blue-700 underline disabled:opacity-50">{busy ? 'Connecting…' : connected ? 'Save replacement' : 'Connect and import accounts'}</button>
+        {connected && <button type="button" disabled={busy} onClick={() => { setDraftExtension(extension); setEditingConnection(false); setError('') }} className="text-gray-700 underline disabled:opacity-50">Cancel</button>}
+      </div>
     </div>}
     <form onSubmit={create} className="space-y-3 border-t pt-4">
       <label className="block text-sm">Unique charge reference<input required maxLength={120} pattern="[A-Za-z0-9 .:_\-]+" className="block border rounded p-2 w-full" value={reference} onChange={e => { setReference(e.target.value); setReviewed(false) }} placeholder="Bank transaction reference, or date and bill identifier" /></label>
