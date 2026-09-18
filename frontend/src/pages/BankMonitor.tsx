@@ -14,7 +14,7 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
 } }
-type Dashboard = { rules: Rules; next_check: string; runs: Run[] }
+type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; runs: Run[] }
 
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
@@ -115,6 +115,7 @@ export default function BankMonitor() {
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
   const accountsConfigured = savedRules.checking.length > 0 && savedRules.sources.length > 0
   const scheduleActive = savedRules.enabled && accountsConfigured
+  const workerOnline = data?.worker.status === 'online'
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-12">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -146,15 +147,16 @@ export default function BankMonitor() {
 
         <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span><span className="block font-semibold text-slate-950">Run history</span><span className="block text-sm text-slate-500">{data.runs.length} scheduled {data.runs.length === 1 ? 'run' : 'runs'}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide</span></summary>
-          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.runs.length ? data.runs.map(run => <div key={run.id} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date}</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>) : <p className="px-5 py-6 text-sm text-slate-600">No scheduled runs yet.</p>}</div>
+          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.runs.length ? data.runs.map(run => <div key={run.id} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date}</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>) : <p className="px-5 py-6 text-sm text-slate-600">No scheduled check has completed. The next check is {new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.</p>}</div>
         </details>
       </main>
 
       <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{scheduleActive ? 'Scheduled' : 'Setup needed'}</span></div>
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && workerOnline ? 'bg-emerald-50 text-emerald-700' : scheduleActive ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && workerOnline ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : scheduleActive ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : workerOnline ? 'Worker online' : 'Worker offline'}</span></div>
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. check</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : `Next requested check: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : `Worker connected. Next check: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment is evaluated at the 5:30 p.m. check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
 

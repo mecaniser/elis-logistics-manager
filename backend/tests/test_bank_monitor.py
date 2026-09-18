@@ -3,9 +3,9 @@ import pytest
 from pydantic import ValidationError
 from app.services.bank_monitor import MonitorRules, BalanceSnapshot, calculate, due_date, next_check, usd_cents
 from app.services.truliant_reader import parse_card, BankReadError
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun
+from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
 from app.models.tenant import Tenant
-from app.bank_monitor_worker import run_due
+from app.bank_monitor_worker import run_due, record_heartbeat
 from app.bank_monitor_worker import main as worker_main
 from app.auth_utils import create_session_token, SESSION_COOKIE_NAME
 
@@ -137,6 +137,9 @@ def test_settings_validation_and_tenant_history(bank_auth, db):
     db.add(BankMonitorRun(tenant_id=2, scheduled_date=datetime.now().date(), started_at=datetime.now(timezone.utc), status='private', result={}))
     db.commit()
     assert bank_auth.get('/api/bank-monitor', headers=headers).json()['runs'] == []
+    db.add(BankMonitorWorkerHeartbeat(tenant_id=1, last_seen_at=datetime.now(timezone.utc)))
+    db.commit()
+    assert bank_auth.get('/api/bank-monitor', headers=headers).json()['worker']['status'] == 'online'
 
 
 def test_worker_daily_deduplication_and_failure(db, monkeypatch):
@@ -157,3 +160,13 @@ def test_worker_daily_deduplication_and_failure(db, monkeypatch):
         raise BankReadError('sign_in_required')
     assert run_due(db, now + timedelta(days=1), failure) == 1
     assert db.query(BankMonitorRun).order_by(BankMonitorRun.id.desc()).first().status == 'sign_in_required'
+
+
+def test_worker_heartbeat_is_upserted(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    first = datetime.now(timezone.utc)
+    record_heartbeat(db, first)
+    record_heartbeat(db, first + timedelta(seconds=30))
+    heartbeat = db.query(BankMonitorWorkerHeartbeat).one()
+    assert heartbeat.tenant_id == 1
+    assert heartbeat.last_seen_at.replace(tzinfo=timezone.utc) == first + timedelta(seconds=30)

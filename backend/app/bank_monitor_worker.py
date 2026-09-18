@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun
+from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
 from app.models.tenant import Tenant
 from app.services.bank_monitor import MonitorRules, calculate, due_date
 from app.services.truliant_reader import BankReadError, read_balances
@@ -62,6 +62,18 @@ def run_due(db, now, reader=read_balances):
     return completed
 
 
+def record_heartbeat(db, now):
+    allowed = {int(value.strip()) for value in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',') if value.strip().isdigit()}
+    for tenant_id in allowed:
+        heartbeat = db.get(BankMonitorWorkerHeartbeat, tenant_id)
+        if heartbeat is None:
+            heartbeat = BankMonitorWorkerHeartbeat(tenant_id=tenant_id, last_seen_at=now)
+            db.add(heartbeat)
+        else:
+            heartbeat.last_seen_at = now
+    db.commit()
+
+
 def main():
     if os.getenv('BANK_MONITOR_WORKER_ENABLED') != 'true':
         print('Bank monitor is disabled; no scheduled checks started.')
@@ -76,7 +88,9 @@ def main():
         signal.signal(sig, lambda *_: stop.set())
     while not stop.is_set():
         with SessionLocal() as db:
-            run_due(db, datetime.now(timezone.utc))
+            now = datetime.now(timezone.utc)
+            record_heartbeat(db, now)
+            run_due(db, now)
         stop.wait(30)
 
 

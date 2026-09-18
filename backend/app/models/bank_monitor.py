@@ -22,6 +22,12 @@ class BankMonitorRun(Base):
     result = Column(JSON, nullable=False, default=dict)
 
 
+class BankMonitorWorkerHeartbeat(Base):
+    __tablename__ = 'bank_monitor_worker_heartbeats'
+    tenant_id = Column(Integer, primary_key=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class BankTransferDraft(Base):
     __tablename__ = 'bank_transfer_drafts'
     __table_args__ = (UniqueConstraint('tenant_id', 'charge_reference', name='uq_bank_charge_reference'),)

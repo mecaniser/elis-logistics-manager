@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun
+from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
 from app.services.bank_monitor import EASTERN, MonitorRules, next_check
 
 router = APIRouter()
@@ -34,9 +34,16 @@ def bank_tenant(request: Request, db: Session = Depends(get_db)):
 @router.get('')
 def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     config = db.get(BankMonitorConfig, tenant_id)
+    heartbeat = db.get(BankMonitorWorkerHeartbeat, tenant_id)
+    now = datetime.now(timezone.utc)
+    last_seen = heartbeat.last_seen_at if heartbeat else None
+    if last_seen and last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    worker_online = bool(last_seen and (now - last_seen).total_seconds() <= 120)
     runs = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id).order_by(BankMonitorRun.id.desc()).limit(30).all()
     return {'rules': config.rules if config else MonitorRules().model_dump(),
             'mode': 'proposal_only', 'next_check': next_check(datetime.now(timezone.utc)),
+            'worker': {'status': 'online' if worker_online else 'offline', 'last_seen_at': last_seen},
             'runs': [{'id': r.id, 'scheduled_date': r.scheduled_date, 'started_at': r.started_at,
                       'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs]}
 
