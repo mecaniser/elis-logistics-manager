@@ -55,6 +55,18 @@ def test_friday_eastern_and_stale_data():
     assert calculate_repayment(rules, snapshot, NOW)['status'] == 'repayment_data_required'
 
 
+def test_manual_check_can_run_outside_friday_without_weakening_evidence_rules():
+    rules, snapshot = setup()
+    non_friday = NOW.replace(day=22)
+    snapshot.observed_at = non_friday
+    for account in snapshot.accounts[:2]:
+        account.income_date = non_friday.date()
+    assert calculate_repayment(rules, snapshot, non_friday)['status'] == 'not_friday'
+    assert calculate_repayment(rules, snapshot, non_friday, require_friday=False)['status'] == 'review_required'
+    snapshot.accounts[0].settled_cash_cents = None
+    assert calculate_repayment(rules, snapshot, non_friday, require_friday=False)['status'] == 'repayment_data_required'
+
+
 def test_minimum_due_is_not_payoff_and_priority_requires_configuration():
     rules, snapshot = setup()
     snapshot.accounts[3].payoff_cents = None

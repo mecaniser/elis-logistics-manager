@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
-from app.services.bank_monitor import EASTERN, MonitorRules, next_check
+from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun
+from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
+                                       MonitorRules, StrictModel,
+                                       calculate_repayment, next_check)
 
 router = APIRouter()
 
@@ -41,11 +43,15 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
         last_seen = last_seen.replace(tzinfo=timezone.utc)
     worker_online = bool(last_seen and (now - last_seen).total_seconds() <= 120)
     runs = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id).order_by(BankMonitorRun.id.desc()).limit(30).all()
+    repayment_runs = db.query(BankRepaymentRun).filter_by(tenant_id=tenant_id).order_by(BankRepaymentRun.id.desc()).limit(30).all()
     return {'rules': config.rules if config else MonitorRules().model_dump(),
             'mode': 'proposal_only', 'next_check': next_check(datetime.now(timezone.utc)),
             'worker': {'status': 'online' if worker_online else 'offline', 'last_seen_at': last_seen},
             'runs': [{'id': r.id, 'scheduled_date': r.scheduled_date, 'started_at': r.started_at,
-                      'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs]}
+                      'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs],
+            'repayment_runs': [{'id': r.id, 'started_at': r.started_at,
+                                'finished_at': r.finished_at, 'status': r.status,
+                                'result': r.result} for r in repayment_runs]}
 
 
 @router.put('')
@@ -68,8 +74,66 @@ def save(rules: MonitorRules, request: Request, tenant_id: int = Depends(bank_te
 from uuid import uuid4
 from pydantic import Field
 from sqlalchemy.exc import IntegrityError
-from app.services.bank_monitor import StrictModel
 from app.models.bank_monitor import BankTransferDraft
+
+
+class RepaymentCheckingEvidence(StrictModel):
+    last4: str = Field(pattern=r'^\d{4}$')
+    current_cents: int = Field(ge=-100000000, le=100000000, strict=True)
+    pending_debits_cents: int = Field(ge=0, le=100000000, strict=True)
+    settled_cash_cents: int = Field(ge=0, le=100000000, strict=True)
+    eligible_income_cents: int = Field(ge=0, le=100000000, strict=True)
+    income_date: date
+
+
+class RepaymentSourceEvidence(StrictModel):
+    last4: str = Field(pattern=r'^\d{4}$')
+    payoff_cents: int = Field(ge=0, le=100000000, strict=True)
+
+
+class ManualRepaymentInput(StrictModel):
+    checking: list[RepaymentCheckingEvidence] = Field(min_length=1, max_length=10)
+    sources: list[RepaymentSourceEvidence] = Field(min_length=1, max_length=5)
+    evidence_confirmed: bool = Field(strict=True)
+
+
+@router.post('/repayment-runs')
+def run_repayment_now(data: ManualRepaymentInput, request: Request,
+                      tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    if request.headers.get('x-bank-monitor-action') != 'run-repayment-check':
+        raise HTTPException(403, 'Missing repayment check action header.')
+    if data.evidence_confirmed is not True:
+        raise HTTPException(422, 'Confirm that the evidence was checked in Truliant.')
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        raise HTTPException(409, 'Configure bank monitoring first.')
+    rules = MonitorRules.model_validate(config.rules)
+    if not rules.repayment.enabled:
+        raise HTTPException(409, 'Enable repayment proposals in Monitoring settings first.')
+    expected_checking = {account.last4 for account in rules.checking}
+    expected_sources = set(rules.repayment.priority)
+    supplied_checking = [account.last4 for account in data.checking]
+    supplied_sources = [account.last4 for account in data.sources]
+    if len(supplied_checking) != len(set(supplied_checking)) or set(supplied_checking) != expected_checking:
+        raise HTTPException(422, 'Provide evidence for every configured checking account exactly once.')
+    if len(supplied_sources) != len(set(supplied_sources)) or set(supplied_sources) != expected_sources:
+        raise HTTPException(422, 'Provide payoff evidence for every repayment source exactly once.')
+    now = datetime.now(timezone.utc)
+    accounts = [AccountBalance(**account.model_dump()) for account in data.checking]
+    accounts.extend(AccountBalance(**account.model_dump()) for account in data.sources)
+    snapshot = BalanceSnapshot(observed_at=now, accounts=accounts)
+    result = calculate_repayment(rules, snapshot, now, require_friday=False)
+    result.update({'source': 'manual', 'observed_at': now.isoformat(),
+                   'evidence_confirmed': True,
+                   'checking_evidence': [account.model_dump(mode='json') for account in data.checking],
+                   'source_evidence': [account.model_dump(mode='json') for account in data.sources]})
+    run = BankRepaymentRun(tenant_id=tenant_id, started_at=now, finished_at=now,
+                           status=result['status'], result=result)
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return {'id': run.id, 'started_at': run.started_at, 'finished_at': run.finished_at,
+            'status': run.status, 'result': run.result}
 
 
 class DraftInput(StrictModel):
@@ -89,6 +153,7 @@ def draft_json(d):
     result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status', 'bank_state')}
     result['bank_effective_date'] = d.bank_effective_date.isoformat() if d.bank_effective_date else None
     result['bank_date'] = created.astimezone(EASTERN).date().isoformat()
+    result['kind'] = 'repayment' if d.memo.startswith('Rpy ') else 'coverage'
     return result
 
 
@@ -109,6 +174,8 @@ def create_draft(data: DraftInput, request: Request, tenant_id: int = Depends(ba
     if not config:
         raise HTTPException(409, 'Configure bank accounts first.')
     rules = MonitorRules.model_validate(config.rules)
+    if data.memo.startswith('Rpy '):
+        raise HTTPException(422, 'Repayment drafts must come from a reviewed repayment run.')
     if data.from_last4 not in {a.last4 for a in rules.sources} or data.to_last4 not in {a.last4 for a in rules.checking}:
         raise HTTPException(422, 'Use a configured credit source and checking destination.')
     draft = BankTransferDraft(id=str(uuid4()), tenant_id=tenant_id, **data.model_dump(),
@@ -122,6 +189,53 @@ def create_draft(data: DraftInput, request: Request, tenant_id: int = Depends(ba
     return draft_json(draft)
 
 
+@router.post('/repayment-runs/{run_id}/drafts')
+def create_repayment_drafts(run_id: int, request: Request,
+                            tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    if request.headers.get('x-bank-monitor-action') != 'create-repayment-drafts':
+        raise HTTPException(403, 'Missing repayment draft action header.')
+    run = db.query(BankRepaymentRun).filter_by(id=run_id, tenant_id=tenant_id).first()
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not run or not config or run.status != 'review_required':
+        raise HTTPException(409, 'Repayment proposal is unavailable.')
+    result = dict(run.result or {})
+    if result.get('drafts_created'):
+        raise HTTPException(409, 'This repayment proposal is already in the transfer queue.')
+    unresolved = db.query(BankTransferDraft).filter(
+        BankTransferDraft.tenant_id == tenant_id,
+        BankTransferDraft.memo.like('Rpy %'),
+        BankTransferDraft.status != 'bank_history_matched').first()
+    if unresolved:
+        raise HTTPException(409, 'Finish the existing repayment transfer before adding another repayment proposal.')
+    rules = MonitorRules.model_validate(config.rules)
+    checking = {account.last4 for account in rules.checking}
+    sources = set(rules.repayment.priority)
+    created = []
+    now = datetime.now(timezone.utc)
+    for index, proposal in enumerate(result.get('proposals') or [], start=1):
+        if proposal.get('from_last4') not in checking or proposal.get('to_last4') not in sources:
+            raise HTTPException(409, 'Configured repayment accounts changed. Run the check again.')
+        memo = f"Rpy {proposal['to_last4']} {now.astimezone(EASTERN):%m%d} {run.id}-{index}"
+        draft = BankTransferDraft(id=str(uuid4()), tenant_id=tenant_id,
+            charge_reference=f'repayment-{run.id}-{index}', amount_cents=proposal['amount_cents'],
+            from_last4=proposal['from_last4'], to_last4=proposal['to_last4'], memo=memo,
+            status='reviewed', created_at=now)
+        db.add(draft)
+        created.append(draft)
+    if not created:
+        raise HTTPException(409, 'This repayment proposal has no transfers to prepare.')
+    result['drafts_created'] = True
+    result['draft_ids'] = [draft.id for draft in created]
+    run.result = result
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'This repayment proposal is already in the transfer queue.') from None
+    return {'created': len(created), 'drafts': [draft_json(draft) for draft in created],
+            'transfers_executed': False}
+
+
 @router.post('/drafts/{draft_id}/prepare')
 def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
@@ -130,7 +244,11 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
     if not draft or not config:
         raise HTTPException(409, 'Draft unavailable.')
     rules = MonitorRules.model_validate(config.rules)
-    if draft.from_last4 not in {a.last4 for a in rules.sources} or draft.to_last4 not in {a.last4 for a in rules.checking}:
+    coverage_route = (draft.from_last4 in {a.last4 for a in rules.sources} and
+                      draft.to_last4 in {a.last4 for a in rules.checking} and draft.memo.startswith('Cvr '))
+    repayment_route = (draft.from_last4 in {a.last4 for a in rules.checking} and
+                       draft.to_last4 in set(rules.repayment.priority) and draft.memo.startswith('Rpy '))
+    if not coverage_route and not repayment_route:
         raise HTTPException(409, 'Configured accounts changed. Review the draft.')
     # Reserve before browser dispatch; timeouts cannot silently reprepare a draft.
     updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').update({'status': 'preparation_requested'})

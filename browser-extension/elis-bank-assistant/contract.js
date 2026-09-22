@@ -11,10 +11,12 @@ export function allowedSender(url) {
   } catch { return false; }
 }
 export function validDraft(d) {
+  const kind = d?.kind || (d?.memo?.startsWith('Cvr ') ? 'coverage' : null);
   return d && /^[a-f0-9-]{36}$/.test(d.id) && Number.isSafeInteger(d.amount_cents) &&
     d.amount_cents > 0 && d.amount_cents <= 100000000 &&
     /^\d{4}$/.test(d.from_last4) && /^\d{4}$/.test(d.to_last4) && d.from_last4 !== d.to_last4 &&
-    /^Cvr [A-Za-z0-9 ._-]{1,30}$/.test(d.memo);
+    ((kind === 'coverage' && /^Cvr [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)) ||
+     (kind === 'repayment' && /^Rpy [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)));
 }
 export function boundDraft(active, draft, sender) {
   return !!active && active.origin === new URL(sender.url).origin && active.elisTabId === sender.tab?.id &&

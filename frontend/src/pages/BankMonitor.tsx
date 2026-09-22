@@ -14,7 +14,12 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
 } }
-type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; runs: Run[] }
+type RepaymentRun = { id: number; started_at: string; status: string; result: {
+  proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
+  observed_at: string; transfers_executed: false; drafts_created?: boolean;
+} }
+type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; runs: Run[]; repayment_runs: RepaymentRun[] }
+type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
 
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
@@ -25,6 +30,16 @@ const apiError = (error: unknown, fallback: string) => {
     if (typeof response?.data?.detail === 'string') return response.data.detail
   }
   return fallback
+}
+const easternDate = () => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${value.year}-${value.month}-${value.day}`
+}
+const centsFromInput = (value: string, allowNegative = false) => {
+  const pattern = allowNegative ? /^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/ : /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
+  if (!pattern.test(value.trim())) throw new Error('Enter every amount in dollars, using no more than two decimal places.')
+  return Math.round(Number(value) * 100)
 }
 
 function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause' | 'close'; className?: string }) {
@@ -54,15 +69,24 @@ export default function BankMonitor() {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [repaymentOpen, setRepaymentOpen] = useState(false)
+  const [repaying, setRepaying] = useState(false)
+  const [repaymentError, setRepaymentError] = useState('')
+  const [repaymentNotice, setRepaymentNotice] = useState('')
+  const [evidenceConfirmed, setEvidenceConfirmed] = useState(false)
+  const [checkingEvidence, setCheckingEvidence] = useState<Record<string, CheckingEvidence>>({})
+  const [sourceEvidence, setSourceEvidence] = useState<Record<string, string>>({})
+  const [queueVersion, setQueueVersion] = useState(0)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (!settingsOpen) return
+    if (!settingsOpen && !repaymentOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSettingsOpen(false)
+        setRepaymentOpen(false)
         window.setTimeout(() => settingsButtonRef.current?.focus(), 0)
       }
     }
@@ -71,7 +95,7 @@ export default function BankMonitor() {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', closeOnEscape)
     }
-  }, [settingsOpen])
+  }, [settingsOpen, repaymentOpen])
 
   useEffect(() => {
     if (!currentTenantId) return
@@ -109,7 +133,52 @@ export default function BankMonitor() {
     setRules(current => ({ ...current, checking: checking.length ? checking : current.checking, sources: sources.length ? [...sources.filter(account => /(heloc|home equity)/i.test(account.nickname)), ...sources.filter(account => !/(heloc|home equity)/i.test(account.nickname))] : current.sources }))
   }
 
+  const openRepayment = () => {
+    const today = easternDate()
+    setCheckingEvidence(Object.fromEntries(savedRules.checking.map(account => [account.last4, { current: '', pending: '', settled: '', income: '', incomeDate: today }])))
+    setSourceEvidence(Object.fromEntries(savedRules.repayment.priority.map(last4 => [last4, ''])))
+    setEvidenceConfirmed(false); setRepaymentError(''); setRepaymentNotice(''); setRepaymentOpen(true)
+  }
+  const runRepayment = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setRepaying(true); setRepaymentError(''); setRepaymentNotice('')
+    try {
+      const checking = savedRules.checking.map(account => {
+        const values = checkingEvidence[account.last4]
+        if (!values) throw new Error(`Evidence for ••${account.last4} is missing.`)
+        return { last4: account.last4, current_cents: centsFromInput(values.current, true), pending_debits_cents: centsFromInput(values.pending), settled_cash_cents: centsFromInput(values.settled), eligible_income_cents: centsFromInput(values.income), income_date: values.incomeDate }
+      })
+      const sources = savedRules.repayment.priority.map(last4 => ({ last4, payoff_cents: centsFromInput(sourceEvidence[last4] || '') }))
+      const response = await bankMonitorApi.runRepayment(tenantId, { checking, sources, evidence_confirmed: evidenceConfirmed })
+      if (tenantRef.current !== tenantId) return
+      const refreshed = await bankMonitorApi.get(tenantId)
+      if (tenantRef.current !== tenantId) return
+      setData(refreshed.data); setRepaymentOpen(false)
+      setRepaymentNotice(response.data.status === 'review_required' ? 'Repayment proposal created. Review the exact route and amount below.' : `Manual repayment check completed: ${label(response.data.status)}.`)
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setRepaymentError(apiError(error, error instanceof Error ? error.message : 'Unable to run the repayment check.'))
+    } finally { setRepaying(false) }
+  }
+  const addRepaymentToQueue = async (run: RepaymentRun) => {
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setRepaying(true); setRepaymentError(''); setRepaymentNotice('')
+    try {
+      const response = await bankMonitorApi.createRepaymentDrafts(tenantId, run.id)
+      const refreshed = await bankMonitorApi.get(tenantId)
+      if (tenantRef.current !== tenantId) return
+      setData(refreshed.data); setQueueVersion(value => value + 1)
+      setRepaymentNotice(`${response.data.created} repayment transfer${response.data.created === 1 ? '' : 's'} added to the queue. Prepare and approve each form in Truliant.`)
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setRepaymentNotice('')
+      setRepaymentError(apiError(error, 'Unable to add this repayment proposal to the queue.'))
+    } finally { setRepaying(false) }
+  }
+
   const latest = data?.runs[0]
+  const latestRepayment = data?.repayment_runs?.[0]
   const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
@@ -128,7 +197,14 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={currentTenantId} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} />
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} />
+
+        {repaymentNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{repaymentNotice}</div>}
+        {repaymentError && !repaymentOpen && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
+        {latestRepayment && <section className="rounded-2xl border border-violet-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-violet-100 p-5 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">Manual repayment check</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{latestRepayment.status === 'review_required' ? 'Repayment proposal ready for review' : label(latestRepayment.status)}</h2><p className="mt-1 text-sm text-slate-600">Checked {new Date(latestRepayment.started_at).toLocaleString()} · No transfer submitted.</p></div><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold capitalize text-violet-800 ring-1 ring-inset ring-violet-200">{label(latestRepayment.status)}</span></div>
+          <div className="p-5">{latestRepayment.result.proposals.length ? <div className="space-y-3">{latestRepayment.result.proposals.map((proposal, index) => <div key={`${proposal.from_last4}-${proposal.to_last4}-${index}`} className="flex flex-col gap-1 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"><span className="text-sm text-slate-700">Checking ••{proposal.from_last4} <span aria-hidden="true">→</span> credit ••{proposal.to_last4}</span><strong className="text-lg tabular-nums text-slate-950">{dollars(proposal.amount_cents)}</strong></div>)}</div> : <p className="text-sm text-slate-700">No repayment is available from the evidence entered. Nothing was sent to Truliant.</p>}{latestRepayment.result.proposals.length > 0 && <div className="mt-5 flex flex-col gap-2 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-slate-500">Creating drafts adds these exact routes to the queue. You still approve and submit each transfer in Truliant.</p><button type="button" disabled={repaying || latestRepayment.result.drafts_created} onClick={() => addRepaymentToQueue(latestRepayment)} className="min-h-11 shrink-0 rounded-xl bg-violet-700 px-4 font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-45">{latestRepayment.result.drafts_created ? 'Added to transfer queue' : repaying ? 'Adding…' : 'Add to transfer queue'}</button></div>}</div>
+        </section>}
 
         {latest && <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
@@ -146,8 +222,8 @@ export default function BankMonitor() {
         </details>}
 
         <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span><span className="block font-semibold text-slate-950">Run history</span><span className="block text-sm text-slate-500">{data.runs.length} scheduled {data.runs.length === 1 ? 'run' : 'runs'}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide</span></summary>
-          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.runs.length ? data.runs.map(run => <div key={run.id} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date}</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>) : <p className="px-5 py-6 text-sm text-slate-600">No scheduled check has completed. The next check is {new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.</p>}</div>
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span><span className="block font-semibold text-slate-950">Run history</span><span className="block text-sm text-slate-500">{data.runs.length} scheduled · {data.repayment_runs.length} manual</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide</span></summary>
+          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.repayment_runs.map(run => <div key={`repayment-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{new Date(run.started_at).toLocaleString()} · Manual repayment</span><span className="capitalize text-slate-600">{label(run.status)} · No transfer executed</span></div>)}{data.runs.map(run => <div key={`scheduled-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date} · Scheduled</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>)}{!data.runs.length && !data.repayment_runs.length && <p className="px-5 py-6 text-sm text-slate-600">No check has completed. The next scheduled check is {new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.</p>}</div>
         </details>
       </main>
 
@@ -157,6 +233,7 @@ export default function BankMonitor() {
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. check</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : `Worker connected. Next check: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
           {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment is evaluated at the 5:30 p.m. check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
+          <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
 
@@ -185,6 +262,21 @@ export default function BankMonitor() {
             {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
             <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
           </form>
+          </section>
+        </>}
+
+        {repaymentOpen && <>
+          <button type="button" aria-label="Close manual repayment check" onClick={() => setRepaymentOpen(false)} className="fixed inset-0 z-40 cursor-default bg-slate-950/45 backdrop-blur-[1px]" />
+          <section role="dialog" aria-modal="true" aria-labelledby="manual-repayment-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">On-demand check</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Calculate repayment available now</h2><p className="mt-1 text-sm leading-6 text-slate-600">Enter values you just verified in Truliant. ELIS will protect pending debits and calculate the repayment order; it will not move money.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
+            <form onSubmit={runRepayment} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Use current bank values.</strong> Settled cash means cash available without an overdraft or credit draw. Eligible income means cleared business or salary income received on the date entered.</div>
+              {savedRules.checking.map(account => { const values = checkingEvidence[account.last4]; if (!values) return null; return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend><div className="mt-2 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Current posted balance<input required inputMode="decimal" placeholder="0.00" value={values.current} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use a minus sign if negative.</span></label><label className="text-sm font-medium text-slate-700">Pending debits<input required inputMode="decimal" placeholder="0.00" value={values.pending} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], pending: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Settled cash without borrowing<input required inputMode="decimal" placeholder="0.00" value={values.settled} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Eligible cleared income<input required inputMode="decimal" placeholder="0.00" value={values.income} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date<input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label></div></fieldset> })}
+              <fieldset className="space-y-4"><legend className="font-semibold text-slate-950">Full payoff amounts</legend>{savedRules.repayment.priority.map(last4 => { const account = savedRules.sources.find(item => item.last4 === last4); return <label key={last4} className="block text-sm font-medium text-slate-700">{account?.nickname || 'Credit source'} · ••{last4}<input required inputMode="decimal" placeholder="0.00" value={sourceEvidence[last4] || ''} onChange={event => setSourceEvidence(current => ({ ...current, [last4]: event.target.value }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the full verified payoff, including accrued interest—not amount due or available credit.</span></label> })}</fieldset>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><input required type="checkbox" checked={evidenceConfirmed} onChange={event => setEvidenceConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /><span>I verified these values in Truliant and understand this check records a proposal only.</span></label>
+              {repaymentError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
+              <div className="flex flex-col gap-2 sm:flex-row"><button disabled={repaying || !evidenceConfirmed} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-700 px-5 font-semibold text-white hover:bg-violet-800 disabled:opacity-45">{repaying ? 'Calculating…' : 'Calculate repayment'}</button><button type="button" disabled={repaying} onClick={() => setRepaymentOpen(false)} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button></div>
+            </form>
           </section>
         </>}
       </aside>

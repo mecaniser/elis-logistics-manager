@@ -43,3 +43,12 @@ test('source requires a disbursement with the opposite sign',async()=>{
   setup([section('posted transactions section'),entry('-$118.20','Principal Disbursement Cvr / Utility 0914')]);
   assert((await findPostedEntry({...wanted,source:true})).match);
 });
+test('repayment requires one exact signed entry in each account without assuming bank description wording',async()=>{
+  const repayment={...wanted,kind:'repayment',memo:'Rpy 2829 0922 1-1'};
+  setup([section('posted transactions section'),entry('-$118.20','External Withdrawal Rpy 2829 0922 1-1')]);
+  assert((await findPostedEntry({...repayment,source:true})).match);
+  setup([section('posted transactions section'),entry('$118.20','Principal Payment Rpy 2829 0922 1-1')]);
+  assert((await findPostedEntry({...repayment,source:false})).match);
+  setup([section('posted transactions section'),entry('$118.20','Principal Payment Rpy 2829 0922 1-1')]);
+  assert((await findPostedEntry({...repayment,source:true})).error);
+});
