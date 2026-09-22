@@ -20,6 +20,11 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
 } }
 type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
+type BankRead = {
+  checked_at: string;
+  accounts: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }[];
+  coverage: { last4: string; transactions: { amount_cents: number; pending?: boolean }[] }[];
+}
 
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
@@ -41,6 +46,7 @@ const centsFromInput = (value: string, allowNegative = false) => {
   if (!pattern.test(value.trim())) throw new Error('Enter every amount in dollars, using no more than two decimal places.')
   return Math.round(Number(value) * 100)
 }
+const dollarsInput = (cents: number | null | undefined) => cents == null ? '' : (cents / 100).toFixed(2)
 
 function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause' | 'close'; className?: string }) {
   const paths = {
@@ -76,6 +82,7 @@ export default function BankMonitor() {
   const [evidenceConfirmed, setEvidenceConfirmed] = useState(false)
   const [checkingEvidence, setCheckingEvidence] = useState<Record<string, CheckingEvidence>>({})
   const [sourceEvidence, setSourceEvidence] = useState<Record<string, string>>({})
+  const [latestBankRead, setLatestBankRead] = useState<BankRead | null>(null)
   const [queueVersion, setQueueVersion] = useState(0)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -127,15 +134,38 @@ export default function BankMonitor() {
     } finally { setSaving(false) }
   }
   const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => ({ ...current, [group]: current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account) }))
-  const importAccounts = (accounts: Account[]) => {
-    const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname)))
-    const sources = accounts.filter(account => account.kind === 'credit' || (!account.kind && /(line of credit|heloc|home equity)/i.test(account.nickname)))
-    setRules(current => ({ ...current, checking: checking.length ? checking : current.checking, sources: sources.length ? [...sources.filter(account => /(heloc|home equity)/i.test(account.nickname)), ...sources.filter(account => !/(heloc|home equity)/i.test(account.nickname))] : current.sources }))
+  const importAccounts = async (accounts: Account[]) => {
+    if (!currentTenantId || loadedTenant !== currentTenantId || !data) return { checking: rules.checking, sources: rules.sources }
+    const tenantId = currentTenantId
+    const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
+    const sources = accounts.filter(account => account.kind === 'credit' || (!account.kind && /(line of credit|heloc|home equity)/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
+    const saved = { ...data.rules, repayment: data.rules.repayment || defaults.repayment }
+    const configured = new Set([...saved.checking, ...saved.sources].map(account => account.last4))
+    const newChecking = checking.filter(account => !configured.has(account.last4))
+    newChecking.forEach(account => configured.add(account.last4))
+    const newSources = sources.filter(account => !configured.has(account.last4))
+    const next = { ...saved, checking: [...saved.checking, ...newChecking], sources: [...saved.sources, ...newSources] }
+    if (!newChecking.length && !newSources.length) return { checking: next.checking, sources: next.sources }
+    await bankMonitorApi.save(tenantId, next)
+    const response = await bankMonitorApi.get(tenantId)
+    if (tenantRef.current !== tenantId) return { checking: next.checking, sources: next.sources }
+    setData(response.data)
+    setRules({ ...response.data.rules, repayment: response.data.rules.repayment || defaults.repayment })
+    const added = [...newChecking, ...newSources].map(account => `${account.nickname} · ••${account.last4}`).join(', ')
+    setSettingsNotice(`Added and saved ${added}.`)
+    return { checking: response.data.rules.checking, sources: response.data.rules.sources }
   }
 
   const openRepayment = () => {
     const today = easternDate()
-    setCheckingEvidence(Object.fromEntries(savedRules.checking.map(account => [account.last4, { current: '', pending: '', settled: '', income: '', incomeDate: today }])))
+    const balances = new Map((latestBankRead?.accounts || []).map(account => [account.last4, account]))
+    const pending = new Map((latestBankRead?.coverage || []).map(account => [account.last4, account.transactions.filter(transaction => transaction.pending).reduce((sum, transaction) => sum + transaction.amount_cents, 0)]))
+    setCheckingEvidence(Object.fromEntries(savedRules.checking.map(account => {
+      const current = balances.get(account.last4)?.current_cents
+      const pendingDebits = pending.get(account.last4)
+      const settled = current == null || pendingDebits == null ? null : Math.max(0, current - pendingDebits)
+      return [account.last4, { current: dollarsInput(current), pending: dollarsInput(pendingDebits), settled: dollarsInput(settled), income: '', incomeDate: today }]
+    })))
     setSourceEvidence(Object.fromEntries(savedRules.repayment.priority.map(last4 => [last4, ''])))
     setEvidenceConfirmed(false); setRepaymentError(''); setRepaymentNotice(''); setRepaymentOpen(true)
   }
@@ -197,7 +227,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} />
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} />
 
         {repaymentNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{repaymentNotice}</div>}
         {repaymentError && !repaymentOpen && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
@@ -270,8 +300,8 @@ export default function BankMonitor() {
           <section role="dialog" aria-modal="true" aria-labelledby="manual-repayment-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">On-demand check</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Calculate repayment available now</h2><p className="mt-1 text-sm leading-6 text-slate-600">Enter values you just verified in Truliant. ELIS will protect pending debits and calculate the repayment order; it will not move money.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
             <form onSubmit={runRepayment} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Use current bank values.</strong> Settled cash means cash available without an overdraft or credit draw. Eligible income means cleared business or salary income received on the date entered.</div>
-              {savedRules.checking.map(account => { const values = checkingEvidence[account.last4]; if (!values) return null; return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend><div className="mt-2 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Current posted balance<input required inputMode="decimal" placeholder="0.00" value={values.current} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use a minus sign if negative.</span></label><label className="text-sm font-medium text-slate-700">Pending debits<input required inputMode="decimal" placeholder="0.00" value={values.pending} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], pending: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Settled cash without borrowing<input required inputMode="decimal" placeholder="0.00" value={values.settled} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Eligible cleared income<input required inputMode="decimal" placeholder="0.00" value={values.income} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date<input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label></div></fieldset> })}
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Each checking account funds its own repayments.</strong> ELIS prefills the posted balance and pending debits from the latest bank check, protects those debits, and applies confirmed incoming funds to the credit lines in your repayment priority.</div>
+              {savedRules.checking.map(account => { const values = checkingEvidence[account.last4]; if (!values) return null; const prefilled = Boolean(latestBankRead?.accounts.some(item => item.last4 === account.last4)); return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend>{prefilled && <p className="mb-3 text-xs font-medium text-emerald-700">Balance and pending debits prefilled from the latest bank check.</p>}<div className="mt-2 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Current posted balance<input required inputMode="decimal" placeholder="0.00" value={values.current} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use a minus sign if negative.</span></label><label className="text-sm font-medium text-slate-700">Pending debits<input required inputMode="decimal" placeholder="0.00" value={values.pending} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], pending: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Cash available after pending debits<input required inputMode="decimal" placeholder="0.00" value={values.settled} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Exclude any amount supplied by overdraft protection or a credit draw.</span></label><label className="text-sm font-medium text-slate-700">Incoming funds to reimburse credit<input required inputMode="decimal" placeholder="0.00" value={values.income} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Enter the cleared income from this account that you want applied to the credit lines.</span></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date<input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label></div></fieldset> })}
               <fieldset className="space-y-4"><legend className="font-semibold text-slate-950">Full payoff amounts</legend>{savedRules.repayment.priority.map(last4 => { const account = savedRules.sources.find(item => item.last4 === last4); return <label key={last4} className="block text-sm font-medium text-slate-700">{account?.nickname || 'Credit source'} · ••{last4}<input required inputMode="decimal" placeholder="0.00" value={sourceEvidence[last4] || ''} onChange={event => setSourceEvidence(current => ({ ...current, [last4]: event.target.value }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the full verified payoff, including accrued interest—not amount due or available credit.</span></label> })}</fieldset>
               <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><input required type="checkbox" checked={evidenceConfirmed} onChange={event => setEvidenceConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /><span>I verified these values in Truliant and understand this check records a proposal only.</span></label>
               {repaymentError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}

@@ -194,12 +194,14 @@ tenant. No production settings, bank credentials or banking balances changed.
 ### Manual repayment check and preparation
 
 An enabled repayment policy can also be evaluated on demand without waiting for
-Friday at 5:30 p.m. The user enters values just verified in Truliant for every
-configured checking account (posted balance, pending debits, settled cash that
-does not depend on borrowing, eligible cleared income, and income date) plus the
-full payoff for every repayment source. The server applies the same reserve,
-income, freshness, and priority rules as the scheduled calculation; only the
-Friday calendar gate is skipped.
+Friday at 5:30 p.m. `Check bank now` first discovers the current account list and
+persists newly detected checking and credit accounts without removing previously
+configured accounts. The repayment drawer prefills each checking account's
+posted balance, pending debits, and cash remaining after those debits from the
+latest read. The user confirms how much cleared incoming cash in each checking
+account is reimbursement income, its date, and the full payoff for every credit
+source. The server applies the same reserve, income, freshness, and priority
+rules as the scheduled calculation; only the Friday calendar gate is skipped.
 
 Each manual evaluation has its own tenant-scoped `bank_repayment_runs` record and
 appears in run history. A reviewed proposal can be added to the transfer queue

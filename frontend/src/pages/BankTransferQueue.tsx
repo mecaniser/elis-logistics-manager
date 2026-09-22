@@ -10,6 +10,7 @@ type BalanceAccount = { last4: string; current_cents: number | null; available_c
 type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
+type MonitoredAccounts = { checking: Account[]; sources: Account[] }
 
 const REQUIRED_EXTENSION_VERSION = '0.1.22'
 const SELF_RELOAD_VERSION = '0.1.19'
@@ -84,7 +85,7 @@ const statusMeta = (status: string) => {
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
 
-export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered, onBalanceObserved }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -177,7 +178,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       if (active.current) { setExtension(candidate); setDraftExtension(candidate); setConnected(true); setConnectionState('connected'); setDetectedVersion(response.version || ''); setEditingConnection(false) }
       const discovered = await send<ExtensionResponse>(candidate, { type: 'ELIS_DISCOVER_ACCOUNTS' })
       const accounts = discovered.accounts || []
-      if (active.current) { onAccountsDiscovered(accounts); setNotice(`Connected and imported ${accounts.length} accounts. Review and save the account roles in Settings.`) }
+      if (active.current) { await onAccountsDiscovered(accounts); setNotice(`Connected and synchronized ${accounts.length} bank accounts. Newly detected accounts were saved automatically.`) }
     } catch (error: unknown) { fail(error, 'Unable to connect to the bank assistant.') }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
@@ -186,7 +187,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     try {
       const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS' })
       const accounts = discovered.accounts || []
-      if (active.current) { setConnected(true); onAccountsDiscovered(accounts); setNotice(`Imported ${accounts.length} accounts. Review and save their roles in Settings.`) }
+      if (active.current) { setConnected(true); await onAccountsDiscovered(accounts); setNotice(`Synchronized ${accounts.length} bank accounts. Newly detected accounts were saved automatically.`) }
     } catch (error: unknown) { fail(error, 'Unable to import accounts.') }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
@@ -214,22 +215,27 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Confirming your ELIS session…', started: Date.now() })
     let bankRead = false
     try {
-      if (!checking.length || !sources.length) throw new Error('Import and save the checking and credit accounts first.')
       await bankMonitorApi.drafts(tenantId)
+      if (active.current) setOperation({ message: 'Synchronizing the current Truliant account list…', started: Date.now() })
+      const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS' })
+      const monitored = await onAccountsDiscovered(discovered.accounts || [])
+      const effectiveChecking = monitored.checking
+      const effectiveSources = monitored.sources
+      if (!effectiveChecking.length || !effectiveSources.length) throw new Error('Import and save the checking and credit accounts first.')
       if (active.current) setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
-      const suffixes = [...checking, ...sources].map(account => account.last4)
-      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: checking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
+      const suffixes = [...effectiveChecking, ...effectiveSources].map(account => account.last4)
+      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: effectiveChecking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
       bankRead = true
       if (!active.current) return
-      setConnected(true); setBalanceCheck(result)
+      setConnected(true); setBalanceCheck(result); onBalanceObserved(result)
       setOperation({ message: 'Building the queue from uncovered posted and pending charges…', started: Date.now() })
       const existing = (await bankMonitorApi.drafts(tenantId)).data as Draft[]
       const accountBySuffix = new Map(result.accounts.map(account => [account.last4, account]))
-      const sourceBalances = sources.map(source => ({ source, available: accountBySuffix.get(source.last4)?.available_credit_cents ?? null }))
+      const sourceBalances = effectiveSources.map(source => ({ source, available: accountBySuffix.get(source.last4)?.available_credit_cents ?? null }))
       let created = 0
       let identified = 0
       const issues: string[] = []
-      for (const destination of checking) {
+      for (const destination of effectiveChecking) {
         const balance = accountBySuffix.get(destination.last4)
         if (balance?.current_cents == null) { issues.push(`Posted balance for ••${destination.last4} was unavailable.`); continue }
         const history = result.coverage?.find(item => item.last4 === destination.last4)
@@ -279,7 +285,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       }
       await reload()
       if (issues.length) setCoverageIssue(issues.join(' '))
-      const negative = result.accounts.filter(account => checking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
+      const negative = result.accounts.filter(account => effectiveChecking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
       if (!negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
       else if (created) setNotice(`${created} coverage draft${created === 1 ? '' : 's'} created. Prepare each one in the action queue.`)
       else if (identified) setNotice('The coverage queue is already current for the posted charges found.')
