@@ -38,3 +38,8 @@ export const moneyCaretPosition = (display: string, logicalOffset: number) => {
 
 export const plainMoney = (cents: number) => `${cents < 0 ? '-' : ''}${Math.trunc(Math.abs(cents) / 100)}.${String(Math.abs(cents) % 100).padStart(2, '0')}`
 export const formattedMoney = (cents: number) => `${cents < 0 ? '-$' : '$'}${Math.trunc(Math.abs(cents) / 100).toLocaleString('en-US')}.${String(Math.abs(cents) % 100).padStart(2, '0')}`
+
+export const incomeExceedsCash = (income: string, cash: string) => {
+  try { return centsFromMoneyInput(income) > centsFromMoneyInput(cash) }
+  catch { return false }
+}

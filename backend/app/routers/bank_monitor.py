@@ -118,6 +118,9 @@ def run_repayment_now(data: ManualRepaymentInput, request: Request,
         raise HTTPException(422, 'Provide evidence for every configured checking account exactly once.')
     if len(supplied_sources) != len(set(supplied_sources)) or set(supplied_sources) != expected_sources:
         raise HTTPException(422, 'Provide payoff evidence for every repayment source exactly once.')
+    for account in data.checking:
+        if account.eligible_income_cents > account.settled_cash_cents:
+            raise HTTPException(422, f'Incoming funds for checking account ••{account.last4} cannot exceed cash available after pending debits.')
     now = datetime.now(timezone.utc)
     accounts = [AccountBalance(**account.model_dump()) for account in data.checking]
     accounts.extend(AccountBalance(**account.model_dump()) for account in data.sources)

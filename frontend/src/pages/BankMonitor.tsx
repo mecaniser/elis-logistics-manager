@@ -3,7 +3,7 @@ import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
-import { centsFromMoneyInput } from '../components/moneyAmount'
+import { centsFromMoneyInput, incomeExceedsCash } from '../components/moneyAmount'
 import { useTenant } from '../contexts/TenantContext'
 
 type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
@@ -175,7 +175,10 @@ export default function BankMonitor() {
       const checking = savedRules.checking.map(account => {
         const values = checkingEvidence[account.last4]
         if (!values) throw new Error(`Evidence for ••${account.last4} is missing.`)
-        return { last4: account.last4, current_cents: centsFromMoneyInput(values.current, true), pending_debits_cents: centsFromMoneyInput(values.pending), settled_cash_cents: centsFromMoneyInput(values.settled), eligible_income_cents: centsFromMoneyInput(values.income), income_date: values.incomeDate }
+        const settledCash = centsFromMoneyInput(values.settled)
+        const eligibleIncome = centsFromMoneyInput(values.income)
+        if (eligibleIncome > settledCash) throw new Error(`Incoming funds for ${account.nickname} cannot exceed ${dollars(settledCash)} cash available after pending debits.`)
+        return { last4: account.last4, current_cents: centsFromMoneyInput(values.current, true), pending_debits_cents: centsFromMoneyInput(values.pending), settled_cash_cents: settledCash, eligible_income_cents: eligibleIncome, income_date: values.incomeDate }
       })
       const sources = savedRules.repayment.priority.map(last4 => ({ last4, payoff_cents: centsFromMoneyInput(sourceEvidence[last4] || '') }))
       const response = await bankMonitorApi.runRepayment(tenantId, { checking, sources, evidence_confirmed: evidenceConfirmed })
@@ -209,6 +212,7 @@ export default function BankMonitor() {
   const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
+  const incomeOverLimit = Object.values(checkingEvidence).some(values => incomeExceedsCash(values.income, values.settled))
   const accountsConfigured = savedRules.checking.length > 0 && savedRules.sources.length > 0
   const scheduleActive = savedRules.enabled && accountsConfigured
   const workerOnline = data?.worker.status === 'online'
@@ -298,11 +302,44 @@ export default function BankMonitor() {
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">On-demand check</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Calculate repayment available now</h2><p className="mt-1 text-sm leading-6 text-slate-600">Enter values you just verified in Truliant. ELIS will protect pending debits and calculate the repayment order; it will not move money.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
             <form onSubmit={runRepayment} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Each checking account funds its own repayments.</strong> ELIS prefills the posted balance and pending debits from the latest bank check, protects those debits, and applies confirmed incoming funds to the credit lines in your repayment priority.</div>
-              {savedRules.checking.map(account => { const values = checkingEvidence[account.last4]; if (!values) return null; const prefilled = Boolean(latestBankRead?.accounts.some(item => item.last4 === account.last4)); return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend>{prefilled && <p className="mb-3 text-xs font-medium text-emerald-700">Balance and pending debits prefilled from the latest bank check.</p>}<div className="mt-2 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Current posted balance<MoneyInput required allowNegative value={values.current} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use a minus sign if negative.</span></label><label className="text-sm font-medium text-slate-700">Pending debits<MoneyInput required value={values.pending} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], pending: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label><label className="text-sm font-medium text-slate-700">Cash available after pending debits<MoneyInput required value={values.settled} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Exclude any amount supplied by overdraft protection or a credit draw.</span></label><label className="text-sm font-medium text-slate-700">Incoming funds to reimburse credit<MoneyInput required value={values.income} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Enter the cleared income from this account that you want applied to the credit lines.</span></label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date<input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label></div></fieldset> })}
+              {savedRules.checking.map(account => {
+                const values = checkingEvidence[account.last4]
+                if (!values) return null
+                const prefilled = Boolean(latestBankRead?.accounts.some(item => item.last4 === account.last4))
+                const overLimit = incomeExceedsCash(values.income, values.settled)
+                let cashLimit: number | null = null
+                try { cashLimit = centsFromMoneyInput(values.settled) } catch { /* Wait for a valid cash amount. */ }
+                const incomeHelpId = `repayment-income-limit-${account.last4}`
+                return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4">
+                  <legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend>
+                  {prefilled && <p className="mb-3 text-xs font-medium text-emerald-700">Balance and pending debits prefilled from the latest bank check.</p>}
+                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium text-slate-700">Current posted balance
+                      <MoneyInput required allowNegative value={values.current} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Use a minus sign if negative.</span>
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">Pending debits
+                      <MoneyInput required value={values.pending} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], pending: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">Cash available after pending debits
+                      <MoneyInput required value={values.settled} onChange={value => { setRepaymentError(''); setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: value } })) }} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Exclude any amount supplied by overdraft protection or a credit draw.</span>
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">Incoming funds to reimburse credit
+                      <MoneyInput required invalid={overLimit} describedBy={incomeHelpId} value={values.income} onChange={value => { setRepaymentError(''); setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: value } })) }} className={`block min-h-11 w-full rounded-xl border px-3 ${overLimit ? 'border-red-400 focus:border-red-500' : 'border-slate-300'}`} />
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Enter cleared income from this account that you want applied to the credit lines.</span>
+                      <span id={incomeHelpId} role={overLimit ? 'alert' : undefined} className={`mt-1 block text-xs font-medium ${overLimit ? 'text-red-700' : 'text-slate-600'}`}>{overLimit ? `Reduce this amount to ${dollars(cashLimit ?? 0)} or less.` : cashLimit === null ? 'Cannot exceed cash available after pending debits.' : `Maximum ${dollars(cashLimit)}: cash available after pending debits in this account.`}</span>
+                    </label>
+                    <label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date
+                      <input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
+                    </label>
+                  </div>
+                </fieldset>
+              })}
               <fieldset className="space-y-4"><legend className="font-semibold text-slate-950">Full payoff amounts</legend>{savedRules.repayment.priority.map(last4 => { const account = savedRules.sources.find(item => item.last4 === last4); return <label key={last4} className="block text-sm font-medium text-slate-700">{account?.nickname || 'Credit source'} · ••{last4}<MoneyInput required value={sourceEvidence[last4] || ''} onChange={value => setSourceEvidence(current => ({ ...current, [last4]: value }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the full verified payoff, including accrued interest—not amount due or available credit.</span></label> })}</fieldset>
               <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><input required type="checkbox" checked={evidenceConfirmed} onChange={event => setEvidenceConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /><span>I verified these values in Truliant and understand this check records a proposal only.</span></label>
               {repaymentError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
-              <div className="flex flex-col gap-2 sm:flex-row"><button disabled={repaying || !evidenceConfirmed} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-700 px-5 font-semibold text-white hover:bg-violet-800 disabled:opacity-45">{repaying ? 'Calculating…' : 'Calculate repayment'}</button><button type="button" disabled={repaying} onClick={() => setRepaymentOpen(false)} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button></div>
+              <div className="flex flex-col gap-2 sm:flex-row"><button disabled={repaying || !evidenceConfirmed || incomeOverLimit} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-700 px-5 font-semibold text-white hover:bg-violet-800 disabled:opacity-45">{repaying ? 'Calculating…' : 'Calculate repayment'}</button><button type="button" disabled={repaying} onClick={() => setRepaymentOpen(false)} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button></div>
             </form>
           </section>
         </>}
