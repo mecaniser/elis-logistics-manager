@@ -115,8 +115,9 @@
       if (!amount || !description || !date) continue;
       const expected = `${wanted.source ? '-' : ''}$${(wanted.amount_cents / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
       const text = normalized(description.textContent);
-      if (amount.textContent.trim() === expected && text.endsWith(wanted.memo) && date.textContent.trim() === wanted.bank_date &&
-          (wanted.source ? text.startsWith('Principal Disbursement ') : text.startsWith('Deposit '))) {
+      const expectedKind = wanted.kind === 'repayment' ||
+        (wanted.source ? text.startsWith('Principal Disbursement ') : text.startsWith('Deposit '));
+      if (amount.textContent.trim() === expected && text.endsWith(wanted.memo) && date.textContent.trim() === wanted.bank_date && expectedKind) {
         const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(amount.id));
         matches.push([...new Uint8Array(bytes)].map(value => value.toString(16).padStart(2, '0')).join(''));
       }

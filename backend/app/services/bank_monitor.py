@@ -148,15 +148,16 @@ def usd_cents(text: str):
     return int(Decimal(value.replace('$', '').replace(',', '')) * 100)
 
 
-def calculate_repayment(rules: MonitorRules, snapshot: BalanceSnapshot, now: datetime):
-    """Friday income sweep proposals; missing evidence always blocks repayment."""
+def calculate_repayment(rules: MonitorRules, snapshot: BalanceSnapshot, now: datetime,
+                        require_friday: bool = True):
+    """Income repayment proposals; missing evidence always blocks repayment."""
     def result(status, proposals=None):
         return {'status': status, 'proposals': proposals or [], 'transfers_executed': False}
     policy = rules.repayment
     if not policy.enabled:
         return result('disabled')
     today = now.astimezone(EASTERN).date()
-    if today.weekday() != 4:
+    if require_friday and today.weekday() != 4:
         return result('not_friday')
     if not -30 <= (now - snapshot.observed_at).total_seconds() <= 300:
         return result('repayment_data_required')

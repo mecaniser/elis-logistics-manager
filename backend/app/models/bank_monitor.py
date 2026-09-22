@@ -22,6 +22,17 @@ class BankMonitorRun(Base):
     result = Column(JSON, nullable=False, default=dict)
 
 
+class BankRepaymentRun(Base):
+    """On-demand repayment evaluations, separate from the daily scheduler slot."""
+    __tablename__ = 'bank_repayment_runs'
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String(40), nullable=False)
+    result = Column(JSON, nullable=False, default=dict)
+
+
 class BankMonitorWorkerHeartbeat(Base):
     __tablename__ = 'bank_monitor_worker_heartbeats'
     tenant_id = Column(Integer, primary_key=True)

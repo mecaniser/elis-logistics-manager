@@ -3,7 +3,9 @@ import pytest
 from pydantic import ValidationError
 from app.services.bank_monitor import MonitorRules, BalanceSnapshot, calculate, due_date, next_check, usd_cents
 from app.services.truliant_reader import parse_card, BankReadError
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
+from app.models.bank_monitor import (BankMonitorConfig, BankMonitorRun,
+                                     BankMonitorWorkerHeartbeat, BankRepaymentRun,
+                                     BankTransferDraft)
 from app.models.tenant import Tenant
 from app.bank_monitor_worker import run_due, record_heartbeat
 from app.bank_monitor_worker import main as worker_main
@@ -140,6 +142,50 @@ def test_settings_validation_and_tenant_history(bank_auth, db):
     db.add(BankMonitorWorkerHeartbeat(tenant_id=1, last_seen_at=datetime.now(timezone.utc)))
     db.commit()
     assert bank_auth.get('/api/bank-monitor', headers=headers).json()['worker']['status'] == 'online'
+
+
+def test_manual_repayment_run_is_guarded_recorded_and_tenant_scoped(bank_auth, db):
+    repayment_rules = rules(enabled=True, repayment={
+        'enabled': True, 'priority': ['3333', '2222'], 'reserve_cents': 0})
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=repayment_rules.model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.commit()
+    today = datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('America/New_York')).date().isoformat()
+    payload = {
+        'checking': [{'last4': '1111', 'current_cents': 100000,
+                      'pending_debits_cents': 20000, 'settled_cash_cents': 80000,
+                      'eligible_income_cents': 50000, 'income_date': today}],
+        'sources': [{'last4': '3333', 'payoff_cents': 30000},
+                    {'last4': '2222', 'payoff_cents': 40000}],
+        'evidence_confirmed': True,
+    }
+    headers = {'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'run-repayment-check'}
+    assert bank_auth.post('/api/bank-monitor/repayment-runs', json=payload,
+                          headers={'X-Tenant-ID': '1'}).status_code == 403
+    response = bank_auth.post('/api/bank-monitor/repayment-runs', json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()['status'] == 'review_required'
+    assert [row['amount_cents'] for row in response.json()['result']['proposals']] == [30000, 20000]
+    assert response.json()['result']['transfers_executed'] is False
+    assert db.query(BankRepaymentRun).one().tenant_id == 1
+    draft_headers = {'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'create-repayment-drafts'}
+    drafts = bank_auth.post(f"/api/bank-monitor/repayment-runs/{response.json()['id']}/drafts",
+                            json={}, headers=draft_headers)
+    assert drafts.status_code == 200
+    assert [(row['kind'], row['from_last4'], row['to_last4']) for row in drafts.json()['drafts']] == [
+        ('repayment', '1111', '3333'), ('repayment', '1111', '2222')]
+    assert bank_auth.post(f"/api/bank-monitor/repayment-runs/{response.json()['id']}/drafts",
+                          json={}, headers=draft_headers).status_code == 409
+    for draft in drafts.json()['drafts']:
+        prepared = bank_auth.post(f"/api/bank-monitor/drafts/{draft['id']}/prepare", json={},
+                                  headers={'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'reviewed-transfer'})
+        assert prepared.status_code == 200
+        db.query(BankTransferDraft).filter_by(id=draft['id']).update({'status': 'bank_history_matched'})
+        db.commit()
+    dashboard = bank_auth.get('/api/bank-monitor', headers={'X-Tenant-ID': '1'}).json()
+    assert len(dashboard['repayment_runs']) == 1
+    bad = {**payload, 'sources': [{'last4': '3333', 'payoff_cents': 30000}]}
+    assert bank_auth.post('/api/bank-monitor/repayment-runs', json=bad, headers=headers).status_code == 422
 
 
 def test_worker_daily_deduplication_and_failure(db, monkeypatch):

@@ -17,6 +17,8 @@ test('parse only explicitly labeled account-card balances', () => {
 });
 test('reject malformed, fractional, same-account and oversized requests',()=>{
   assert(validDraft(draft));
+  assert(validDraft({...draft,kind:'repayment',memo:'Rpy 2829 0922 1-1',from_last4:'1111',to_last4:'2829'}));
+  assert(!validDraft({...draft,kind:'repayment'}));
   for(const change of [{amount_cents:1.1},{amount_cents:0},{to_last4:'2222'},{memo:'Missing prefix'},{memo:'Cvr '+'x'.repeat(31)}]) assert(!validDraft({...draft,...change}));
 });
 test('signed-out page receives no form writes',async()=>{

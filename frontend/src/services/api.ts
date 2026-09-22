@@ -1015,4 +1015,6 @@ export const bankMonitorApi = {
   updateDraftBankDetails: (tenantId: number, id: string, details: { bank_state: 'posted' | 'pending'; bank_effective_date: string }) => bankMonitorClient.put(`/bank-monitor/drafts/${id}/bank-details`, details, draftHeaders(tenantId)),
   get: (tenantId: number) => bankMonitorClient.get('/bank-monitor', { headers: { 'X-Tenant-ID': String(tenantId) } }),
   save: (tenantId: number, rules: unknown) => bankMonitorClient.put('/bank-monitor', rules, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'save-settings' } }),
+  runRepayment: (tenantId: number, evidence: unknown) => bankMonitorClient.post('/bank-monitor/repayment-runs', evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'run-repayment-check' } }),
+  createRepaymentDrafts: (tenantId: number, runId: number) => bankMonitorClient.post(`/bank-monitor/repayment-runs/${runId}/drafts`, {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-repayment-drafts' } }),
 }

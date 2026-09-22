@@ -191,6 +191,28 @@ TypeScript/Vite build passes, and the local browser accepted and saved business
 credit first / HELOC second with repayment proposals enabled for the synthetic
 tenant. No production settings, bank credentials or banking balances changed.
 
+### Manual repayment check and preparation
+
+An enabled repayment policy can also be evaluated on demand without waiting for
+Friday at 5:30 p.m. The user enters values just verified in Truliant for every
+configured checking account (posted balance, pending debits, settled cash that
+does not depend on borrowing, eligible cleared income, and income date) plus the
+full payoff for every repayment source. The server applies the same reserve,
+income, freshness, and priority rules as the scheduled calculation; only the
+Friday calendar gate is skipped.
+
+Each manual evaluation has its own tenant-scoped `bank_repayment_runs` record and
+appears in run history. A reviewed proposal can be added to the transfer queue
+once. A second repayment proposal cannot be queued while an earlier repayment
+draft remains unresolved. Repayment drafts use a unique `Rpy` memo, checking as
+the source, and the configured credit account as the destination.
+
+Extension 0.1.22 prepares the exact checking-to-credit form after the existing
+extension-owned approval. It never submits the form. After the user submits in
+Truliant, verification requires one exact posted debit in the checking history
+and one exact posted credit in the destination history with the same amount,
+date, and unique memo; ambiguous or missing matches stay unconfirmed.
+
 
 ## Observed history adapter update
 

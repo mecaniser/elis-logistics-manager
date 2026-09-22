@@ -3,7 +3,7 @@ import { bankMonitorApi } from '../services/api'
 import BankSelect from '../components/BankSelect'
 
 type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
-type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; status: string; bank_date: string; bank_state?: 'posted' | 'pending' | null; bank_effective_date?: string | null }
+type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; kind: 'coverage' | 'repayment'; status: string; bank_date: string; bank_state?: 'posted' | 'pending' | null; bank_effective_date?: string | null }
 type ExtensionResponse = { ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
 type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callback: (response?: ExtensionResponse) => void) => void; lastError?: unknown }
 type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }
@@ -11,7 +11,7 @@ type PostedDebit = { reference: string; date: string; description: string; amoun
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 
-const REQUIRED_EXTENSION_VERSION = '0.1.21'
+const REQUIRED_EXTENSION_VERSION = '0.1.22'
 const SELF_RELOAD_VERSION = '0.1.19'
 const ASSISTANT_UNREACHABLE_ERRORS = new Set([
   'Chrome cannot reach the bank assistant. Reload the extension and this page.',

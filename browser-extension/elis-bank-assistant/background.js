@@ -131,14 +131,17 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
             const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
             if(result?.opened) {selected=true;break;}
           }
+          const repayment = message.draft.kind === 'repayment';
+          const accountRole = repayment ? (source ? 'checking account' : 'credit account') : (source ? 'funding source' : 'checking account');
           if(!selected) throw stageError(
             source ? 'SOURCE_ACCOUNT_NOT_FOUND' : 'DESTINATION_ACCOUNT_NOT_FOUND',
-            `Could not open ${source ? 'funding source' : 'checking account'} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
+            `Could not open ${accountRole} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
           );
-          await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${source ? 'principal disbursements' : 'deposits'} in account ••${suffix}…`);
+          const entryRole = repayment ? (source ? 'repayment debits' : 'credit payments') : (source ? 'principal disbursements' : 'deposits');
+          await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${entryRole} in account ••${suffix}…`);
           for(let i=0;i<40;i++) {
             await new Promise(r=>setTimeout(r,300));
-            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
+            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
             if(found?.match) return found.match;
             if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
           }
@@ -149,7 +152,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         }
       }
       const destination=await inspect(message.draft.to_last4,false);
-      await progress('checking_matched', `Checking account ••${message.draft.to_last4} matched. Opening funding source ••${message.draft.from_last4}…`);
+      await progress('destination_matched', `Destination account ••${message.draft.to_last4} matched. Opening source account ••${message.draft.from_last4}…`);
       const source=await inspect(message.draft.from_last4,true);
       await chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'matched',progress:{stage:'matched',message:'Both posted bank entries matched. Saving verification in ELIS…',at:Date.now()}}});
       finishReply({ok:true,evidence:{source,destination}});
