@@ -288,7 +288,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       await reload()
       if (issues.length) setCoverageIssue(issues.join(' '))
       const negative = result.accounts.filter(account => effectiveChecking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
-      if (!negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
+      if (!issues.length && !negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
       else if (created) setNotice(`${created} coverage draft${created === 1 ? '' : 's'} created. Prepare each one in the action queue.`)
       else if (identified) setNotice('The coverage queue is already current for the posted charges found.')
       else if (!issues.length) setNotice('The negative balance is already covered by transfer drafts in the action queue.')
