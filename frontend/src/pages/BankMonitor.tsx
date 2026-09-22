@@ -138,7 +138,7 @@ export default function BankMonitor() {
     if (!currentTenantId || loadedTenant !== currentTenantId || !data) return { checking: rules.checking, sources: rules.sources }
     const tenantId = currentTenantId
     const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
-    const sources = accounts.filter(account => account.kind === 'credit' || (!account.kind && /(line of credit|heloc|home equity)/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
+    const sources = accounts.filter(account => /(line of credit|heloc|home equity)/i.test(account.nickname)).map(({ nickname, last4 }) => ({ nickname, last4 }))
     const saved = { ...data.rules, repayment: data.rules.repayment || defaults.repayment }
     const configured = new Set([...saved.checking, ...saved.sources].map(account => account.last4))
     const newChecking = checking.filter(account => !configured.has(account.last4))
