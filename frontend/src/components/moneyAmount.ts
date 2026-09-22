@@ -10,9 +10,30 @@ export const centsFromMoneyInput = (value: string, allowNegative = false): numbe
   return negative ? -cents : cents
 }
 
-export const editableMoney = (value: string) => {
-  const typed = value.replace(/^(-?)\$/, '$1').replace(/^\$(-?)/, '$1')
-  return /^-?\d{1,3}(?:,\d{3})+(?:\.\d{0,2})?$/.test(typed) ? typed.replace(/,/g, '') : typed
+export const editableMoney = (value: string, preserveBadGrouping = false) => {
+  const typed = value.replace(/^(-?)\$/, '$1').replace(/^\$(-?)/, '$1').replace(/\s/g, '')
+  if (preserveBadGrouping && typed.includes(',') && !/^-?\d{1,3}(?:,\d{3})+(?:\.\d*)?$/.test(typed)) return typed
+  return typed.replace(/,/g, '')
+}
+
+export const groupedMoneyDraft = (value: string) => {
+  if (!/^-?\d*(?:\.\d*)?$/.test(value)) return value
+  const negative = value.startsWith('-')
+  const unsigned = negative ? value.slice(1) : value
+  const dot = unsigned.indexOf('.')
+  const whole = dot < 0 ? unsigned : unsigned.slice(0, dot)
+  const fractional = dot < 0 ? '' : unsigned.slice(dot)
+  return `${negative ? '-' : ''}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fractional}`
+}
+
+export const moneyCaretPosition = (display: string, logicalOffset: number) => {
+  if (logicalOffset <= 0) return 0
+  let count = 0
+  for (let index = 0; index < display.length; index += 1) {
+    if (display[index] !== ',' && display[index] !== '$') count += 1
+    if (count === logicalOffset) return index + 1
+  }
+  return display.length
 }
 
 export const plainMoney = (cents: number) => `${cents < 0 ? '-' : ''}${Math.trunc(Math.abs(cents) / 100)}.${String(Math.abs(cents) % 100).padStart(2, '0')}`

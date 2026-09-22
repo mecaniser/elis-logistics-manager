@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { centsFromMoneyInput, editableMoney, formattedMoney, plainMoney } from '../src/components/moneyAmount.ts'
+import { centsFromMoneyInput, editableMoney, formattedMoney, groupedMoneyDraft, moneyCaretPosition, plainMoney } from '../src/components/moneyAmount.ts'
 
 test('formats and parses whole, fractional, and grouped dollar amounts exactly', () => {
   assert.equal(centsFromMoneyInput('1180'), 118000)
@@ -9,6 +9,17 @@ test('formats and parses whole, fractional, and grouped dollar amounts exactly',
   assert.equal(centsFromMoneyInput('.05'), 5)
   assert.equal(formattedMoney(118040), '$1,180.40')
   assert.equal(plainMoney(118040), '1180.40')
+})
+
+test('groups digits as they are typed while keeping the caret by numeric position', () => {
+  assert.equal(groupedMoneyDraft('1234'), '1,234')
+  assert.equal(groupedMoneyDraft('1234.'), '1,234.')
+  assert.equal(groupedMoneyDraft('1234.5'), '1,234.5')
+  assert.equal(groupedMoneyDraft('-1234.5'), '-1,234.5')
+  assert.equal(moneyCaretPosition('1,234.5', 2), 3)
+  assert.equal(moneyCaretPosition('1,234.5', 6), 7)
+  assert.equal(editableMoney('1,24'), '124')
+  assert.equal(editableMoney('1,24', true), '1,24')
 })
 
 test('supports negative posted balances without allowing negative repayments', () => {
