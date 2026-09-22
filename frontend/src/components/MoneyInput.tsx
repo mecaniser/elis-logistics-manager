@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { centsFromMoneyInput, editableMoney, formattedMoney, groupedMoneyDraft, moneyCaretPosition, plainMoney } from './moneyAmount'
 
-export default function MoneyInput({ value, onChange, allowNegative = false, className = '', placeholder = '0.00', required = false }: {
+export default function MoneyInput({ value, onChange, allowNegative = false, className = '', placeholder = '0.00', required = false, invalid = false, describedBy }: {
   value: string
   onChange: (value: string) => void
   allowNegative?: boolean
   className?: string
   placeholder?: string
   required?: boolean
+  invalid?: boolean
+  describedBy?: string
 }) {
   const [focused, setFocused] = useState(false)
   let display = focused ? groupedMoneyDraft(value) : value
@@ -30,6 +32,8 @@ export default function MoneyInput({ value, onChange, allowNegative = false, cla
       type="text"
       inputMode="decimal"
       required={required}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       placeholder={placeholder}
       value={display}
       onFocus={event => {

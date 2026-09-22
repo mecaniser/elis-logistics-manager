@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { centsFromMoneyInput, editableMoney, formattedMoney, groupedMoneyDraft, moneyCaretPosition, plainMoney } from '../src/components/moneyAmount.ts'
+import { centsFromMoneyInput, editableMoney, formattedMoney, groupedMoneyDraft, incomeExceedsCash, moneyCaretPosition, plainMoney } from '../src/components/moneyAmount.ts'
 
 test('formats and parses whole, fractional, and grouped dollar amounts exactly', () => {
   assert.equal(centsFromMoneyInput('1180'), 118000)
@@ -33,4 +33,11 @@ test('rejects excess precision and nonnumeric values', () => {
   for (const value of ['1.234', '1.2.3', '1,23', '', '$', 'abc', '90071992547409.92']) {
     assert.throws(() => centsFromMoneyInput(value), value)
   }
+})
+
+test('incoming reimbursement cannot exceed cash available after pending debits', () => {
+  assert.equal(incomeExceedsCash('1180.23', '1180.22'), true)
+  assert.equal(incomeExceedsCash('1180.22', '1180.22'), false)
+  assert.equal(incomeExceedsCash('0', '0'), false)
+  assert.equal(incomeExceedsCash('', '1180.22'), false)
 })

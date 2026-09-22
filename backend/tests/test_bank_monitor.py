@@ -162,6 +162,11 @@ def test_manual_repayment_run_is_guarded_recorded_and_tenant_scoped(bank_auth, d
     headers = {'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'run-repayment-check'}
     assert bank_auth.post('/api/bank-monitor/repayment-runs', json=payload,
                           headers={'X-Tenant-ID': '1'}).status_code == 403
+    over_limit = {**payload, 'checking': [{**payload['checking'][0], 'eligible_income_cents': 80001}]}
+    rejected = bank_auth.post('/api/bank-monitor/repayment-runs', json=over_limit, headers=headers)
+    assert rejected.status_code == 422
+    assert 'cannot exceed cash available' in rejected.json()['detail']
+    assert db.query(BankRepaymentRun).count() == 0
     response = bank_auth.post('/api/bank-monitor/repayment-runs', json=payload, headers=headers)
     assert response.status_code == 200
     assert response.json()['status'] == 'review_required'
