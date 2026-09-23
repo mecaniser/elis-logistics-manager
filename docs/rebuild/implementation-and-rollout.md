@@ -2,6 +2,8 @@
 
 ## Status
 
+Follow [execution-tracker.md](execution-tracker.md) for the stage-by-stage status, remaining engineering work and the owner's dashboard-integration direction. The separate workspace is a staging implementation, not an accepted replacement; missing business records are only part of the remaining work.
+
 Local implementation on `codex/reconciled-logistics-rebuild`. The new workspace is `/finance`. Production has not been deployed, historical business data has not been posted, and the actual business has not been switched to the new home page.
 
 The application now supports source-preserving imports, reconciled CSV statements, matched deposits and bill payments, partial/split payments, credits/refunds, protected reserves, equipment recovery plans, assignment history, traced HELOC schedules, immutable balanced postings, reversals, closed periods, frozen reports, source-backed accountant packages and a separate five-section dashboard. Existing source records and legacy reports remain available. Legacy profit-derived payoff labels now explicitly identify forecasts.
