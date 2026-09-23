@@ -1,6 +1,6 @@
 # ELIS rebuild execution tracker
 
-Updated 2026-09-23 after the owner's review of the local preview.
+Updated 2026-09-23 after source-backed dashboard integration and historical reconciliation.
 Implementation checkpoint: `5786bd7`. Production unchanged.
 
 ## Outcome and current judgment
@@ -24,11 +24,11 @@ Update this tracker at each implementation milestone and handoff. Do not assign 
 
 | Stage | Current evidence | Remaining work / exit condition |
 | --- | --- | --- |
-| 1. Definitions and examples | Owner-approved plan; metric dictionary; $23,700 → $5,836.92 fixture | Verify original records flow through extraction, posting and report with those totals. Fixture arithmetic alone does not close source verification. |
+| 1. Definitions and examples | Owner-approved definitions; both original September 21 PDFs now trace through extraction, local posting and browser display: $23,700 → $5,836.92, support once | Resolve service-date exception before finalized accrual interpretation. Cash and ownership examples still require actual bank/asset evidence. |
 | 2. Evidence, imports and accounting | Additive ledger, immutable history, CSV mapping, matching, reversals and draft reports; local SQLite/PostgreSQL checks | Unify existing settlement/repair intake with the new evidence/posting path. Verify supported PDF layouts, amendments and cross-period service dates using real records. Current accrual uses the entered effective date; adjustments remain manual. |
 | 3. Equipment, repair funding and HELOC | Dated assignments, capital plans, reserves, owner claims, financing entries and disposal checks exist | Confirm acquisitions, protected balances and opening obligations. HELOC currently supports manually evidenced allocations; complete statement-driven tracing/reconciliation and a usable review flow. Verify lifetime history and sale scenarios. |
-| 4. Reconstruct history | Original-document retrieval and legacy comparison tools exist | Reconstruction has not been executed against the actual business. Recover accessible originals, post reviewed history in staging, retain gaps, and explain every changed total. |
-| 5. Operations, Motive and screens | Five-section Home prototype; basic paired earnings; raw Motive fetch and manual interval entry | Integrate the owner's familiar dashboard and workflows. Add pair cost/mile, expense shares, movement/coverage comparisons and explanations of earnings differences. Verify Motive vehicle mapping, pagination, resets and interval coverage; implement the validated reconciliation flow. |
+| 4. Reconstruct history | 175 source records inventoried; 37 derived allocations excluded; 78 real PDFs preserved; 77 arithmetic matched and one row ambiguity. Per-record review and CSV register exist | 97 originals unavailable. Reconcile 21 unexplained $200 gross differences, bank receipts and historical outside costs; only the September 21 pair is posted in staging. Historical review is not completed accrual reconstruction. |
+| 5. Operations, Motive and screens | Familiar five-section Dashboard now has source-based revenue shares, paired costs/mile and exact earnings-gap explanation; linked historical reconciliation and selectable line trends | Finish existing intake/repair workflow integration, pair capital detail and full outside-cost performance. Add independent travel and load/payment matching. Verify Motive vehicle mapping, pagination, resets and interval coverage; implement the validated reconciliation flow. |
 | 6. Acceptance and release | Synthetic desktop/mobile review and 24 financial tests recorded; cutover gate exists | Real-business acceptance, staging migration/auth checks, complete difference report, documented rollback and live verification. Full repository checks still have known baseline failures/lint debt. |
 
 ## Does Home answer the owner's questions yet?
@@ -52,7 +52,7 @@ Update this tracker at each implementation milestone and handoff. Do not assign 
 
 ## Next milestone: one familiar dashboard, one real period
 
-Owner: implementation agent. This remains pending, not completed by this document.
+Owner: implementation agent. The source-backed presentation portion is implemented locally and browser reviewed. This milestone does not close funding, bank reconciliation or the overall plan.
 
 - Use the September 21 source group already identified in the original audit. Recover available originals from the existing application before requesting documents from the owner.
 - Trace originals → normalized rows → accounting entries → one reconciled presentation. Explain the support charge, carrier retention, internal trailer allocations and reserves exactly once.
@@ -68,3 +68,14 @@ The implementation agent owns integration, extraction validation, reconstruction
 Owner/accountant input is needed only for unavailable bank/card statements and balances, confirmed funded earmarks, acquisition/sale assumptions, private HELOC statements/use history, accounting/tax policy decisions, and authorized Motive access. Request specific gaps after inventorying what already exists. Do not invent balances or treat theoretical savings as funded cash.
 
 Evidence references: `metric-dictionary.md`, `verification.md`, `implementation-and-rollout.md`, `design-verification.md`, and the earlier local dashboard critique under `.impeccable/critique/2026-09-23T14-38-39Z__frontend-src-pages-dashboard-tsx.md`.
+
+
+## September 23 source-history implementation checkpoint
+
+**Implemented locally:** graph-led familiar Dashboard; explicit incomplete-period warning; 175-record historical register; original source downloads; strict 77 Cargo and 277 summary/load normalization; saved/source differences; rolling fuel-spending, driver-share and other-cost review signals. Existing Settlements links to the review by source record. Charts preserve unsupported dates as gaps. Source selection never posts or edits production records.
+
+**Verified:** September 21 source pair sums to $5,836.92 from $23,700.00; truck difference exactly $1,517.76; 21.86% fuel-spending/mile difference uses reported miles, not inferred consumption. Desktop1440, mobile390 and user1832 browser captures show the real source data. Month preset warns of four unposted records. Focused financial/history tests:35 passed; frontend build and changed finance/history lint passed. Full repository baseline failures/lint debt remain documented separately. Independent finish review and its precise outcome are recorded in the design handoff.
+
+**Evidence:** `historical-reconciliation.md` contains the definition/difference report. Original PDFs, snapshot, review JSON, CSV and isolated database remain under the ignored local `backend/settlements_extracted/rebuild-20260923/`. The temporary synthetic demo database remains separate; its balances were not copied into this source review. Local8016 now serves this source-backed database, with unknown cash displayed honestly. Production remains unchanged.
+
+**Next owned work:** trace the historical $200 gross adjustments and row ambiguity; recover missing historical originals; reconcile bank deposits and actual driver payments; integrate repair expenses/funding into the same intake path; finish HELOC statement allocation and Motive coverage. Missing records and unfinished engineering remain separately tracked. Browser acceptance by the owner and business cutover have not occurred.

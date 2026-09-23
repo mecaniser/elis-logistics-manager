@@ -7,7 +7,7 @@ import os
 import zipfile
 from datetime import date
 from uuid import uuid4
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -26,8 +26,8 @@ def event_json(e):
 
 
 @router.get('/context')
-def context(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
-    return {'tenant_id': tenant, 'currency': 'USD', 'basis': 'accrual', 'accounts': f.ACCOUNTS, 'assets': [{'id': x.id, 'name': x.name, 'type': x.vehicle_type} for x in db.query(Truck).filter_by(tenant_id=tenant).all()], 'motive_configured': bool(os.getenv(f'MOTIVE_API_KEY_TENANT_{tenant}')), 'legacy_preserved': True, 'home_enabled': db.query(FinanceEvent).filter_by(tenant_id=tenant, kind='activate_finance').first() is not None}
+def context(request: Request, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    return {'tenant_id': tenant, 'currency': 'USD', 'basis': 'accrual', 'accounts': f.ACCOUNTS, 'assets': [{'id': x.id, 'name': x.name, 'type': x.vehicle_type} for x in db.query(Truck).filter_by(tenant_id=tenant).all()], 'motive_configured': bool(os.getenv(f'MOTIVE_API_KEY_TENANT_{tenant}')), 'legacy_preserved': True, 'owner_preview': bool(os.getenv('ELIS_OWNER_DASHBOARD_PREVIEW') == '1' and os.getenv('ELIS_FINANCE_LOCAL_TENANTS') and not os.getenv('APP_AUTH_USERNAME') and request.client and request.client.host in ('127.0.0.1', '::1', 'testclient')), 'home_enabled': db.query(FinanceEvent).filter_by(tenant_id=tenant, kind='activate_finance').first() is not None}
 
 
 @router.post('/events')
@@ -113,6 +113,12 @@ def list_evidence(limit: int = Query(100, ge=1, le=500), cursor: str | None = No
 def original(evidence_id: str, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     e = f.evidence(db, tenant, evidence_id)
     return Response(base64.b64decode(e.content_base64), media_type='application/octet-stream', headers={'Content-Disposition': 'attachment; filename="original-document"', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.get('/settlement-history')
+def settlement_history(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.settlement_history import settlement_history as build
+    return build(db, tenant)
 
 
 @router.get('/workspace')

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
 import Modal from '../components/Modal'
@@ -1323,6 +1324,7 @@ export default function Settlements() {
           <span className="text-xl text-gray-500 font-medium">({settlements.length})</span>
         </div>
         <div className="flex flex-row gap-2 w-full items-center">
+          <Link to="/settlements/reconciliation" className="text-sm text-blue-700 px-3 py-3 border border-gray-300 rounded-md">Reconcile history</Link>
           <div className="relative flex-1">
             <input
               type="text"
@@ -2234,6 +2236,7 @@ export default function Settlements() {
                         </>
                       )}
                     </div>
+                    <Link onClick={e => e.stopPropagation()} className="inline-flex py-3 text-sm text-blue-700" to={`/settlements/reconciliation?id=${settlement.source_settlement_id || settlement.id}`}>Review reconciliation</Link>
                     {/* Hide PDF, type, and custom descriptions on mobile */}
                     {!isMobile && (
                       <>

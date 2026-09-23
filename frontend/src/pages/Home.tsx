@@ -12,7 +12,7 @@ export default function Home() {
     let active = true
     if (!currentTenant) return
     const tenant = currentTenant.id
-    financeApi.context().then(context => { if (active) setSelection({tenant, enabled: context.home_enabled}) }).catch(() => { if (active) setSelection({tenant, enabled: false}) })
+    financeApi.context().then(context => { if (active) setSelection({tenant, enabled: context.home_enabled || context.owner_preview}) }).catch(() => { if (active) setSelection({tenant, enabled: false}) })
     return () => { active = false }
   }, [currentTenant])
   if (!currentTenant || selection?.tenant !== currentTenant.id) return <p role="status">Loading business workspace…</p>

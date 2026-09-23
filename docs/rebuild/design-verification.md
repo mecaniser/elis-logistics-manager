@@ -50,3 +50,9 @@ These additions do not change Home, Finance CSS, or the application layout. They
 No material visual deviation from the retained-world direction was found within the reviewed Finance surface. The documentation location is the explicit scoped exception described above; no global design-system change is intended.
 
 No artwork is required for this operational finance interface. No shipping raster assets were added; the two PNGs are review evidence only. Further Finance work should retain the as-of/period distinction, evidence-state messaging, five-section Home composition, and progressive disclosure. Those requirements belong to this Finance surface and are not application-wide prohibitions.
+
+## Later real-source dashboard and history milestone
+
+The September 23 graph-led familiar Dashboard and historical settlement review have a separate [source-history design audit](history-design-audit.md). Its independent final disposition is **SHIP for the scoped local finish review** after all five code findings and the desktop chart recapture were resolved. That handoff records five current captures, a bounded 14/20 audit score, supplied browser measurements, 35 passing focused tests and the performance/accessibility limits. Dashboard/history controls now have 44px minimum heights; the 40px observation above describes the earlier synthetic review.
+
+The new milestone uses 175 source records, 78 preserved originals, 77 arithmetic matches, one source-row review and 97 unavailable originals. Only the September 21 pair is posted in the isolated local ledger. The synthetic captures and verdict above remain historical evidence, not real-business reconciliation. Production, owner acceptance and full rebuild completion are not established by either design review.

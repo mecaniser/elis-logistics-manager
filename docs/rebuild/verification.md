@@ -3,6 +3,18 @@
 Date: 2026-09-23. Branch: `codex/reconciled-logistics-rebuild`.
 Baseline: `ae6ceefc0a144498ae168b6dfc1af7ecb4ec438d`.
 
+## Later source-history milestone
+
+The sections below retain the earlier foundation verification. The current local preview on port 8016 now uses the isolated real-source database at `backend/settlements_extracted/rebuild-20260923/review.db`; it does not use the synthetic balances below. Production remains unchanged.
+
+- Finance and historical reconciliation suites: **35 passed**, 15 existing deprecation warnings. Latest run includes the ambiguous source-row guard.
+- Frontend build, scoped finance/history ESLint and `git diff --check` pass. The existing bundle-size warning and repository baseline failures remain.
+- Local API confirms 175 source records, 78 preserved originals, 77 arithmetic matches, one source-row review and 97 unavailable originals. All measured-MPG values remain null. A foreign-business history request returns 404.
+- The two posted September 21 originals reconcile to $5,836.92. Owner cash remains null/provisional because bank and opening evidence are absent. Other historical statements have not been posted to the new ledger.
+- Desktop 1440px, mobile 390px and normal user-width 1832px dashboard/history views were inspected. Controls measure 44px, tables scroll within their panels and mobile has no document overflow. Known unsupported dates remain chart gaps. Search, disclosure, metric selection and period coverage warnings were exercised.
+- The independent finish review resolved all five findings and accepted the final desktop chart recapture. Its SHIP disposition is scoped local design acceptance, not production or complete financial acceptance. See `history-design-audit.md` and `historical-reconciliation.md`.
+- Private JSON and CSV review exports were regenerated from the current endpoint after verification. Originals and legacy interpretations remain preserved.
+
 ## Result
 
 The additive finance workspace is implemented and locally verified. This is not production acceptance: real opening balances, funded reserves, asset/depreciation records, financing statements, historical reconstruction, Motive access and business browser acceptance remain outstanding. No production data was modified or migrated.

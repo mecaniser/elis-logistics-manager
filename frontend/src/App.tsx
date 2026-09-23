@@ -8,6 +8,7 @@ import Finance from './pages/Finance'
 import Home from './pages/Home'
 import Trucks from './pages/Trucks'
 import Settlements from './pages/Settlements'
+import SettlementHistory from './pages/SettlementHistory'
 import Repairs from './pages/Repairs'
 import VehicleDetail from './pages/VehicleDetail'
 import Accounting from './pages/Accounting'
@@ -40,6 +41,7 @@ function App() {
                       <Route path="/finance/:section" element={<Finance />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
+                      <Route path="/settlements/reconciliation" element={<SettlementHistory />} />
                       <Route path="/settlements" element={<Settlements />} />
                       <Route path="/repairs" element={<Repairs />} />
                       <Route path="/vehicles/:id" element={<VehicleDetail />} />
