@@ -4,6 +4,8 @@ import { AuthProvider } from './contexts/AuthContext'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import Finance from './pages/Finance'
+import Home from './pages/Home'
 import Trucks from './pages/Trucks'
 import Settlements from './pages/Settlements'
 import Repairs from './pages/Repairs'
@@ -32,7 +34,10 @@ function App() {
                 <TenantProvider>
                   <Layout>
                     <Routes>
-                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/" element={<Home />} />
+                      <Route path="/legacy-dashboard" element={<Dashboard />} />
+                      <Route path="/finance" element={<Finance />} />
+                      <Route path="/finance/:section" element={<Finance />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
                       <Route path="/settlements" element={<Settlements />} />

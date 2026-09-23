@@ -1,7 +1,7 @@
 """
 Accounting router
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -11,7 +11,7 @@ from decimal import Decimal
 import io
 
 from app.database import get_db
-from app.dependencies import get_tenant_id
+from app.finance_auth import accounting_tenant as get_tenant_id
 from app.models.chart_of_accounts import ChartOfAccount
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
@@ -44,7 +44,21 @@ from app.models.truck import Truck
 from app.models.tenant import Tenant
 from app.utils.export_utils import export_to_csv, export_to_excel, export_to_pdf, format_currency, format_date
 
-router = APIRouter()
+async def legacy_guard(request: Request):
+    if request.method in ('POST', 'PUT', 'PATCH'):
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        def has_scope(value):
+            return (isinstance(value, dict) and ('tenant_id' in value or any(has_scope(v) for v in value.values()))) or (isinstance(value, list) and any(has_scope(v) for v in value))
+        if has_scope(body):
+            raise HTTPException(400, detail={"code": "TENANT_CONTEXT_INVALID", "message": "Business scope cannot be supplied in the body."})
+    if '/export/' in request.url.path or request.url.path.endswith('/schedule-c'):
+        raise HTTPException(409, detail={"code": "PACKAGE_BLOCKED", "message": "Use reconciled v1 accountant packages; legacy exports do not verify evidence readiness."})
+
+
+router = APIRouter(dependencies=[Depends(get_tenant_id), Depends(legacy_guard)])
 
 
 @router.post("/chart-of-accounts/initialize", response_model=List[ChartOfAccountResponse])
@@ -80,34 +94,7 @@ def reset_chart_of_accounts(db: Session = Depends(get_db), tenant_id: int = Depe
     WARNING: This will delete all accounts. Journal entries referencing these accounts will also be affected.
     Use this to re-initialize accounts with the correct business type.
     """
-    # Check if there are any journal entries using these accounts
-    account_ids = [acc.id for acc in db.query(ChartOfAccount).filter(ChartOfAccount.tenant_id == tenant_id).all()]
-    
-    if account_ids:
-        # Check for journal entry lines referencing these accounts
-        journal_entry_lines_count = db.query(JournalEntryLine).filter(
-            JournalEntryLine.account_id.in_(account_ids)
-        ).count()
-        
-        if journal_entry_lines_count > 0:
-            # Delete journal entry lines first
-            db.query(JournalEntryLine).filter(
-                JournalEntryLine.account_id.in_(account_ids)
-            ).delete(synchronize_session=False)
-            
-            # Delete journal entries for this tenant
-            db.query(JournalEntry).filter(
-                JournalEntry.tenant_id == tenant_id
-            ).delete(synchronize_session=False)
-        
-        # Delete all accounts for this tenant
-        db.query(ChartOfAccount).filter(
-            ChartOfAccount.tenant_id == tenant_id
-        ).delete(synchronize_session=False)
-        
-        db.commit()
-    
-    return {"message": "All accounts have been reset. You can now re-initialize with the correct business type."}
+    raise HTTPException(409, detail={"code": "ACCOUNT_RESET_UNAVAILABLE", "message": "Accounting history cannot be deleted. Use reversals."})
 
 
 @router.get("/chart-of-accounts", response_model=List[ChartOfAccountResponse])
@@ -165,6 +152,8 @@ def create_chart_of_account(
     if existing:
         raise HTTPException(status_code=400, detail=f"Account with code {account.code} already exists")
     
+    if account.truck_id is not None and not db.query(Truck).filter_by(id=account.truck_id, tenant_id=tenant_id).first():
+        raise HTTPException(404, detail='Resource not found.')
     account_data = account.model_dump()
     account_data['tenant_id'] = tenant_id
     db_account = ChartOfAccount(**account_data)
@@ -175,9 +164,9 @@ def create_chart_of_account(
 
 
 @router.get("/chart-of-accounts/{account_id}", response_model=ChartOfAccountResponse)
-def get_chart_of_account(account_id: int, db: Session = Depends(get_db)):
+def get_chart_of_account(account_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Get a specific chart of account."""
-    account = db.query(ChartOfAccount).filter(ChartOfAccount.id == account_id).first()
+    account = db.query(ChartOfAccount).filter(ChartOfAccount.id == account_id, ChartOfAccount.tenant_id == tenant_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     return account
@@ -235,6 +224,8 @@ def create_journal_entry(
     from app.services.accounting_service import uses_per_asset_accounting
     
     per_asset = uses_per_asset_accounting(tenant)
+    if entry.truck_id is not None and not db.query(Truck).filter_by(id=entry.truck_id, tenant_id=tenant_id).first():
+        raise HTTPException(404, detail='Resource not found.')
     if per_asset and not entry.truck_id:
         raise HTTPException(status_code=400, detail="truck_id is required for LS Logistics journal entries")
     
@@ -270,9 +261,9 @@ def create_journal_entry(
 
 
 @router.get("/journal-entries/{entry_id}", response_model=JournalEntryResponse)
-def get_journal_entry(entry_id: int, db: Session = Depends(get_db)):
+def get_journal_entry(entry_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Get a specific journal entry."""
-    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id, JournalEntry.tenant_id == tenant_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Journal entry not found")
     return entry
@@ -283,10 +274,11 @@ def get_general_ledger(
     account_id: int,
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_tenant_id)
 ):
     """Get general ledger for a specific account."""
-    account = db.query(ChartOfAccount).filter(ChartOfAccount.id == account_id).first()
+    account = db.query(ChartOfAccount).filter(ChartOfAccount.id == account_id, ChartOfAccount.tenant_id == tenant_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     

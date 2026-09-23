@@ -12,6 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine, Base
 from app.migration_runner import run_startup_migrations
 from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants, auth, repair_reserves
+from app.routers import finance
+from app.models import finance as finance_models
 from app.auth_utils import verify_session_token, SESSION_COOKIE_NAME
 
 # Create database tables
@@ -23,6 +25,9 @@ app = FastAPI(
     description="Management system for Amazon Relay truck operations",
     version="1.0.0"
 )
+
+from app.finance_http import install as install_finance_http
+install_finance_http(app)
 
 # Session-based auth middleware to keep the app private while allowing a custom login page.
 APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME")
@@ -108,6 +113,7 @@ app.include_router(repairs.router, prefix="/api/repairs", tags=["repairs"])
 app.include_router(repair_reserves.router, prefix="/api", tags=["repair-reserves"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"])
+app.include_router(finance.router, prefix="/api/v1/accounting", tags=["accounting-v1"])
 app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
