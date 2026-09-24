@@ -89,7 +89,7 @@ const statusMeta = (status: string) => {
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
 
-export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered, onBalanceObserved }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -288,6 +288,25 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
         if (balance.current_cents < 0 && remaining > 0) issues.push(`${money(remaining)} of the negative balance in ••${destination.last4} could not be tied to an uncovered posted charge.`)
       }
       await reload()
+      const verifiedHistories = effectiveChecking.map(account => result.coverage?.find(item => item.last4 === account.last4))
+      if (verifiedHistories.every(history => history && !history.error)) {
+        const accountRows = result.accounts.map(account => ({
+          last4: account.last4,
+          current_cents: account.current_cents,
+          available_cents: account.available_cents,
+          available_credit_cents: account.available_credit_cents,
+          pending_debits_cents: basis === 'posted_and_pending'
+            ? verifiedHistories.find(history => history?.last4 === account.last4)?.transactions
+                .filter(transaction => transaction.pending)
+                .reduce((total, transaction) => total + transaction.amount_cents, 0) ?? null
+            : null,
+        }))
+        await bankMonitorApi.recordBrowserCheck(tenantId, {
+          snapshot: { observed_at: result.checked_at, accounts: accountRows },
+          histories_verified: effectiveChecking.map(account => account.last4),
+        })
+        onBrowserCheckRecorded()
+      }
       if (issues.length) setCoverageIssue(issues.join(' '))
       const negative = result.accounts.filter(account => effectiveChecking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
       if (!issues.length && !negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
@@ -304,6 +323,20 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
+  useEffect(() => {
+    document.documentElement.dataset.elisBankMonitorReady = connected && !busy ? 'true' : 'false'
+    const scheduled = () => {
+      if (!connected || busy) return
+      void checkBalances().finally(() => {
+        void send<ExtensionResponse>(extension, {type:'ELIS_SCHEDULED_DONE'}).catch(() => {})
+      })
+    }
+    window.addEventListener('elis:scheduled-bank-check', scheduled)
+    return () => {
+      delete document.documentElement.dataset.elisBankMonitorReady
+      window.removeEventListener('elis:scheduled-bank-check', scheduled)
+    }
+  })
   const prepare = async (draft: Draft) => {
     const blockingDraft = drafts.find(item => item.id !== draft.id && item.status === 'prepared_awaiting_submission')
     if (blockingDraft) {
