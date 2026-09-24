@@ -10,6 +10,7 @@ def repair_history(db, tenant, as_of):
     records = db.query(Repair, Truck).join(Truck, Repair.truck_id == Truck.id).filter(Truck.tenant_id == tenant).order_by(Repair.id).all()
     docs = db.query(FinanceEvidence).filter_by(tenant_id=tenant).all()
     superseded = {d.supersedes_id for d in docs if d.supersedes_id}
+    confirmations = {d.extracted['repair_id']: d for d in docs if d.id not in superseded and d.extraction_version == 'owner-confirmation-v1'}
     by_repair = {}
     for d in docs:
         if d.id in superseded: continue
@@ -48,12 +49,20 @@ def repair_history(db, tenant, as_of):
                      'description': repair.title or repair.description, 'invoice_number': repair.invoice_number,
                      'recorded_cost': f.money(repair.cost) if repair.cost is not None else None,
                      'source_totals': sorted(set(totals)),
-                     'evidence': [{'id': d.id, 'sha256': d.sha256, 'media_type': d.media_type, 'extraction_version': d.extraction_version} for d in evidence],
+                     'evidence': [{'id': d.id, 'sha256': d.sha256, 'media_type': d.media_type, 'extraction_version': d.extraction_version} for d in sorted(evidence, key=lambda d: d.id)],
                      'obligation_event_ids': [e.id for e in events], 'payment_event_ids': [e.id for e in payments],
                      'recorded_vendor_outstanding': f.money(vendor) if active else None,
                      'recorded_owner_reimbursement': f.money(owner) if active else None,
                      'payment_status': 'linked_activity' if payments else 'unverified',
                      'issues': list(dict.fromkeys(issues)), 'automatic_posting_allowed': False})
+    for row in rows:
+        row['review_snapshot'] = f.digest({k: row[k] for k in ('legacy_id', 'asset_id', 'date', 'description', 'invoice_number', 'recorded_cost', 'source_totals', 'evidence')})
+        confirmation = confirmations.get(row['legacy_id'])
+        row['confirmation'] = ({'id': confirmation.id, **confirmation.extracted,
+                                'stale': confirmation.extracted.get('snapshot') != row['review_snapshot']} if confirmation else None)
+        row['batch_eligible'] = bool(row['source_totals']) and not confirmation and not row['obligation_event_ids'] and not any(i in row['issues'] for i in (
+            'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
+            'incurred_amount_required', 'cost_or_recovery_treatment_review'))
     return {'version': 'repair-history-v1', 'tenant_id': tenant, 'as_of': as_of.isoformat(),
             'scope': 'legacy_repairs', 'basis': 'evidence_and_explicit_ledger_links',
             'evidence_status': 'review_required', 'rows': rows,

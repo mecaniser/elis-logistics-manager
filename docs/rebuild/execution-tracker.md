@@ -165,3 +165,13 @@ The existing finance forms now expose cash accounts, counted cashbook reconcilia
 Verified: 54 focused backend tests pass, including 12 cashbook cases covering missing count evidence, negative funding, partial/repeated payments, bank-to-cash transfers, personal payment/reimbursement, reserve-funded repairs, repeat imports, cross-business evidence/repair selection, old command replay and report evidence manifests. All 22 frontend model tests pass; frontend build and changed-file lint pass. Desktop/mobile payment controls and live local cash-account/cashbook form options verified; no fabricated transaction was submitted through the real review database. Impeccable detector returned no findings. Existing bundle warning and broader repository baseline debt remain.
 
 Backed up review.db before restarting the local backend. Verified counts remain 5 finance events, 2 postings and 268 evidence records. Production unchanged. This completes the basic cashbook-backed payment path, not historical payment reconciliation. Remaining inputs: actual cash ownership/payer, receipts/payment dates, cash counts/opening cash, and Zelle checking records. A direct cash-entry wizard and scoped repair prefill would further improve the current generic accounting forms. Historical repair classification, source corrections, remaining retention rules and fuel/travel reconciliation remain tracked engineering/evidence work.
+
+## 2026-09-24 — Invoice-first repair confirmations
+
+- Implemented inline payment questions in existing repair cards, with unknown/partial/unpaid answers and optional date/reference. No account setup required to save what the owner knows.
+- Added batch confirmation for matching extracted invoices; current local history has 28 candidates. Amount/treatment conflicts remain individual exceptions.
+- Added immutable owner-confirmation evidence with revision/snapshot checks, tenant scope, idempotency and no financial side effects.
+- Preserved original PDFs atomically during existing repair upload; retained legacy mechanics pending migration.
+- Finance Repairs now leads to invoice cards; generic accounting tools remain explicitly advanced.
+- Fixed repair date-only display shifting back one day.
+- Validation and limits: see `repair-confirmation-workflow.md`. No historical payment answers invented, no production deployment. Confirmation-to-ledger automation, OCR/payment extraction, and historical accounting cutover remain unfinished.

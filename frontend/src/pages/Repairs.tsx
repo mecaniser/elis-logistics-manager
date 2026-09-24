@@ -1,3 +1,4 @@
+import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
 import RepairEvidence from '../components/repairs/RepairEvidence'
@@ -783,7 +784,7 @@ export default function Repairs() {
 
       <section aria-labelledby="repair-review-heading" className="mb-6 border-y border-gray-200 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="repair-review-heading" className="text-lg font-semibold text-gray-900">Evidence & payment review</h2>
+          <h2 id="repair-review-heading" className="text-lg font-semibold text-gray-900">Invoice review</h2>
           <label className="flex items-center gap-2 text-sm text-gray-700">Review as of
             <input type="date" value={reviewAsOf} onChange={e => { if (e.target.value) setReviewAsOf(e.target.value) }} className="min-h-11 border border-gray-300 rounded-md px-2 text-base focus-visible:outline-blue-600" />
           </label>
@@ -791,11 +792,12 @@ export default function Repairs() {
         {review.loading && <p role="status" className="text-sm text-gray-600 mt-2">Loading preserved documents and payment links…</p>}
         {review.error && <div role="alert" className="mt-2 text-sm text-red-700">Evidence review could not load: {review.error}. Existing repair records remain available. <button type="button" onClick={review.retry} className="min-h-11 underline focus-visible:outline focus-visible:outline-2">Retry evidence review</button></div>}
         {review.data && <>
-          <p className="text-sm text-gray-700 mt-2">{review.data.coverage.with_preserved_evidence} of {review.data.coverage.records} repairs have preserved documents; {review.data.coverage.with_linked_payments} have linked payment activity as of {review.data.as_of}. Invoice evidence alone does not establish payment.</p>
+          <p className="text-sm text-gray-700 mt-2">Upload your invoices as usual. Review differences here and add payment details only where needed. {review.data.coverage.with_preserved_evidence} of {review.data.coverage.records} repairs have preserved documents.</p>
           <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Filter repair evidence">
-            {([['all', 'All repairs'], ['amount', 'Invoice differences'], ['documents', 'Missing documents'], ['payment', 'Payment unverified'], ['treatment', 'Cost treatment']] as [ReviewFilter, string][]).map(([value, label]) => <button key={value} type="button" aria-pressed={reviewFilter === value} onClick={() => setReviewFilter(value)} className={`min-h-11 px-3 py-2 text-sm rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${reviewFilter === value ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{label} <span className="tabular-nums">({value === 'all' ? repairs.length : review.data!.rows.filter(row => matchesReview(row, value)).length})</span></button>)}
+            {([['all', 'All repairs'], ['amount', 'Invoice differences'], ['documents', 'Missing documents'], ['payment', 'Payment questions'], ['treatment', 'Cost treatment']] as [ReviewFilter, string][]).map(([value, label]) => <button key={value} type="button" aria-pressed={reviewFilter === value} onClick={() => setReviewFilter(value)} className={`min-h-11 px-3 py-2 text-sm rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${reviewFilter === value ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{label} <span className="tabular-nums">({value === 'all' ? repairs.length : review.data!.rows.filter(row => matchesReview(row, value)).length})</span></button>)}
           </div>
-          <p className="text-sm text-gray-600 mt-3">Cash payments need a receipt or confirmation of the payer, amount and date. Zelle payments can be linked to checking records. Review here does not post expenses or change balances.</p>
+          <p className="text-sm text-gray-600 mt-3">77 Cargo deductions stay in settlements. These are your separate repair records; confirming payment does not charge them again.</p>
+          <RepairBatchReview key={`${currentTenant?.id}-${reviewAsOf}`} rows={review.data.rows} onSaved={review.retry} />
         </>}
       </section>
 
@@ -827,7 +829,7 @@ export default function Repairs() {
                       {getTruckName(repair.truck_id)}
                     </p>
                     <p className="text-xs text-gray-400 mb-2">
-                      {new Date(repair.repair_date).toLocaleDateString()}
+                      {new Date(`${repair.repair_date}T12:00:00`).toLocaleDateString()}
                       {repair.category && (
                         <span className="ml-2 text-xs bg-gray-100 px-2 py-0.5 rounded">{repair.category}</span>
                       )}
@@ -865,7 +867,7 @@ export default function Repairs() {
                         )}
                       </>
                     )}
-                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} />}
+                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} onSaved={review.retry} />}
                     {/* Show images with expandable functionality */}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mb-3">

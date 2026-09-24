@@ -26,3 +26,10 @@ test('records absent from the selected as-of report are not invented as missing 
   assert.equal(matchesReview(undefined, 'all'), true)
   assert.equal(matchesReview(undefined, 'documents'), false)
 })
+
+test('owner confirmation answers payment questions without claiming a ledger payment', () => {
+  const row = {issues: [], payment_status: 'unverified', confirmation: {status: 'paid', stale: false}}
+  assert.equal(matchesReview(row, 'payment'), false)
+  assert.equal(matchesReview({...row, confirmation: {...row.confirmation, stale: true}}, 'payment'), true)
+  assert.equal(matchesReview({...row, confirmation: {...row.confirmation, status: 'unknown'}}, 'payment'), true)
+})

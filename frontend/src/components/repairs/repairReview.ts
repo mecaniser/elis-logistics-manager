@@ -1,5 +1,11 @@
 export interface RepairReviewRow {
   legacy_id: number
+  asset_name: string
+  date: string | null
+  description: string
+  review_snapshot: string
+  batch_eligible: boolean
+  confirmation: {id: string; status: string; method: string; source: string; paid_amount: string | null; paid_date: string | null; note: string; stale: boolean} | null
   recorded_cost: string | null
   source_totals: string[]
   recorded_vendor_outstanding: string | null
@@ -20,7 +26,7 @@ export function matchesReview(row: RepairReviewRow | undefined, filter: ReviewFi
   if (!row) return false
   if (filter === 'amount') return row.issues.some(i => ['invoice_amount_difference', 'conflicting_invoice_totals'].includes(i))
   if (filter === 'documents') return row.issues.includes('missing_preserved_evidence')
-  if (filter === 'payment') return row.payment_status === 'unverified'
+  if (filter === 'payment') return row.payment_status === 'unverified' && (!row.confirmation || row.confirmation.stale || row.confirmation.status === 'unknown')
   return row.issues.some(i => ['cost_or_recovery_treatment_review', 'incurred_amount_required', 'incurred_date_required'].includes(i))
 }
 export const reviewIssueLabels: Record<string, string> = {

@@ -16,6 +16,7 @@ from app.finance_auth import accounting_tenant
 from app.models.finance import FinanceEvidence, FinanceEvent, FinanceReport
 from app.models.truck import Truck
 from app.schemas.finance import Command, ReportRequest, MotiveRequest, ReconstructionRequest
+from app.schemas.repair_review import RepairConfirmation
 from app.services import finance as f
 
 router = APIRouter()
@@ -131,6 +132,18 @@ def reconstruction_plan(db: Session = Depends(get_db), tenant: int = Depends(acc
 def repair_history(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     from app.services.repair_history import repair_history as build
     return build(db, tenant, as_of)
+
+
+@router.post('/repair-confirmations')
+def confirm_repairs(request: RepairConfirmation, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.repair_confirmation import save_confirmation
+    try:
+        result = save_confirmation(db, tenant, request)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get('/workspace')
