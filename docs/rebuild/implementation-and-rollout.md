@@ -13,7 +13,7 @@ The application now supports source-preserving imports, reconciled CSV statement
 - Existing session authentication remains in use. Set `APP_AUTH_TENANT_IDS` to the server-authorized comma-separated business IDs for that session principal. The client header only selects an allowed business. Missing authorization fails closed for new and retained accounting routes.
 - Local development only: `ELIS_FINANCE_LOCAL_TENANTS=1` enables finance access when authentication is unconfigured **and** the request originates from loopback. Never use this as production configuration.
 - Set `MOTIVE_API_KEY_TENANT_<business_id>` in the server environment. The app never accepts or displays the key. The connector uses GET vehicle history only, with a maximum 90-day window and preserved raw response. Provider access, mapping, pagination and odometer coverage require live verification before accepting distance.
-- Existing SQLAlchemy startup creates the additive `finance_*` tables. PostgreSQL and SQLite DDL install immutable-history triggers. No existing settlement or repair table is rewritten.
+- Startup creates the additive `finance_*` tables and runs the recorded `2026_09_24_reconciled_finance` migration. The migration also installs immutable-history guards on existing finance tables that were restored without them. PostgreSQL and SQLite are supported. No existing settlement or repair row is rewritten.
 
 ## Setup and migration sequence
 
@@ -38,7 +38,7 @@ The application now supports source-preserving imports, reconciled CSV statement
 - Owner financing allocations are evidenced entries, not an automatic tax-interest allocation algorithm. Prior filing basis and mixed-use allocation remain accountant-confirmed policy.
 - No automatic money transfers, lender payments, tax preparation or filing.
 - Immutable revisions are supported through reversals and replacement source references. Reverse dependent matches/payments before correcting their source obligation. Disposal corrections currently require operational review; they are not silently reversed.
-- Verification has used SQLite, a disposable PostgreSQL 16 database and a synthetic local browser business. PostgreSQL additive DDL, exact decimal posting and all ten SQL immutability guards passed. A production-shaped staging migration and real-data parallel run remain release gates.
+- Verification has used SQLite, a disposable PostgreSQL 16 database and a synthetic local browser business. PostgreSQL additive DDL, exact decimal posting and all ten SQL immutability guards passed. A PostgreSQL 18.6 production-copy migration and pre/post backup restore rehearsal passed on September 24; see `release-rehearsal.md`. The real-data accounting parallel run and live acceptance remain release gates.
 
 ## Verification
 
