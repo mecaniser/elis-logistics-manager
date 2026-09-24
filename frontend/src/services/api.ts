@@ -342,10 +342,16 @@ export interface PMStatusResponse {
 
 // Auth API (no tenant header)
 export const authApi = {
-  login: (username: string, password: string) =>
-    axios.post('/api/auth/login', { username, password }, { withCredentials: true }),
+  login: (username: string, password: string, remember: boolean, mfaCode?: string) =>
+    axios.post<{ mfa_required?: boolean }>('/api/auth/login', { username, password, remember, mfa_code: mfaCode }, { withCredentials: true }),
   logout: () => axios.post('/api/auth/logout', {}, { withCredentials: true }),
   me: () => axios.get<{ username: string }>('/api/auth/me', { withCredentials: true }),
+  capabilities: () => axios.get<{ password_recovery: boolean }>('/api/auth/capabilities'),
+  requestReset: (email: string) => axios.post('/api/auth/password/reset-request', { email }),
+  resetPassword: (token: string, password: string) => axios.post('/api/auth/password/reset', { token, password }),
+  mfaStatus: () => axios.get<{ enabled: boolean }>('/api/auth/mfa', { withCredentials: true }),
+  mfaSetup: (password: string) => axios.post<{ secret: string; uri: string }>('/api/auth/mfa/setup', { password }, { withCredentials: true }),
+  mfaConfirm: (code: string) => axios.post<{ recovery_codes: string[] }>('/api/auth/mfa/confirm', { code }, { withCredentials: true }),
 }
 
 // Truck API (also handles trailers and SUVs)

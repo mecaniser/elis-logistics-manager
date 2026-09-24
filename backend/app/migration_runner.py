@@ -55,12 +55,28 @@ def _add_bank_draft_transaction_details(engine: Engine) -> None:
             connection.execute(text(statement))
 
 
+def _add_auth_account(engine: Engine) -> None:
+    from app.models.auth_account import AuthAccount
+    AuthAccount.__table__.create(engine, checkfirst=True)
+
+
+def _add_auth_login_throttle(engine: Engine) -> None:
+    columns = {column['name'] for column in inspect(engine).get_columns('auth_account')}
+    with engine.begin() as connection:
+        if 'failed_login_count' not in columns:
+            connection.execute(text('ALTER TABLE auth_account ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0'))
+        if 'login_retry_after' not in columns:
+            connection.execute(text('ALTER TABLE auth_account ADD COLUMN login_retry_after BIGINT'))
+
+
 # Keep this ordered. New migrations must be additive/idempotent and be added
 # here in the same change that introduces their schema or data dependency.
 MIGRATIONS: List[Migration] = [
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),
     ("2026_07_30_trailer_resale_plan", _add_trailer_resale_plan),
     ("2026_09_15_bank_draft_transaction_details", _add_bank_draft_transaction_details),
+    ("2026_09_24_auth_account", _add_auth_account),
+    ("2026_09_24_auth_login_throttle", _add_auth_login_throttle),
 ]
 
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 interface AccountMenuProps {
   onLogout: () => void
@@ -70,6 +71,10 @@ export default function AccountMenu({ onLogout }: AccountMenuProps) {
           aria-label="Account"
           className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 py-1"
         >
+          <Link to="/account/security" data-menu-item role="menuitem" onClick={() => setOpen(false)}
+            className="w-full flex items-center px-4 min-h-[44px] py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:bg-gray-100">
+            Account security
+          </Link>
           <button
             type="button"
             data-menu-item
