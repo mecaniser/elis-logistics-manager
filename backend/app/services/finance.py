@@ -271,6 +271,10 @@ def append_command(db, tenant, command, key):
         except ZoneInfoNotFoundError: fail('Choose a valid IANA timezone.')
         if any(p[x] for x in ('approved', 'opening_confirmed', 'history_confirmed', 'carrier_presentation_confirmed', 'owner_treatment_confirmed', 'depreciation_confirmed', 'tax_basis_confirmed')) and not p['evidence_ids']:
             fail('Attach supporting evidence before confirming accounting policy or opening history.')
+    elif k == 'retention_targets':
+        timezone = (bank_state['policy'] or {}).get('timezone', 'UTC')
+        if when < datetime.now(ZoneInfo(timezone)).date():
+            fail('Retention targets apply prospectively. Choose today or a future date.', 'RETROACTIVE_TARGET')
     elif k == 'statement':
         p['_transactions'] = parse_statement(db, tenant, p)
         if when.isoformat() != p['end']: fail('Statement effective date must equal statement end.')
@@ -654,6 +658,8 @@ def report(db, tenant, start, end, as_of):
 
     from app.services.fleet_insights import owner_insights
     result['owner_insights'] = owner_insights(result)
+    from app.services.retention import retention_report
+    result['retention'] = retention_report(db, tenant, result)
     return result
 
 

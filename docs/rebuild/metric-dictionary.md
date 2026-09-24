@@ -29,3 +29,20 @@ The financial foundation and workflows for the owner-approved plan are implement
 ## Rollout
 
 New data uses separate tables. Read-only legacy comparison explains allocation/interest differences and labels legacy mileage unverified. Never infer funded reserves or payoff from historical profit. Opening journals, account coverage, policies, and historical completeness require source confirmation. The new workspace is available at `/finance`; the existing home remains at `/` until reconciliation and browser acceptance authorize cutover.
+
+## Retention score (September 23 approved extension)
+
+The owner approved a 30% retained-freight target and a 28% acceptable floor. The score is a **period management contribution**, not book profit or the as-of amount safe to withdraw.
+
+- Retained per $100 = recorded retained contribution / positive freight revenue × 100.
+- Score = retained per $100 / target percent × 100. Target attainment is 100; better results can exceed 100 and losses remain negative. Zero/negative freight produces no score.
+- Status uses the unrounded ratio: 30% meets target, 28% is acceptable, below 28% is below acceptable. Display rounding cannot change the band.
+- The bridge starts with statement remainder, adds net outside recorded costs/income (including accrued interest), adds the freight-proportional company result, subtracts business-paid equipment obligations and new positive non-opening repair/capital funding, and restores repair costs already covered by protected funds. Book depreciation and equipment disposal are excluded from this freight-performance measure.
+- Company amounts are allocated for comparison only, using exact cents and largest remainders with asset ID tie breaking. The ledger still records each company cost once. Period scores use period totals, never averages of weekly percentages. Allocation can change as the period's freight mix changes.
+- Repair offset = reserves consumed by payments during the period + change in funded coverage of unpaid claims. This prevents a covered incurred repair, its later payment, a personal-payment substitution and reimbursement from becoming repeated retention costs. Discretionary reserve releases do not become earnings.
+- A supporting HELOC principal record never duplicates its linked payment. Personal HELOC uses do not enter the calculation. Equipment card repayment attribution and operational effects of reversals remain explicit review gaps.
+- Targets are immutable dated events, with positive acceptable <= target <= 100. Backdating is rejected. Each report uses the benchmark effective at its start. Settings use the confirmed business timezone, or explicitly labeled UTC until setup; the form receives its minimum date from the server. Future changes remain visible in target history.
+
+All scores currently remain **provisional**: there is no per-period completeness attestation yet. Unfunded reserve targets and scheduled financing obligations are not silently treated as funded deductions. The expanded calculation explicitly requires outside-cost reconciliation, target funding and financing verification. It cannot be used as confirmed take-home pay. Driver names are current equipment labels; historical driver attribution still requires dated driver assignments. Unassigned equipment results remain visible review gaps.
+
+Worked cases: $30 retained from $100 → 100; $28 → 93.33 acceptable; $25 → 83.33 below floor; $33 → 110; -$3 → -10. An opening $1,000 reserve covering a $500 repair leaves current retained contribution unchanged whether unpaid, paid in the same period or paid next period. Funding a new $1,000 reserve reduces period contribution by $1,000 once, including when $500 of it covers a repair. A $1,000 business equipment reimbursement reduces contribution once even when a matching HELOC schedule row also exists.

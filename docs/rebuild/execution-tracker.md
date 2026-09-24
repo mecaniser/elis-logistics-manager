@@ -83,3 +83,13 @@ Evidence references: `metric-dictionary.md`, `verification.md`, `implementation-
 ## Approved money-flow presentation
 
 The owner approved the Sankey/money-flow prototype for the freight allocation section. It is now connected locally to the existing report, with a signed waterfall alternative and expandable exact charges. No backend calculations, evidence, ledger records or production behavior changed. Negative/credit periods use the signed view; nonreconciling inputs retain exact figures and withhold the chart. Nine presentation-model tests cover the source total, cent precision, credits, losses, zero values and unsupported inputs. Follow the scoped design handoff for browser evidence and final review status. The accounting, history and cutover work above remains open.
+
+## Retention score checkpoint — September 23
+
+**Implemented locally:** per-pair normalized retention score, approved30% target/28% acceptable floor, same-scale comparison bars, dollars retained per$100, unrounded threshold classification, negative/no-revenue handling, expandable recorded-cost/funding bridge, and prospective adjustable targets with audit history. Shared company costs are allocated by freight only for comparison, without changing company ledger totals. Existing daily and mileage metrics remain available. No production deployment or cutover.
+
+**Verified:**47 focused financial/history tests pass (12new retention cases); scoped frontend lint/build pass; existing bundle-size warning remains. Desktop1440, mobile390 and user1832 captures are under `.impeccable/review/retention/`. Mobile has no horizontal overflow and44px disclosure targets. Browser target validation, approved30/28 local save, persisted revision display and calculation disclosure were exercised. A local/UTC default-date mismatch was found and fixed by serving the minimum settings date and displaying its timezone. Independent design review is recorded in `retention-score-design.md`.
+
+**Current source-backed result:**603 score103.9 at$31.16 per$100;609 score60.5 at$18.15 per$100, for the posted September21 statements. Both remain provisional. This does not close historical imports, bank/payment reconciliation, outside-repair integration, HELOC evidence, Motive, or production acceptance.
+
+**Remaining score integration:** per-period completeness/attestation; explicit unfunded-target and scheduled-financing treatment before a finalized cash-retention score; equipment-card repayment attribution; operational reversal reconciliation; effective-dated historical driver attribution. Current UI identifies these limits rather than advertising final after-all-cost take-home pay. Metric details and worked no-double-counting examples are in `metric-dictionary.md`.

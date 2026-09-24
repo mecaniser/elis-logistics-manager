@@ -1,0 +1,21 @@
+.retention-result {display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px;font-variant-numeric:tabular-nums;}
+.retention-result p {margin:0;display:flex;flex-direction:column;gap:6px;}
+.retention-result strong {font-size:30px;font-weight:650;letter-spacing:-.02em;line-height:1.2;}
+.retention-result span,.retention-axis {font-size:12px;color:var(--finance-muted);line-height:1.5;}
+.retention-status {font-size:13px;color:#854d0e;margin:14px 0;}
+.retention-chart {margin:20px 0 22px;}
+.retention-track {height:26px;background:#f1f5f9;position:relative;}
+.retention-range {position:absolute;top:0;height:100%;background:#cbd5e1;}
+.retention-bar {position:absolute;top:6px;height:14px;background:var(--finance-accent);}
+.retention-bar.is-loss {background:#b45309;}
+.retention-floor,.retention-target {position:absolute;top:-5px;height:36px;border-left:2px solid var(--finance-ink);}
+.retention-floor {border-left-style:dashed;}
+.retention-axis {display:flex;justify-content:space-between;gap:10px;margin-top:12px;font-variant-numeric:tabular-nums;}
+.retention-axis span:nth-child(2) {text-align:center;}
+.retention-gaps {padding-left:20px;color:var(--finance-muted);line-height:1.7;}
+.retention-gaps li {margin:8px 0;}
+.retention-targets {margin-bottom:24px;}
+.retention-target-fields {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:16px 0;max-width:760px;}
+.retention-target-fields label {display:flex;flex-direction:column;gap:8px;}
+.retention-target-fields input {min-width:0;min-height:44px;padding:10px;border:1px solid var(--finance-border);border-radius:6px;background:white;color:var(--finance-ink);}
+@media(max-width:700px) {.retention-target-fields {grid-template-columns:1fr;}.retention-result {gap:12px;}.retention-result strong {font-size:28px;}}

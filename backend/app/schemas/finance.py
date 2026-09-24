@@ -30,6 +30,18 @@ class Policy(Strict):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class RetentionTargets(Strict):
+    kind: Literal['retention_targets']
+    target_percent: PositiveMoney = '30.00'
+    acceptable_percent: PositiveMoney = '28.00'
+
+    @model_validator(mode='after')
+    def validate_thresholds(self):
+        if not 0 < Decimal(self.acceptable_percent) <= Decimal(self.target_percent) <= 100:
+            raise ValueError('Use 0 < acceptable retention <= target retention <= 100 percent.')
+        return self
+
+
 class Account(Strict):
     kind: Literal['account']
     name: str = Field(min_length=1, max_length=100)
@@ -256,7 +268,7 @@ class Period(Strict):
     reason: str = Field(min_length=1, max_length=500)
 
 
-Payload = Annotated[Union[Policy, Account, CSVMapping, Statement, Claim, Payment, CreditNote, BankMatch, Reserve, Assignment, AssetPlan, Disposal, Financing, SettlementInput, Travel, CompletedLoad, Journal, Reversal, Period, Activation], Field(discriminator='kind')]
+Payload = Annotated[Union[Policy, RetentionTargets, Account, CSVMapping, Statement, Claim, Payment, CreditNote, BankMatch, Reserve, Assignment, AssetPlan, Disposal, Financing, SettlementInput, Travel, CompletedLoad, Journal, Reversal, Period, Activation], Field(discriminator='kind')]
 
 
 class Command(Strict):
