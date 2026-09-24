@@ -9,17 +9,54 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
 from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
-                                     BankMonitorRun, BankMonitorWorkerHeartbeat)
+                                     BankMonitorRun, BankMonitorWorkerHeartbeat, BankProviderConnection)
 from app.models.tenant import Tenant
 from app.services.bank_monitor import EASTERN, MonitorRules, calculate, due_date
 from app.services.truliant_reader import BankReadError, read_balances
+from app.services import plaid_bank
+
+
+def read_provider(db, tenant_id, rules, now):
+    if plaid_bank.environment() != 'production':
+        raise plaid_bank.PlaidBankError('provider_not_live')
+    connection = db.get(BankProviderConnection, tenant_id)
+    if not connection:
+        raise plaid_bank.PlaidBankError('provider_connection_required')
+    try:
+        token = plaid_bank.decrypt_token(connection.encrypted_access_token)
+        bank_item = plaid_bank.item(token)
+        if bank_item.get('item_id') != connection.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
+            raise plaid_bank.PlaidBankError('provider_institution_mismatch')
+        snapshot = plaid_bank.balance_snapshot(token, rules, connection.account_map, now)
+    except plaid_bank.PlaidBankError as exc:
+        connection.status = 'reauthorization_required' if str(exc) == 'provider_reauthorization_required' else 'read_blocked'
+        connection.last_error = str(exc)
+        raise
+    connection.status = 'balance_verified'
+    connection.last_error = None
+    connection.last_checked_at = now
+    return snapshot
+
+
+def provider_pending_result(snapshot, rules):
+    return {'status': 'provider_pending_unverified', 'source': 'plaid',
+            'observed_at': snapshot.observed_at.isoformat(),
+            'accounts': [{**account.model_dump(), 'nickname': next(
+                configured.nickname for configured in rules.checking if configured.last4 == account.last4)}
+                         for account in snapshot.accounts if account.last4 in {a.last4 for a in rules.checking}],
+            'credit_accounts': [{**account.model_dump(), 'nickname': next(
+                configured.nickname for configured in rules.sources if configured.last4 == account.last4)}
+                                for account in snapshot.accounts if account.last4 in {a.last4 for a in rules.sources}],
+            'proposals': [], 'transfers_executed': False,
+            'message': 'Current balances were read, but pending debits were not verifiable. No coverage or repayment proposal was calculated.'}
 
 
 def run_due(db, now, reader=read_balances):
     day = due_date(now)
     if day is None:
         return 0
-    chrome_reader = os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome'
+    mode = os.getenv('BANK_MONITOR_READER_MODE')
+    chrome_reader = mode == 'signed_in_chrome'
     local = now.astimezone(EASTERN)
     if chrome_reader and (local.hour, local.minute) < (17, 45):
         return 0
@@ -45,14 +82,23 @@ def run_due(db, now, reader=read_balances):
             if chrome_reader:
                 raise BankReadError('chrome_check_missed')
             rules = MonitorRules.model_validate(config.rules)
-            profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
-            if not profile:
-                raise BankReadError('connection_required')
-            snapshot = (reader(profile, rules, tenant_id=config.tenant_id)
-                        if reader is read_balances else reader(profile, rules))
-            result = calculate(rules, snapshot, datetime.now(timezone.utc))
+            if mode == 'plaid':
+                snapshot = read_provider(db, config.tenant_id, rules, now)
+                result = (provider_pending_result(snapshot, rules) if rules.basis == 'posted_and_pending'
+                          else calculate(rules, snapshot, now))
+                result['source'] = 'plaid'
+            else:
+                profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
+                if not profile:
+                    raise BankReadError('connection_required')
+                snapshot = (reader(profile, rules, tenant_id=config.tenant_id)
+                            if reader is read_balances else reader(profile, rules))
+                result = calculate(rules, snapshot, datetime.now(timezone.utc))
             run.status = result['status']
             run.result = result
+        except plaid_bank.PlaidBankError as exc:
+            run.status = str(exc)
+            run.result = {'transfers_executed': False}
         except BankReadError as exc:
             run.status = str(exc)
             run.result = {'transfers_executed': False}
@@ -71,7 +117,8 @@ def run_due(db, now, reader=read_balances):
 
 def run_connection_checks(db, reader=read_balances):
     """Verify private bank access without using a daily slot or preparing a transfer."""
-    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome':
+    mode = os.getenv('BANK_MONITOR_READER_MODE')
+    if mode == 'signed_in_chrome':
         # This mode must never open the server browser, including for a
         # connection request queued before the mode was changed.
         return 0
@@ -93,15 +140,23 @@ def run_connection_checks(db, reader=read_balances):
             if not tenant or not config:
                 raise BankReadError('connection_required')
             rules = MonitorRules.model_validate(config.rules)
-            profile = os.getenv(f'BANK_MONITOR_PROFILE_{check.tenant_id}')
-            if not profile:
-                raise BankReadError('connection_required')
-            snapshot = (reader(profile, rules, tenant_id=check.tenant_id)
-                        if reader is read_balances else reader(profile, rules))
-            calculate(rules, snapshot, datetime.now(timezone.utc))
-            check.status = 'verified'
+            if mode == 'plaid':
+                snapshot = read_provider(db, check.tenant_id, rules, datetime.now(timezone.utc))
+                check.status = 'balance_only' if rules.basis == 'posted_and_pending' else 'verified'
+            else:
+                profile = os.getenv(f'BANK_MONITOR_PROFILE_{check.tenant_id}')
+                if not profile:
+                    raise BankReadError('connection_required')
+                snapshot = (reader(profile, rules, tenant_id=check.tenant_id)
+                            if reader is read_balances else reader(profile, rules))
+                calculate(rules, snapshot, datetime.now(timezone.utc))
+                check.status = 'verified'
             check.result = {'observed_at': snapshot.observed_at.isoformat(),
-                            'account_count': len(snapshot.accounts), 'transfers_executed': False}
+                            'account_count': len(snapshot.accounts), 'transfers_executed': False,
+                            'source': 'plaid' if mode == 'plaid' else 'private_worker'}
+        except plaid_bank.PlaidBankError as exc:
+            check.status = str(exc)
+            check.result = {'transfers_executed': False}
         except BankReadError as exc:
             check.status = str(exc)
             check.result = {'transfers_executed': False}

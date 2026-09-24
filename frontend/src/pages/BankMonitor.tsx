@@ -13,16 +13,16 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   credit_accounts?: { last4: string; nickname: string; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
   repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
   observed_at?: string; uncovered_cents?: number; message?: string;
-  accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents: number }[];
+  accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents?: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
 } }
 type RepaymentRun = { id: number; started_at: string; status: string; result: {
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
-type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number } }
+type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string } }
 type BrowserCheck = { id: number; status: string; observed_at: string; result: { source: string; repayment?: { status: string }; accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
-type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome'; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
+type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome' | 'plaid'; provider_connection: { configured: boolean; linked: boolean; status: string; last_checked_at: string | null; last_error: string | null; accounts: string[] }; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
 type BankRead = {
   checked_at: string;
@@ -65,6 +65,12 @@ const scheduledIssue = (status: string) => {
     title: 'Worker bank check interrupted',
     detail: 'The private worker stopped before confirming the bank read. No automatic retry was made; an operator must inspect the worker session before another sign-in attempt.',
   }
+  if (status.startsWith('provider_')) return {
+    title: 'Provider bank read needs review',
+    detail: status === 'provider_pending_unverified'
+      ? 'Current balances were read, but Plaid could not verify pending debits. Coverage and repayment proposals were withheld under the selected rule.'
+      : `The provider did not complete this bank check (${label(status)}). No transfer proposal was calculated. Review the bank connection below.`,
+  }
   return null
 }
 const defaults: Rules = { repayment: { enabled: false, priority: [], reserve_cents: 0 }, enabled: false, checking: [], sources: [], basis: 'posted', buffer_cents: 0 }
@@ -81,6 +87,23 @@ const easternDate = () => {
   return `${value.year}-${value.month}-${value.day}`
 }
 const dollarsInput = (cents: number | null | undefined) => cents == null ? '' : (cents / 100).toFixed(2)
+
+type PlaidHandler = { open: () => void; destroy: () => void }
+type PlaidFactory = { create: (options: { token: string; receivedRedirectUri?: string; onSuccess: (publicToken: string | null) => void; onExit: () => void }) => PlaidHandler }
+declare global { interface Window { Plaid?: PlaidFactory } }
+let plaidScript: Promise<void> | null = null
+function loadPlaidLink(): Promise<void> {
+  if (window.Plaid) return Promise.resolve()
+  if (!plaidScript) plaidScript = new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
+    script.async = true
+    script.onload = () => window.Plaid ? resolve() : reject(new Error('Bank connection could not open.'))
+    script.onerror = () => reject(new Error('Bank connection could not load.'))
+    document.head.appendChild(script)
+  }).catch(error => { plaidScript = null; throw error })
+  return plaidScript!
+}
 
 function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause' | 'close'; className?: string }) {
   const paths = {
@@ -99,6 +122,7 @@ export default function BankMonitor() {
   const { currentTenant } = useTenant()
   const currentTenantId = currentTenant?.id
   const tenantRef = useRef(currentTenantId)
+  const oauthResumeRef = useRef(false)
   tenantRef.current = currentTenantId
   const [loadedTenant, setLoadedTenant] = useState<number | null>(null)
   const [data, setData] = useState<Dashboard | null>(null)
@@ -110,6 +134,8 @@ export default function BankMonitor() {
   const [loading, setLoading] = useState(true)
   const [verifyingWorker, setVerifyingWorker] = useState(false)
   const [verificationError, setVerificationError] = useState('')
+  const [linkingProvider, setLinkingProvider] = useState(false)
+  const [providerNotice, setProviderNotice] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
   const [repaying, setRepaying] = useState(false)
@@ -176,6 +202,82 @@ export default function BankMonitor() {
       if (tenantRef.current === tenantId) setVerificationError(apiError(error, 'Unable to start the worker bank check.'))
     } finally { setVerifyingWorker(false) }
   }
+
+  const launchProvider = async (tenantId: number, token: string, attemptId: string | undefined,
+                                update: boolean, receivedRedirectUri?: string) => {
+    const clearReturn = () => {
+      sessionStorage.removeItem('elis-bank-plaid-link')
+      if (receivedRedirectUri) {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('oauth_state_id')
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+      }
+    }
+    try {
+      await loadPlaidLink()
+      if (tenantRef.current !== tenantId) { setLinkingProvider(false); return }
+      const handler = window.Plaid!.create({ token, receivedRedirectUri,
+        onSuccess: (publicToken: string | null) => {
+          void (async () => {
+            try {
+              if (!update) {
+                if (!attemptId || !publicToken) throw new Error('Bank consent did not return a connection token.')
+                await bankMonitorApi.providerExchange(tenantId, { link_token: token, attempt_id: attemptId, public_token: publicToken })
+              } else await bankMonitorApi.providerRenewed(tenantId)
+              if (tenantRef.current !== tenantId) return
+              const fresh = await bankMonitorApi.get(tenantId)
+              if (tenantRef.current === tenantId) {
+                setData(fresh.data)
+                setProviderNotice('Bank consent saved. Run a read-only access check to confirm every configured account.')
+              }
+            } catch (error: unknown) {
+              if (tenantRef.current === tenantId) setVerificationError(apiError(error, error instanceof Error ? error.message : 'Bank connection could not be saved.'))
+            } finally { clearReturn(); setLinkingProvider(false); handler.destroy() }
+          })()
+        },
+        onExit: () => { clearReturn(); setLinkingProvider(false); handler.destroy() },
+      })
+      handler.open()
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setVerificationError(apiError(error, 'Bank connection could not open.'))
+      clearReturn()
+      setLinkingProvider(false)
+    }
+  }
+
+  const connectProvider = async (update: boolean) => {
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setLinkingProvider(true); setVerificationError(''); setProviderNotice('')
+    try {
+      const response = update ? await bankMonitorApi.providerUpdateToken(tenantId) : await bankMonitorApi.providerLinkToken(tenantId)
+      const { link_token: token } = response.data
+      const attemptId = 'attempt_id' in response.data ? response.data.attempt_id as string : undefined
+      sessionStorage.setItem('elis-bank-plaid-link', JSON.stringify({ tenantId, token, attemptId, update, startedAt: Date.now() }))
+      await launchProvider(tenantId, token, attemptId, update)
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setVerificationError(apiError(error, 'Bank connection could not open.'))
+      setLinkingProvider(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!window.location.search.includes('oauth_state_id=') || !currentTenantId || loadedTenant !== currentTenantId || oauthResumeRef.current) return
+    oauthResumeRef.current = true
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('elis-bank-plaid-link') || 'null') as {
+        tenantId: number; token: string; attemptId?: string; update: boolean; startedAt: number
+      } | null
+      if (!saved || saved.tenantId !== currentTenantId || !saved.token || Date.now() - saved.startedAt > 30 * 60 * 1000) {
+        throw new Error('Bank authorization return expired. Start the connection again.')
+      }
+      setLinkingProvider(true)
+      void launchProvider(currentTenantId, saved.token, saved.attemptId, saved.update, window.location.href)
+    } catch (error) {
+      setVerificationError(error instanceof Error ? error.message : 'Bank authorization could not resume.')
+      sessionStorage.removeItem('elis-bank-plaid-link')
+    }
+  }, [currentTenantId, loadedTenant])
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -284,6 +386,7 @@ export default function BankMonitor() {
   const connectionCheck = data?.connection_check
   const connectionPending = connectionCheck?.status === 'pending' || connectionCheck?.status === 'running'
   const connectionVerified = Boolean(connectionCheck?.status === 'verified' && connectionCheck.finished_at &&
+    (data?.reader_mode !== 'plaid' || connectionCheck.result.source === 'plaid') &&
     Date.now() - Date.parse(connectionCheck.finished_at) < 86400000 &&
     (!latest || !latestIssue || Date.parse(connectionCheck.finished_at) > Date.parse(latest.started_at)))
 
@@ -322,7 +425,7 @@ export default function BankMonitor() {
             {latestIssue && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{latestIssue.detail}</p>}
             {stale && <p className="text-sm text-amber-800">Historical snapshot. Use Check bank now before preparing a transfer.</p>}
             {latest.result.message && <p className="text-sm text-slate-700">{latest.result.message}</p>}
-            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
+            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{account.needed_cents == null ? 'Not calculated' : dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
             {latest.result.credit_accounts?.some(account => account.outstanding_cents !== null) && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Credit balances</h3>{latest.result.credit_accounts.map(account => <p key={account.last4} className="mt-2 text-sm text-slate-700">{account.nickname} · ••{account.last4}: {account.outstanding_cents === null ? 'unknown' : dollars(account.outstanding_cents)}</p>)}</div>}
             {latest.result.repayment && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Friday repayment</h3><p className="mt-1 text-sm capitalize text-slate-700">{label(latest.result.repayment.status)}</p>{latest.result.repayment.proposals.map((proposal, index) => <p key={`${proposal.from_last4}-${proposal.to_last4}-${index}`} className="mt-2 text-sm text-slate-700">{dollars(proposal.amount_cents)} from ••{proposal.from_last4} to ••{proposal.to_last4}</p>)}</div>}
             {!!latest.result.uncovered_cents && <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-800">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}</p>}
@@ -337,9 +440,9 @@ export default function BankMonitor() {
 
       <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : data.reader_mode === 'signed_in_chrome' ? (data.browser_check ? 'Chrome reader active' : 'Chrome check needed') : connectionVerified ? 'Access verified' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : data.reader_mode === 'signed_in_chrome' ? (data.browser_check ? 'Chrome reader active' : 'Chrome check needed') : data.reader_mode === 'plaid' && !data.provider_connection.linked ? 'Bank consent needed' : connectionVerified ? 'Access verified' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. attempt</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : data.reader_mode === 'signed_in_chrome' ? `The Chrome assistant will attempt a bank read at 5:30 p.m. Eastern while Chrome is running. A complete result must reach ELIS by 5:45; otherwise the scheduled run is marked missed. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : data.reader_mode === 'signed_in_chrome' ? `The Chrome assistant will attempt a bank read at 5:30 p.m. Eastern while Chrome is running. A complete result must reach ELIS by 5:45; otherwise the scheduled run is marked missed. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : data.reader_mode === 'plaid' && !data.provider_connection.linked ? 'Connect Truliant through the provider below before server checks can read accounts.' : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
           {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment can be evaluated during a completed 5:30 p.m. bank check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
           <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
@@ -350,6 +453,23 @@ export default function BankMonitor() {
           <p className="mt-2 text-sm leading-6 text-slate-600">The bank assistant checks Truliant in your signed-in Chrome profile at 5:30 p.m. Eastern. Keep this Bank Monitor tab open with the current assistant version. ELIS records a complete result; if Chrome or either sign-in is unavailable, the check is marked missed at 5:45. No password is sent from Chrome to ELIS.</p>
           {data.browser_check ? <p className="mt-4 text-sm font-medium text-emerald-800">Last complete browser read: {new Date(data.browser_check.observed_at).toLocaleString()}</p> : <p className="mt-4 text-sm text-amber-800">No complete browser read has been recorded yet.</p>}
           <p className="mt-2 text-xs leading-5 text-slate-500">The bank may require you to sign in again when its session expires. Transfers still require your approval in Truliant.</p>
+        </section> : data.reader_mode === 'plaid' ? <section aria-labelledby="provider-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 id="provider-access-title" className="text-lg font-semibold text-slate-950">Truliant connection</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Connect through Plaid’s consent screen. ELIS stores an encrypted read token for server-side balance checks; it never receives your bank password. Truliant may still require you to renew consent. No transfer is submitted here.</p>
+          {!data.provider_connection.configured && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Provider setup is incomplete. An administrator must configure production Plaid access before you can connect.</p>}
+          {data.provider_connection.configured && !data.provider_connection.linked && <button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(false)} className="mt-4 min-h-11 w-full rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{linkingProvider ? 'Opening secure bank connection…' : 'Connect Truliant'}</button>}
+          {data.provider_connection.linked && <>
+            <p className="mt-4 text-sm font-medium text-slate-800">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server read has not been verified yet.'}</p>
+            {data.provider_connection.last_error && <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Last provider read: {label(data.provider_connection.last_error)}. Review access or renew consent.</p>}
+            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'verified' && <p role="status" className="mt-3 text-sm text-emerald-800">A read-only server check verified {connectionCheck.result.account_count} accounts. No transfer was submitted.</p>}
+            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'balance_only' && <p role="status" className="mt-3 text-sm text-amber-800">Balances were read, but pending debits could not be verified. No coverage proposal can be calculated under this rule.</p>}
+            {connectionCheck && !connectionPending && !['verified', 'balance_only'].includes(connectionCheck.status) && <p role="alert" className="mt-3 text-sm text-amber-800">Server check stopped: {label(connectionCheck.status)}. No bank proposal was calculated.</p>}
+            {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Checking bank access from the server…</p>}
+            <div className="mt-4 grid gap-2"><button type="button" disabled={!workerOnline || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="min-h-11 rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{connectionPending || verifyingWorker ? 'Checking…' : 'Verify server bank read'}</button><button type="button" disabled={linkingProvider} onClick={() => void connectProvider(true)} className="min-h-11 rounded-xl border border-slate-300 px-4 font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : 'Renew bank access'}</button></div>
+          </>}
+          {providerNotice && <p role="status" className="mt-3 text-sm text-emerald-800">{providerNotice}</p>}
+          {verificationError && <p role="alert" className="mt-3 text-sm text-red-800">{verificationError}</p>}
+          <p className="mt-3 text-xs leading-5 text-slate-500">A consented connection can renew data without your browser, while the bank permits it. Pending debits and repayment evidence still require verification before those proposals appear.</p>
         </section> : <section aria-labelledby="worker-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 id="worker-access-title" className="text-lg font-semibold text-slate-950">Server bank access</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">The worker creates a private browser profile on its persistent volume. Its Truliant username and password must be set as worker-only Railway secrets. Do not enter them on this page or in chat.</p>
