@@ -121,6 +121,12 @@ def settlement_history(db: Session = Depends(get_db), tenant: int = Depends(acco
     return build(db, tenant)
 
 
+@router.get('/reconstruction-plan')
+def reconstruction_plan(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.reconstruction_plan import reconstruction_plan as build
+    return build(db, tenant)
+
+
 @router.get('/workspace')
 def workspace(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     s = f.state(db, tenant, as_of)

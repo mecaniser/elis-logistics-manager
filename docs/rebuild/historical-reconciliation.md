@@ -51,3 +51,28 @@ The 609 PDF includes load 5073 with delivery September 23 on a September 21 stat
 ## Remaining acceptance work
 
 Recover missing originals from backups or owner records; reconcile statements and driver payments to bank/card evidence; check carrier agreements and unusual deductions; incorporate actual repair/invoice/payment evidence; reconcile independent Motive/odometer intervals and classified diesel purchases. Complete accounting policy, opening balances and HELOC tracing before final books or withdrawal figures. The original six-stage plan remains open; see `execution-tracker.md`.
+
+
+## September 24 posting dry-run
+
+Added tenant-scoped `GET /api/v1/accounting/reconstruction-plan`. It is read only and retains each source record's exact differences and operational warnings. It validates original bytes against their SHA-256, supported posting schema/categories, duplicate references, existing postings, amendment conflicts, closed periods and accounting-date exceptions. It provides balanced proposed ledger lines only for review candidates. No status grants automatic posting approval.
+
+| Result on the preserved review copy | Count |
+| --- | ---: |
+| New candidates for review | 18 |
+| Blocked pending source/mapping/date/difference review | 155 |
+| Already posted locally | 1 |
+| Already posted locally, service-date review outstanding | 1 |
+| Total source records | 175 |
+
+Candidate totals: $157,725.00 freight, $18,927.00 carrier retention, and $45,336.93 statement remainder. This remainder is a receivable interpretation, not confirmed cash or profit after outside expenses. The 37 derived allocations remain excluded.
+
+Blocking reasons overlap: 97 missing originals, 26 stored/source differences, 16 unsupported expense mappings, four service-date exceptions, two non-operating cash adjustments and one ambiguous source row. There are also 32 records with non-unique date-based source references in the older review mapping. That is an identifier-design limitation, not evidence of duplicate payment. The older mapping remains review-only; it cannot yet produce a posting command.
+
+Executed the 18 candidate commands through the actual accounting engine in a separate disposable SQLite copy. All 18 postings balanced exactly; ledger freight, carrier and receivable totals matched the dry-run. Repeating each idempotency key returned the same event and created no duplicate. A second dry-run recognized all 18 as existing postings. Neither the user-facing review database nor production was posted or rewritten by this simulation.
+
+Private detailed JSON/CSV and simulation results are under `backend/settlements_extracted/release-20260924/`. A reproducible read-only local exporter is `backend/scripts/export_reconstruction_plan.py`, accepting `--database-path`, `--output-dir`, and `--tenant`; run with `PYTHONPATH=backend`. It does not import application startup, run migrations, or overwrite an existing export.
+
+Repair evidence inventory: 58 records, 53 invoice-number fields, 29 receipt references, and 40 image-reference fields. References may overlap and have not yet been verified as retrievable originals. Existing fields do not establish payer or payment status; `paid_from_reserve` alone is insufficient to post a bank payment or confirmed funded reserve. Recover and match evidence before asking the owner to recreate these records.
+
+Remaining engineering includes approved older-layout category/source identity mapping, actual repair intake integration, historical adjustment review and retention funding/completeness rules. No new financial finalization, release or dashboard browser acceptance is claimed by this backend-only milestone.
