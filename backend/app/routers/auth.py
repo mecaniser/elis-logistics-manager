@@ -11,6 +11,7 @@ import hmac
 import httpx
 import logging
 import os
+import re
 import secrets
 import smtplib
 import time
@@ -51,6 +52,20 @@ class PasswordRequest(BaseModel):
     password: str
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(max_length=1024)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+class RecoveryEmailChangeRequest(BaseModel):
+    current_password: str = Field(max_length=1024)
+    new_email: str = Field(max_length=254)
+
+
+class RecoveryEmailConfirmRequest(BaseModel):
+    token: str = Field(min_length=30, max_length=256)
+
+
 class MfaConfirmRequest(BaseModel):
     code: str = Field(pattern=r'^\d{6}$')
 
@@ -88,8 +103,12 @@ def _require_login(request: Request) -> str:
     return username
 
 
-def _recovery_configured() -> bool:
-    configured = all(os.getenv(name) for name in ('APP_AUTH_RECOVERY_EMAIL', 'APP_PUBLIC_URL'))
+def _active_recovery_email(account: AuthAccount | None) -> str:
+    return (account.recovery_email if account and account.recovery_email else os.getenv('APP_AUTH_RECOVERY_EMAIL') or '').strip().lower()
+
+
+def _recovery_configured(email: str | None = None) -> bool:
+    configured = bool(email if email is not None else os.getenv('APP_AUTH_RECOVERY_EMAIL')) and bool(os.getenv('APP_PUBLIC_URL'))
     resend_ready = all(os.getenv(name) for name in ('APP_RESEND_API_KEY', 'APP_EMAIL_FROM'))
     smtp_ready = all(os.getenv(name) for name in ('APP_SMTP_HOST', 'APP_SMTP_FROM'))
     credentials_complete = bool(os.getenv('APP_SMTP_USERNAME')) == bool(os.getenv('APP_SMTP_PASSWORD'))
@@ -100,6 +119,14 @@ def _recovery_configured() -> bool:
     return configured and (resend_ready or (smtp_ready and credentials_complete)) and url_safe and separate_secret
 
 
+def _recovery_email_hint(email: str) -> str:
+    local, separator, domain = email.strip().lower().partition('@')
+    if not separator or not local or not domain:
+        return ''
+    masked_local = f'{local[0]}••••••{local[-1]}' if len(local) >= 4 else '••••••'
+    return f'{masked_local}@{domain}'
+
+
 def _login_failed(account: AuthAccount, db: Session) -> None:
     account.failed_login_count = (account.failed_login_count or 0) + 1
     if account.failed_login_count >= 5:
@@ -108,22 +135,18 @@ def _login_failed(account: AuthAccount, db: Session) -> None:
     db.commit()
 
 
-def _send_reset_email(email: str, token: str) -> None:
-    link = f"{os.environ['APP_PUBLIC_URL'].rstrip('/')}/reset-password?token={quote(token)}"
-    body = ('A password reset was requested for your Elis Group Hub account.\n\n'
-            f'Use this link within 20 minutes: {link}\n\n'
-            'If you did not request this, ignore this email. Your password has not changed.')
+def _send_email(email: str, subject: str, body: str, token: str) -> None:
     if os.getenv('APP_RESEND_API_KEY') and os.getenv('APP_EMAIL_FROM'):
         with httpx.Client(timeout=10) as client:
             response = client.post('https://api.resend.com/emails',
                                    headers={'Authorization': f"Bearer {os.environ['APP_RESEND_API_KEY']}",
                                             'Idempotency-Key': hashlib.sha256(token.encode()).hexdigest()},
                                    json={'from': os.environ['APP_EMAIL_FROM'], 'to': [email],
-                                         'subject': 'Reset your Elis Group Hub password', 'text': body})
+                                         'subject': subject, 'text': body})
             response.raise_for_status()
         return
     message = EmailMessage()
-    message['Subject'] = 'Reset your Elis Group Hub password'
+    message['Subject'] = subject
     message['From'] = os.environ['APP_SMTP_FROM']
     message['To'] = email
     message.set_content(body)
@@ -135,6 +158,22 @@ def _send_reset_email(email: str, token: str) -> None:
         if os.getenv('APP_SMTP_USERNAME'):
             smtp.login(os.environ['APP_SMTP_USERNAME'], os.environ['APP_SMTP_PASSWORD'])
         smtp.send_message(message)
+
+
+def _send_reset_email(email: str, token: str) -> None:
+    link = f"{os.environ['APP_PUBLIC_URL'].rstrip('/')}/reset-password?token={quote(token)}"
+    body = ('A password reset was requested for your Elis Group Hub account.\n\n'
+            f'Use this link within 20 minutes: {link}\n\n'
+            'If you did not request this, ignore this email. Your password has not changed.')
+    _send_email(email, 'Reset your Elis Group Hub password', body, token)
+
+
+def _send_recovery_change_email(email: str, token: str) -> None:
+    link = f"{os.environ['APP_PUBLIC_URL'].rstrip('/')}/verify-recovery-email?token={quote(token)}"
+    body = ('Confirm this address as the recovery email for your Elis Group Hub account.\n\n'
+            f'Open this link within 20 minutes: {link}\n\n'
+            'If you did not request this, ignore this email. Your current recovery address remains active.')
+    _send_email(email, 'Confirm your Elis Group Hub recovery email', body, token)
 
 
 def _deliver_reset_email(email: str, token: str) -> None:
@@ -149,6 +188,21 @@ def _deliver_reset_email(email: str, token: str) -> None:
             if account and account.reset_token_hash and hmac.compare_digest(account.reset_token_hash, digest):
                 account.reset_token_hash = None
                 account.reset_expires_at = None
+                db.commit()
+
+
+def _deliver_recovery_change_email(email: str, token: str) -> None:
+    try:
+        _send_recovery_change_email(email, token)
+    except (OSError, smtplib.SMTPException, httpx.HTTPError, KeyError, ValueError):
+        logger.exception('Recovery email verification delivery failed')
+        with SessionLocal() as db:
+            account = db.get(AuthAccount, 1)
+            digest = hashlib.sha256(token.encode()).hexdigest()
+            if account and account.pending_recovery_token_hash and hmac.compare_digest(account.pending_recovery_token_hash, digest):
+                account.pending_recovery_email = None
+                account.pending_recovery_token_hash = None
+                account.pending_recovery_expires_at = None
                 db.commit()
 
 
@@ -229,19 +283,25 @@ def me(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get('/capabilities')
-def capabilities():
-    return {'password_recovery': _recovery_configured()}
+def capabilities(db: Session = Depends(get_db)):
+    email = _active_recovery_email(db.get(AuthAccount, 1))
+    available = _recovery_configured(email)
+    return {
+        'password_recovery': available,
+        'recovery_email_hint': _recovery_email_hint(email) if available else None,
+    }
 
 
 @router.post('/password/reset-request')
 def reset_request(data: RecoveryRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if not _recovery_configured():
+    account = db.get(AuthAccount, 1)
+    expected = _active_recovery_email(account)
+    if not _recovery_configured(expected):
         raise HTTPException(503, 'Password recovery is not configured. Contact the account administrator.')
     generic = {'message': 'If this is the recovery email for the account, a reset link will be sent.'}
-    expected = os.environ['APP_AUTH_RECOVERY_EMAIL']
     if not hmac.compare_digest(data.email.strip().lower(), expected.strip().lower()):
         return generic
-    account = _account(db)
+    account = account or _account(db)
     now = int(time.time())
     if account.reset_requested_at and now - account.reset_requested_at < 60:
         return generic
@@ -272,6 +332,91 @@ def reset_password(data: ResetRequest, db: Session = Depends(get_db)):
     account.reset_expires_at = None
     db.commit()
     return {'message': 'Password updated. Sign in with your new password.'}
+
+
+def _require_current_password(password: str, account: AuthAccount, db: Session) -> None:
+    now = int(time.time())
+    if account.login_retry_after and account.login_retry_after > now:
+        raise HTTPException(429, 'Too many attempts. Try again in a minute.')
+    if not _password_matches(password, account):
+        _login_failed(account, db)
+        raise HTTPException(401, 'Current password is incorrect.')
+    account.failed_login_count = 0
+    account.login_retry_after = None
+
+
+@router.post('/password/change')
+def change_password(data: PasswordChangeRequest, request: Request, response: Response,
+                    db: Session = Depends(get_db)):
+    username = _require_login(request)
+    account = _account(db)
+    _require_current_password(data.current_password, account, db)
+    if hmac.compare_digest(data.current_password, data.new_password):
+        raise HTTPException(400, 'Choose a different password.')
+    account.password_hash = hash_password(data.new_password)
+    account.session_version += 1
+    account.reset_token_hash = None
+    account.reset_expires_at = None
+    db.commit()
+    _set_cookie(response, username)
+    return {'message': 'Password changed. Other sessions have been signed out.'}
+
+
+@router.get('/recovery-email')
+def recovery_email_status(request: Request, db: Session = Depends(get_db)):
+    _require_login(request)
+    account = db.get(AuthAccount, 1)
+    return {
+        'email': _active_recovery_email(account),
+        'pending_email_hint': _recovery_email_hint(account.pending_recovery_email)
+        if account and account.pending_recovery_email and account.pending_recovery_expires_at
+        and account.pending_recovery_expires_at > int(time.time()) else None,
+    }
+
+
+@router.post('/recovery-email/change-request')
+def request_recovery_email_change(data: RecoveryEmailChangeRequest, request: Request,
+                                  background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    _require_login(request)
+    account = _account(db)
+    current = _active_recovery_email(account)
+    if not _recovery_configured(current):
+        raise HTTPException(503, 'Email recovery is not configured.')
+    _require_current_password(data.current_password, account, db)
+    new_email = data.new_email.strip().lower()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', new_email):
+        raise HTTPException(422, 'Enter a valid email address.')
+    if hmac.compare_digest(new_email, current):
+        raise HTTPException(400, 'This is already your recovery email.')
+    now = int(time.time())
+    if account.recovery_email_requested_at and now - account.recovery_email_requested_at < 60:
+        raise HTTPException(429, 'Wait a minute before requesting another verification email.')
+    token = secrets.token_urlsafe(32)
+    account.pending_recovery_email = new_email
+    account.pending_recovery_token_hash = hashlib.sha256(token.encode()).hexdigest()
+    account.pending_recovery_expires_at = now + 20 * 60
+    account.recovery_email_requested_at = now
+    db.commit()
+    background_tasks.add_task(_deliver_recovery_change_email, new_email, token)
+    return {'message': 'Check the new inbox for a verification link. Your current recovery email remains active until you confirm it.'}
+
+
+@router.post('/recovery-email/confirm')
+def confirm_recovery_email(data: RecoveryEmailConfirmRequest, db: Session = Depends(get_db)):
+    account = db.get(AuthAccount, 1)
+    digest = hashlib.sha256(data.token.encode()).hexdigest()
+    if (not account or not account.pending_recovery_email or not account.pending_recovery_token_hash or
+            not hmac.compare_digest(account.pending_recovery_token_hash, digest) or
+            not account.pending_recovery_expires_at or account.pending_recovery_expires_at <= int(time.time())):
+        raise HTTPException(400, 'This verification link is invalid or has expired.')
+    account.recovery_email = account.pending_recovery_email
+    account.pending_recovery_email = None
+    account.pending_recovery_token_hash = None
+    account.pending_recovery_expires_at = None
+    account.reset_token_hash = None
+    account.reset_expires_at = None
+    db.commit()
+    return {'message': 'Recovery email verified and updated.'}
 
 
 @router.get('/mfa')

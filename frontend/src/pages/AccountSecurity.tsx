@@ -17,10 +17,50 @@ export default function AccountSecurity() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null)
+  const [pendingEmailHint, setPendingEmailHint] = useState<string | null>(null)
+  const [newRecoveryEmail, setNewRecoveryEmail] = useState('')
+  const [recoveryPassword, setRecoveryPassword] = useState('')
+  const [recoveryMessage, setRecoveryMessage] = useState('')
+  const [recoveryBusy, setRecoveryBusy] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState('')
+  const [passwordBusy, setPasswordBusy] = useState(false)
 
   useEffect(() => {
     authApi.mfaStatus().then(({ data }) => setEnabled(data.enabled)).catch((error) => setMessage(detail(error)))
+    authApi.recoveryEmail().then(({ data }) => {
+      setRecoveryEmail(data.email)
+      setPendingEmailHint(data.pending_email_hint)
+    }).catch((error) => setRecoveryMessage(detail(error)))
   }, [])
+
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault()
+    if (newPassword !== confirmPassword) { setPasswordMessage('New passwords do not match.'); return }
+    setPasswordBusy(true); setPasswordMessage('')
+    try {
+      const { data } = await authApi.changePassword(currentPassword, newPassword)
+      setPasswordMessage(data.message)
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('')
+    } catch (error) { setPasswordMessage(detail(error)) }
+    finally { setPasswordBusy(false) }
+  }
+
+  const changeRecoveryEmail = async (event: FormEvent) => {
+    event.preventDefault()
+    setRecoveryBusy(true); setRecoveryMessage('')
+    try {
+      const { data } = await authApi.requestRecoveryEmailChange(recoveryPassword, newRecoveryEmail)
+      setRecoveryMessage(data.message)
+      setRecoveryPassword(''); setNewRecoveryEmail('')
+      const status = await authApi.recoveryEmail()
+      setPendingEmailHint(status.data.pending_email_hint)
+    } catch (error) { setRecoveryMessage(detail(error)) }
+    finally { setRecoveryBusy(false) }
+  }
 
   const begin = async (event: FormEvent) => {
     event.preventDefault()
@@ -49,7 +89,31 @@ export default function AccountSecurity() {
 
   return <section className="max-w-2xl space-y-6">
     <header><h2 className="text-2xl font-bold text-gray-900">Account security</h2>
-      <p className="mt-2 text-gray-600">Add an authenticator app to protect sign in.</p></header>
+      <p className="mt-2 text-gray-600">Manage your password, recovery email, and authenticator.</p></header>
+    <form onSubmit={changePassword} className="space-y-3 rounded-lg border bg-white p-5">
+      <h3 className="font-semibold">Change password</h3>
+      <p className="text-sm text-gray-600">Use at least 12 characters. Changing your password signs out other sessions.</p>
+      <label htmlFor="current-account-password" className="block text-sm font-medium">Current password</label>
+      <input id="current-account-password" className={inputClass} type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+      <label htmlFor="new-account-password" className="block text-sm font-medium">New password</label>
+      <input id="new-account-password" className={inputClass} type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+      <label htmlFor="confirm-account-password" className="block text-sm font-medium">Confirm new password</label>
+      <input id="confirm-account-password" className={inputClass} type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+      <div><button disabled={passwordBusy} className="rounded-lg bg-emerald-600 text-white px-4 py-2 disabled:opacity-60">{passwordBusy ? 'Updating...' : 'Change password'}</button></div>
+      {passwordMessage && <p role="status" className="text-sm">{passwordMessage}</p>}
+    </form>
+    <form onSubmit={changeRecoveryEmail} className="space-y-3 rounded-lg border bg-white p-5">
+      <h3 className="font-semibold">Recovery email</h3>
+      <p className="text-sm text-gray-600">Current address: <span className="font-medium text-gray-900">{recoveryEmail ?? 'Loading...'}</span></p>
+      {pendingEmailHint && <p className="text-sm text-amber-800">Waiting for confirmation from {pendingEmailHint}. The current address still works.</p>}
+      <p className="text-sm text-gray-600">We’ll send a verification link to the new address before using it for password resets.</p>
+      <label htmlFor="new-recovery-email" className="block text-sm font-medium">New recovery email</label>
+      <input id="new-recovery-email" className={inputClass} type="email" autoComplete="email" required value={newRecoveryEmail} onChange={(e) => setNewRecoveryEmail(e.target.value)} />
+      <label htmlFor="recovery-current-password" className="block text-sm font-medium">Current password</label>
+      <input id="recovery-current-password" className={inputClass} type="password" autoComplete="current-password" required value={recoveryPassword} onChange={(e) => setRecoveryPassword(e.target.value)} />
+      <div><button disabled={recoveryBusy || recoveryEmail === null} className="rounded-lg bg-emerald-600 text-white px-4 py-2 disabled:opacity-60">{recoveryBusy ? 'Sending...' : 'Verify new email'}</button></div>
+      {recoveryMessage && <p role="status" className="text-sm">{recoveryMessage}</p>}
+    </form>
     {message && <p role="status" className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">{message}</p>}
     {enabled === true && recoveryCodes.length === 0 && <p className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">Authenticator is enabled. Sign in with a six-digit code or one of your saved recovery codes.</p>}
     {recoveryCodes.length > 0 && <div className="rounded-lg bg-amber-50 border border-amber-300 p-4">

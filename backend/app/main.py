@@ -76,6 +76,7 @@ if APP_AUTH_REQUIRED:
             "/api/auth/capabilities",
             "/api/auth/password/reset-request",
             "/api/auth/password/reset",
+            "/api/auth/recovery-email/confirm",
             "/api/health",
             "/docs",
             "/openapi.json",
