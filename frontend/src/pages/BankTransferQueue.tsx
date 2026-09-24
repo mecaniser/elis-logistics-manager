@@ -117,6 +117,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const automaticVerificationAttempts = useRef(new Set<string>())
   const automaticVerificationRunning = useRef(false)
   const verifyRef = useRef<(draft: Draft, automatic?: boolean) => Promise<void>>(async () => undefined)
+  const scheduledCheckRef = useRef<() => void>(() => undefined)
 
   const markDisconnected = useCallback(() => { setConnected(false); setConnectionState(extension ? 'unavailable' : 'unconfigured') }, [extension])
   const ping = useCallback(async () => {
@@ -337,6 +338,33 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
       window.removeEventListener('elis:scheduled-bank-check', scheduled)
     }
   })
+  scheduledCheckRef.current = () => {
+    // Older installed assistants have no Chrome alarm. An already-open ELIS
+    // page can still perform today's scheduled read without new permissions.
+    if (!connected || busy || versionAtLeast(detectedVersion, '0.1.23')) return
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date()).map(part => [part.type, part.value]))
+    const minute = Number(parts.hour) * 60 + Number(parts.minute)
+    if (minute < 17 * 60 + 30 || minute >= 17 * 60 + 45) return
+    const key = `elis-bank-check-attempt:${tenantId}:${parts.year}-${parts.month}-${parts.day}`
+    if (localStorage.getItem(key)) return
+    localStorage.setItem(key, 'started')
+    void checkBalances(true)
+  }
+  useEffect(() => {
+    const attempt = () => scheduledCheckRef.current()
+    const timer = window.setInterval(attempt, 30_000)
+    window.addEventListener('focus', attempt)
+    document.addEventListener('visibilitychange', attempt)
+    attempt()
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', attempt)
+      document.removeEventListener('visibilitychange', attempt)
+    }
+  }, [tenantId])
   const prepare = async (draft: Draft) => {
     const blockingDraft = drafts.find(item => item.id !== draft.id && item.status === 'prepared_awaiting_submission')
     if (blockingDraft) {
