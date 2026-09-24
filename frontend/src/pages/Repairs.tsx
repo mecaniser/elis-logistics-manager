@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
+import RepairEvidence from '../components/repairs/RepairEvidence'
+import { useRepairReview } from '../components/repairs/useRepairReview'
+import { matchesReview, type ReviewFilter } from '../components/repairs/repairReview'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
@@ -10,6 +13,13 @@ export default function Repairs() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [repairs, setRepairs] = useState<Repair[]>([])
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
+  const [reviewAsOf, setReviewAsOf] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
+  const review = useRepairReview(currentTenant?.id, repairs, reviewAsOf)
+  const reviewRows = new Map(review.data?.rows.map(row => [row.legacy_id, row]))
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +66,7 @@ export default function Repairs() {
   useEffect(() => {
     // Reset state when tenant changes
     setRepairs([])
+    setReviewFilter('all')
     setTrucks([])
     loadTrucks()
     loadRepairs()
@@ -364,6 +375,7 @@ export default function Repairs() {
 
   // Filter repairs based on search term
   const filteredRepairs = repairs.filter(repair => {
+    if (review.data && !matchesReview(reviewRows.get(repair.id), reviewFilter)) return false
     if (!searchFilter.trim()) return true
     
     const searchLower = searchFilter.toLowerCase()
@@ -635,8 +647,8 @@ export default function Repairs() {
               </div>
               <div className="md:col-span-2">
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-                  <div className="text-sm font-medium text-gray-900">Reserve-funded automatically</div>
-                  <div className="text-xs text-gray-600">All repairs are recorded as reserve withdrawals. A repair date is required so the ledger stays accurate.</div>
+                  <div className="text-sm font-medium text-gray-900">Legacy reserve tracking</div>
+                  <div className="text-xs text-gray-600">This form updates the legacy reserve tracker. Actual cash payment and funded reserves require separate evidence review.</div>
                 </div>
               </div>
               <div>
@@ -769,7 +781,25 @@ export default function Repairs() {
         </div>
       )}
 
-      {searchFilter && (
+      <section aria-labelledby="repair-review-heading" className="mb-6 border-y border-gray-200 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="repair-review-heading" className="text-lg font-semibold text-gray-900">Evidence & payment review</h2>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Review as of
+            <input type="date" value={reviewAsOf} onChange={e => { if (e.target.value) setReviewAsOf(e.target.value) }} className="min-h-11 border border-gray-300 rounded-md px-2 text-base focus-visible:outline-blue-600" />
+          </label>
+        </div>
+        {review.loading && <p role="status" className="text-sm text-gray-600 mt-2">Loading preserved documents and payment links…</p>}
+        {review.error && <div role="alert" className="mt-2 text-sm text-red-700">Evidence review could not load: {review.error}. Existing repair records remain available. <button type="button" onClick={review.retry} className="min-h-11 underline focus-visible:outline focus-visible:outline-2">Retry evidence review</button></div>}
+        {review.data && <>
+          <p className="text-sm text-gray-700 mt-2">{review.data.coverage.with_preserved_evidence} of {review.data.coverage.records} repairs have preserved documents; {review.data.coverage.with_linked_payments} have linked payment activity as of {review.data.as_of}. Invoice evidence alone does not establish payment.</p>
+          <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Filter repair evidence">
+            {([['all', 'All repairs'], ['amount', 'Invoice differences'], ['documents', 'Missing documents'], ['payment', 'Payment unverified'], ['treatment', 'Cost treatment']] as [ReviewFilter, string][]).map(([value, label]) => <button key={value} type="button" aria-pressed={reviewFilter === value} onClick={() => setReviewFilter(value)} className={`min-h-11 px-3 py-2 text-sm rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${reviewFilter === value ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{label} <span className="tabular-nums">({value === 'all' ? repairs.length : review.data!.rows.filter(row => matchesReview(row, value)).length})</span></button>)}
+          </div>
+          <p className="text-sm text-gray-600 mt-3">Cash payments need a receipt or confirmation of the payer, amount and date. Zelle payments can be linked to checking records. Review here does not post expenses or change balances.</p>
+        </>}
+      </section>
+
+      {(searchFilter || reviewFilter !== 'all') && (
         <div className="mb-4 text-sm text-gray-600">
           Showing {filteredRepairs.length} of {repairs.length} repair{repairs.length !== 1 ? 's' : ''}
         </div>
@@ -778,7 +808,7 @@ export default function Repairs() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredRepairs.length === 0 ? (
           <div className="px-6 py-4 text-gray-500 text-center">
-            {searchFilter ? `No repairs found matching "${searchFilter}"` : 'No repairs found.'}
+            {searchFilter || reviewFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs.' : 'No repairs found.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
@@ -835,6 +865,7 @@ export default function Repairs() {
                         )}
                       </>
                     )}
+                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} />}
                     {/* Show images with expandable functionality */}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mb-3">
@@ -998,8 +1029,8 @@ export default function Repairs() {
             </div>
             <div>
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-                <div className="text-sm font-medium text-gray-900">Reserve-funded automatically</div>
-                <div className="text-xs text-gray-600">Every repair stays synced as a reserve withdrawal. Keep the repair date accurate so the ledger date stays correct.</div>
+                <div className="text-sm font-medium text-gray-900">Legacy reserve tracking</div>
+                <div className="text-xs text-gray-600">This form updates the legacy reserve tracker. It does not confirm the payer, a cash payment or a funded reserve balance.</div>
               </div>
             </div>
             <div>
