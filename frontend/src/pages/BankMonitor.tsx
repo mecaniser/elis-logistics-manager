@@ -20,7 +20,8 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
-type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; runs: Run[]; repayment_runs: RepaymentRun[] }
+type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number } }
+type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
 type BankRead = {
   checked_at: string;
@@ -50,6 +51,10 @@ const scheduledIssue = (status: string) => {
   if (['mfa_required', 'login_review_required', 'sign_in_required', 'unexpected_login_page'].includes(status)) return {
     title: 'Worker bank sign-in needs review',
     detail: 'The scheduled worker could not complete Truliant sign-in. This check did not read any accounts. An operator must review the separate worker session and any bank verification step.',
+  }
+  if (status === 'check_interrupted') return {
+    title: 'Worker bank check interrupted',
+    detail: 'The private worker stopped before confirming the bank read. No automatic retry was made; an operator must inspect the worker session before another sign-in attempt.',
   }
   return null
 }
@@ -94,6 +99,8 @@ export default function BankMonitor() {
   const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [verifyingWorker, setVerifyingWorker] = useState(false)
+  const [verificationError, setVerificationError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
   const [repaying, setRepaying] = useState(false)
@@ -135,6 +142,31 @@ export default function BankMonitor() {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [currentTenantId])
+
+  useEffect(() => {
+    const status = data?.connection_check?.status
+    if (!currentTenantId || loadedTenant !== currentTenantId || (status !== 'pending' && status !== 'running')) return
+    let active = true
+    const timer = window.setInterval(() => {
+      bankMonitorApi.get(currentTenantId).then(({ data: value }) => {
+        if (active && tenantRef.current === currentTenantId) setData(value)
+      }).catch(() => { if (active) setVerificationError('Unable to refresh the worker check. Reload the page to see its result.') })
+    }, 3000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [currentTenantId, loadedTenant, data?.connection_check?.status])
+
+  const verifyWorkerConnection = async () => {
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setVerifyingWorker(true); setVerificationError('')
+    try {
+      await bankMonitorApi.verifyWorkerConnection(tenantId)
+      const response = await bankMonitorApi.get(tenantId)
+      if (tenantRef.current === tenantId) setData(response.data)
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setVerificationError(apiError(error, 'Unable to start the worker bank check.'))
+    } finally { setVerifyingWorker(false) }
+  }
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -240,6 +272,11 @@ export default function BankMonitor() {
   const accountsConfigured = savedRules.checking.length > 0 && savedRules.sources.length > 0
   const scheduleActive = savedRules.enabled && accountsConfigured
   const workerOnline = data?.worker.status === 'online'
+  const connectionCheck = data?.connection_check
+  const connectionPending = connectionCheck?.status === 'pending' || connectionCheck?.status === 'running'
+  const connectionVerified = Boolean(connectionCheck?.status === 'verified' && connectionCheck.finished_at &&
+    Date.now() - Date.parse(connectionCheck.finished_at) < 86400000 &&
+    (!latest || !latestIssue || Date.parse(connectionCheck.finished_at) > Date.parse(latest.started_at)))
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-12">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -285,12 +322,23 @@ export default function BankMonitor() {
 
       <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : connectionVerified ? 'Access verified' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. attempt</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
           {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment can be evaluated during a completed 5:30 p.m. bank check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
           <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
+        </section>
+
+        <section aria-labelledby="worker-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 id="worker-access-title" className="text-lg font-semibold text-slate-950">Server bank access</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">The worker creates a private browser profile on its persistent volume. Its Truliant username and password must be set as worker-only Railway secrets. Do not enter them on this page or in chat.</p>
+          {connectionCheck?.status === 'verified' && <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">Read-only sign-in verified {connectionCheck.finished_at ? new Date(connectionCheck.finished_at).toLocaleString() : ''}. {connectionCheck.result.account_count} configured accounts were read. No transfer was submitted.</p>}
+          {connectionPending && <p role="status" className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Checking the private worker’s bank session…</p>}
+          {connectionCheck && !connectionPending && connectionCheck.status !== 'verified' && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">{connectionCheck.status === 'mfa_required' || connectionCheck.status === 'login_review_required' ? 'Truliant requested sign-in review. The worker stopped after one attempt; an operator must recover the private session before another sign-in.' : scheduledIssue(connectionCheck.status)?.detail || `The worker check stopped: ${label(connectionCheck.status)}. No bank access was verified.`}</p>}
+          {verificationError && <p role="alert" className="mt-4 text-sm text-red-800">{verificationError}</p>}
+          <button type="button" disabled={!workerOnline || !accountsConfigured || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-45">{connectionPending || verifyingWorker ? 'Verifying bank access…' : 'Verify worker bank access'}</button>
+          <p className="mt-2 text-xs leading-5 text-slate-500">This opens a read-only worker check. It never prepares or submits a transfer.</p>
         </section>
 
         <button ref={settingsButtonRef} type="button" aria-expanded={settingsOpen} aria-controls="monitoring-settings-drawer" onClick={() => setSettingsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md active:scale-[0.99] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">

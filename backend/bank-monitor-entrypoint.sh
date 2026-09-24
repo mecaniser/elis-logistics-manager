@@ -1,11 +1,10 @@
 #!/bin/sh
 set -eu
 
-# Railway volumes mount at runtime and may be owned by root. Create only the
-# dedicated profile tree, lock it down, then drop privileges permanently.
-profile_root=/data/profiles
-mkdir -p "$profile_root"
-chown -R bankworker:bankworker "$profile_root"
-chmod 0700 "$profile_root"
+# Railway mounts the persistent volume at runtime. Provision only explicitly
+# configured private profiles, then permanently drop privileges.
+if [ "${BANK_MONITOR_WORKER_ENABLED:-false}" = true ]; then
+  python -m app.provision_bank_profiles
+fi
 
 exec setpriv --reuid=10001 --regid=10001 --init-groups -- "$@"

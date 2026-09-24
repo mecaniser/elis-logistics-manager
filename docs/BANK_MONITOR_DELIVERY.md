@@ -1,7 +1,36 @@
 # Bank monitor delivery checklist
 
-Updated 2026-09-14. This is the authoritative completion checklist; historical
-implementation notes in BANK_MONITOR.md are not deployment evidence.
+## Private worker sign-in path (2026-09-24)
+
+The dedicated Railway worker now provisions one mode-0700 browser profile per
+allowed tenant on its mounted `/data` volume at startup. The profile path must
+match `BANK_MONITOR_PROFILE_<tenant ID>=/data/profiles/<tenant ID>` exactly; a
+missing, mismatched, or symlinked path stops startup. The worker runs as UID
+10001 after provisioning. It never copies cookies from the operator's Chrome.
+
+The app's **Verify worker bank access** action queues a separate read-only check
+without using the daily scheduler slot. It accepts no credentials or MFA codes.
+The worker submits the worker-only username/password at most once to the exact
+observed Truliant login origin, verifies that all configured checking and credit
+accounts can be read, and records only a status, count, and observation time.
+Duplicate/premature requests are blocked. No form is prepared or transfer made.
+
+To complete live sign-in, the account owner must enter
+`BANK_MONITOR_USERNAME_<tenant ID>` and `BANK_MONITOR_PASSWORD_<tenant ID>` directly
+in the **bank-monitor Railway service's Variables**. Do not provide these values
+in ELIS, chat, shell arguments, or source control. Then use the on-page
+verification action and inspect its result. Truliant MFA, CAPTCHA, unexpected
+login screens, or an interrupted attempt stop the worker and require operator
+recovery of that private session. The current flow cannot complete MFA from
+the ELIS page; unattended checks must not be called verified until an actual
+read-only server check succeeds. The bank may require renewed sign-in later.
+
+The historical checklist below describes the original pilot state. The live
+worker and web service must still be checked against their current deployment
+and an actual verified bank read before claiming this milestone complete.
+
+Original checklist recorded 2026-09-14. Historical implementation notes in
+BANK_MONITOR.md and the entries below are not current deployment evidence.
 
 ## Current production evidence
 
