@@ -1,8 +1,16 @@
 import axios from 'axios'
 
-const handleAuthFailure = (error: unknown) => {
+const handleAuthFailure = async (error: unknown) => {
   const status = (error as { response?: { status?: number } })?.response?.status
   if (status === 401 && window.location.pathname !== '/login') {
+    // An endpoint can require stronger authorization than the app shell.
+    // A valid shell session (including local-dev mode) must not loop through Login.
+    try {
+      await axios.get('/api/auth/me', { withCredentials: true })
+      return Promise.reject(error)
+    } catch {
+      // Only recover through Login when the shell session check also fails.
+    }
     const from = `${window.location.pathname}${window.location.search}${window.location.hash}`
     const query = new URLSearchParams({ from, reason: 'session-expired' })
     window.location.replace(`/login?${query.toString()}`)
