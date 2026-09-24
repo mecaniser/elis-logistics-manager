@@ -41,11 +41,102 @@ def test_recovery_email_over_https_without_smtp(monkeypatch):
     assert b'https://hub.example.com/reset-password?token=single-use-token' in request.content
     assert b'owner@example.com' in request.content
 
+    auth._send_recovery_change_email('new@example.com', 'verification-token')
+    assert len(requests) == 2
+    assert b'https://hub.example.com/verify-recovery-email?token=verification-token' in requests[1].content
+    assert b'Confirm your Elis Group Hub recovery email' in requests[1].content
+
     def rejected(request):
         return httpx.Response(403, json={'message': 'Sender is not verified'})
     monkeypatch.setattr(auth.httpx, 'Client', lambda **kwargs: original_client(transport=httpx.MockTransport(rejected)))
     with pytest.raises(httpx.HTTPStatusError):
         auth._send_reset_email('owner@example.com', 'single-use-token')
+
+
+def test_recovery_capabilities_only_expose_masked_email(monkeypatch):
+    for name, value in {
+        'APP_AUTH_PASSWORD': 'original-password', 'APP_AUTH_SECRET': 'independent-secret',
+        'APP_AUTH_RECOVERY_EMAIL': 'longowneraddress@example.com', 'APP_PUBLIC_URL': 'https://hub.example.com',
+        'APP_RESEND_API_KEY': 'test-api-key', 'APP_EMAIL_FROM': 'security@example.com',
+    }.items():
+        monkeypatch.setenv(name, value)
+    class EmptyDb:
+        def get(self, *_args):
+            return None
+    response = auth.capabilities(db=EmptyDb())
+    assert response == {'password_recovery': True, 'recovery_email_hint': 'l••••••s@example.com'}
+    assert 'longowneraddress' not in str(response)
+
+    monkeypatch.delenv('APP_RESEND_API_KEY')
+    monkeypatch.delenv('APP_SMTP_HOST', raising=False)
+    assert auth.capabilities(db=EmptyDb()) == {'password_recovery': False, 'recovery_email_hint': None}
+
+
+def test_recovery_email_change_requires_password_and_new_inbox_confirmation(monkeypatch):
+    engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(database, 'SessionLocal', sessions)
+    for name, value in {
+        'APP_AUTH_USERNAME': 'owner@example.com', 'APP_AUTH_PASSWORD': 'original-password',
+        'APP_AUTH_SECRET': 'independent-session-secret', 'APP_AUTH_RECOVERY_EMAIL': 'oldaddress@example.com',
+        'APP_PUBLIC_URL': 'https://hub.example.com', 'APP_RESEND_API_KEY': 'test-api-key',
+        'APP_EMAIL_FROM': 'security@example.com',
+    }.items():
+        monkeypatch.setenv(name, value)
+    sent = []
+    monkeypatch.setattr(auth, '_send_recovery_change_email', lambda email, token: sent.append((email, token)))
+    reset_sent = []
+    monkeypatch.setattr(auth, '_send_reset_email', lambda email, token: reset_sent.append(email))
+
+    def override_db():
+        with sessions() as db:
+            yield db
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            assert client.get('/api/auth/recovery-email').status_code == 401
+            assert client.post('/api/auth/login', json={
+                'username': 'owner@example.com', 'password': 'original-password',
+            }).status_code == 200
+            endpoint = '/api/auth/recovery-email/change-request'
+            wrong = client.post(endpoint, json={'current_password': 'wrong', 'new_email': 'newaddress@example.com'})
+            assert wrong.status_code == 401
+            requested = client.post(endpoint, json={'current_password': 'original-password', 'new_email': 'newaddress@example.com'})
+            assert requested.status_code == 200
+            assert sent[0][0] == 'newaddress@example.com'
+            assert client.get('/api/auth/recovery-email').json() == {
+                'email': 'oldaddress@example.com', 'pending_email_hint': 'n••••••s@example.com',
+            }
+            assert client.get('/api/auth/capabilities').json()['recovery_email_hint'] == 'o••••••s@example.com'
+            token = sent[0][1]
+            assert client.post('/api/auth/recovery-email/confirm', json={'token': 'x' * 32}).status_code == 400
+            assert client.post('/api/auth/recovery-email/confirm', json={'token': token}).status_code == 200
+            assert client.post('/api/auth/recovery-email/confirm', json={'token': token}).status_code == 400
+            assert client.get('/api/auth/recovery-email').json() == {
+                'email': 'newaddress@example.com', 'pending_email_hint': None,
+            }
+            assert client.get('/api/auth/capabilities').json()['recovery_email_hint'] == 'n••••••s@example.com'
+            client.post('/api/auth/password/reset-request', json={'email': 'oldaddress@example.com'})
+            assert reset_sent == []
+            client.post('/api/auth/password/reset-request', json={'email': 'newaddress@example.com'})
+            assert reset_sent == ['newaddress@example.com']
+
+            changed = client.post('/api/auth/password/change', json={
+                'current_password': 'original-password', 'new_password': 'replacement-password-123',
+            })
+            assert changed.status_code == 200
+            assert client.get('/api/auth/recovery-email').status_code == 200
+            client.cookies.clear()
+            assert client.post('/api/auth/login', json={
+                'username': 'owner@example.com', 'password': 'original-password',
+            }).status_code == 401
+            assert client.post('/api/auth/login', json={
+                'username': 'owner@example.com', 'password': 'replacement-password-123',
+            }).status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        engine.dispose()
 
 
 def test_remember_reset_and_mfa(monkeypatch):
