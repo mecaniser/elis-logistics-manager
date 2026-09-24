@@ -19,12 +19,13 @@ store bank cookies, initiate a payment, or submit a transfer.
    not print or commit production secrets. Keep the same key across deploys;
    rotation requires re-encrypting saved tokens.
 3. Deploy the web service first so the new tables are created, then the worker.
-   Keep the existing reader mode until production provider credentials and
-   account availability are verified. Set `BANK_MONITOR_READER_MODE=plaid` on
-   **both** services only for a supervised connection acceptance test.
-4. In Bank Monitor, connect Truliant through Plaid Link. The server checks the
-   institution ID and binds each configured four-digit suffix to one exact
-   account. Use **Verify server bank read** and inspect the status and account
+   Keep the existing reader mode while provisioning production credentials.
+4. In Bank Monitor, connect Truliant through Plaid Link **before cutover**. The
+   server checks the institution ID, binds every configured four-digit suffix
+   to one exact account, and validates the current balance response. Existing
+   Chrome checks continue during this setup.
+5. Set `BANK_MONITOR_READER_MODE=plaid` on **both** services for a supervised
+   cutover. Use **Verify server bank read** and inspect the status and account
    count before relying on scheduled checks. Observe a completed daily run as
    separate evidence. Renew access through Plaid Link when the bank requires
    reauthorization. No saved browser session is involved.

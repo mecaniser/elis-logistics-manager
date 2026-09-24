@@ -56,6 +56,8 @@ def test_account_binding_and_incomplete_balances(monkeypatch, provider_env):
 
 
 def test_consent_is_tenant_bound_one_use_and_token_is_encrypted(client, db, monkeypatch, provider_env):
+    # Consent can be staged while the existing Chrome reader still runs.
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
     client.cookies.set(SESSION_COOKIE_NAME, create_session_token('bank-test'))
     db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules().model_dump(),
                              updated_at=datetime.now(timezone.utc)))

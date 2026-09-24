@@ -481,6 +481,15 @@ export default function BankMonitor() {
           <p className="mt-2 text-xs leading-5 text-slate-500">This opens a read-only worker check. It never prepares or submits a transfer.</p>
         </section>}
 
+        {data.reader_mode !== 'plaid' && data.provider_connection.configured && <section aria-labelledby="provider-stage-title" className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+          <h2 id="provider-stage-title" className="text-lg font-semibold text-slate-950">Prepare server bank connection</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-700">Connect Truliant through Plaid before changing the scheduled reader. ELIS checks every configured account and its current balance during setup. The current {data.reader_mode === 'signed_in_chrome' ? 'Chrome' : 'private browser'} check remains active until the worker is switched and verified.</p>
+          {data.provider_connection.linked ? <p className="mt-3 text-sm font-medium text-emerald-900">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. The scheduled worker still needs a live read after cutover.</p> : <p className="mt-3 text-sm text-slate-700">No provider consent saved yet.</p>}
+          <button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="mt-4 min-h-11 w-full rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{linkingProvider ? 'Opening secure bank connection…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button>
+          {providerNotice && <p role="status" className="mt-3 text-sm text-emerald-900">{providerNotice}</p>}
+          {verificationError && <p role="alert" className="mt-3 text-sm text-red-800">{verificationError}</p>}
+        </section>}
+
         <button ref={settingsButtonRef} type="button" aria-expanded={settingsOpen} aria-controls="monitoring-settings-drawer" onClick={() => setSettingsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md active:scale-[0.99] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
           <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="settings" /></span><span><span className="block font-semibold text-slate-950">Monitoring settings</span><span className="block text-xs text-slate-500">Accounts, rules and schedule</span></span></span><span className="text-sm font-semibold text-blue-700">Edit</span>
         </button>

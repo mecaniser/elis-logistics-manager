@@ -82,8 +82,6 @@ def provider_action(request: Request, action: str):
         raise HTTPException(403, 'Missing bank connection action header.')
     if not plaid_bank.configured():
         raise HTTPException(409, 'Bank connection provider is not configured.')
-    if os.getenv('BANK_MONITOR_READER_MODE') != 'plaid':
-        raise HTTPException(409, 'Provider bank reads are not enabled.')
     if plaid_bank.environment() != 'production':
         raise HTTPException(409, 'Production bank provider access is required.')
 
@@ -147,6 +145,7 @@ def exchange_provider_token(data: ProviderExchangeInput, request: Request,
             raise plaid_bank.PlaidBankError('provider_institution_mismatch')
         accounts = plaid_bank.real_time_accounts(access_token)
         account_map = plaid_bank.map_accounts(accounts, rules)
+        plaid_bank.balance_snapshot(access_token, rules, account_map, now, accounts)
         encrypted = plaid_bank.encrypt_token(access_token)
     except plaid_bank.PlaidBankError as exc:
         raise HTTPException(422, str(exc)) from None
@@ -186,7 +185,9 @@ def confirm_provider_renewal(data: ProviderLinkRequest, request: Request,
         bank_item = plaid_bank.item(token)
         if bank_item.get('item_id') != provider.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
             raise plaid_bank.PlaidBankError('provider_institution_mismatch')
-        account_map = plaid_bank.map_accounts(plaid_bank.real_time_accounts(token), rules)
+        accounts = plaid_bank.real_time_accounts(token)
+        account_map = plaid_bank.map_accounts(accounts, rules)
+        plaid_bank.balance_snapshot(token, rules, account_map, datetime.now(timezone.utc), accounts)
     except plaid_bank.PlaidBankError as exc:
         raise HTTPException(422, str(exc)) from None
     provider.account_map = account_map

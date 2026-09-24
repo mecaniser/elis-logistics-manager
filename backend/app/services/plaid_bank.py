@@ -139,9 +139,9 @@ def map_accounts(accounts: list[dict], rules: MonitorRules) -> dict:
 
 
 def balance_snapshot(access_token: str, rules: MonitorRules, account_map: dict,
-                     now: datetime | None = None) -> BalanceSnapshot:
+                     now: datetime | None = None, rows: list[dict] | None = None) -> BalanceSnapshot:
     observed_at = now or datetime.now(timezone.utc)
-    accounts = real_time_accounts(access_token)
+    accounts = rows if rows is not None else real_time_accounts(access_token)
     rows_by_id = {row.get('account_id'): row for row in accounts}
     values = []
     for configured_account in rules.checking + rules.sources:
