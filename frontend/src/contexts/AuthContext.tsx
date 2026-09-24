@@ -36,7 +36,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     await authApi.logout()
-    setAuthenticated(false)
+    // The server remains authoritative: a local preview without configured
+    // authentication must not strand the user on an unusable login form.
+    await checkAuth()
   }
 
   return (
