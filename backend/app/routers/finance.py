@@ -277,3 +277,24 @@ async def reconstruct(request: ReconstructionRequest, db: Session = Depends(get_
         except (httpx.HTTPError, OSError, ValueError):
             results.append({'legacy_id': legacy_id, 'status': 'gap', 'message': 'Original could not be retrieved. Upload the original document.'})
     return {'results': results, 'posted': 0, 'note': 'Originals preserved for review. No historical accounting interpretation was overwritten.'}
+
+
+from app.services.payment_accounts import PaymentAccountInput
+
+
+@router.get('/payment-accounts')
+def payment_accounts(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_accounts import list_accounts
+    return {'tenant_id': tenant, 'items': list_accounts(db, tenant), 'basis': 'owner_identified', 'balances_connected': False}
+
+
+@router.post('/payment-accounts')
+def add_payment_account(request: PaymentAccountInput, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_accounts import add_account
+    try:
+        result = add_account(db, tenant, request)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise

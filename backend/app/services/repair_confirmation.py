@@ -19,6 +19,15 @@ def save_confirmation(db, tenant, request):
         f.fail('Unpaid or unknown status cannot include payment details.')
     if request.status == 'partial' and (len(request.items) != 1 or not request.paid_amount):
         f.fail('Confirm partial payments one repair at a time with the total paid so far.')
+    account = None
+    if request.payment_account_id:
+        from app.services.payment_accounts import get_account
+        account = get_account(db, tenant, request.payment_account_id)
+        expected_type = {'credit_card': 'card', 'zelle': 'bank', 'cash': 'cash'}.get(request.method)
+        if request.status not in ('paid', 'partial') or not expected_type or account['account_type'] != expected_type:
+            f.fail('Choose a payment account matching the payment method.')
+        if request.source != account['ownership']:
+            f.fail('The funding source must match the selected account ownership.')
     results = []
     for item in request.items:
         row = rows.get(item.repair_id)
@@ -43,6 +52,9 @@ def save_confirmation(db, tenant, request):
                    'paid_amount': f.money(amount) if request.status == 'paid' else f.money(request.paid_amount) if request.paid_amount else None,
                    'paid_date': request.paid_date.isoformat() if request.paid_date else None,
                    'note': request.note, 'basis': 'owner_confirmation'}
+        if account:
+            payload['payment_account_id'] = account['id']
+            payload['payment_account'] = account
         if request.payee and request.payee.strip():
             payload['payee'] = request.payee.strip()
         content = json.dumps(payload, sort_keys=True).encode()

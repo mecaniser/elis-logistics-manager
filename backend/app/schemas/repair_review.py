@@ -18,6 +18,7 @@ class RepairConfirmation(BaseModel):
     status: Literal['paid', 'partial', 'unpaid', 'unknown']
     method: Literal['cash', 'zelle', 'credit_card', 'other', 'unknown'] = 'unknown'
     source: Literal['business', 'personal', 'mixed', 'unknown'] = 'unknown'
+    payment_account_id: str | None = Field(default=None, max_length=36)
     paid_amount: Decimal | None = None
     paid_date: date | None = None
     payee: str | None = Field(default=None, max_length=160)

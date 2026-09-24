@@ -23,7 +23,11 @@ export interface RetentionReport {
   note:string; pairs:{asset_id:number; retained:string; freight:string; retained_per_100:string|null; score:string|null; band:'target_met'|'acceptable'|'below_floor'|'no_revenue'; status:'provisional'; issues:string[]; bridge:{label:string;amount:string}[]; source_event_ids:string[]}[]
 }
 export interface Report { retention: RetentionReport; owner_insights: OwnerInsights; id: string; label: string; as_of: string; period: {start: string; end: string; calendar_days: number}; owner_cash: Cash; readiness: Readiness; ledger: {income_statement: {revenue: string; operating_earnings: string; net_income: string; interest: string; depreciation: string; disposal_gain: string}; general_ledger: RecordData[]; trial_balance: RecordData[]; balance_sheet: RecordData; cash_flow: RecordData}; revenue_breakdown: {freight_gross: string; settlement_remainder: string; rows: {category: string; amount: string; percent_of_freight: string | null}[]}; pairs: {truck_id: number; name: string; trailer_ids: number[]; freight_gross: string; earnings: string; per_calendar_day: string; settlements: RecordData[]; components: RecordData[]}[]; shared_company_result: string; unassigned_asset_result: string; capital: RecordData[]; fuel: {asset_id: number; name: string; measured_mpg: string | null; miles_per_gallon_purchased: string | null; note: string; alerts: string[]}[]; exceptions: {code: string; message: string; status: string; href: string}[]; trend: {date: string; freight: string; earnings: string}[]; legacy_comparison: {rows: RecordData[]; totals: RecordData; note: string} }
+export interface PaymentAccount { id: string; name: string; account_type: 'card' | 'bank' | 'cash'; ownership: 'personal' | 'business'; last4: string }
+
 export const financeApi = {
+  paymentAccounts: () => client.get<{items: PaymentAccount[]}>('/payment-accounts').then(r => r.data.items),
+  addPaymentAccount: (payload: Omit<PaymentAccount, 'id'>) => client.post<PaymentAccount>('/payment-accounts', payload).then(r => r.data),
   confirmRepairs: (payload: RecordData) => client.post('/repair-confirmations', payload).then(r => r.data),
   repairHistory: (as_of: string) => client.get<RepairReviewReport>('/repair-history', {params: {as_of}}).then(r => r.data),
   history: () => client.get<HistoryReport>('/settlement-history').then(r => r.data),
