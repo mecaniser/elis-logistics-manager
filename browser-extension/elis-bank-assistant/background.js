@@ -5,7 +5,11 @@ let busy = false;
 const stageError = (code, message) => Object.assign(new Error(message), {code});
 const scheduledAlarm = 'elis-bank-monitor-daily';
 const scheduledCleanup = 'elis-bank-monitor-cleanup';
-chrome.alarms?.create(scheduledAlarm, {periodInMinutes: 1});
+if (chrome.alarms) {
+  chrome.alarms.get(scheduledAlarm).then(existing => {
+    if (!existing) chrome.alarms.create(scheduledAlarm, {periodInMinutes: 1});
+  });
+}
 chrome.alarms?.onAlarm.addListener(async alarm => {
   if (alarm.name === scheduledCleanup) {
     const {scheduledElisTabId} = await chrome.storage.session.get('scheduledElisTabId');
