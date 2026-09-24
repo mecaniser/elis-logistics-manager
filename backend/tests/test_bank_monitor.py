@@ -4,10 +4,10 @@ from pydantic import ValidationError
 from app.services.bank_monitor import MonitorRules, BalanceSnapshot, calculate, due_date, next_check, usd_cents
 from app.services.truliant_reader import parse_card, BankReadError
 from app.models.bank_monitor import (BankMonitorConfig, BankMonitorRun,
-                                     BankMonitorWorkerHeartbeat, BankRepaymentRun,
+                                     BankMonitorWorkerHeartbeat, BankMonitorConnectionCheck, BankRepaymentRun,
                                      BankTransferDraft)
 from app.models.tenant import Tenant
-from app.bank_monitor_worker import run_due, record_heartbeat
+from app.bank_monitor_worker import run_due, run_connection_checks, record_heartbeat
 from app.bank_monitor_worker import main as worker_main
 from app.auth_utils import create_session_token, SESSION_COOKIE_NAME
 
@@ -221,3 +221,73 @@ def test_worker_heartbeat_is_upserted(db, monkeypatch):
     heartbeat = db.query(BankMonitorWorkerHeartbeat).one()
     assert heartbeat.tenant_id == 1
     assert heartbeat.last_seen_at.replace(tzinfo=timezone.utc) == first + timedelta(seconds=30)
+
+
+def test_worker_connection_check_verifies_real_account_evidence_without_daily_slot(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    monkeypatch.setenv('BANK_MONITOR_PROFILE_1', '/private-test-profile')
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True).model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.add(BankMonitorConnectionCheck(tenant_id=1, requested_at=datetime.now(timezone.utc),
+                                      status='pending', result={}))
+    db.commit()
+    assert run_connection_checks(db, lambda *_: snapshot()) == 1
+    check = db.query(BankMonitorConnectionCheck).one()
+    assert check.status == 'verified'
+    assert check.result['account_count'] == 3
+    assert check.result['transfers_executed'] is False
+    assert db.query(BankMonitorRun).count() == 0
+
+
+def test_worker_connection_check_records_sign_in_failure_without_retry(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    monkeypatch.setenv('BANK_MONITOR_PROFILE_1', '/private-test-profile')
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True).model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.add(BankMonitorConnectionCheck(tenant_id=1, requested_at=datetime.now(timezone.utc),
+                                      status='pending', result={}))
+    db.commit()
+    calls = []
+    def reader(*_):
+        calls.append(1)
+        raise BankReadError('mfa_required')
+    assert run_connection_checks(db, reader) == 1
+    assert run_connection_checks(db, reader) == 0
+    assert calls == [1]
+    check = db.query(BankMonitorConnectionCheck).one()
+    assert check.status == 'mfa_required'
+    assert check.result == {'transfers_executed': False}
+
+
+def test_interrupted_check_is_not_retried_or_changed_for_another_tenant(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    now = datetime.now(timezone.utc)
+    for tenant_id in (1, 2):
+        db.add(BankMonitorConnectionCheck(tenant_id=tenant_id,
+            requested_at=now - timedelta(minutes=12), started_at=now - timedelta(minutes=11),
+            status='running', result={}))
+    db.commit()
+    record_heartbeat(db, now)
+    checks = db.query(BankMonitorConnectionCheck).order_by(BankMonitorConnectionCheck.tenant_id).all()
+    assert [check.status for check in checks] == ['check_interrupted', 'running']
+    assert checks[0].result == {'transfers_executed': False}
+
+
+def test_worker_verification_request_is_authenticated_and_rate_limited(bank_auth, db):
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True).model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.add(BankMonitorWorkerHeartbeat(tenant_id=1, last_seen_at=datetime.now(timezone.utc)))
+    db.commit()
+    path = '/api/bank-monitor/connection-checks'
+    headers = {'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'verify-worker-bank-access'}
+    assert bank_auth.post(path, json={}, headers={'X-Tenant-ID': '1'}).status_code == 403
+    assert bank_auth.post(path, json={'password': 'must-not-be-accepted'}, headers=headers).status_code == 422
+    assert bank_auth.post(path, json={}, headers=headers).status_code == 202
+    assert bank_auth.post(path, json={}, headers=headers).status_code == 409
+    check = db.query(BankMonitorConnectionCheck).one()
+    check.status = 'credentials_required'
+    db.commit()
+    assert bank_auth.post(path, json={}, headers=headers).status_code == 429
+    dashboard = bank_auth.get('/api/bank-monitor', headers={'X-Tenant-ID': '1'}).json()
+    assert dashboard['connection_check']['status'] == 'credentials_required'
+    assert dashboard['connection_check']['result'].get('password') is None

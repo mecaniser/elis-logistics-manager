@@ -39,6 +39,18 @@ class BankMonitorWorkerHeartbeat(Base):
     last_seen_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class BankMonitorConnectionCheck(Base):
+    """Read-only, on-demand verification of the worker's bank access."""
+    __tablename__ = 'bank_monitor_connection_checks'
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    requested_at = Column(DateTime(timezone=True), nullable=False)
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+    status = Column(String(40), nullable=False)
+    result = Column(JSON, nullable=False, default=dict)
+
+
 class BankTransferDraft(Base):
     __tablename__ = 'bank_transfer_drafts'
     __table_args__ = (UniqueConstraint('tenant_id', 'charge_reference', name='uq_bank_charge_reference'),)

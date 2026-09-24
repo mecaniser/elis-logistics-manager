@@ -5,10 +5,11 @@ No schedules start inside web workers. Every run is proposal-only.
 import os
 import signal
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat
+from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
+                                     BankMonitorRun, BankMonitorWorkerHeartbeat)
 from app.models.tenant import Tenant
 from app.services.bank_monitor import MonitorRules, calculate, due_date
 from app.services.truliant_reader import BankReadError, read_balances
@@ -62,8 +63,60 @@ def run_due(db, now, reader=read_balances):
     return completed
 
 
+def run_connection_checks(db, reader=read_balances):
+    """Verify private bank access without using a daily slot or preparing a transfer."""
+    allowed = {int(value.strip()) for value in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',') if value.strip().isdigit()}
+    pending = db.query(BankMonitorConnectionCheck).filter(
+        BankMonitorConnectionCheck.status == 'pending',
+        BankMonitorConnectionCheck.tenant_id.in_(allowed)).order_by(BankMonitorConnectionCheck.id).all()
+    completed = 0
+    for check in pending:
+        claimed = db.query(BankMonitorConnectionCheck).filter_by(id=check.id, status='pending').update(
+            {'status': 'running', 'started_at': datetime.now(timezone.utc)}, synchronize_session=False)
+        db.commit()
+        if not claimed:
+            continue
+        db.refresh(check)
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == check.tenant_id, Tenant.is_active.is_(True)).first()
+            config = db.get(BankMonitorConfig, check.tenant_id)
+            if not tenant or not config:
+                raise BankReadError('connection_required')
+            rules = MonitorRules.model_validate(config.rules)
+            profile = os.getenv(f'BANK_MONITOR_PROFILE_{check.tenant_id}')
+            if not profile:
+                raise BankReadError('connection_required')
+            snapshot = (reader(profile, rules, tenant_id=check.tenant_id)
+                        if reader is read_balances else reader(profile, rules))
+            calculate(rules, snapshot, datetime.now(timezone.utc))
+            check.status = 'verified'
+            check.result = {'observed_at': snapshot.observed_at.isoformat(),
+                            'account_count': len(snapshot.accounts), 'transfers_executed': False}
+        except BankReadError as exc:
+            check.status = str(exc)
+            check.result = {'transfers_executed': False}
+        except ValueError:
+            check.status = 'balance_review_required'
+            check.result = {'transfers_executed': False}
+        except Exception:
+            check.status = 'check_failed'
+            check.result = {'transfers_executed': False}
+        check.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        completed += 1
+    return completed
+
+
 def record_heartbeat(db, now):
     allowed = {int(value.strip()) for value in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',') if value.strip().isdigit()}
+    # A killed browser read must never look like an endless live check or be
+    # retried automatically. Login attempts have a separate durable guard.
+    db.query(BankMonitorConnectionCheck).filter(
+        BankMonitorConnectionCheck.tenant_id.in_(allowed),
+        BankMonitorConnectionCheck.status == 'running',
+        BankMonitorConnectionCheck.started_at < now - timedelta(minutes=10)).update(
+            {'status': 'check_interrupted', 'finished_at': now,
+             'result': {'transfers_executed': False}}, synchronize_session=False)
     for tenant_id in allowed:
         heartbeat = db.get(BankMonitorWorkerHeartbeat, tenant_id)
         if heartbeat is None:
@@ -90,6 +143,7 @@ def main():
         with SessionLocal() as db:
             now = datetime.now(timezone.utc)
             record_heartbeat(db, now)
+            run_connection_checks(db)
             run_due(db, now)
         stop.wait(30)
 

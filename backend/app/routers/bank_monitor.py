@@ -1,12 +1,13 @@
 """Strictly authenticated, tenant-scoped settings and read-only run history."""
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun
+from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
+                                     BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun)
 from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
                                        MonitorRules, StrictModel,
                                        calculate_repayment, next_check)
@@ -43,15 +44,59 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
         last_seen = last_seen.replace(tzinfo=timezone.utc)
     worker_online = bool(last_seen and (now - last_seen).total_seconds() <= 120)
     runs = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id).order_by(BankMonitorRun.id.desc()).limit(30).all()
+    connection_check = db.query(BankMonitorConnectionCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorConnectionCheck.id.desc()).first()
     repayment_runs = db.query(BankRepaymentRun).filter_by(tenant_id=tenant_id).order_by(BankRepaymentRun.id.desc()).limit(30).all()
     return {'rules': config.rules if config else MonitorRules().model_dump(),
             'mode': 'proposal_only', 'next_check': next_check(datetime.now(timezone.utc)),
             'worker': {'status': 'online' if worker_online else 'offline', 'last_seen_at': last_seen},
+            'connection_check': ({'id': connection_check.id, 'status': connection_check.status,
+                                  'requested_at': connection_check.requested_at,
+                                  'finished_at': connection_check.finished_at,
+                                  'result': connection_check.result} if connection_check else None),
             'runs': [{'id': r.id, 'scheduled_date': r.scheduled_date, 'started_at': r.started_at,
                       'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs],
             'repayment_runs': [{'id': r.id, 'started_at': r.started_at,
                                 'finished_at': r.finished_at, 'status': r.status,
                                 'result': r.result} for r in repayment_runs]}
+
+
+class ConnectionCheckInput(StrictModel):
+    """The request cannot carry a username, password, or MFA code."""
+
+
+@router.post('/connection-checks', status_code=202)
+def request_connection_check(data: ConnectionCheckInput, request: Request, tenant_id: int = Depends(bank_tenant),
+                             db: Session = Depends(get_db)):
+    """Ask the private worker for one read-only account check; never accept secrets."""
+    if request.headers.get('x-bank-monitor-action') != 'verify-worker-bank-access':
+        raise HTTPException(403, 'Missing bank verification action header.')
+    # Serialize requests for this tenant so two clicks cannot queue two logins.
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
+    if not config:
+        raise HTTPException(409, 'Configure monitored bank accounts first.')
+    rules = MonitorRules.model_validate(config.rules)
+    if not rules.checking or not rules.sources:
+        raise HTTPException(409, 'Configure checking and funding accounts first.')
+    now = datetime.now(timezone.utc)
+    heartbeat = db.get(BankMonitorWorkerHeartbeat, tenant_id)
+    if not heartbeat:
+        raise HTTPException(409, 'The private bank worker is offline.')
+    seen = heartbeat.last_seen_at.replace(tzinfo=timezone.utc) if heartbeat.last_seen_at.tzinfo is None else heartbeat.last_seen_at
+    if now - seen > timedelta(seconds=120):
+        raise HTTPException(409, 'The private bank worker is offline.')
+    latest = db.query(BankMonitorConnectionCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorConnectionCheck.id.desc()).first()
+    if latest and latest.status in ('pending', 'running'):
+        raise HTTPException(409, 'A bank connection check is already in progress.')
+    if latest:
+        requested = latest.requested_at.replace(tzinfo=timezone.utc) if latest.requested_at.tzinfo is None else latest.requested_at
+        if now - requested < timedelta(minutes=2):
+            raise HTTPException(429, 'Wait two minutes before requesting another bank connection check.')
+    check = BankMonitorConnectionCheck(tenant_id=tenant_id, requested_at=now,
+                                       status='pending', result={'transfers_executed': False})
+    db.add(check)
+    db.commit()
+    db.refresh(check)
+    return {'id': check.id, 'status': check.status}
 
 
 @router.put('')
