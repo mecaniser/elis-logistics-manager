@@ -71,6 +71,10 @@ def run_due(db, now, reader=read_balances):
 
 def run_connection_checks(db, reader=read_balances):
     """Verify private bank access without using a daily slot or preparing a transfer."""
+    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome':
+        # This mode must never open the server browser, including for a
+        # connection request queued before the mode was changed.
+        return 0
     allowed = {int(value.strip()) for value in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',') if value.strip().isdigit()}
     pending = db.query(BankMonitorConnectionCheck).filter(
         BankMonitorConnectionCheck.status == 'pending',

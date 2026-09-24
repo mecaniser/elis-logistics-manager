@@ -74,6 +74,8 @@ def request_connection_check(data: ConnectionCheckInput, request: Request, tenan
     """Ask the private worker for one read-only account check; never accept secrets."""
     if request.headers.get('x-bank-monitor-action') != 'verify-worker-bank-access':
         raise HTTPException(403, 'Missing bank verification action header.')
+    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome':
+        raise HTTPException(409, 'Server bank access is disabled in Chrome reader mode.')
     # Serialize requests for this tenant so two clicks cannot queue two logins.
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not config:
