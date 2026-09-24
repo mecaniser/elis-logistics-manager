@@ -1,0 +1,4 @@
+export const accountControl = 'mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+export const accountButton = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
+export const accountPrimary = `${accountButton} bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900`
+export const accountSecondary = `${accountButton} border border-slate-300 bg-white text-slate-800 hover:bg-slate-100 active:bg-slate-200`

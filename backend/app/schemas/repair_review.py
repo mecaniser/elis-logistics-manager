@@ -18,6 +18,7 @@ class RepairConfirmation(BaseModel):
     status: Literal['paid', 'partial', 'unpaid', 'unknown']
     method: Literal['cash', 'zelle', 'credit_card', 'other', 'unknown'] = 'unknown'
     source: Literal['business', 'personal', 'mixed', 'unknown'] = 'unknown'
+    reimbursement: Literal['owed', 'reimbursed', 'unknown'] = 'unknown'
     payment_account_id: str | None = Field(default=None, max_length=36)
     paid_amount: Decimal | None = None
     paid_date: date | None = None
@@ -30,3 +31,8 @@ class RepairConfirmation(BaseModel):
         if value is not None and (not value.is_finite() or value <= 0 or value >= Decimal('1000000000000') or value != value.quantize(Decimal('0.01'))):
             raise ValueError('Use a positive amount with at most two decimal places.')
         return value
+
+
+class ConfirmUnreimbursed(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    items: list[ReviewItem] = Field(min_length=1, max_length=100)

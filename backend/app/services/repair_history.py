@@ -66,6 +66,8 @@ def repair_history(db, tenant, as_of):
         row['payee'] = payee_details(evidence_by_row[row['legacy_id']])
         if row['confirmation'] and not row['confirmation']['stale'] and row['confirmation'].get('payee'):
             row['payee'] = {**row['payee'], 'name': row['confirmation']['payee'], 'basis': 'owner_confirmation'}
+        from app.services.repair_owner_posting import assessment
+        row['owner_posting'] = assessment(db, tenant, row, ledger_state=state, posting_links=[d for d in docs if d.extraction_version == 'repair-owner-posting-v1' and d.source_key == f"repair-owner-posting:{row['legacy_id']}"])
         row['batch_eligible'] = bool(row['source_totals']) and not confirmation and not row['obligation_event_ids'] and not any(i in row['issues'] for i in (
             'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
             'incurred_amount_required', 'cost_or_recovery_treatment_review'))

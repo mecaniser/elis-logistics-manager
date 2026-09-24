@@ -1,7 +1,20 @@
 # ELIS rebuild execution tracker
 
-Updated 2026-09-23 after source-backed dashboard integration and historical reconciliation.
-Implementation checkpoint: `5786bd7`. Production unchanged.
+Updated 2026-09-24 after payment-account connections and automatic owner-payment accounting. Production unchanged.
+
+## Current execution lane — keep the original objective in view
+
+The original question is whether fuel use and other costs explain why one truck retains less than the other. Repair payment work is part of outside-expense reconciliation (stages 2–3), not a replacement objective or a new banking product.
+
+| Order | Work | Status and next exit condition |
+| --- | --- | --- |
+| Current | Repair payees, payment methods, personal/business account identities, owner reimbursements | Local integrated path now records eligible confirmed personal payments once; connects selected identities to existing statement or monitored sources; matches actual repayments. Verify the owner's real account links and three earlier personal confirmations without assuming prior reimbursements. |
+| Next | Outside costs → available cash and pair retention | Validate a real repair through expense, owner funding/repayment and the truck/trailer results; reconcile business cash/Zelle evidence and funded repair reserves. Business cash, card and mixed-payment intake still need a simpler operator path. |
+| Then | Original fuel and settlement anomaly investigation | Return to the historical register, 21 unexplained $200 gross differences and missing originals. Compare matched fuel purchases, driver pay and mileage windows; add independent Motive/odometer evidence before calling anything consumption. Existing fuel-spending signals are not evidence of missing freight or theft. |
+| Remaining | Capital, HELOC and lifetime return | Finish statement-based mixed-use financing allocation, actual payments, recovery targets and disposal acceptance. Preserve gaps instead of inferring payoff or saved reserves. |
+| Release | Integrate and reconcile before cutover | Difference report, main integration, production auth/migration checks and browser acceptance remain separate gates. Local functionality does not establish production readiness. |
+
+Do not hide pending engineering under “waiting for records.” Missing private bank/card/HELOC statements, opening balances and Motive coverage block their dependent conclusions only. The stage-by-stage baseline and dated evidence below remain part of this same plan.
 
 ## Outcome and current judgment
 
@@ -200,3 +213,25 @@ Backed up review.db before restarting the local backend. Verified counts remain 
 - Directory entries use immutable evidence storage; repeated identical creation returns the existing identity. Repair evidence keeps the selected account snapshot and ID. Server rejects foreign-business accounts and incompatible ownership/methods. No schema migration or real-account backfill is required for this checkpoint.
 - This directory is not yet linked to Bank Monitor balance sources, automated monitoring settings, or finance ledger accounts. Existing monitoring configuration is unchanged. Owner confirmations still do not automatically create reimbursement postings. Personal card repayment must never create a second repair expense or duplicate owner claim.
 - Validation: 20 backend account/repair tests passed, scoped frontend lint passed, frontend build passed with existing bundle-size warning. Browser verified the directory/editor, mobile layout, default paid/date and credit-card selector without saving invented accounts or repair answers. Existing local Bank Monitor monitoring panel requests sign-in; directory is available under local accounting preview. No production deployment.
+
+
+## 2026-09-24 — Account workflow, balance links and owner reimbursement postings
+
+| Before | After | Why |
+| --- | --- | --- |
+| Add/cancel presented as underlined text | Primary Add account button; type choices; grouped fields; explicit Save and Cancel actions | Make creation visible and familiar without expanding an unstructured form |
+| Payment nickname disconnected from any balance | Explicit links to a business ledger account or authorized Bank Monitor source | Preserve account identity and show the observation/statement date |
+| Personal-payment confirmation stopped at evidence | Eligible still-unreimbursed personal payments create one bill and one owner-funded payment atomically | Record the cost once and move the liability from vendor to owner |
+| Reimbursement requires generic accounting commands | Owner reimbursements shows amounts owed and matches existing reconciled bank/cash transactions | Clear the obligation without another expense or a money transfer |
+
+Engineering completed locally:
+- Immutable account links preserve source identity and revisions. Type/ownership/tenant checks block personal-to-business-ledger links and duplicate source links. Changed sources require review. Bank Monitor access is independently checked before exposing monitored observations.
+- Monitored balances retain their timestamp and stay distinct from reconciled statements; connecting an identity creates no cash or liability posting. Personal balances never enter business cash.
+- New personal confirmations include whether the full payment remains owed. Dates, costs, stale records, prior obligations and closed periods are checked. Partial personal payment leaves the unpaid vendor portion and creates only the paid owner portion. Existing confirmed personal payments can be selected together to confirm they remain unreimbursed.
+- Posting links are immutable; repeats and note-only changes do not repost. Financial corrections enter accounting review instead of silently changing posted history. A failed payment posting rolls back its bill too while preserving the confirmation for review.
+- Matching an actual reimbursement derives its date and business payer from the reconciled transaction, supports partial repayment, and preserves idempotency. It does not submit a bank transfer.
+- Existing review data contained three personal confirmations lacking reimbursement status during inspection. They are listed for owner confirmation; none was silently backfilled by the agent. Real balances/account ownership and prior repayments are not invented.
+
+Still open: unmatched business cash/Zelle/card history; mixed-funding split intake; actual reserves; manual-existing-claim corrections; actual monitoring authentication and provider records; full cutover. The legacy upload journal remains separate until reconciled migration, so the two ledgers must never be summed.
+
+Verification for this checkpoint: 72 targeted backend tests passed across finance, cashbook, payment identities, balance links, owner postings and repair confirmations/history; 23 frontend tests passed; scoped frontend lint/build and whitespace checks passed. The build retains its existing bundle-size warning. Desktop/mobile account form, keyboard type selection/Cancel, actual saved-card ownership selection, review checklist and unavailable-monitor state were inspected in the in-app browser without saving invented facts. The local Bank Monitor still requires its authenticated monitoring session; no live balance source or production reimbursement was claimed verified.

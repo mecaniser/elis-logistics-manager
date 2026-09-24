@@ -25,7 +25,16 @@ export interface RetentionReport {
 export interface Report { retention: RetentionReport; owner_insights: OwnerInsights; id: string; label: string; as_of: string; period: {start: string; end: string; calendar_days: number}; owner_cash: Cash; readiness: Readiness; ledger: {income_statement: {revenue: string; operating_earnings: string; net_income: string; interest: string; depreciation: string; disposal_gain: string}; general_ledger: RecordData[]; trial_balance: RecordData[]; balance_sheet: RecordData; cash_flow: RecordData}; revenue_breakdown: {freight_gross: string; settlement_remainder: string; rows: {category: string; amount: string; percent_of_freight: string | null}[]}; pairs: {truck_id: number; name: string; trailer_ids: number[]; freight_gross: string; earnings: string; per_calendar_day: string; settlements: RecordData[]; components: RecordData[]}[]; shared_company_result: string; unassigned_asset_result: string; capital: RecordData[]; fuel: {asset_id: number; name: string; measured_mpg: string | null; miles_per_gallon_purchased: string | null; note: string; alerts: string[]}[]; exceptions: {code: string; message: string; status: string; href: string}[]; trend: {date: string; freight: string; earnings: string}[]; legacy_comparison: {rows: RecordData[]; totals: RecordData; note: string} }
 export interface PaymentAccount { id: string; name: string; account_type: 'card' | 'bank' | 'cash'; ownership: 'personal' | 'business'; last4: string }
 
+export interface PaymentBalanceSource {id: string; provider: 'ledger' | 'monitor'; name: string; account_type: string; last4?: string; balance: string | null; as_of: string | null; basis: string; source_ref: string | null}
+export interface PaymentBalanceLink {link_id: string; provider: 'ledger' | 'monitor'; status: string; source: PaymentBalanceSource | null; reason: string}
 export const financeApi = {
+  ownerReimbursements: () => client.get('/owner-reimbursements').then(r => r.data),
+  matchOwnerReimbursement: (id: string, payload: RecordData, key: string) => client.post(`/owner-reimbursements/${id}/match`, payload, {headers: {'Idempotency-Key': key}}).then(r => r.data),
+  paymentSources: () => client.get<{items: PaymentBalanceSource[]; monitor_available: boolean}>('/payment-account-sources').then(r => r.data),
+  paymentBalances: (id: string) => client.get<{items: PaymentBalanceLink[]}>(`/payment-accounts/${id}/balances`).then(r => r.data.items),
+  linkPaymentAccount: (id: string, payload: RecordData) => client.post(`/payment-accounts/${id}/links`, payload).then(r => r.data),
+  confirmUnreimbursed: (items: RecordData[]) => client.post('/repair-owner-postings/confirm-unreimbursed', {items}).then(r => r.data),
+  postOwnerRepairs: () => client.post('/repair-owner-postings').then(r => r.data),
   paymentAccounts: () => client.get<{items: PaymentAccount[]}>('/payment-accounts').then(r => r.data.items),
   addPaymentAccount: (payload: Omit<PaymentAccount, 'id'>) => client.post<PaymentAccount>('/payment-accounts', payload).then(r => r.data),
   confirmRepairs: (payload: RecordData) => client.post('/repair-confirmations', payload).then(r => r.data),

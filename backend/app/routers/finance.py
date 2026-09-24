@@ -298,3 +298,106 @@ def add_payment_account(request: PaymentAccountInput, db: Session = Depends(get_
     except Exception:
         db.rollback()
         raise
+
+
+@router.post('/repair-owner-postings')
+def post_confirmed_repairs(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.repair_owner_posting import process_confirmed
+    try:
+        result = process_confirmed(db, tenant)
+        db.commit()
+        return {'items': result, 'transfers_executed': False}
+    except Exception:
+        db.rollback()
+        raise
+
+
+from app.services.payment_account_links import AccountLinkInput
+
+
+def monitor_access(request, db, tenant):
+    from app.routers.bank_monitor import bank_tenant
+    try:
+        return bank_tenant(request, db) == tenant
+    except HTTPException:
+        return False
+
+
+@router.get('/payment-account-sources')
+def payment_account_sources(request: Request, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_account_links import sources
+    allowed = monitor_access(request, db, tenant)
+    return {'items': sources(db, tenant, allowed), 'monitor_available': allowed}
+
+
+@router.get('/payment-accounts/{account_id}/balances')
+def payment_account_balances(account_id: str, request: Request, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_account_links import account_balances
+    return {'items': account_balances(db, tenant, account_id, monitor_access(request, db, tenant))}
+
+
+@router.post('/payment-accounts/{account_id}/links')
+def connect_payment_account(account_id: str, body: AccountLinkInput, request: Request, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_account_links import link_account
+    try:
+        result = link_account(db, tenant, account_id, body, monitor_access(request, db, tenant))
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.get('/owner-reimbursements')
+def owner_reimbursements(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    s = f.state(db, tenant, date.today())
+    claims = [{**c, 'remaining': f.money(c['remaining']), 'amount': f.money(c['amount'])} for c in s['claims'].values() if c['creditor'] == 'owner' and c.get('legacy_repair_id')]
+    transactions = []
+    for t in s['transactions'].values():
+        account = s['accounts'][t['account_id']]
+        remaining = -f.D(t['amount']) - s['allocated'].get(t['id'], f.ZERO)
+        if t['id'] not in s['matches'] and remaining > 0 and account['account_type'] in ('bank', 'cash'):
+            transactions.append({**t, 'unallocated': f.money(remaining), 'account_name': account['name']})
+    return {'as_of': date.today().isoformat(), 'basis': 'posted_ledger', 'claims': claims, 'transactions': transactions,
+            'total_owed': f.money(sum((f.D(c['remaining']) for c in claims), f.ZERO))}
+
+
+from app.services.repair_owner_posting import ReimbursementMatch
+
+
+@router.post('/owner-reimbursements/{claim_id}/match')
+def match_owner_reimbursement(claim_id: str, body: ReimbursementMatch, idempotency_key: str = Header(..., min_length=8, max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.repair_owner_posting import match_reimbursement
+    try:
+        event = match_reimbursement(db, tenant, claim_id, body, idempotency_key)
+        db.commit()
+        return event_json(event)
+    except Exception:
+        db.rollback()
+        raise
+
+
+from app.schemas.repair_review import ConfirmUnreimbursed
+
+
+@router.post('/repair-owner-postings/confirm-unreimbursed')
+def confirm_unreimbursed(body: ConfirmUnreimbursed, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.repair_confirmation import save_confirmation
+    from app.services.repair_history import repair_history
+    try:
+        f.lock_business(db, tenant)
+        if len({i.repair_id for i in body.items}) != len(body.items): f.fail('Select each repair once.')
+        rows = {r['legacy_id']: r for r in repair_history(db, tenant, date.today())['rows']}
+        results = []
+        for item in body.items:
+            row = rows.get(item.repair_id)
+            c = row.get('confirmation') if row else None
+            if not c or c['source'] != 'personal' or c['status'] not in ('paid', 'partial'):
+                f.fail('Choose confirmed personal payments only.')
+            fields = {k: c[k] for k in ('status', 'method', 'source', 'paid_amount', 'paid_date', 'payee', 'note', 'payment_account_id') if k in c}
+            results.append(save_confirmation(db, tenant, RepairConfirmation(items=[item], reimbursement='owed', **fields)))
+        db.commit()
+        return {'items': results, 'transfers_executed': False}
+    except Exception:
+        db.rollback()
+        raise

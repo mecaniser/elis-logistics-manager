@@ -6,7 +6,8 @@ export interface RepairReviewRow {
   review_snapshot: string
   batch_eligible: boolean
   payee: {name: string | null; basis: string; candidates: string[]; evidence_ids: string[]}
-  confirmation: {payment_account_id?: string; payment_account?: {name: string; last4: string}; payee?: string; id: string; status: string; method: string; source: string; paid_amount: string | null; paid_date: string | null; note: string; stale: boolean} | null
+  owner_posting?: {status: string; reason: string; remaining?: string; owner_claim_id?: string}
+  confirmation: {reimbursement?: string; payment_account_id?: string; payment_account?: {name: string; last4: string}; payee?: string; id: string; status: string; method: string; source: string; paid_amount: string | null; paid_date: string | null; note: string; stale: boolean} | null
   recorded_cost: string | null
   source_totals: string[]
   recorded_vendor_outstanding: string | null

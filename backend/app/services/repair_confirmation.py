@@ -52,6 +52,10 @@ def save_confirmation(db, tenant, request):
                    'paid_amount': f.money(amount) if request.status == 'paid' else f.money(request.paid_amount) if request.paid_amount else None,
                    'paid_date': request.paid_date.isoformat() if request.paid_date else None,
                    'note': request.note, 'basis': 'owner_confirmation'}
+        if request.reimbursement != 'unknown':
+            if request.source != 'personal' or request.status not in ('paid', 'partial'):
+                f.fail('Reimbursement answers require a personal payment.')
+            payload['reimbursement'] = request.reimbursement
         if account:
             payload['payment_account_id'] = account['id']
             payload['payment_account'] = account
@@ -72,4 +76,6 @@ def save_confirmation(db, tenant, request):
             source_key=f'repair-confirmation:{item.repair_id}', supersedes_id=item.previous_id,
             extraction_version='owner-confirmation-v1', extracted=payload)
         db.add(evidence); db.flush(); results.append(evidence.id)
-    return {'ids': results, 'status': 'owner_confirmed', 'posted': False}
+    from app.services.repair_owner_posting import process_confirmed
+    posting = process_confirmed(db, tenant, {i.repair_id for i in request.items})
+    return {'ids': results, 'status': 'owner_confirmed', 'posted': any(r['status'] == 'posted' for r in posting), 'accounting': posting}

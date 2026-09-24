@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
+import OwnerReimbursements from '../components/OwnerReimbursements'
 import PaymentAccounts from '../components/PaymentAccounts'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
@@ -225,6 +226,7 @@ export default function BankMonitor() {
     </header>
 
     <PaymentAccounts key={currentTenantId} />
+    {currentTenantId && <OwnerReimbursements key={currentTenantId} />}
 
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">{error}</div>}
     {loading && <div role="status" className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" />Loading bank monitor…</div>}

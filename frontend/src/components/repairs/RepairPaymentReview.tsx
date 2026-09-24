@@ -1,5 +1,6 @@
 import { useState, useId, useEffect, type FormEvent } from 'react'
 import { financeApi, financeError, type PaymentAccount } from '../../services/finance'
+import { accountSecondary } from '../paymentAccountStyles'
 import { PaymentAccountEditor } from '../PaymentAccounts'
 import { repairMoney, type RepairReviewRow } from './repairReview'
 
@@ -28,6 +29,7 @@ export default function RepairPaymentReview({ rows, onSaved }: { rows: RepairRev
     const account = accounts.find(a => a.id === id)
     if (account) setSource(account.ownership)
   }
+  const [reimbursement, setReimbursement] = useState(prior?.reimbursement || (prior ? 'unknown' : 'owed'))
   const [note, setNote] = useState(prior?.note || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -38,7 +40,7 @@ export default function RepairPaymentReview({ rows, onSaved }: { rows: RepairRev
     try {
       await financeApi.confirmRepairs({items: rows.map(r => ({repair_id: r.legacy_id, snapshot: r.review_snapshot, previous_id: r.confirmation?.id || null})), status,
         method: paid ? method : 'unknown', source: paid ? source : 'unknown', paid_amount: status === 'partial' ? amount : null,
-        payment_account_id: paid && accountId ? accountId : null, paid_date: paid && paidDate ? paidDate : null, note, payee: payee.trim() || null})
+        reimbursement: paid && source === 'personal' ? reimbursement : 'unknown', payment_account_id: paid && accountId ? accountId : null, paid_date: paid && paidDate ? paidDate : null, note, payee: payee.trim() || null})
       setSaved(true); onSaved()
     } catch (e) { setError(financeError(e)) }
     finally { setBusy(false) }
@@ -57,16 +59,16 @@ export default function RepairPaymentReview({ rows, onSaved }: { rows: RepairRev
       {accountType && <div className="space-y-2">
         <label className="block">Which {accountType === 'card' ? 'credit card' : accountType === 'bank' ? 'bank account' : 'cash source'}?<select className={control} value={accountId} onChange={e => selectAccount(e.target.value)}><option value="">Not identified yet</option>{matchingAccounts.map(a => <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` · ••${a.last4}` : ''} · {a.ownership === 'personal' ? 'Personal' : 'Business'}</option>)}</select></label>
         {accountError && <p role="alert" className="text-red-700">{accountError}</p>}
-        <button type="button" aria-expanded={addingAccount} className="min-h-11 text-blue-700 underline" onClick={() => setAddingAccount(!addingAccount)}>{addingAccount ? 'Cancel adding account' : 'Add a payment account'}</button>
-        {addingAccount && <PaymentAccountEditor onAdded={a => { setAccounts(items => [...items.filter(i => i.id !== a.id), a]); if (a.account_type === accountType) { setSource(a.ownership); setAccountId(a.id) } setAddingAccount(false) }} />}
+        <button type="button" aria-expanded={addingAccount} className={accountSecondary} onClick={() => setAddingAccount(!addingAccount)}>{addingAccount ? 'Close account form' : 'Add account'}</button>
+        {addingAccount && <PaymentAccountEditor initialType={accountType} onCancel={() => setAddingAccount(false)} onAdded={a => { setAccounts(items => [...items.filter(i => i.id !== a.id), a]); if (a.account_type === accountType) { setSource(a.ownership); setAccountId(a.id) } setAddingAccount(false) }} />}
       </div>}
       {status === 'partial' && <label className="block">Total paid so far<input className={control} type="number" min="0.01" step="0.01" required value={amount} onChange={e => setAmount(e.target.value)} /></label>}
       {rows.length === 1 && !prior && rows[0].date && <p>Payment date defaults to the invoice date. Change it if payment happened on another day.</p>}
       {rows.length === 1 && <label className="block">Payment date<input className={control} type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} /></label>}
     </>}
-    {paid && source === 'personal' && <p className="font-medium text-blue-800">Paid with your personal money: this belongs in amounts the business owes you, less anything already reimbursed. Saving here preserves the details; the Accounting reimbursement entry is not created yet.</p>}
+    {paid && source === 'personal' && <div className="space-y-2 border-t border-slate-200 pt-3"><label className="block">Does the business still owe you this payment?<select className={control} value={reimbursement} onChange={e => setReimbursement(e.target.value)}><option value="owed">Yes, the full amount I paid</option><option value="reimbursed">Already reimbursed, fully or partly</option><option value="unknown">I need to check</option></select></label><p>{reimbursement === 'owed' ? 'Saving records the repair and personal payment in Accounting when the dates and amounts pass checks. The business will owe you the amount you paid.' : 'Your answer is saved for review. Match earlier reimbursements before creating a new balance owed to you.'}</p></div>}
     <label className="block">Note or payment reference (optional)<input className={control} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} /></label>
-    <p>Your answers are saved as your confirmation. Unknown dates and funding sources can stay unknown. This does not add another expense or change bank balances.</p>
+    <p>Your confirmation preserves the payment details. Eligible personal payments are recorded once in Accounting; no money is transferred.</p>
     <button disabled={busy || !rows.length} className="min-h-11 px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-800 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">{busy ? 'Saving…' : 'Save payment details'}</button>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {saved && <p role="status">Payment details saved as your confirmation.</p>}

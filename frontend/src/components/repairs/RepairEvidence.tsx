@@ -23,6 +23,8 @@ export default function RepairEvidence({ row, onSaved }: { row: RepairReviewRow;
     {matchesReview(row, 'amount') && <p className="font-medium text-amber-800 mb-2">Invoice {row.source_totals.map(repairMoney).join(' / ')} · saved {repairMoney(row.recorded_cost)}</p>}
     <p>{row.evidence.length ? `${row.evidence.length} preserved document${row.evidence.length === 1 ? '' : 's'}` : 'No preserved documents'}</p>
     <p className="mt-1">{row.confirmation ? (row.confirmation.stale ? 'Repair changed · review your previous answer' : `Your answer: ${{paid: 'paid in full', partial: 'partly paid', unpaid: 'not paid yet', unknown: 'not sure'}[row.confirmation.status]} · ${{cash: 'cash', zelle: 'Zelle', credit_card: 'credit card', other: 'other payment method', unknown: 'method unknown'}[row.confirmation.method]}`) : row.payment_status === 'unverified' ? 'Payment details not yet confirmed' : 'Payment activity linked'}</p>
+    {row.owner_posting?.status === 'posted' && <p className="mt-2 font-medium text-emerald-800">Business owes you: {repairMoney(row.owner_posting.remaining ?? null)} · recorded in Accounting</p>}
+    {row.owner_posting?.status === 'review_required' && <p className="mt-2 text-amber-800">Accounting review: {row.owner_posting.reason}</p>}
     <button type="button" aria-expanded={open} aria-controls={`repair-evidence-${row.legacy_id}`} onClick={() => setOpen(!open)} className="flex items-center gap-1 min-h-11 text-blue-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 rounded">
       <svg aria-hidden="true" className={`w-4 h-4 ${open ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>
       Invoice & payment details
