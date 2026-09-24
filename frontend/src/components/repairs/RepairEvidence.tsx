@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { financeApi, financeError } from '../../services/finance'
 import { repairMoney, reviewIssueLabels, matchesReview } from './repairReview'
 import type { RepairReviewRow } from './repairReview'
@@ -28,6 +29,7 @@ export default function RepairEvidence({ row }: { row: RepairReviewRow }) {
         <div><dt>Recorded vendor balance</dt><dd className="font-medium">{repairMoney(row.recorded_vendor_outstanding)}</dd></div>
         <div><dt>Recorded amount owed to you</dt><dd className="font-medium">{repairMoney(row.recorded_owner_reimbursement)}</dd></div>
       </dl>
+      <Link to="/finance/repairs" className="inline-flex items-center min-h-11 text-blue-700 underline focus-visible:outline focus-visible:outline-2">Record or link a repair payment</Link>
       <p>Missing payment records do not mean this repair is unpaid. Personal cash and business cash need different payment links.</p>
       {row.issues.length > 0 && <ul className="list-disc pl-4 space-y-2">{row.issues.map(issue => <li key={issue}>{reviewIssueLabels[issue] || 'Additional evidence review required.'}</li>)}</ul>}
       {row.evidence.map((doc, index) => <button key={doc.id} type="button" disabled={downloading !== null} onClick={() => download(doc.id, doc.media_type)} className="block min-h-11 text-left text-blue-700 hover:underline disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 rounded">{downloading === doc.id ? 'Downloading…' : `Download preserved document ${index + 1}`}</button>)}

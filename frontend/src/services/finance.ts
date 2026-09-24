@@ -16,7 +16,7 @@ export interface Event { id: string; kind: string; effective_date: string; paylo
 export interface Context { tenant_id: number; currency: string; assets: { id: number; name: string; type: string }[]; accounts: Record<string, string>; motive_configured: boolean; home_enabled: boolean; owner_preview: boolean }
 export interface Cash { available: string | null; business_cash: string | null; protected_reserves: string; uncovered_bills: string; owner_reimbursement: string; card_obligations: string; committed_financing: string; status: string; as_of: string; issues: string[]; coverage: {name: string; type: string; balance: string | null; reconciled_through: string | null}[] }
 export interface Readiness { status: string; checks: { code: string; label: string; status: string }[] }
-export interface Workspace { accounts: RecordData[]; statements: RecordData[]; transactions: RecordData[]; claims: RecordData[]; reserves: RecordData[]; capital: RecordData[]; settlements: RecordData[]; assignments: RecordData[]; policy: RecordData | null; owner_cash: Cash; readiness: Readiness }
+export interface Workspace { legacy_repairs: {id: number; asset_id: number; date: string | null; description: string; cost: string | null}[]; accounts: RecordData[]; statements: RecordData[]; transactions: RecordData[]; claims: RecordData[]; reserves: RecordData[]; capital: RecordData[]; settlements: RecordData[]; assignments: RecordData[]; policy: RecordData | null; owner_cash: Cash; readiness: Readiness }
 export interface RetentionReport {
   settings_timezone:string; minimum_effective_date:string; scheduled_targets:{effective_date:string;target_percent:string;acceptable_percent:string}[];
   targets: {target_percent:string; acceptable_percent:string; effective_date:string|null};

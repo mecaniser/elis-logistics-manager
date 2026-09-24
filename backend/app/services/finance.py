@@ -161,12 +161,12 @@ def cash_position(db, tenant, as_of):
         coverage.append({'account_id': aid, 'name': a['name'], 'type': a['account_type'], 'reconciled_through': latest['end'] if latest else None, 'balance': latest['closing'] if latest else None})
         if not latest or latest['end'] != as_of.isoformat(): issues.append(f"{a['name']}: statement balance needed through {as_of}.")
         if latest:
-            if a['account_type'] == 'bank': cash += D(latest['closing'])
+            if a['account_type'] in ('bank', 'cash'): cash += D(latest['closing'])
             else: card += max(-D(latest['closing']), ZERO)
-    if not s['accounts'] or not any(a['account_type'] == 'bank' for a in s['accounts'].values()): issues.append('Add and reconcile business bank accounts.')
+    if not s['accounts'] or not any(a['account_type'] in ('bank', 'cash') for a in s['accounts'].values()): issues.append('Add and reconcile business bank or cash-on-hand accounts.')
     policy = s['policy'] or {}
-    if any(tid not in s['matches'] for tid in s['transactions']): issues.append('Unmatched bank or card transactions may overlap unpaid obligations. Resolve them before relying on available cash.')
-    if not policy.get('account_coverage_confirmed'): issues.append('Confirm all business bank and card accounts are included.')
+    if any(tid not in s['matches'] for tid in s['transactions']): issues.append('Unmatched bank, card or cashbook transactions may overlap unpaid obligations. Resolve them before relying on available cash.')
+    if not policy.get('account_coverage_confirmed'): issues.append('Confirm all business bank, card and cash-on-hand accounts are included.')
     reserve_total = sum((max(r['balance'], ZERO) for r in s['reserves'].values()), ZERO)
     remaining_cover = {r['id']: max(r['balance'], ZERO) for r in s['reserves'].values()}
     unpaid = owner = ZERO
@@ -190,8 +190,8 @@ def cash_position(db, tenant, as_of):
     for key, title in [('approved', 'Accounting policy'), ('opening_confirmed', 'Opening balances'), ('history_confirmed', 'Historical obligation coverage'), ('owner_treatment_confirmed', 'Owner funding treatment')]:
         if not policy.get(key): issues.append(f'{title} needs confirmation before available cash is final.')
     if reserve_total > max(cash, ZERO): issues.append('Protected reserve balances exceed reconciled cash; funding requires review.')
-    has_bank_evidence = any(c['balance'] is not None and c['type'] == 'bank' for c in coverage)
-    return {'as_of': as_of.isoformat(), 'currency': 'USD', 'basis': 'reconciled_cash_position', 'status': 'provisional' if issues else 'reconciled', 'funding_ready': funding_ready, 'available': money(available) if has_bank_evidence else None, 'business_cash': money(cash) if has_bank_evidence else None, 'protected_reserves': money(reserve_total), 'uncovered_bills': money(unpaid), 'owner_reimbursement': money(owner), 'card_obligations': money(card), 'committed_financing': money(committed), 'coverage': coverage, 'claims': protected_claims, 'issues': issues}
+    has_cash_evidence = any(c['balance'] is not None and c['type'] in ('bank', 'cash') for c in coverage)
+    return {'as_of': as_of.isoformat(), 'currency': 'USD', 'basis': 'reconciled_cash_position', 'status': 'provisional' if issues else 'reconciled', 'funding_ready': funding_ready, 'available': money(available) if has_cash_evidence else None, 'business_cash': money(cash) if has_cash_evidence else None, 'protected_reserves': money(reserve_total), 'uncovered_bills': money(unpaid), 'owner_reimbursement': money(owner), 'card_obligations': money(card), 'committed_financing': money(committed), 'coverage': coverage, 'claims': protected_claims, 'issues': issues}
 
 
 def parse_statement(db, tenant, p):
@@ -236,6 +236,8 @@ def append_command(db, tenant, command, key):
     # Preserve idempotency digests for commands saved before repair linking existed.
     if data['payload'].get('legacy_repair_id') is None:
         data['payload'].pop('legacy_repair_id', None)
+    if data['payload'].get('cash_count_evidence_id') is None:
+        data['payload'].pop('cash_count_evidence_id', None)
     hash_value = digest(data)
     prior = db.query(FinanceEvent).filter_by(tenant_id=tenant, key=key).first()
     if prior:
@@ -257,7 +259,7 @@ def append_command(db, tenant, command, key):
             if not asset: fail('Resource not found.', 'RESOURCE_NOT_FOUND', 404)
             if field in ('truck_id', 'pair_id') and asset.vehicle_type != 'truck': fail('Pair must identify the power unit.')
             if field == 'trailer_id' and asset.vehicle_type != 'trailer': fail('Select a trailer.')
-    for field in ('evidence_id', 'payoff_evidence_id'):
+    for field in ('evidence_id', 'payoff_evidence_id', 'cash_count_evidence_id'):
         if p.get(field):
             evidence(db, tenant, p[field])
             if db.query(FinanceEvidence).filter_by(tenant_id=tenant, supersedes_id=p[field]).first(): fail('This document was amended. Review its latest version before posting.', 'SUPERSEDED_EVIDENCE')
@@ -279,7 +281,20 @@ def append_command(db, tenant, command, key):
         if when < datetime.now(ZoneInfo(timezone)).date():
             fail('Retention targets apply prospectively. Choose today or a future date.', 'RETROACTIVE_TARGET')
     elif k == 'statement':
+        account = resource(db, tenant, p['account_id'], {'account'})
+        if account.effective_date > when: fail('The account must exist by the reconciliation date.')
+        if account.payload['account_type'] == 'cash':
+            if not p.get('cash_count_evidence_id'): fail('Cashbook reconciliation requires supporting evidence of the closing cash count.', 'CASH_COUNT_REQUIRED')
+            if p['cash_count_evidence_id'] == p['evidence_id']: fail('Attach the cash count separately from the cashbook CSV.', 'CASH_COUNT_REQUIRED')
+            if D(p['opening']) < ZERO or D(p['closing']) < ZERO: fail('Physical cash balances cannot be negative.')
+        elif p.get('cash_count_evidence_id'):
+            fail('Cash-count evidence applies only to a cash-on-hand account.')
         p['_transactions'] = parse_statement(db, tenant, p)
+        if account.payload['account_type'] == 'cash':
+            running = D(p['opening'])
+            for tx in sorted(p['_transactions'], key=lambda t: (t['date'], t['source_row'])):
+                running += D(tx['amount'])
+                if running < ZERO: fail('Cashbook spending exceeds the cash available. Review missing funding or transaction order.', 'CASH_SHORTFALL')
         if when.isoformat() != p['end']: fail('Statement effective date must equal statement end.')
         old = resource(db, tenant, p['supersedes_id'], {'statement'}) if p.get('supersedes_id') else None
         if old and old.payload['account_id'] != p['account_id']: fail('A replacement statement must use the same account.')
@@ -321,9 +336,9 @@ def append_command(db, tenant, command, key):
             t = s['transactions'].get(p.get('transaction_id'))
             if not t or t['id'] in s['matches']: fail('Choose an unmatched reconciled transaction.')
             a = s['accounts'][t['account_id']]
-            if (a['account_type'] == 'card') != (p['payer'] == 'card'): fail('Payment account type does not match payer.')
-            if t['date'] != when.isoformat(): fail('Use the bank transaction date as the payment effective date.')
-            if amount > -D(t['amount']) - s['allocated'].get(t['id'], ZERO): fail('Payment exceeds the unallocated bank/card transaction amount.')
+            if a['account_type'] != {'business': 'bank', 'card': 'card', 'cash': 'cash'}[p['payer']]: fail('Payment account type does not match payer.')
+            if t['date'] != when.isoformat(): fail('Use the transaction date as the payment effective date.')
+            if amount > -D(t['amount']) - s['allocated'].get(t['id'], ZERO): fail('Payment exceeds the unallocated transaction amount.')
             credit = 'card_payable' if p['payer'] == 'card' else 'cash'
         lines = [line(creditor, amount, claim.get('asset_id')), line(credit, -amount, claim.get('asset_id'))]
     elif k == 'credit_note':
@@ -344,7 +359,7 @@ def append_command(db, tenant, command, key):
     elif k == 'bank_match':
         t = s['transactions'].get(p['transaction_id'])
         if not t or t['id'] in s['matches']: fail('Choose an unmatched reconciled transaction.')
-        if s['accounts'][t['account_id']]['account_type'] != 'bank': fail('Start this match from a bank transaction.')
+        if s['accounts'][t['account_id']]['account_type'] not in ('bank', 'cash'): fail('Start this match from a bank or cashbook transaction.')
         if t['date'] != when.isoformat(): fail('Use the bank transaction date as the match effective date.')
         if s['allocated'].get(t['id'], ZERO): fail('This transaction already has partial bill allocations.')
         amount = D(t['amount'])
@@ -362,8 +377,10 @@ def append_command(db, tenant, command, key):
         else:
             other = s['transactions'].get(p.get('counterpart_transaction_id'))
             if not other or other['id'] in s['matches'] or s['allocated'].get(other['id'], ZERO) or other['account_id'] == t['account_id'] or D(other['amount']) != -amount: fail('Select the opposite, unmatched transaction in another account.')
-            expected = 'card' if mt == 'card_repayment' else 'bank'
-            if s['accounts'][other['account_id']]['account_type'] != expected: fail('Counterpart account type is incorrect.')
+            expected = ('card',) if mt == 'card_repayment' else ('bank', 'cash')
+            if s['accounts'][other['account_id']]['account_type'] not in expected: fail('Counterpart account type is incorrect.')
+            if 'cash' in (s['accounts'][t['account_id']]['account_type'], s['accounts'][other['account_id']]['account_type']) and t['date'] != other['date']:
+                fail('Cash transfers require the same date on both sides; review timing differences separately.')
             if mt == 'card_repayment':
                 if amount >= 0: fail('Card repayment must leave the bank account.')
                 if sum((D(p[f'{bucket}_amount']) for bucket in ('operating', 'investing', 'financing')), ZERO) != -amount:
@@ -662,7 +679,7 @@ def report(db, tenant, start, end, as_of):
         if ACCOUNTS[l['account']] in ('revenue', 'expense'): trend[l['date']]['earnings'] += amount
     overhead = sum((D(x['earnings']) for x in ledger['asset_earnings'] if x['asset_id'] is None), ZERO)
     source_events = [{'id': e.id, 'kind': e.kind, 'effective_date': e.effective_date.isoformat(), 'payload': e.payload} for e in s['events']]
-    evidence_ids = {eid for e in s['events'] for eid in [e.payload.get('evidence_id'), e.payload.get('payoff_evidence_id'), *e.payload.get('evidence_ids', [])] if eid}
+    evidence_ids = {eid for e in s['events'] for eid in [e.payload.get('evidence_id'), e.payload.get('payoff_evidence_id'), e.payload.get('cash_count_evidence_id'), *e.payload.get('evidence_ids', [])] if eid}
     manifest = [{'id': e.id, 'filename': e.filename, 'sha256': e.sha256, 'source_key': e.source_key, 'supersedes_id': e.supersedes_id, 'extraction_version': e.extraction_version} for e in db.query(FinanceEvidence).filter(FinanceEvidence.tenant_id == tenant, FinanceEvidence.id.in_(evidence_ids)).all()]
     result = {'tenant_id': tenant, 'currency': 'USD', 'basis': 'accrual', 'source_events': source_events, 'evidence_manifest': manifest, 'period': {'start': start.isoformat(), 'end': end.isoformat(), 'calendar_days': days}, 'as_of': as_of.isoformat(), 'source_cutoff': max((e.created_at.isoformat() for e in s['events']), default=None), 'source_sequence': max((e.sequence for e in s['events']), default=0), 'readiness': readiness(db, tenant, as_of), 'owner_cash': cash_position(db, tenant, as_of), 'ledger': ledger, 'revenue_breakdown': {'freight_gross': money(gross), 'rows': breakdown, 'settlement_remainder': money(sum((D(x['reported_payout']) for x in settled), ZERO))}, 'pairs': pairs, 'shared_company_result': money(overhead), 'unassigned_asset_result': money(D(ledger['income_statement']['net_income']) - overhead - sum((D(p['earnings']) for p in pairs), ZERO)), 'capital': capital_schedule(db, tenant, as_of), 'fuel': fuel, 'exceptions': exceptions, 'trend': [{'date': d, **{k: money(v) for k, v in vals.items()}} for d, vals in sorted(trend.items())], 'legacy_comparison': legacy_comparison(db, tenant, start, end), 'label': 'Draft — source and opening evidence required' if readiness(db, tenant, as_of)['status'] != 'pass' else 'Reconciled management report'}
 
@@ -697,7 +714,7 @@ def auto_reconcile(db, tenant):
                 already = sum((D(s['transactions'][e.payload['transaction_id']]['amount']) for e in s['events'] if e.kind == 'bank_match' and e.payload.get('target_id') == c['id'] and e.payload['transaction_id'] in s['matches']), ZERO)
                 if D(c['reported_payout']) - already == amount: candidates.append({'kind': 'bank_match', 'transaction_id': t['id'], 'target_id': c['id'], 'match_type': 'settlement'})
             elif c['remaining'] == -amount and c['creditor'] == 'vendor':
-                candidates.append({'kind': 'payment', 'claim_id': c['id'], 'transaction_id': t['id'], 'amount': money(-amount), 'payer': 'card' if s['accounts'][t['account_id']]['account_type'] == 'card' else 'business'})
+                candidates.append({'kind': 'payment', 'claim_id': c['id'], 'transaction_id': t['id'], 'amount': money(-amount), 'payer': {'bank': 'business', 'card': 'card', 'cash': 'cash'}[s['accounts'][t['account_id']]['account_type']]})
         if len(candidates) == 1:
             try:
                 with db.begin_nested():

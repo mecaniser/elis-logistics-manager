@@ -45,7 +45,7 @@ class RetentionTargets(Strict):
 class Account(Strict):
     kind: Literal['account']
     name: str = Field(min_length=1, max_length=100)
-    account_type: Literal['bank', 'card']
+    account_type: Literal['bank', 'card', 'cash']
 
 
 class CSVMapping(Strict):
@@ -61,6 +61,7 @@ class CSVMapping(Strict):
 
 
 class Statement(Strict):
+    cash_count_evidence_id: str | None = None
     kind: Literal['statement']
     account_id: str
     evidence_id: str
@@ -89,7 +90,7 @@ class Payment(Strict):
     kind: Literal['payment']
     claim_id: str
     amount: PositiveMoney
-    payer: Literal['business', 'owner', 'card']
+    payer: Literal['business', 'owner', 'card', 'cash']
     transaction_id: str | None = None
     evidence_id: str | None = None
     principal: PositiveMoney = '0.00'

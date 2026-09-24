@@ -136,7 +136,9 @@ def repair_history(as_of: date, db: Session = Depends(get_db), tenant: int = Dep
 @router.get('/workspace')
 def workspace(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     s = f.state(db, tenant, as_of)
-    return {'as_of': as_of.isoformat(), 'policy': s['policy'], 'accounts': [{'id': k, **v} for k, v in s['accounts'].items()], 'statements': list(s['statements'].values()), 'transactions': [{**v, 'matched': k in s['matches']} for k, v in s['transactions'].items()], 'claims': [{**c, 'remaining': f.money(c['remaining']), 'credited': f.money(c.get('credited', 0))} for c in s['claims'].values()], 'reserves': [{**r, 'balance': f.money(r['balance'])} for r in s['reserves'].values()], 'capital': f.capital_schedule(db, tenant, as_of), 'owner_cash': f.cash_position(db, tenant, as_of), 'readiness': f.readiness(db, tenant, as_of), 'assignments': s['assignments'], 'settlements': s['settlements']}
+    from app.models.repair import Repair
+    repair_options = [{'id': r.id, 'asset_id': r.truck_id, 'date': r.repair_date.isoformat() if r.repair_date else None, 'description': r.title or r.description or 'Untitled repair', 'cost': f.money(r.cost) if r.cost is not None else None} for r in db.query(Repair).join(Truck, Repair.truck_id == Truck.id).filter(Truck.tenant_id == tenant).all()]
+    return {'legacy_repairs': repair_options, 'as_of': as_of.isoformat(), 'policy': s['policy'], 'accounts': [{'id': k, **v} for k, v in s['accounts'].items()], 'statements': list(s['statements'].values()), 'transactions': [{**v, 'matched': k in s['matches']} for k, v in s['transactions'].items()], 'claims': [{**c, 'remaining': f.money(c['remaining']), 'credited': f.money(c.get('credited', 0))} for c in s['claims'].values()], 'reserves': [{**r, 'balance': f.money(r['balance'])} for r in s['reserves'].values()], 'capital': f.capital_schedule(db, tenant, as_of), 'owner_cash': f.cash_position(db, tenant, as_of), 'readiness': f.readiness(db, tenant, as_of), 'assignments': s['assignments'], 'settlements': s['settlements']}
 
 
 @router.post('/report-runs')
