@@ -18,7 +18,9 @@ import TaxYearSummary from './pages/TaxYearSummary'
 import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
 import Login from './pages/Login'
+import { ForgotPassword, ResetPassword } from './pages/PasswordRecovery'
 import BankMonitor from './pages/BankMonitor'
+import AccountSecurity from './pages/AccountSecurity'
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route
             path="/*"
             element={
@@ -35,6 +39,7 @@ function App() {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/bank-monitor" element={<BankMonitor />} />
+                      <Route path="/account/security" element={<AccountSecurity />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
                       <Route path="/settlements" element={<Settlements />} />
