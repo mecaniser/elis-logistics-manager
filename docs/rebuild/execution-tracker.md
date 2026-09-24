@@ -184,3 +184,11 @@ Backed up review.db before restarting the local backend. Verified counts remain 
 - Inline confirmations accept a vendor/person name, including manual/other records. Corrections retain existing revision history; omitted payee preserves old request digests. No ledger or cash side effects.
 - New PDF parsing includes known vendor extraction. Image OCR and arbitrary vendor extraction remain outside this checkpoint; image-only and undocumented entries are labeled explicitly, not assumed manual or unpaid.
 - Validation: 16 backend repair tests and 23 frontend tests passed, scoped new-component lint/build passed, desktop/mobile filters and credit-card option verified without saving invented facts. Production unchanged.
+
+## 2026-09-24 — Dropdown styling as part of ongoing implementation
+
+- Added shared native-select styling in `frontend/src/index.css`: consistent 44px minimum control height, typography, chevron, focus/hover/disabled/error states, and reduced-motion support.
+- Progressive customizable-select styles also cover open menus, selected options, checkmarks, long labels and bounded scrolling. Unsupported browsers retain their native picker; no JavaScript replacement changes selection, required validation or form submission semantics.
+- Desktop open-menu and keyboard ArrowDown/Enter selection verified in the in-app browser; mobile 390px picker placement and wrapped option labels verified. Restored All methods afterward. Build and whitespace checks passed; existing bundle-size warning remains.
+- Ongoing UI work should include control styling, open/closed states, keyboard access and desktop/mobile inspection in the same checkpoint instead of deferring those details to a final redesign.
+- This change touches only shared dropdown styles and this tracker. Concurrent account/login work was left untouched. Production unchanged.
