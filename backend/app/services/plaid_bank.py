@@ -77,7 +77,7 @@ def link_token(tenant_id: int, *, access_token: str | None = None) -> str:
     if access_token:
         body['access_token'] = access_token
     else:
-        body['products'] = ['transactions']
+        body['products'] = ['transactions', 'liabilities']
     body['redirect_uri'] = os.environ['PLAID_REDIRECT_URI']
     token = request('/link/token/create', body).get('link_token')
     if not isinstance(token, str) or not token:

@@ -55,6 +55,18 @@ def test_account_binding_and_incomplete_balances(monkeypatch, provider_env):
         plaid_bank.balance_snapshot('private-token', rules(), mapping)
 
 
+def test_link_requests_credit_and_transaction_access(monkeypatch, provider_env):
+    requested = {}
+    def fake_request(path, body):
+        requested.update(body)
+        assert path == '/link/token/create'
+        return {'link_token': 'link-token'}
+    monkeypatch.setattr(plaid_bank, 'request', fake_request)
+    assert plaid_bank.link_token(1) == 'link-token'
+    assert requested['products'] == ['transactions', 'liabilities']
+    assert requested['redirect_uri'] == 'https://example.test/bank-monitor'
+
+
 def test_consent_is_tenant_bound_one_use_and_token_is_encrypted(client, db, monkeypatch, provider_env):
     # Consent can be staged while the existing Chrome reader still runs.
     monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')

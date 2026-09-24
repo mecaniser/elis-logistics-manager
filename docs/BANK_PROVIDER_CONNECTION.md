@@ -6,8 +6,8 @@ store bank cookies, initiate a payment, or submit a transfer.
 
 ## Provisioning and rollout
 
-1. Obtain a Plaid **Production** account with Truliant access, Transactions and
-   Balance entitlements, and confirm in Plaid's live institution API that the
+1. Obtain a Plaid **Production** account with Truliant access, Transactions,
+   Liabilities, and Balance entitlements, and confirm in Plaid's live institution API that the
    configured checking and credit accounts are available. The public coverage
    file is only a candidate signal, not proof of current eligibility, account
    coverage, or an OAuth/FDX connection.
