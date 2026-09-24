@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from urllib.parse import quote, urlsplit
 import hashlib
 import hmac
+import httpx
 import logging
 import os
 import secrets
@@ -88,13 +89,15 @@ def _require_login(request: Request) -> str:
 
 
 def _recovery_configured() -> bool:
-    configured = all(os.getenv(name) for name in ('APP_AUTH_RECOVERY_EMAIL', 'APP_SMTP_HOST', 'APP_SMTP_FROM', 'APP_PUBLIC_URL'))
+    configured = all(os.getenv(name) for name in ('APP_AUTH_RECOVERY_EMAIL', 'APP_PUBLIC_URL'))
+    resend_ready = all(os.getenv(name) for name in ('APP_RESEND_API_KEY', 'APP_EMAIL_FROM'))
+    smtp_ready = all(os.getenv(name) for name in ('APP_SMTP_HOST', 'APP_SMTP_FROM'))
     credentials_complete = bool(os.getenv('APP_SMTP_USERNAME')) == bool(os.getenv('APP_SMTP_PASSWORD'))
     url = urlsplit(os.getenv('APP_PUBLIC_URL', ''))
     url_safe = url.scheme == 'https' and bool(url.netloc) and not url.username and not url.password and not url.path.strip('/')
     secret = os.getenv('APP_AUTH_SECRET')
     separate_secret = bool(secret) and secret != os.getenv('APP_AUTH_PASSWORD')
-    return configured and credentials_complete and url_safe and separate_secret
+    return configured and (resend_ready or (smtp_ready and credentials_complete)) and url_safe and separate_secret
 
 
 def _login_failed(account: AuthAccount, db: Session) -> None:
@@ -107,13 +110,23 @@ def _login_failed(account: AuthAccount, db: Session) -> None:
 
 def _send_reset_email(email: str, token: str) -> None:
     link = f"{os.environ['APP_PUBLIC_URL'].rstrip('/')}/reset-password?token={quote(token)}"
+    body = ('A password reset was requested for your Elis Group Hub account.\n\n'
+            f'Use this link within 20 minutes: {link}\n\n'
+            'If you did not request this, ignore this email. Your password has not changed.')
+    if os.getenv('APP_RESEND_API_KEY') and os.getenv('APP_EMAIL_FROM'):
+        with httpx.Client(timeout=10) as client:
+            response = client.post('https://api.resend.com/emails',
+                                   headers={'Authorization': f"Bearer {os.environ['APP_RESEND_API_KEY']}",
+                                            'Idempotency-Key': hashlib.sha256(token.encode()).hexdigest()},
+                                   json={'from': os.environ['APP_EMAIL_FROM'], 'to': [email],
+                                         'subject': 'Reset your Elis Group Hub password', 'text': body})
+            response.raise_for_status()
+        return
     message = EmailMessage()
     message['Subject'] = 'Reset your Elis Group Hub password'
     message['From'] = os.environ['APP_SMTP_FROM']
     message['To'] = email
-    message.set_content('A password reset was requested for your Elis Group Hub account.\n\n'
-                        f'Use this link within 20 minutes: {link}\n\n'
-                        'If you did not request this, ignore this email. Your password has not changed.')
+    message.set_content(body)
     port = int(os.getenv('APP_SMTP_PORT', '587'))
     smtp_class = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
     with smtp_class(os.environ['APP_SMTP_HOST'], port, timeout=10) as smtp:
@@ -127,7 +140,7 @@ def _send_reset_email(email: str, token: str) -> None:
 def _deliver_reset_email(email: str, token: str) -> None:
     try:
         _send_reset_email(email, token)
-    except (OSError, smtplib.SMTPException, KeyError, ValueError):
+    except (OSError, smtplib.SMTPException, httpx.HTTPError, KeyError, ValueError):
         logger.exception('Password reset email delivery failed')
         # An undelivered link should not remain valid. Never log its token.
         with SessionLocal() as db:

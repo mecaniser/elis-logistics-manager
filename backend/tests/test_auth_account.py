@@ -1,5 +1,7 @@
 """Focused account login, reset, and authenticator regression tests."""
 import time
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,6 +13,39 @@ from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import Base, get_db
 from app.main import app
 from app.routers import auth
+
+
+def test_recovery_email_over_https_without_smtp(monkeypatch):
+    for name, value in {
+        'APP_AUTH_PASSWORD': 'original-password', 'APP_AUTH_SECRET': 'independent-secret',
+        'APP_AUTH_RECOVERY_EMAIL': 'owner@example.com', 'APP_PUBLIC_URL': 'https://hub.example.com',
+        'APP_RESEND_API_KEY': 'test-api-key', 'APP_EMAIL_FROM': 'security@example.com',
+    }.items():
+        monkeypatch.setenv(name, value)
+    for name in ('APP_SMTP_HOST', 'APP_SMTP_FROM', 'APP_SMTP_USERNAME', 'APP_SMTP_PASSWORD'):
+        monkeypatch.delenv(name, raising=False)
+    assert auth._recovery_configured()
+
+    requests = []
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={'id': 'email-id'})
+
+    original_client = httpx.Client
+    monkeypatch.setattr(auth.httpx, 'Client', lambda **kwargs: original_client(transport=httpx.MockTransport(handler)))
+    auth._send_reset_email('owner@example.com', 'single-use-token')
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url) == 'https://api.resend.com/emails'
+    assert request.headers['Authorization'] == 'Bearer test-api-key'
+    assert b'https://hub.example.com/reset-password?token=single-use-token' in request.content
+    assert b'owner@example.com' in request.content
+
+    def rejected(request):
+        return httpx.Response(403, json={'message': 'Sender is not verified'})
+    monkeypatch.setattr(auth.httpx, 'Client', lambda **kwargs: original_client(transport=httpx.MockTransport(rejected)))
+    with pytest.raises(httpx.HTTPStatusError):
+        auth._send_reset_email('owner@example.com', 'single-use-token')
 
 
 def test_remember_reset_and_mfa(monkeypatch):
