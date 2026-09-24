@@ -274,6 +274,18 @@ def test_worker_connection_check_verifies_real_account_evidence_without_daily_sl
     assert db.query(BankMonitorRun).count() == 0
 
 
+def test_chrome_mode_does_not_run_queued_private_connection_check(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    db.add(BankMonitorConnectionCheck(tenant_id=1, requested_at=datetime.now(timezone.utc),
+                                      status='pending', result={}))
+    db.commit()
+    def forbidden_reader(*_):
+        raise AssertionError('The server browser must not open in Chrome mode')
+    assert run_connection_checks(db, forbidden_reader) == 0
+    assert db.query(BankMonitorConnectionCheck).one().status == 'pending'
+
+
 def test_worker_connection_check_records_sign_in_failure_without_retry(db, monkeypatch):
     monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
     monkeypatch.setenv('BANK_MONITOR_PROFILE_1', '/private-test-profile')
@@ -326,3 +338,12 @@ def test_worker_verification_request_is_authenticated_and_rate_limited(bank_auth
     dashboard = bank_auth.get('/api/bank-monitor', headers={'X-Tenant-ID': '1'}).json()
     assert dashboard['connection_check']['status'] == 'credentials_required'
     assert dashboard['connection_check']['result'].get('password') is None
+
+
+def test_chrome_mode_rejects_new_private_connection_check(bank_auth, db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    response = bank_auth.post('/api/bank-monitor/connection-checks', json={}, headers={
+        'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'verify-worker-bank-access',
+    })
+    assert response.status_code == 409
+    assert db.query(BankMonitorConnectionCheck).count() == 0
