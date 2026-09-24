@@ -41,7 +41,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:message.background !== true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
@@ -64,7 +64,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:message.background !== true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>

@@ -215,20 +215,20 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     } catch (error: unknown) { if (active.current) setError(errorMessage(error, 'Unable to reload the bank assistant.')) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
-  const checkBalances = async () => {
+  const checkBalances = async (background = false) => {
     setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Confirming your ELIS session…', started: Date.now() })
     let bankRead = false
     try {
       await bankMonitorApi.drafts(tenantId)
       if (active.current) setOperation({ message: 'Synchronizing the current Truliant account list…', started: Date.now() })
-      const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS' })
+      const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS', background })
       const monitored = await onAccountsDiscovered(discovered.accounts || [])
       const effectiveChecking = monitored.checking
       const effectiveSources = monitored.sources
       if (!effectiveChecking.length || !effectiveSources.length) throw new Error('Import and save the checking and credit accounts first.')
       if (active.current) setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
       const suffixes = [...effectiveChecking, ...effectiveSources].map(account => account.last4)
-      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: effectiveChecking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
+      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: effectiveChecking.map(account => account.last4), include_pending: basis === 'posted_and_pending', background })
       bankRead = true
       if (!active.current) return
       setConnected(true); setBalanceCheck(result); onBalanceObserved(result)
@@ -327,7 +327,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     document.documentElement.dataset.elisBankMonitorReady = connected && !busy ? 'true' : 'false'
     const scheduled = () => {
       if (!connected || busy) return
-      void checkBalances().finally(() => {
+      void checkBalances(true).finally(() => {
         void send<ExtensionResponse>(extension, {type:'ELIS_SCHEDULED_DONE'}).catch(() => {})
       })
     }
@@ -453,7 +453,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300"><Icon name="clock" className="h-4 w-4" /> Current funding status</div>
             {!balanceCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">Checked {new Date(balanceCheck.checked_at).toLocaleString()} · Read-only; no transfer submitted.</p></div></div>}
           </div>
-          <button type="button" disabled={busy || !connected} onClick={checkBalances} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
+          <button type="button" disabled={busy || !connected} onClick={() => void checkBalances()} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
         </div>
         {balanceCheck && <div className="mt-7 grid gap-6 lg:grid-cols-2">
           <section aria-labelledby="cash-accounts-heading">
