@@ -74,6 +74,7 @@ class Statement(Strict):
 
 class Claim(Strict):
     kind: Literal['bill', 'owner_advance']
+    legacy_repair_id: int | None = Field(default=None, gt=0)
     evidence_id: str
     source_ref: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)

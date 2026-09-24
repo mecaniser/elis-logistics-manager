@@ -127,6 +127,12 @@ def reconstruction_plan(db: Session = Depends(get_db), tenant: int = Depends(acc
     return build(db, tenant)
 
 
+@router.get('/repair-history')
+def repair_history(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.repair_history import repair_history as build
+    return build(db, tenant, as_of)
+
+
 @router.get('/workspace')
 def workspace(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     s = f.state(db, tenant, as_of)

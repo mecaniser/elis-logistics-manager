@@ -233,6 +233,9 @@ def append_command(db, tenant, command, key):
     # Serialize writes for a business, including idempotency and closed-period checks.
     lock_business(db, tenant)
     data = command.model_dump(mode='json')
+    # Preserve idempotency digests for commands saved before repair linking existed.
+    if data['payload'].get('legacy_repair_id') is None:
+        data['payload'].pop('legacy_repair_id', None)
     hash_value = digest(data)
     prior = db.query(FinanceEvent).filter_by(tenant_id=tenant, key=key).first()
     if prior:
@@ -287,6 +290,13 @@ def append_command(db, tenant, command, key):
                 if p['start'] <= existing['end'] and p['end'] >= existing['start']: fail('Statement periods overlap. Link the replacement explicitly.')
                 if (date.fromisoformat(existing['end']) + timedelta(days=1)).isoformat() == p['start'] and D(existing['closing']) != D(p['opening']): fail('Opening does not match the preceding reconciled statement.')
     elif k in ('bill', 'owner_advance'):
+        if p.get('legacy_repair_id'):
+            from app.models.repair import Repair
+            repair = db.query(Repair).join(Truck, Repair.truck_id == Truck.id).filter(Repair.id == p['legacy_repair_id'], Truck.tenant_id == tenant).first()
+            if not repair: fail('Resource not found.', 'RESOURCE_NOT_FOUND', 404)
+            if p.get('asset_id') != repair.truck_id: fail('The obligation must reference the repair asset.')
+            if any(e.kind in ('bill', 'owner_advance') and e.payload.get('legacy_repair_id') == repair.id for e in all_events):
+                fail('This repair already has an obligation. Review its existing claim or correction.', 'DUPLICATE_REPAIR')
         if D(p['amount']) <= 0: fail('Amount must be greater than zero.')
         if any(e.kind in ('bill', 'owner_advance') and e.payload['source_ref'] == p['source_ref'] for e in all_events): fail('This obligation already exists.', 'DUPLICATE_SOURCE')
         if p.get('reserve_id'):
