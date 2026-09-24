@@ -30,6 +30,29 @@ type BankRead = {
 
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
+const scheduledIssue = (status: string) => {
+  if (status === 'profile_setup_required') return {
+    title: 'Bank access not set up',
+    detail: 'The scheduled worker has no private Truliant browser profile. This check did not read any accounts. A Chrome extension connection does not connect the server worker; a system administrator must set up and verify its separate bank access.',
+  }
+  if (status === 'connection_required') return {
+    title: 'Worker bank connection missing',
+    detail: 'The scheduled worker has no bank profile configured. This check did not read any accounts. A system administrator must configure and verify the worker connection.',
+  }
+  if (status === 'credentials_required') return {
+    title: 'Worker sign-in not configured',
+    detail: 'The worker reached the bank sign-in step but has no worker-only credentials. This check did not read any accounts. A system administrator must configure secure worker credentials and verify sign-in.',
+  }
+  if (status === 'profile_permissions_required') return {
+    title: 'Worker profile access blocked',
+    detail: 'The worker cannot safely use its private browser profile. This check did not read any accounts. A system administrator must correct its profile permissions.',
+  }
+  if (['mfa_required', 'login_review_required', 'sign_in_required', 'unexpected_login_page'].includes(status)) return {
+    title: 'Worker bank sign-in needs review',
+    detail: 'The scheduled worker could not complete Truliant sign-in. This check did not read any accounts. An operator must review the separate worker session and any bank verification step.',
+  }
+  return null
+}
 const defaults: Rules = { repayment: { enabled: false, priority: [], reserve_cents: 0 }, enabled: false, checking: [], sources: [], basis: 'posted', buffer_cents: 0 }
 const apiError = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error && 'response' in error) {
@@ -125,7 +148,7 @@ export default function BankMonitor() {
       if (tenantRef.current !== tenantId) return
       setData(response.data)
       setRules({ ...response.data.rules, repayment: response.data.rules.repayment || defaults.repayment })
-      setSettingsNotice(response.data.rules.enabled ? 'Settings saved. Daily checks are scheduled.' : 'Settings saved. Scheduled checks are paused.')
+      setSettingsNotice(response.data.rules.enabled ? 'Schedule saved. Bank access must be verified before automated checks can be relied on.' : 'Settings saved. Scheduled checks are paused.')
     } catch (error: unknown) {
       if (tenantRef.current === tenantId) setSettingsError(apiError(error, 'Check the account suffixes and ensure each account appears only once.'))
     } finally { setSaving(false) }
@@ -208,6 +231,7 @@ export default function BankMonitor() {
   }
 
   const latest = data?.runs[0]
+  const latestIssue = latest ? scheduledIssue(latest.status) : null
   const latestRepayment = data?.repayment_runs?.[0]
   const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
@@ -239,10 +263,11 @@ export default function BankMonitor() {
 
         {latest && <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
-            <span className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span className="min-w-0"><span className="block font-semibold text-slate-950">Latest scheduled check</span><span className="block truncate text-sm capitalize text-slate-500">{latest.scheduled_date} · {label(latest.status)}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View details</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide details</span>
+            <span className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span className="min-w-0"><span className="block font-semibold text-slate-950">Latest scheduled check</span><span className={`block text-sm ${latestIssue ? 'font-medium text-amber-800' : 'text-slate-500'}`}>{latest.scheduled_date} · {latestIssue?.title || label(latest.status)}</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View details</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide details</span>
           </summary>
           <div className="space-y-5 border-t border-slate-200 p-5">
             {latest.status === 'running' && <p className="text-sm text-amber-800">This check is still running. No outcome is confirmed.</p>}
+            {latestIssue && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{latestIssue.detail}</p>}
             {stale && <p className="text-sm text-amber-800">Historical snapshot. Use Check bank now before preparing a transfer.</p>}
             {latest.result.message && <p className="text-sm text-slate-700">{latest.result.message}</p>}
             {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
@@ -254,16 +279,16 @@ export default function BankMonitor() {
 
         <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="history" /></span><span><span className="block font-semibold text-slate-950">Run history</span><span className="block text-sm text-slate-500">{data.runs.length} scheduled · {data.repayment_runs.length} manual</span></span></span><span className="text-sm font-semibold text-blue-700 group-open:hidden">View</span><span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Hide</span></summary>
-          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.repayment_runs.map(run => <div key={`repayment-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{new Date(run.started_at).toLocaleString()} · Manual repayment</span><span className="capitalize text-slate-600">{label(run.status)} · No transfer executed</span></div>)}{data.runs.map(run => <div key={`scheduled-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date} · Scheduled</span><span className="capitalize text-slate-600">{label(run.status)} · No transfers executed</span></div>)}{!data.runs.length && !data.repayment_runs.length && <p className="px-5 py-6 text-sm text-slate-600">No check has completed. The next scheduled check is {new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.</p>}</div>
+          <div className="divide-y divide-slate-200 border-t border-slate-200">{data.repayment_runs.map(run => <div key={`repayment-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{new Date(run.started_at).toLocaleString()} · Manual repayment</span><span className="capitalize text-slate-600">{label(run.status)} · No transfer executed</span></div>)}{data.runs.map(run => <div key={`scheduled-${run.id}`} className="flex flex-col gap-1 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="font-medium text-slate-800">{run.scheduled_date} · Scheduled</span><span className="text-slate-600">{scheduledIssue(run.status)?.title || label(run.status)} · No transfers executed</span></div>)}{!data.runs.length && !data.repayment_runs.length && <p className="px-5 py-6 text-sm text-slate-600">No scheduled check has completed. The next attempt is {new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern. Bank access is not yet verified.</p>}</div>
         </details>
       </main>
 
       <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && workerOnline ? 'bg-emerald-50 text-emerald-700' : scheduleActive ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && workerOnline ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : scheduleActive ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : workerOnline ? 'Worker online' : 'Worker offline'}</span></div>
-          <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. check</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : `Worker connected. Next check: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
-          {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment is evaluated at the 5:30 p.m. check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
+          <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. attempt</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment can be evaluated during a completed 5:30 p.m. bank check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
           <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
