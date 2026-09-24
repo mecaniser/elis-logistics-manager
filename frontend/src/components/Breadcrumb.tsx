@@ -7,6 +7,7 @@ interface BreadcrumbItem {
 }
 
 const routeLabels: Record<string, string> = {
+  '/bank-monitor': 'Bank Monitor',
   '/': 'Dashboard',
   '/trucks': 'Vehicles',
   '/settlements': 'Settlements',

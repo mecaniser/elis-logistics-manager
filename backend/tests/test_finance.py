@@ -300,3 +300,23 @@ def test_ready_package_contains_originals_and_cutover_requires_current_snapshot(
     assert not client.get('/api/v1/accounting/context',headers=tenant_headers).json()['home_enabled']
     cmd(db,'activate_finance',report_id=r['id'],browser_acceptance_confirmed=True)
     assert client.get('/api/v1/accounting/context',headers=tenant_headers).json()['home_enabled']
+
+
+def test_authenticated_finance_access_does_not_use_local_bypass(client, monkeypatch):
+    from app.auth_utils import create_session_token, SESSION_COOKIE_NAME
+    monkeypatch.setenv('APP_AUTH_USERNAME', 'release-test-principal')
+    monkeypatch.setenv('APP_AUTH_SECRET', 'isolated-test-secret-not-a-production-credential')
+    monkeypatch.setenv('APP_AUTH_TENANT_IDS', '1')
+    # Even a testclient/loopback request must authenticate once auth is configured.
+    client.cookies.clear()
+    headers = {'X-Tenant-ID': '1'}
+    assert client.get('/api/v1/accounting/context', headers=headers).status_code == 401
+    client.cookies.set(SESSION_COOKIE_NAME, create_session_token('different-principal'))
+    assert client.get('/api/v1/accounting/context', headers=headers).status_code == 401
+    client.cookies.set(SESSION_COOKIE_NAME, create_session_token('release-test-principal'))
+    response = client.get('/api/v1/accounting/context', headers=headers)
+    assert response.status_code == 200
+    assert response.json()['owner_preview'] is False
+    assert client.get('/api/v1/accounting/context', headers={'X-Tenant-ID': '2'}).status_code == 404
+    monkeypatch.delenv('APP_AUTH_TENANT_IDS')
+    assert client.get('/api/v1/accounting/context', headers=headers).status_code == 404

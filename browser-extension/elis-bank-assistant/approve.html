@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review ELIS form preparation</title>
+  <link rel="stylesheet" href="approve.css">
+</head>
+<body>
+  <main class="dialog" aria-labelledby="heading">
+    <header class="header">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 3 5 6.5v5.25c0 4.1 2.95 7.9 7 9.25 4.05-1.35 7-5.15 7-9.25V6.5L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>
+      </div>
+      <div><p class="eyebrow">ELIS Bank Assistant</p><h1 id="heading">Review form preparation</h1></div>
+    </header>
+
+    <div class="step" aria-label="Transfer preparation progress">
+      <span class="step-dot complete">1</span><span class="step-label">Draft reviewed</span><span class="step-line"></span>
+      <span class="step-dot current">2</span><span class="step-label current-label">Approve preparation</span><span class="step-line"></span>
+      <span class="step-dot">3</span><span class="step-label final-label">Submit in Truliant</span>
+    </div>
+
+    <section class="notice" aria-labelledby="intro">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/><path d="M12 8v4m0 4h.01"/></svg>
+      <div><strong id="intro">This approval only fills the bank form.</strong><p id="safety-copy">No money moves until you review and submit the transfer in Truliant.</p></div>
+    </section>
+
+    <section class="summary" aria-label="Transfer details">
+      <div class="route">
+        <div><span>From</span><strong id="from">••••</strong></div>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+        <div><span>To</span><strong id="to">••••</strong></div>
+      </div>
+      <div class="amount"><span>Amount</span><strong id="amount">—</strong></div>
+      <div class="memo"><span>Memo</span><strong id="memo">—</strong></div>
+    </section>
+
+    <p class="expiry" id="expiry"><span class="pulse" aria-hidden="true"></span>Review expires in <strong id="countdown">2:00</strong></p>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <footer class="actions">
+      <button class="secondary" id="cancel" type="button">Cancel</button>
+      <button class="primary" id="approve" type="button" disabled><span id="approve-label">Approve and open Truliant</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+    </footer>
+  </main>
+  <script type="module" src="approve.js"></script>
+</body>
+</html>

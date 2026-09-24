@@ -1,5 +1,18 @@
 # elis-logistics-app
 
+## Bank monitor deployment configuration
+
+- User decision: server only; never install a local scheduled bank worker.
+- Platform target: separate Railway worker alongside the ELIS web application.
+- Build: `Dockerfile.bank-monitor`; service config: `/railway.bank-monitor.json`.
+- Entrypoint: `python -m app.bank_monitor_worker`; one replica, no public domain.
+- Persistent session directory: private UID 10001-owned profile under `/data`.
+- Status: configuration prepared, not deployed. The server login/MFA flow remains
+  unimplemented; do not treat the Codex browser session as worker authentication.
+- Enablement: default off; require verified PostgreSQL URL, authorized tenant IDs,
+  and authenticated profile mapping before starting any daily checks.
+- No transfers are implemented. Details and rollout blockers: `docs/BANK_MONITOR.md`.
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. The

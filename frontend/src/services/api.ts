@@ -1,5 +1,15 @@
 import axios from 'axios'
 
+const handleAuthFailure = (error: unknown) => {
+  const status = (error as { response?: { status?: number } })?.response?.status
+  if (status === 401 && window.location.pathname !== '/login') {
+    const from = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    const query = new URLSearchParams({ from, reason: 'session-expired' })
+    window.location.replace(`/login?${query.toString()}`)
+  }
+  return Promise.reject(error)
+}
+
 const api = axios.create({
   baseURL: '/api',
   headers: {
@@ -30,12 +40,7 @@ api.interceptors.request.use((config) => {
 })
 
 // Redirect to login on auth failures
-api.interceptors.response.use((response) => response, (error) => {
-  if (error.response?.status === 401) {
-    window.location.href = '/login'
-  }
-  return Promise.reject(error)
-})
+api.interceptors.response.use((response) => response, handleAuthFailure)
 
 // Separate axios instance for FormData requests (no default Content-Type header)
 // This allows the browser to automatically set multipart/form-data with boundary
@@ -56,12 +61,7 @@ formDataApi.interceptors.request.use((config) => {
   return Promise.reject(error)
 })
 
-formDataApi.interceptors.response.use((response) => response, (error) => {
-  if (error.response?.status === 401) {
-    window.location.href = '/login'
-  }
-  return Promise.reject(error)
-})
+formDataApi.interceptors.response.use((response) => response, handleAuthFailure)
 
 // Types
 export interface Truck {
@@ -1000,4 +1000,21 @@ export const accountingApi = {
   exportTaxPackage: (year: number) => {
     return api.get('/accounting/export/tax-package', { params: { year }, responseType: 'blob' })
   },
+}
+
+const draftHeaders = (tenantId: number) => ({ withCredentials: true, headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'reviewed-transfer' } })
+const bankMonitorClient = axios.create({ baseURL: '/api', withCredentials: true })
+bankMonitorClient.interceptors.response.use((response) => response, handleAuthFailure)
+export const bankMonitorApi = {
+  draftHistoryMatch: (tenantId: number, id: string, evidence: unknown) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/history-match`, evidence, draftHeaders(tenantId)),
+  drafts: (tenantId: number) => bankMonitorClient.get('/bank-monitor/drafts', draftHeaders(tenantId)),
+  createDraft: (tenantId: number, draft: unknown) => bankMonitorClient.post('/bank-monitor/drafts', draft, draftHeaders(tenantId)),
+  prepareDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/prepare`, {}, draftHeaders(tenantId)),
+  draftOutcome: (tenantId: number, id: string, status: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/outcome`, { status }, draftHeaders(tenantId)),
+  retryDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/retry`, { reason: 'signed_out_before_form' }, draftHeaders(tenantId)),
+  updateDraftBankDetails: (tenantId: number, id: string, details: { bank_state: 'posted' | 'pending'; bank_effective_date: string }) => bankMonitorClient.put(`/bank-monitor/drafts/${id}/bank-details`, details, draftHeaders(tenantId)),
+  get: (tenantId: number) => bankMonitorClient.get('/bank-monitor', { headers: { 'X-Tenant-ID': String(tenantId) } }),
+  save: (tenantId: number, rules: unknown) => bankMonitorClient.put('/bank-monitor', rules, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'save-settings' } }),
+  runRepayment: (tenantId: number, evidence: unknown) => bankMonitorClient.post('/bank-monitor/repayment-runs', evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'run-repayment-check' } }),
+  createRepaymentDrafts: (tenantId: number, runId: number) => bankMonitorClient.post(`/bank-monitor/repayment-runs/${runId}/drafts`, {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-repayment-drafts' } }),
 }

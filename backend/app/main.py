@@ -15,6 +15,7 @@ from app.routers import trucks, settlements, repairs, analytics, extractor, acco
 from app.routers import finance
 from app.models import finance as finance_models
 from app.auth_utils import verify_session_token, SESSION_COOKIE_NAME
+from app.routers import bank_monitor
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -116,6 +117,8 @@ app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"]
 app.include_router(finance.router, prefix="/api/v1/accounting", tags=["accounting-v1"])
 app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+app.include_router(bank_monitor.router, prefix="/api/bank-monitor", tags=["bank-monitor"])
 
 # Serve uploaded files
 # Determine uploads directory - backend runs from backend/ directory

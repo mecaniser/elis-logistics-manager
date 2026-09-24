@@ -21,6 +21,7 @@ import TaxYearSummary from './pages/TaxYearSummary'
 import ScheduleC from './pages/ScheduleC'
 import Businesses from './pages/Businesses'
 import Login from './pages/Login'
+import BankMonitor from './pages/BankMonitor'
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
                       <Route path="/legacy-dashboard" element={<Dashboard />} />
                       <Route path="/finance" element={<Finance />} />
                       <Route path="/finance/:section" element={<Finance />} />
+                      <Route path="/bank-monitor" element={<BankMonitor />} />
                       <Route path="/businesses" element={<Businesses />} />
                       <Route path="/trucks" element={<Trucks />} />
                       <Route path="/settlements/reconciliation" element={<SettlementHistory />} />

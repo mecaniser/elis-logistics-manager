@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
+const safeReturnPath = (value: string | null | undefined) => value?.startsWith('/') && !value.startsWith('//') ? value : '/'
+
 const Login = () => {
   const { authenticated, login, loading } = useAuth()
   const navigate = useNavigate()
@@ -11,6 +13,12 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const loginState = location.state as { from?: { pathname?: string }; reason?: string } | null
+  const statePath = loginState?.from?.pathname
+  const query = new URLSearchParams(location.search)
+  const returnPath = safeReturnPath(statePath || query.get('from'))
+  const sessionRecovery = loginState?.reason === 'session-required' || query.get('reason') === 'session-expired'
+  const returnLabel = returnPath === '/bank-monitor' ? 'Bank Monitor' : 'the requested page'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -18,10 +26,10 @@ const Login = () => {
     setSubmitting(true)
     try {
       await login(username, password)
-      const from = (location.state as any)?.from?.pathname || '/'
-      navigate(from, { replace: true })
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Login failed. Please try again.')
+      navigate(returnPath, { replace: true })
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Login failed. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -35,8 +43,7 @@ const Login = () => {
   // disabled.  When the auth check succeeds in that mode, do not leave the
   // user on a login form that cannot submit credentials.
   if (authenticated) {
-    const from = (location.state as any)?.from?.pathname || '/'
-    return <Navigate to={from} replace />
+    return <Navigate to={returnPath} replace />
   }
 
   return (
@@ -44,7 +51,7 @@ const Login = () => {
       <div className="w-full max-w-md bg-white/10 backdrop-blur rounded-xl p-8 shadow-xl border border-white/10">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-white">Elis Group Hub</h1>
-          <p className="text-slate-300 mt-2">Sign in to continue</p>
+          <p className="text-slate-300 mt-2">{sessionRecovery ? `Your ELIS session is no longer active. Sign in to return to ${returnLabel}.` : 'Sign in to continue'}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
