@@ -5,7 +5,8 @@ export interface RepairReviewRow {
   description: string
   review_snapshot: string
   batch_eligible: boolean
-  confirmation: {id: string; status: string; method: string; source: string; paid_amount: string | null; paid_date: string | null; note: string; stale: boolean} | null
+  payee: {name: string | null; basis: string; candidates: string[]; evidence_ids: string[]}
+  confirmation: {payee?: string; id: string; status: string; method: string; source: string; paid_amount: string | null; paid_date: string | null; note: string; stale: boolean} | null
   recorded_cost: string | null
   source_totals: string[]
   recorded_vendor_outstanding: string | null
@@ -42,4 +43,12 @@ export const reviewIssueLabels: Record<string, string> = {
 }
 export function repairMoney(value: string | null): string {
   return value === null ? 'Not established' : new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'}).format(Number(value))
+}
+
+export function repairMethod(row: RepairReviewRow | undefined): string {
+  const c = row?.confirmation
+  return c && !c.stale && ['paid', 'partial'].includes(c.status) ? c.method : 'unknown'
+}
+export function repairDocumentType(row: RepairReviewRow): string {
+  return row.evidence.some(e => e.media_type === 'application/pdf') ? 'Invoice PDF' : row.evidence.length ? 'Image / other attachments' : 'No preserved document'
 }

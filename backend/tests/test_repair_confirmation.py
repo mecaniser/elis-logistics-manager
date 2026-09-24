@@ -110,3 +110,23 @@ def test_uploaded_original_preserved_atomically(db, truck, client, monkeypatch, 
     assert base64.b64decode(evidence.content_base64) == content
     assert evidence.extracted['legacy_repair_ids'] == [response.json()['repair']['id']]
     assert evidence.extracted['payment_basis'] == 'not_established'
+
+
+def test_credit_card_and_payee_confirmation_do_not_infer_cash(db, truck):
+    repair(db, truck)
+    request = payload(db).model_copy(update={'method':'credit_card','payee':'Truck Pit Stop'})
+    save_confirmation(db,1,request); db.commit()
+    row = repair_history(db,1,ASOF)['rows'][0]
+    assert row['payee']['name'] == 'Truck Pit Stop'
+    assert row['payee']['basis'] == 'owner_confirmation'
+    assert row['confirmation']['method'] == 'credit_card'
+    assert row['payment_status'] == 'unverified'
+    assert db.query(FinancePosting).count() == 0
+
+
+def test_invoice_vendor_is_not_payment_method():
+    from app.services.repair_payee import invoice_payee
+    assert invoice_payee('CaroMeck Diesel PM LLC Invoice\nZELLE: pay here') == ['CaroMeck Diesel PM LLC']
+    assert invoice_payee('Truck Pit Stop\nInvoice') == ['Truck Pit Stop']
+    assert invoice_payee('Unknown shop\n' * 12 + 'Work referred by Truck Pit Stop') == []
+    assert invoice_payee('Invoice\nTarpstop LLC') == ['Tarpstop']

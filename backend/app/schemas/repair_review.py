@@ -16,10 +16,11 @@ class RepairConfirmation(BaseModel):
     model_config = ConfigDict(extra='forbid')
     items: list[ReviewItem] = Field(min_length=1, max_length=100)
     status: Literal['paid', 'partial', 'unpaid', 'unknown']
-    method: Literal['cash', 'zelle', 'other', 'unknown'] = 'unknown'
+    method: Literal['cash', 'zelle', 'credit_card', 'other', 'unknown'] = 'unknown'
     source: Literal['business', 'personal', 'mixed', 'unknown'] = 'unknown'
     paid_amount: Decimal | None = None
     paid_date: date | None = None
+    payee: str | None = Field(default=None, max_length=160)
     note: str = Field(default='', max_length=1000)
 
     @field_validator('paid_amount')

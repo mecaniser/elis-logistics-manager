@@ -43,6 +43,8 @@ def save_confirmation(db, tenant, request):
                    'paid_amount': f.money(amount) if request.status == 'paid' else f.money(request.paid_amount) if request.paid_amount else None,
                    'paid_date': request.paid_date.isoformat() if request.paid_date else None,
                    'note': request.note, 'basis': 'owner_confirmation'}
+        if request.payee and request.payee.strip():
+            payload['payee'] = request.payee.strip()
         content = json.dumps(payload, sort_keys=True).encode()
         digest = hashlib.sha256(content).hexdigest()
         existing = db.query(FinanceEvidence).filter_by(tenant_id=tenant, sha256=digest).first()

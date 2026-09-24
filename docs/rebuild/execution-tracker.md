@@ -175,3 +175,12 @@ Backed up review.db before restarting the local backend. Verified counts remain 
 - Finance Repairs now leads to invoice cards; generic accounting tools remain explicitly advanced.
 - Fixed repair date-only display shifting back one day.
 - Validation and limits: see `repair-confirmation-workflow.md`. No historical payment answers invented, no production deployment. Confirmation-to-ledger automation, OCR/payment extraction, and historical accounting cutover remain unfinished.
+
+## 2026-09-24 — Repair payees and payment methods
+
+- Repair cards now distinguish vendor/payee, document type, and owner-confirmed payment method.
+- Added vendor and method filters (cash, Zelle, credit card, other, unknown); vendor names also participate in search. Batch confirmation respects the visible filtered repairs.
+- Known issuer extraction examines invoice headers, not payment instructions or repair descriptions. Current preserved text identifies 28 CaroMeck invoices; 30 remain unidentified. Truck Pit Stop is an available payee, not an inferred assignment to undocumented repairs.
+- Inline confirmations accept a vendor/person name, including manual/other records. Corrections retain existing revision history; omitted payee preserves old request digests. No ledger or cash side effects.
+- New PDF parsing includes known vendor extraction. Image OCR and arbitrary vendor extraction remain outside this checkpoint; image-only and undocumented entries are labeled explicitly, not assumed manual or unpaid.
+- Validation: 16 backend repair tests and 23 frontend tests passed, scoped new-component lint/build passed, desktop/mobile filters and credit-card option verified without saving invented facts. Production unchanged.

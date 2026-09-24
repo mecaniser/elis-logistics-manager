@@ -1,5 +1,6 @@
 """Repair evidence and explicitly linked obligations, without inferred payments."""
 from collections import Counter
+from app.services.repair_payee import payee_details
 from app.models.repair import Repair
 from app.models.truck import Truck
 from app.models.finance import FinanceEvidence
@@ -18,9 +19,11 @@ def repair_history(db, tenant, as_of):
             by_repair.setdefault(rid, []).append(d)
     state = f.state(db, tenant, as_of)
     rows = []
+    evidence_by_row = {}
     for repair, asset in records:
         if repair.repair_date and repair.repair_date > as_of: continue
         evidence = by_repair.get(repair.id, [])
+        evidence_by_row[repair.id] = evidence
         events = [e for e in state['events'] if e.kind in ('bill', 'owner_advance') and e.payload.get('legacy_repair_id') == repair.id]
         active = [e for e in events if e.id in state['active_event_ids']]
         claims = [c for c in state['claims'].values() if c.get('legacy_repair_id') == repair.id]
@@ -60,6 +63,9 @@ def repair_history(db, tenant, as_of):
         confirmation = confirmations.get(row['legacy_id'])
         row['confirmation'] = ({'id': confirmation.id, **confirmation.extracted,
                                 'stale': confirmation.extracted.get('snapshot') != row['review_snapshot']} if confirmation else None)
+        row['payee'] = payee_details(evidence_by_row[row['legacy_id']])
+        if row['confirmation'] and not row['confirmation']['stale'] and row['confirmation'].get('payee'):
+            row['payee'] = {**row['payee'], 'name': row['confirmation']['payee'], 'basis': 'owner_confirmation'}
         row['batch_eligible'] = bool(row['source_totals']) and not confirmation and not row['obligation_event_ids'] and not any(i in row['issues'] for i in (
             'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
             'incurred_amount_required', 'cost_or_recovery_treatment_review'))

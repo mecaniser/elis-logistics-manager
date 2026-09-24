@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
 import RepairEvidence from '../components/repairs/RepairEvidence'
 import { useRepairReview } from '../components/repairs/useRepairReview'
-import { matchesReview, type ReviewFilter } from '../components/repairs/repairReview'
+import { matchesReview, repairMethod, type ReviewFilter } from '../components/repairs/repairReview'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
@@ -14,6 +14,9 @@ export default function Repairs() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [repairs, setRepairs] = useState<Repair[]>([])
+  const [payeeFilter, setPayeeFilter] = useState('all')
+  const [methodFilter, setMethodFilter] = useState('all')
+  useEffect(() => { setPayeeFilter('all'); setMethodFilter('all') }, [currentTenant?.id])
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   const [reviewAsOf, setReviewAsOf] = useState(() => {
     const now = new Date()
@@ -376,6 +379,9 @@ export default function Repairs() {
 
   // Filter repairs based on search term
   const filteredRepairs = repairs.filter(repair => {
+    const row = reviewRows.get(repair.id)
+    if (payeeFilter !== 'all' && (row?.payee?.name || 'unknown') !== payeeFilter) return false
+    if (methodFilter !== 'all' && repairMethod(row) !== methodFilter) return false
     if (review.data && !matchesReview(reviewRows.get(repair.id), reviewFilter)) return false
     if (!searchFilter.trim()) return true
     
@@ -388,6 +394,7 @@ export default function Repairs() {
     const truckId = repair.truck_id.toString()
     
     return (
+      (row?.payee?.name || '').toLowerCase().includes(searchLower) ||
       truckName.includes(searchLower) ||
       title.includes(searchLower) ||
       details.includes(searchLower) ||
@@ -408,7 +415,7 @@ export default function Repairs() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search by invoice #, description, or truck..."
+              placeholder="Search vendor, invoice #, description, or truck..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-[42px]"
@@ -797,11 +804,15 @@ export default function Repairs() {
             {([['all', 'All repairs'], ['amount', 'Invoice differences'], ['documents', 'Missing documents'], ['payment', 'Payment questions'], ['treatment', 'Cost treatment']] as [ReviewFilter, string][]).map(([value, label]) => <button key={value} type="button" aria-pressed={reviewFilter === value} onClick={() => setReviewFilter(value)} className={`min-h-11 px-3 py-2 text-sm rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${reviewFilter === value ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{label} <span className="tabular-nums">({value === 'all' ? repairs.length : review.data!.rows.filter(row => matchesReview(row, value)).length})</span></button>)}
           </div>
           <p className="text-sm text-gray-600 mt-3">77 Cargo deductions stay in settlements. These are your separate repair records; confirming payment does not charge them again.</p>
-          <RepairBatchReview key={`${currentTenant?.id}-${reviewAsOf}`} rows={review.data.rows} onSaved={review.retry} />
+          <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-700">
+            <label>Paid to / vendor<select value={payeeFilter} onChange={e => setPayeeFilter(e.target.value)} className="block min-h-11 max-w-full border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All payees</option>{Array.from(new Set(['CaroMeck Diesel PM LLC', 'Truck Pit Stop', ...review.data.rows.map(r => r.payee?.name).filter((n): n is string => !!n)])).sort().map(name => <option key={name} value={name}>{name} ({review.data!.rows.filter(r => r.payee?.name === name).length})</option>)}<option value="unknown">Payee not identified ({review.data.rows.filter(r => !r.payee?.name).length})</option></select></label>
+            <label>Payment method<select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className="block min-h-11 border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All methods</option><option value="cash">Cash</option><option value="zelle">Zelle</option><option value="credit_card">Credit card</option><option value="other">Other / multiple methods</option><option value="unknown">Not confirmed</option></select></label>
+          </div>
+          <RepairBatchReview key={`${currentTenant?.id}-${reviewAsOf}`} rows={review.data.rows.filter(r => filteredRepairs.some(repair => repair.id === r.legacy_id))} onSaved={review.retry} />
         </>}
       </section>
 
-      {(searchFilter || reviewFilter !== 'all') && (
+      {(searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all') && (
         <div className="mb-4 text-sm text-gray-600">
           Showing {filteredRepairs.length} of {repairs.length} repair{repairs.length !== 1 ? 's' : ''}
         </div>
@@ -810,7 +821,7 @@ export default function Repairs() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredRepairs.length === 0 ? (
           <div className="px-6 py-4 text-gray-500 text-center">
-            {searchFilter || reviewFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs.' : 'No repairs found.'}
+            {searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs, All payees and All methods.' : 'No repairs found.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
