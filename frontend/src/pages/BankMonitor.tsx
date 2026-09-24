@@ -21,7 +21,8 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
 type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number } }
-type Dashboard = { rules: Rules; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
+type BrowserCheck = { id: number; status: string; observed_at: string; result: { source: string; repayment?: { status: string } } }
+type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome'; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
 type BankRead = {
   checked_at: string;
@@ -32,6 +33,14 @@ type BankRead = {
 const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const label = (status: string) => status.replace(/_/g, ' ')
 const scheduledIssue = (status: string) => {
+  if (status === 'chrome_check_missed') return {
+    title: 'Chrome check missed',
+    detail: 'No complete signed-in Chrome bank read reached ELIS during the 5:30–5:45 p.m. Eastern window. Open Chrome and sign in to Truliant, then run Check bank now. No balance or repayment was inferred for the missed slot.',
+  }
+  if (status === 'bank_security_challenge') return {
+    title: 'Bank blocked the server browser',
+    detail: 'Truliant showed a security challenge before the worker could reach its sign-in form. No accounts were read and no login was submitted. Use the signed-in Chrome assistant for a current check; server scheduling cannot be considered verified.',
+  }
   if (status === 'profile_setup_required') return {
     title: 'Bank access not set up',
     detail: 'The scheduled worker has no private Truliant browser profile. This check did not read any accounts. A Chrome extension connection does not connect the server worker; a system administrator must set up and verify its separate bank access.',
@@ -289,7 +298,13 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} />
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+          if (!currentTenantId) return
+          const tenantId = currentTenantId
+          void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
+        }} />
+
+        {data.browser_check && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Chrome bank read saved in ELIS at {new Date(data.browser_check.observed_at).toLocaleString()}. Result: {label(data.browser_check.status)}. {data.browser_check.result.repayment?.status === 'repayment_data_required' ? 'Friday repayment remains blocked until income, usable cash, pending debits, and full payoff are verified.' : ''}</div>}
 
         {repaymentNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{repaymentNotice}</div>}
         {repaymentError && !repaymentOpen && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
@@ -322,15 +337,20 @@ export default function BankMonitor() {
 
       <aside className="space-y-5 lg:sticky lg:top-5">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : connectionVerified ? 'Access verified' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
+          <div className="flex items-center justify-between"><span className={`grid h-10 w-10 place-items-center rounded-xl ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}><Icon name={scheduleActive ? 'calendar' : 'pause'} /></span><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${scheduleActive && latestIssue && !connectionVerified ? 'bg-amber-50 text-amber-900 ring-amber-200' : 'bg-slate-100 text-slate-700 ring-slate-200'}`}>{!scheduleActive ? 'Setup needed' : !workerOnline ? 'Worker offline' : data.reader_mode === 'signed_in_chrome' ? (data.browser_check ? 'Chrome reader active' : 'Chrome check needed') : connectionVerified ? 'Access verified' : latestIssue ? 'Last check blocked' : 'Worker running'}</span></div>
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. attempt</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : data.reader_mode === 'signed_in_chrome' ? `The Chrome assistant will attempt a bank read at 5:30 p.m. Eastern while Chrome is running. A complete result must reach ELIS by 5:45; otherwise the scheduled run is marked missed. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
           {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment can be evaluated during a completed 5:30 p.m. bank check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
           <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
 
-        <section aria-labelledby="worker-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        {data.reader_mode === 'signed_in_chrome' ? <section aria-labelledby="chrome-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 id="chrome-access-title" className="text-lg font-semibold text-slate-950">Chrome bank access</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">The bank assistant checks Truliant in your signed-in Chrome profile at 5:30 p.m. Eastern when Chrome is running. ELIS records a complete result; if Chrome or bank sign-in is unavailable, the check is marked missed at 5:45. No password is sent from Chrome to ELIS.</p>
+          {data.browser_check ? <p className="mt-4 text-sm font-medium text-emerald-800">Last complete browser read: {new Date(data.browser_check.observed_at).toLocaleString()}</p> : <p className="mt-4 text-sm text-amber-800">No complete browser read has been recorded yet.</p>}
+          <p className="mt-2 text-xs leading-5 text-slate-500">The bank may require you to sign in again when its session expires. Transfers still require your approval in Truliant.</p>
+        </section> : <section aria-labelledby="worker-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 id="worker-access-title" className="text-lg font-semibold text-slate-950">Server bank access</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">The worker creates a private browser profile on its persistent volume. Its Truliant username and password must be set as worker-only Railway secrets. Do not enter them on this page or in chat.</p>
           {connectionCheck?.status === 'verified' && <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">Read-only sign-in verified {connectionCheck.finished_at ? new Date(connectionCheck.finished_at).toLocaleString() : ''}. {connectionCheck.result.account_count} configured accounts were read. No transfer was submitted.</p>}
@@ -339,7 +359,7 @@ export default function BankMonitor() {
           {verificationError && <p role="alert" className="mt-4 text-sm text-red-800">{verificationError}</p>}
           <button type="button" disabled={!workerOnline || !accountsConfigured || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-45">{connectionPending || verifyingWorker ? 'Verifying bank access…' : 'Verify worker bank access'}</button>
           <p className="mt-2 text-xs leading-5 text-slate-500">This opens a read-only worker check. It never prepares or submits a transfer.</p>
-        </section>
+        </section>}
 
         <button ref={settingsButtonRef} type="button" aria-expanded={settingsOpen} aria-controls="monitoring-settings-drawer" onClick={() => setSettingsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md active:scale-[0.99] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
           <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="settings" /></span><span><span className="block font-semibold text-slate-950">Monitoring settings</span><span className="block text-xs text-slate-500">Accounts, rules and schedule</span></span></span><span className="text-sm font-semibold text-blue-700">Edit</span>

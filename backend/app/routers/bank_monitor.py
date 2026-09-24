@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
+from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck, BankMonitorBrowserCheck,
                                      BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun)
 from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
                                        MonitorRules, StrictModel,
-                                       calculate_repayment, next_check)
+                                       calculate, calculate_repayment, due_date, next_check)
 
 router = APIRouter()
 
@@ -45,14 +45,18 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
     worker_online = bool(last_seen and (now - last_seen).total_seconds() <= 120)
     runs = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id).order_by(BankMonitorRun.id.desc()).limit(30).all()
     connection_check = db.query(BankMonitorConnectionCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorConnectionCheck.id.desc()).first()
+    browser_check = db.query(BankMonitorBrowserCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorBrowserCheck.id.desc()).first()
     repayment_runs = db.query(BankRepaymentRun).filter_by(tenant_id=tenant_id).order_by(BankRepaymentRun.id.desc()).limit(30).all()
     return {'rules': config.rules if config else MonitorRules().model_dump(),
+            'reader_mode': 'signed_in_chrome' if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome' else 'private_worker',
             'mode': 'proposal_only', 'next_check': next_check(datetime.now(timezone.utc)),
             'worker': {'status': 'online' if worker_online else 'offline', 'last_seen_at': last_seen},
             'connection_check': ({'id': connection_check.id, 'status': connection_check.status,
                                   'requested_at': connection_check.requested_at,
                                   'finished_at': connection_check.finished_at,
                                   'result': connection_check.result} if connection_check else None),
+            'browser_check': ({'id': browser_check.id, 'observed_at': browser_check.observed_at,
+                               'status': browser_check.status, 'result': browser_check.result} if browser_check else None),
             'runs': [{'id': r.id, 'scheduled_date': r.scheduled_date, 'started_at': r.started_at,
                       'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs],
             'repayment_runs': [{'id': r.id, 'started_at': r.started_at,
@@ -97,6 +101,62 @@ def request_connection_check(data: ConnectionCheckInput, request: Request, tenan
     db.commit()
     db.refresh(check)
     return {'id': check.id, 'status': check.status}
+
+
+class BrowserCheckInput(StrictModel):
+    """Only explicit account values; no cookies, credentials, or raw bank HTML."""
+    snapshot: BalanceSnapshot
+    histories_verified: list[str]
+
+
+@router.post('/browser-checks')
+def record_browser_check(data: BrowserCheckInput, request: Request,
+                         tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    if request.headers.get('x-bank-monitor-action') != 'record-browser-check':
+        raise HTTPException(403, 'Missing browser check action header.')
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        raise HTTPException(409, 'Configure bank monitoring first.')
+    rules = MonitorRules.model_validate(config.rules)
+    required = {account.last4 for account in rules.checking + rules.sources}
+    observed = {account.last4 for account in data.snapshot.accounts}
+    histories = data.histories_verified
+    if observed != required or len(histories) != len(set(histories)) or set(histories) != {a.last4 for a in rules.checking}:
+        raise HTTPException(422, 'Every configured account and checking history must be verified.')
+    now = datetime.now(timezone.utc)
+    try:
+        result = calculate(rules, data.snapshot, now)
+    except ValueError:
+        raise HTTPException(422, 'The bank snapshot is incomplete or stale; no check was recorded.') from None
+    result['source'] = 'signed_in_chrome_assistant'
+    browser_check = BankMonitorBrowserCheck(tenant_id=tenant_id, observed_at=data.snapshot.observed_at,
+                                            received_at=now, status=result['status'], result=result)
+    db.add(browser_check)
+    scheduled_run = None
+    local = now.astimezone(EASTERN)
+    # A browser read is a scheduled run only when captured near the actual slot.
+    if rules.enabled and due_date(now) == local.date() and local.hour == 17 and local.minute < 45:
+        existing = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id, scheduled_date=local.date()).first()
+        if existing and existing.status in {'bank_read_failed', 'bank_security_challenge', 'chrome_check_missed'}:
+            # Replace only a failed same-day read with a contemporaneous complete
+            # Chrome result. Never rewrite a successful run or a prior day.
+            existing.status = result['status']
+            existing.result = result
+            existing.finished_at = now
+            scheduled_run = existing
+        elif not existing:
+            scheduled_run = BankMonitorRun(tenant_id=tenant_id, scheduled_date=local.date(),
+                                           started_at=now, finished_at=now, status=result['status'], result=result)
+            db.add(scheduled_run)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'A check for this scheduled time was already recorded.') from None
+    db.refresh(browser_check)
+    return {'id': browser_check.id, 'status': browser_check.status,
+            'scheduled_run_id': scheduled_run.id if scheduled_run else None,
+            'observed_at': browser_check.observed_at, 'transfers_executed': False}
 
 
 @router.put('')

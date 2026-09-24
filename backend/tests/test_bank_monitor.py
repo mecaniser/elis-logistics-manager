@@ -3,7 +3,7 @@ import pytest
 from pydantic import ValidationError
 from app.services.bank_monitor import MonitorRules, BalanceSnapshot, calculate, due_date, next_check, usd_cents
 from app.services.truliant_reader import parse_card, BankReadError
-from app.models.bank_monitor import (BankMonitorConfig, BankMonitorRun,
+from app.models.bank_monitor import (BankMonitorBrowserCheck, BankMonitorConfig, BankMonitorRun,
                                      BankMonitorWorkerHeartbeat, BankMonitorConnectionCheck, BankRepaymentRun,
                                      BankTransferDraft)
 from app.models.tenant import Tenant
@@ -211,6 +211,41 @@ def test_worker_daily_deduplication_and_failure(db, monkeypatch):
         raise BankReadError('sign_in_required')
     assert run_due(db, now + timedelta(days=1), failure) == 1
     assert db.query(BankMonitorRun).order_by(BankMonitorRun.id.desc()).first().status == 'sign_in_required'
+
+
+def test_browser_check_requires_complete_fresh_evidence(bank_auth, db):
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True).model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.commit()
+    payload = {'snapshot': snapshot(current=0).model_dump(mode='json'), 'histories_verified': ['1111']}
+    headers = {'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'record-browser-check'}
+    assert bank_auth.post('/api/bank-monitor/browser-checks', json=payload,
+                          headers={'X-Tenant-ID': '1'}).status_code == 403
+    bad = {**payload, 'histories_verified': []}
+    assert bank_auth.post('/api/bank-monitor/browser-checks', json=bad, headers=headers).status_code == 422
+    stale = {'snapshot': snapshot(current=0, observed=datetime.now(timezone.utc) - timedelta(minutes=10)).model_dump(mode='json'),
+             'histories_verified': ['1111']}
+    assert bank_auth.post('/api/bank-monitor/browser-checks', json=stale, headers=headers).status_code == 422
+    response = bank_auth.post('/api/bank-monitor/browser-checks', json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()['status'] == 'no_shortfall'
+    assert response.json()['transfers_executed'] is False
+    assert db.query(BankMonitorBrowserCheck).one().result['source'] == 'signed_in_chrome_assistant'
+    dashboard = bank_auth.get('/api/bank-monitor', headers={'X-Tenant-ID': '1'}).json()
+    assert dashboard['browser_check']['status'] == 'no_shortfall'
+
+
+def test_chrome_mode_never_tries_server_login_and_records_missed_slot(db, monkeypatch):
+    monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True).model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.commit()
+    def forbidden_reader(*_):
+        raise AssertionError('The server browser must not log in in Chrome mode')
+    assert run_due(db, datetime.fromisoformat('2026-09-24T21:44:00+00:00'), forbidden_reader) == 0
+    assert run_due(db, datetime.fromisoformat('2026-09-24T21:45:00+00:00'), forbidden_reader) == 1
+    assert db.query(BankMonitorRun).one().status == 'chrome_check_missed'
 
 
 def test_worker_heartbeat_is_upserted(db, monkeypatch):

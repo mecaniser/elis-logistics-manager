@@ -11,13 +11,17 @@ from app.database import SessionLocal
 from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
                                      BankMonitorRun, BankMonitorWorkerHeartbeat)
 from app.models.tenant import Tenant
-from app.services.bank_monitor import MonitorRules, calculate, due_date
+from app.services.bank_monitor import EASTERN, MonitorRules, calculate, due_date
 from app.services.truliant_reader import BankReadError, read_balances
 
 
 def run_due(db, now, reader=read_balances):
     day = due_date(now)
     if day is None:
+        return 0
+    chrome_reader = os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome'
+    local = now.astimezone(EASTERN)
+    if chrome_reader and (local.hour, local.minute) < (17, 45):
         return 0
     allowed = {x.strip() for x in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',')}
     configs = db.query(BankMonitorConfig).filter_by(enabled=True).all()
@@ -38,6 +42,8 @@ def run_due(db, now, reader=read_balances):
             db.rollback()
             continue
         try:
+            if chrome_reader:
+                raise BankReadError('chrome_check_missed')
             rules = MonitorRules.model_validate(config.rules)
             profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
             if not profile:

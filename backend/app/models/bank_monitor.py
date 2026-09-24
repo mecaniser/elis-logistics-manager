@@ -51,6 +51,17 @@ class BankMonitorConnectionCheck(Base):
     result = Column(JSON, nullable=False, default=dict)
 
 
+class BankMonitorBrowserCheck(Base):
+    """Authenticated Chrome-assisted read, separate from server-worker checks."""
+    __tablename__ = 'bank_monitor_browser_checks'
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    received_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String(40), nullable=False)
+    result = Column(JSON, nullable=False, default=dict)
+
+
 class BankTransferDraft(Base):
     __tablename__ = 'bank_transfer_drafts'
     __table_args__ = (UniqueConstraint('tenant_id', 'charge_reference', name='uq_bank_charge_reference'),)

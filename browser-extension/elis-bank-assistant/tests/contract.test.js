@@ -25,10 +25,10 @@ test('signed-out page receives no form writes',async()=>{
   globalThis.location={origin:'https://www.truliantfcuonline.org',pathname:'/dbank/live/app/login/consumer'};
   assert.deepEqual(await fillForm(draft),{ok:false,code:'LOGIN_REQUIRED',error:'Sign in to Truliant, then return to ELIS and resume this draft.'});
 });
-test('extension never receives cookies or broad host access',()=>{
+test('extension never receives cookies and limits access to bank and ELIS monitor',()=>{
   const manifest=JSON.parse(fs.readFileSync(new URL('../manifest.json',import.meta.url)));
-  assert.deepEqual(manifest.permissions,['scripting','storage']);
-  assert.deepEqual(manifest.host_permissions,['https://www.truliantfcuonline.org/*']);
+  assert.deepEqual(manifest.permissions,['scripting','storage','alarms']);
+  assert.deepEqual(manifest.host_permissions,['https://www.truliantfcuonline.org/*','https://www.elisprotech.com/bank-monitor']);
 });
 test('an occupied form is not overwritten or submitted',async()=>{
   globalThis.location={origin:'https://www.truliantfcuonline.org',pathname:'/dbank/live/app/home/olb/transfers'};
