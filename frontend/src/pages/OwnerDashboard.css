@@ -59,3 +59,26 @@
 .history-record[open]>summary .history-chevron {transform:rotate(90deg);}
 
 .owner-legend i {display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;}
+.history-trend-controls {display:flex;flex-wrap:wrap;align-items:end;gap:12px 18px;margin:4px 0 18px;}
+.history-trend-controls label {min-width:170px;}
+.history-trend-controls label:last-child {margin-left:auto;min-width:230px;}
+.history-trend-summary {display:flex;flex-wrap:wrap;gap:12px 25px;padding:8px 0 4px;color:var(--finance-muted);font-size:13px;}
+.history-trend-summary strong {color:var(--finance-ink);font-size:17px;margin-right:4px;}
+.history-trend-annotation {background:#edf2f7;color:#314151;border-radius:8px;padding:12px 16px;font-size:13px;line-height:1.5;margin:10px 0 20px;}
+.history-coverage-heading {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 20px;margin-top:22px;}
+.history-coverage-heading h3 {margin:0;}
+.history-coverage-heading a {font-size:13px;}
+.history-coverage-scroll {max-width:100%;}
+.history-coverage-table {min-width:690px;}
+.history-coverage-table th:first-child {position:sticky;left:0;z-index:1;background:#edf2f3;min-width:150px;}
+.history-coverage-table td {min-width:102px;white-space:normal!important;padding:8px!important;}
+.history-coverage-cell {display:flex;flex-direction:column;gap:4px;}
+.history-coverage-cell b {display:block;font-size:11px;font-weight:600;border-radius:4px;padding:3px 5px;white-space:nowrap;}
+.history-coverage-cell .is-verified {color:#15513f;background:#d3eade;}
+.history-coverage-cell .is-missing {color:#6c5118;background:#f5edda;}
+.history-coverage-cell .is-review {color:#294f77;background:#e0ecf8;}
+.history-original-upload {display:flex!important;flex-direction:column;gap:5px;border:1px dashed #aebbc1;border-radius:8px;padding:14px;max-width:360px;margin-top:16px;}
+.history-original-upload input {margin-top:3px!important;padding:6px!important;}
+.history-original-upload small {font-weight:400;line-height:1.5;}
+.history-attachment-notice {background:#edf4f2;padding:12px 16px;border-radius:8px;font-size:14px;}
+@media (max-width:700px) {.history-trend-controls label,.history-trend-controls label:last-child {margin-left:0;min-width:min(100%,230px);flex:1 1 180px;}.history-trend-summary {gap:8px 16px;}}

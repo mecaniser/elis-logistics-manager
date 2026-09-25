@@ -6,6 +6,7 @@ import pytest
 from app.models.truck import Truck
 from app.models.tenant import Tenant
 from app.models.finance import FinanceEvidence, FinanceEvent, FinancePosting
+from app.models.settlement import Settlement
 from app.services import finance as f
 from app.schemas.finance import Command
 
@@ -152,6 +153,39 @@ def test_evidence_versions_and_hashes(client,tenant_headers):
     assert upload(b'amended').status_code==409
     assert upload(b'amended',supersedes_id=first['id']).json()['id']!=first['id']
     assert client.get('/api/v1/accounting/evidence/'+first['id']+'/original',headers=tenant_headers).content==b'first'
+
+def test_attaching_historical_original_requires_own_settlement_and_pdf(client,db,truck,tenant_headers):
+    saved = Settlement(truck_id=truck.id, settlement_date=ASOF)
+    db.add(saved);db.commit()
+    path='/api/v1/accounting/evidence'
+    def attach(ref,content):
+        return client.post(path,headers=tenant_headers,data={'source_key':ref},files={'file':('original.pdf',content,'application/pdf')})
+    assert attach('legacy-settlement:999',b'%PDF-example').status_code==404
+    assert attach(f'legacy-settlement:{saved.id}',b'not a PDF').status_code==400
+    db.add(Tenant(id=2,name='Other'));other=Truck(name='Other truck',tenant_id=2,vehicle_type='truck');db.add(other);db.commit()
+    foreign=Settlement(truck_id=other.id,settlement_date=ASOF);db.add(foreign);db.commit()
+    assert attach(f'legacy-settlement:{foreign.id}',b'%PDF-example').status_code==404
+    assert db.query(FinanceEvidence).filter(FinanceEvidence.source_key.like('legacy-settlement:%')).count()==0
+
+def test_wrong_statement_date_is_not_attached_to_saved_record(client,db,truck,tenant_headers,monkeypatch):
+    # Import before patching parser helpers so later tests retain the real normalizer.
+    from app.services import settlement_evidence
+    saved=Settlement(truck_id=truck.id,settlement_date=ASOF);db.add(saved);db.commit()
+    class FakePage:
+        def extract_text(self): return '77 Cargo statement'
+    class FakePdf:
+        pages=[FakePage()]
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+    monkeypatch.setattr('pdfplumber.open',lambda *_:FakePdf())
+    monkeypatch.setattr('app.utils.pdf_parser._parse_77_cargo_pdf',lambda *_:{})
+    monkeypatch.setattr('app.utils.pdf_parser._extract_77_cargo_load_rows',lambda *_:[])
+    monkeypatch.setattr('app.utils.pdf_parser._extract_77_cargo_sections',lambda *_:[])
+    monkeypatch.setattr(settlement_evidence,'normalize_77',lambda *_:{'period_end':'2026-09-20'})
+    response=client.post('/api/v1/accounting/evidence',headers=tenant_headers,
+        data={'source_key':f'legacy-settlement:{saved.id}'},files={'file':('wrong.pdf',b'%PDF-wrong','application/pdf')})
+    assert response.status_code==409
+    assert db.query(FinanceEvidence).filter_by(source_key=f'legacy-settlement:{saved.id}').count()==0
 
 def test_statement_mismatch_is_not_saved(db):
     policy_setup(db)

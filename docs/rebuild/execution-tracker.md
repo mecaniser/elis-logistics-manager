@@ -8,6 +8,8 @@ Latest evidence: [main integration and release checks](release-checks-2026-09-25
 
 The original question is whether fuel use and other costs explain why one truck retains less than the other. Repair payment work is part of outside-expense reconciliation (stages 2–3), not a replacement objective or a new banking product.
 
+The settlement timeline now has a 2024–2026 year selector, all-recorded-dates view and custom calendar range. Each truck's source-checked statements connect independently; an unavailable original or a gap of more than 15 days breaks that truck's line. Monthly coverage identifies saved records without original PDFs without plotting unverified money. The owner confirmed Volvo 603 was off road without a driver from May 10 through June 22, 2026; the chart labels this interval as owner-reported. A missing-original settlement card offers an evidence-only PDF attachment, while manual trailer entries point to equipment records. This chart change requires live release verification before it is called deployed.
+
 | Order | Work | Status and next exit condition |
 | --- | --- | --- |
 | Completed release lane | Repair payees, payment methods, personal/business account identities, owner reimbursements | Local integrated path now records eligible confirmed personal payments once; connects selected identities to existing statement or monitored sources; matches actual repayments. The owner confirmed all three historical personal payments were reimbursed; carried to production with zero outstanding balance. Continue prospective invoice/account matching. |
