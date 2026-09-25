@@ -248,6 +248,35 @@ def test_chrome_mode_never_tries_server_login_and_records_missed_slot(db, monkey
     assert db.query(BankMonitorRun).one().status == 'chrome_check_missed'
 
 
+@pytest.mark.parametrize('existing_status,existing_result', [
+    ('running', {}),
+    ('provider_pending_unverified', {'source': 'plaid_background', 'transfers_executed': False}),
+])
+def test_complete_chrome_check_supersedes_same_slot_provider_observation(
+        bank_auth, db, monkeypatch, existing_status, existing_result):
+    from app.routers import bank_monitor as router
+    slot = datetime.fromisoformat('2026-09-25T21:32:00+00:00')
+    class SlotDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return slot if tz else slot.replace(tzinfo=None)
+    monkeypatch.setattr(router, 'datetime', SlotDatetime)
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules(enabled=True, basis='posted_and_pending').model_dump(),
+                             updated_at=slot))
+    db.add(BankMonitorRun(tenant_id=1, scheduled_date=slot.date(), started_at=slot,
+                          status=existing_status, result=existing_result))
+    db.commit()
+    payload = {'snapshot': snapshot(current=0, pending=0, observed=slot).model_dump(mode='json'),
+               'histories_verified': ['1111']}
+    response = bank_auth.post('/api/bank-monitor/browser-checks', json=payload, headers={
+        'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'record-browser-check'})
+    assert response.status_code == 200
+    run = db.query(BankMonitorRun).one()
+    assert run.status == 'no_shortfall'
+    assert run.result['source'] == 'signed_in_chrome_assistant'
+
+
 def test_worker_heartbeat_is_upserted(db, monkeypatch):
     monkeypatch.setenv('BANK_MONITOR_TENANT_IDS', '1')
     first = datetime.now(timezone.utc)

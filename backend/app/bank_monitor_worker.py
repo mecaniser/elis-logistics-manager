@@ -51,6 +51,19 @@ def provider_pending_result(snapshot, rules):
             'message': 'Current balances were read, but pending debits were not verifiable. No coverage or repayment proposal was calculated.'}
 
 
+def provider_visibility(db, tenant_id):
+    """Transaction feed evidence is informative, never proof of completeness."""
+    connection = db.get(BankProviderConnection, tenant_id)
+    if not connection:
+        return {'status': 'unavailable'}
+    try:
+        evidence = plaid_bank.transaction_visibility(
+            plaid_bank.decrypt_token(connection.encrypted_access_token), connection.account_map)
+    except plaid_bank.PlaidBankError:
+        return {'status': 'unavailable'}
+    return {'status': 'observed', **evidence}
+
+
 def run_due(db, now, reader=read_balances):
     day = due_date(now)
     if day is None:
@@ -58,8 +71,6 @@ def run_due(db, now, reader=read_balances):
     mode = os.getenv('BANK_MONITOR_READER_MODE')
     chrome_reader = mode == 'signed_in_chrome'
     local = now.astimezone(EASTERN)
-    if chrome_reader and (local.hour, local.minute) < (17, 45):
-        return 0
     allowed = {x.strip() for x in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',')}
     configs = db.query(BankMonitorConfig).filter_by(enabled=True).all()
     completed = 0
@@ -67,6 +78,9 @@ def run_due(db, now, reader=read_balances):
         if str(config.tenant_id) not in allowed:
             continue
         if not db.query(Tenant).filter(Tenant.id == config.tenant_id, Tenant.is_active.is_(True)).first():
+            continue
+        provider_linked = bool(db.get(BankProviderConnection, config.tenant_id))
+        if chrome_reader and not provider_linked and (local.hour, local.minute) < (17, 45):
             continue
         if db.query(BankMonitorRun).filter_by(tenant_id=config.tenant_id, scheduled_date=day).first():
             continue
@@ -79,14 +93,16 @@ def run_due(db, now, reader=read_balances):
             db.rollback()
             continue
         try:
-            if chrome_reader:
-                raise BankReadError('chrome_check_missed')
             rules = MonitorRules.model_validate(config.rules)
-            if mode == 'plaid':
+            use_provider = mode == 'plaid' or (chrome_reader and provider_linked)
+            if chrome_reader and not use_provider:
+                raise BankReadError('chrome_check_missed')
+            if use_provider:
                 snapshot = read_provider(db, config.tenant_id, rules, now)
                 result = (provider_pending_result(snapshot, rules) if rules.basis == 'posted_and_pending'
                           else calculate(rules, snapshot, now))
-                result['source'] = 'plaid'
+                result['source'] = 'plaid_background' if chrome_reader else 'plaid'
+                result['transaction_visibility'] = provider_visibility(db, config.tenant_id)
             else:
                 profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
                 if not profile:
@@ -94,22 +110,29 @@ def run_due(db, now, reader=read_balances):
                 snapshot = (reader(profile, rules, tenant_id=config.tenant_id)
                             if reader is read_balances else reader(profile, rules))
                 result = calculate(rules, snapshot, datetime.now(timezone.utc))
-            run.status = result['status']
-            run.result = result
+            candidate_status, candidate_result = result['status'], result
         except plaid_bank.PlaidBankError as exc:
-            run.status = str(exc)
-            run.result = {'transfers_executed': False}
+            candidate_status = str(exc)
+            candidate_result = {'transfers_executed': False,
+                                'source': 'plaid_background' if chrome_reader else 'plaid'}
         except BankReadError as exc:
-            run.status = str(exc)
-            run.result = {'transfers_executed': False}
+            candidate_status = str(exc)
+            candidate_result = {'transfers_executed': False}
         except ValueError:
-            run.status = 'balance_review_required'
-            run.result = {'transfers_executed': False,
-                          'message': 'Missing, ambiguous, or stale balance data. No proposal calculated.'}
+            candidate_status = 'balance_review_required'
+            candidate_result = {'transfers_executed': False,
+                                'message': 'Missing, ambiguous, or stale balance data. No proposal calculated.'}
         except Exception:
-            run.status = 'check_failed'
-            run.result = {'transfers_executed': False}
-        run.finished_at = datetime.now(timezone.utc)
+            candidate_status = 'check_failed'
+            candidate_result = {'transfers_executed': False}
+        # A complete Chrome check may have finished during the Plaid read.
+        # Lock and refresh before writing so a provisional result or error
+        # cannot overwrite that more complete same-slot observation.
+        db.refresh(run, with_for_update=True)
+        if run.result.get('source') != 'signed_in_chrome_assistant':
+            run.status = candidate_status
+            run.result = candidate_result
+            run.finished_at = datetime.now(timezone.utc)
         db.commit()
         completed += 1
     return completed
@@ -118,16 +141,16 @@ def run_due(db, now, reader=read_balances):
 def run_connection_checks(db, reader=read_balances):
     """Verify private bank access without using a daily slot or preparing a transfer."""
     mode = os.getenv('BANK_MONITOR_READER_MODE')
-    if mode == 'signed_in_chrome':
-        # This mode must never open the server browser, including for a
-        # connection request queued before the mode was changed.
-        return 0
+    # Chrome mode can check an already-consented Plaid Item in the background.
+    # It must never open the old private bank browser.
     allowed = {int(value.strip()) for value in os.getenv('BANK_MONITOR_TENANT_IDS', '').split(',') if value.strip().isdigit()}
     pending = db.query(BankMonitorConnectionCheck).filter(
         BankMonitorConnectionCheck.status == 'pending',
         BankMonitorConnectionCheck.tenant_id.in_(allowed)).order_by(BankMonitorConnectionCheck.id).all()
     completed = 0
     for check in pending:
+        if mode == 'signed_in_chrome' and not db.get(BankProviderConnection, check.tenant_id):
+            continue
         claimed = db.query(BankMonitorConnectionCheck).filter_by(id=check.id, status='pending').update(
             {'status': 'running', 'started_at': datetime.now(timezone.utc)}, synchronize_session=False)
         db.commit()
@@ -140,10 +163,13 @@ def run_connection_checks(db, reader=read_balances):
             if not tenant or not config:
                 raise BankReadError('connection_required')
             rules = MonitorRules.model_validate(config.rules)
-            if mode == 'plaid':
+            if mode == 'plaid' or (mode == 'signed_in_chrome' and db.get(BankProviderConnection, check.tenant_id)):
                 snapshot = read_provider(db, check.tenant_id, rules, datetime.now(timezone.utc))
                 check.status = 'balance_only' if rules.basis == 'posted_and_pending' else 'verified'
+                visibility = provider_visibility(db, check.tenant_id)
             else:
+                if mode == 'signed_in_chrome':
+                    raise BankReadError('provider_connection_required')
                 profile = os.getenv(f'BANK_MONITOR_PROFILE_{check.tenant_id}')
                 if not profile:
                     raise BankReadError('connection_required')
@@ -153,7 +179,9 @@ def run_connection_checks(db, reader=read_balances):
                 check.status = 'verified'
             check.result = {'observed_at': snapshot.observed_at.isoformat(),
                             'account_count': len(snapshot.accounts), 'transfers_executed': False,
-                            'source': 'plaid' if mode == 'plaid' else 'private_worker'}
+                            'source': 'plaid' if mode == 'plaid' or mode == 'signed_in_chrome' else 'private_worker'}
+            if check.result['source'] == 'plaid':
+                check.result['transaction_visibility'] = visibility
         except plaid_bank.PlaidBankError as exc:
             check.status = str(exc)
             check.result = {'transfers_executed': False}
