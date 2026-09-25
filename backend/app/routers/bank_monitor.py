@@ -3,6 +3,7 @@ import os
 import hashlib
 from uuid import uuid4
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
@@ -197,6 +198,24 @@ def confirm_provider_renewal(data: ProviderLinkRequest, request: Request,
     return {'linked': True, 'status': 'linked_unverified', 'accounts': sorted(account_map.keys())}
 
 
+@router.get('/provider/accounts')
+def provider_accounts(request: Request, tenant_id: int = Depends(bank_tenant),
+                      db: Session = Depends(get_db)):
+    provider_action(request, 'discover-provider-accounts')
+    provider = db.get(BankProviderConnection, tenant_id)
+    if not provider:
+        raise HTTPException(409, 'Connect Truliant through Plaid first.')
+    try:
+        token = plaid_bank.decrypt_token(provider.encrypted_access_token)
+        bank_item = plaid_bank.item(token)
+        if bank_item.get('item_id') != provider.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
+            raise plaid_bank.PlaidBankError('provider_institution_mismatch')
+        accounts = plaid_bank.discover_accounts(token)
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return {'accounts': accounts}
+
+
 class ConnectionCheckInput(StrictModel):
     """The request cannot carry a username, password, or MFA code."""
 
@@ -338,6 +357,7 @@ class ManualRepaymentInput(StrictModel):
     checking: list[RepaymentCheckingEvidence] = Field(min_length=1, max_length=10)
     sources: list[RepaymentSourceEvidence] = Field(min_length=1, max_length=5)
     evidence_confirmed: bool = Field(strict=True)
+    funding_basis: Literal['cleared_income', 'verified_cash'] = 'cleared_income'
 
 
 @router.post('/repayment-runs')
@@ -346,7 +366,7 @@ def run_repayment_now(data: ManualRepaymentInput, request: Request,
     if request.headers.get('x-bank-monitor-action') != 'run-repayment-check':
         raise HTTPException(403, 'Missing repayment check action header.')
     if data.evidence_confirmed is not True:
-        raise HTTPException(422, 'Confirm that the evidence was checked in Truliant.')
+        raise HTTPException(422, 'Confirm that the evidence was checked against current bank records.')
     config = db.get(BankMonitorConfig, tenant_id)
     if not config:
         raise HTTPException(409, 'Configure bank monitoring first.')
@@ -363,13 +383,17 @@ def run_repayment_now(data: ManualRepaymentInput, request: Request,
         raise HTTPException(422, 'Provide payoff evidence for every repayment source exactly once.')
     for account in data.checking:
         if account.eligible_income_cents > account.settled_cash_cents:
-            raise HTTPException(422, f'Incoming funds for checking account ••{account.last4} cannot exceed cash available after pending debits.')
+            label = 'Cash chosen for repayment' if data.funding_basis == 'verified_cash' else 'Incoming funds'
+            raise HTTPException(422, f'{label} for checking account ••{account.last4} cannot exceed cash available after pending debits.')
     now = datetime.now(timezone.utc)
     accounts = [AccountBalance(**account.model_dump()) for account in data.checking]
     accounts.extend(AccountBalance(**account.model_dump()) for account in data.sources)
     snapshot = BalanceSnapshot(observed_at=now, accounts=accounts)
     result = calculate_repayment(rules, snapshot, now, require_friday=False)
-    result.update({'source': 'manual', 'observed_at': now.isoformat(),
+    # The calculation uses eligible_income_cents as its per-account cap. For an
+    # on-demand verified-cash run that cap is the cash the user chose to repay;
+    # scheduled Friday runs continue to require same-day income evidence.
+    result.update({'source': 'manual', 'funding_basis': data.funding_basis, 'observed_at': now.isoformat(),
                    'evidence_confirmed': True,
                    'checking_evidence': [account.model_dump(mode='json') for account in data.checking],
                    'source_evidence': [account.model_dump(mode='json') for account in data.sources]})
@@ -578,3 +602,62 @@ def history_match(draft_id: str, evidence: HistoryEvidence, request: Request, te
         db.rollback()
         raise HTTPException(409, 'Bank evidence is already associated with another draft.') from None
     return {'status': 'bank_history_matched', 'verification_source': 'user_browser_extension'}
+
+
+class PlaidMatchInput(StrictModel):
+    confirm: bool = False
+    source_evidence: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    destination_evidence: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+
+
+@router.post('/drafts/{draft_id}/plaid-match')
+def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
+                tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    """Offer an exact posted pair for explicit review, then recheck before marking it."""
+    provider_action(request, 'verify-plaid-transfer')
+    draft = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).first()
+    provider = db.get(BankProviderConnection, tenant_id)
+    if not draft or draft.status not in {'prepared_awaiting_submission', 'preparation_failed'} or not provider:
+        raise HTTPException(409, 'A prepared transfer and active bank connection are required.')
+    try:
+        token = plaid_bank.decrypt_token(provider.encrypted_access_token)
+        bank_item = plaid_bank.item(token)
+        if bank_item.get('item_id') != provider.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
+            raise plaid_bank.PlaidBankError('provider_institution_mismatch')
+        created = draft.created_at.replace(tzinfo=timezone.utc) if draft.created_at.tzinfo is None else draft.created_at
+        match = plaid_bank.transfer_match(token, provider.account_map,
+            from_last4=draft.from_last4, to_last4=draft.to_last4,
+            amount_cents=draft.amount_cents, earliest=created.astimezone(EASTERN).date())
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(422, str(exc)) from None
+    if match['status'] != 'ready_for_confirmation':
+        if data.confirm:
+            raise HTTPException(409, 'Both unique posted entries are no longer available. Review the transfer again.')
+        return match
+    source = match['source']
+    destination = match['destination']
+    source_evidence = hashlib.sha256(f"plaid:{provider.item_id}:{source['transaction_id']}".encode()).hexdigest()
+    destination_evidence = hashlib.sha256(f"plaid:{provider.item_id}:{destination['transaction_id']}".encode()).hexdigest()
+    if source_evidence == destination_evidence:
+        raise HTTPException(409, 'Separate bank entries are required.')
+    if data.confirm:
+        if data.source_evidence != source_evidence or data.destination_evidence != destination_evidence:
+            raise HTTPException(409, 'Bank entries changed. Review the transfer again.')
+        try:
+            updated = db.query(BankTransferDraft).filter(
+                BankTransferDraft.id == draft_id, BankTransferDraft.tenant_id == tenant_id,
+                BankTransferDraft.status.in_(['prepared_awaiting_submission', 'preparation_failed'])).update({
+                    'status': 'bank_history_matched', 'source_evidence': source_evidence,
+                    'destination_evidence': destination_evidence})
+            if not updated:
+                db.rollback()
+                raise HTTPException(409, 'Transfer status changed. Refresh the queue.')
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, 'Bank entries are already associated with another transfer.') from None
+        return {'status': 'bank_history_matched', 'verification_source': 'plaid_confirmed_by_user'}
+    return {'status': 'ready_for_confirmation',
+            'source': {key: source[key] for key in ('description', 'date', 'amount_cents')},
+            'destination': {key: destination[key] for key in ('description', 'date', 'amount_cents')},
+            'source_evidence': source_evidence, 'destination_evidence': destination_evidence}

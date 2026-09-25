@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
+import type { CashPlan } from './BankCashPlan'
 import OwnerReimbursements from '../components/OwnerReimbursements'
 import PaymentAccounts from '../components/PaymentAccounts'
 import BankSelect from '../components/BankSelect'
@@ -13,10 +14,10 @@ type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number |
 type Rules = { repayment: Repayment; enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
 type TransactionVisibility = { status: string; pending_entries?: Record<string, number>; posted_entries?: Record<string, number>; last_successful_update?: string | null; pending_complete?: boolean }
 type Run = { id: number; scheduled_date: string; started_at: string; status: string; result: {
-  credit_accounts?: { last4: string; nickname: string; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
+  credit_accounts?: { last4: string; nickname: string; available_credit_cents?: number | null; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
   repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
-  observed_at?: string; uncovered_cents?: number; message?: string;
-  accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents?: number }[];
+  observed_at?: string; uncovered_cents?: number; message?: string; source?: string; cash_plan?: CashPlan;
+  accounts?: { last4: string; nickname: string; current_cents: number | null; available_cents: number | null; needed_cents?: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
   transaction_visibility?: TransactionVisibility;
 } }
@@ -24,7 +25,7 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
-type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility; accounts?: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }[] } }
+type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility; cash_plan?: CashPlan; accounts?: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null; outstanding_cents?: number | null }[] } }
 type BrowserCheck = { id: number; status: string; observed_at: string; result: { source: string; repayment?: { status: string }; accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
 type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome' | 'plaid'; provider_connection: { configured: boolean; linked: boolean; status: string; last_checked_at: string | null; last_error: string | null; accounts: string[] }; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
@@ -38,8 +39,8 @@ const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style
 const label = (status: string) => status.replace(/_/g, ' ')
 const scheduledIssue = (status: string) => {
   if (status === 'provider_pending_unverified') return {
-    title: 'Balances read; pending unverified',
-    detail: 'Plaid read the configured account balances without a Chrome sign-in. Its transaction feed does not prove every pending debit is present, so ELIS did not prepare a coverage or repayment proposal. A complete Chrome check can replace this result during the scheduled window.',
+    title: 'Bank read needs more evidence',
+    detail: 'Plaid supplied account data without a Chrome sign-in, but one or more balances or pending debits needed for an automatic proposal are unverified. Review the per-account cash view. A complete Chrome check can replace this result during the scheduled window.',
   }
   if (status === 'chrome_check_missed') return {
     title: 'Chrome check missed',
@@ -76,7 +77,7 @@ const scheduledIssue = (status: string) => {
   if (status.startsWith('provider_')) return {
     title: 'Provider bank read needs review',
     detail: status === 'provider_pending_unverified'
-      ? 'Current balances were read, but Plaid could not verify pending debits. Coverage and repayment proposals were withheld under the selected rule.'
+      ? 'Plaid supplied account data, but balances or pending debits needed for a proposal remain unverified. Review the cash view and use a complete Chrome check for exact coverage.'
       : `The provider did not complete this bank check (${label(status)}). No transfer proposal was calculated. Review the bank connection below.`,
   }
   return null
@@ -139,6 +140,7 @@ export default function BankMonitor() {
   const [settingsError, setSettingsError] = useState('')
   const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
+  const [discoveringAccounts, setDiscoveringAccounts] = useState(false)
   const [loading, setLoading] = useState(true)
   const [verifyingWorker, setVerifyingWorker] = useState(false)
   const [verificationError, setVerificationError] = useState('')
@@ -304,12 +306,49 @@ export default function BankMonitor() {
       if (tenantRef.current === tenantId) setSettingsError(apiError(error, 'Check the account suffixes and ensure each account appears only once.'))
     } finally { setSaving(false) }
   }
-  const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => ({ ...current, [group]: current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account) }))
+  const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => {
+    const previous = current[group][index]?.last4
+    const updated = current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account)
+    const priority = group === 'sources' && key === 'last4' && previous
+      ? current.repayment.priority.map(last4 => last4 === previous ? value : last4)
+      : current.repayment.priority
+    return { ...current, [group]: updated, repayment: { ...current.repayment, priority } }
+  })
+  const removeAccount = (group: 'checking' | 'sources', index: number) => setRules(current => {
+    const last4 = current[group][index]?.last4
+    return { ...current, [group]: current[group].filter((_, position) => position !== index), repayment: { ...current.repayment, priority: group === 'sources' ? current.repayment.priority.filter(item => item !== last4) : current.repayment.priority } }
+  })
+  const discoverProviderAccounts = async () => {
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setDiscoveringAccounts(true); setSettingsError(''); setSettingsNotice('')
+    try {
+      const { data: discovered } = await bankMonitorApi.providerAccounts(tenantId)
+      if (tenantRef.current !== tenantId) return
+      const existing = new Set([...rules.checking, ...rules.sources].map(account => account.last4))
+      const nextChecking = [...rules.checking]
+      const nextSources = [...rules.sources]
+      let added = 0
+      let skipped = 0
+      for (const account of discovered.accounts) {
+        if (existing.has(account.last4)) { skipped += 1; continue }
+        const target = account.kind === 'checking' ? nextChecking : nextSources
+        if (target.length >= (account.kind === 'checking' ? 10 : 5)) { skipped += 1; continue }
+        target.push({ nickname: account.nickname, last4: account.last4 })
+        existing.add(account.last4)
+        added += 1
+      }
+      if (added) setRules(current => ({ ...current, checking: nextChecking, sources: nextSources }))
+      setSettingsNotice(added ? `${added} Plaid account${added === 1 ? '' : 's'} added for review. Save settings to monitor them.${skipped ? ` ${skipped} already configured or could not be added.` : ''}` : 'No new eligible Plaid accounts were found. If you added an account at Truliant, renew bank access first.')
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setSettingsError(apiError(error, 'Unable to list connected Plaid accounts.'))
+    } finally { setDiscoveringAccounts(false) }
+  }
   const importAccounts = async (accounts: Account[]) => {
     if (!currentTenantId || loadedTenant !== currentTenantId || !data) return { checking: rules.checking, sources: rules.sources }
     const tenantId = currentTenantId
     const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
-    const sources = accounts.filter(account => /(line of credit|heloc|home equity)/i.test(account.nickname)).map(({ nickname, last4 }) => ({ nickname, last4 }))
+    const sources = accounts.filter(account => account.kind === 'credit' || /(line of credit|heloc|home equity|credit card)/i.test(account.nickname)).map(({ nickname, last4 }) => ({ nickname, last4 }))
     const saved = { ...data.rules, repayment: data.rules.repayment || defaults.repayment }
     const configured = new Set([...saved.checking, ...saved.sources].map(account => account.last4))
     const newChecking = checking.filter(account => !configured.has(account.last4))
@@ -330,9 +369,10 @@ export default function BankMonitor() {
   const openRepayment = () => {
     const today = easternDate()
     const balances = new Map((latestBankRead?.accounts || []).map(account => [account.last4, account]))
+    const providerCash = new Map((providerResult?.cash_plan?.cash_accounts || []).map(account => [account.last4, account]))
     const pending = new Map((latestBankRead?.coverage || []).map(account => [account.last4, account.transactions.filter(transaction => transaction.pending).reduce((sum, transaction) => sum + transaction.amount_cents, 0)]))
     setCheckingEvidence(Object.fromEntries(savedRules.checking.map(account => {
-      const current = balances.get(account.last4)?.current_cents
+      const current = balances.get(account.last4)?.current_cents ?? providerCash.get(account.last4)?.current_cents
       const pendingDebits = pending.get(account.last4)
       const settled = current == null || pendingDebits == null ? null : Math.max(0, current - pendingDebits)
       return [account.last4, { current: dollarsInput(current), pending: dollarsInput(pendingDebits), settled: dollarsInput(settled), income: '', incomeDate: today }]
@@ -351,11 +391,11 @@ export default function BankMonitor() {
         if (!values) throw new Error(`Evidence for ••${account.last4} is missing.`)
         const settledCash = centsFromMoneyInput(values.settled)
         const eligibleIncome = centsFromMoneyInput(values.income)
-        if (eligibleIncome > settledCash) throw new Error(`Incoming funds for ${account.nickname} cannot exceed ${dollars(settledCash)} cash available after pending debits.`)
+        if (eligibleIncome > settledCash) throw new Error(`Cash chosen for repayment from ${account.nickname} cannot exceed ${dollars(settledCash)} available after pending debits.`)
         return { last4: account.last4, current_cents: centsFromMoneyInput(values.current, true), pending_debits_cents: centsFromMoneyInput(values.pending), settled_cash_cents: settledCash, eligible_income_cents: eligibleIncome, income_date: values.incomeDate }
       })
       const sources = savedRules.repayment.priority.map(last4 => ({ last4, payoff_cents: centsFromMoneyInput(sourceEvidence[last4] || '') }))
-      const response = await bankMonitorApi.runRepayment(tenantId, { checking, sources, evidence_confirmed: evidenceConfirmed })
+      const response = await bankMonitorApi.runRepayment(tenantId, { checking, sources, evidence_confirmed: evidenceConfirmed, funding_basis: 'verified_cash' })
       if (tenantRef.current !== tenantId) return
       const refreshed = await bankMonitorApi.get(tenantId)
       if (tenantRef.current !== tenantId) return
@@ -393,10 +433,19 @@ export default function BankMonitor() {
   const workerOnline = data?.worker.status === 'online'
   const connectionCheck = data?.connection_check
   const connectionPending = connectionCheck?.status === 'pending' || connectionCheck?.status === 'running'
-  const providerCheck = connectionCheck?.result.source === 'plaid' ? connectionCheck : null
-  const providerNewerThanBrowser = Boolean(providerCheck?.result.observed_at && data?.browser_check?.observed_at &&
-    Date.parse(providerCheck.result.observed_at) > Date.parse(data.browser_check.observed_at))
-  const transactionVisibility = providerCheck?.result.transaction_visibility
+  const onDemandProvider = connectionCheck?.result.source === 'plaid' ? connectionCheck : null
+  const scheduledProvider = latest?.result.source?.startsWith('plaid') && latest.result.observed_at && latest.result.cash_plan ? latest : null
+  const scheduledIsNewer = Boolean(scheduledProvider && (!onDemandProvider?.result.observed_at ||
+    Date.parse(scheduledProvider.result.observed_at!) > Date.parse(onDemandProvider.result.observed_at)))
+  const providerResult = scheduledIsNewer ? scheduledProvider!.result : onDemandProvider?.result
+  const providerStatus = scheduledIsNewer ? scheduledProvider!.status : onDemandProvider?.status
+  const providerAccounts = scheduledIsNewer ? [
+    ...(scheduledProvider!.result.accounts || []).map(account => ({ last4: account.last4, current_cents: account.current_cents, available_cents: account.available_cents, available_credit_cents: null, outstanding_cents: null })),
+    ...(scheduledProvider!.result.credit_accounts || []).map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents ?? null, outstanding_cents: account.outstanding_cents })),
+  ] : onDemandProvider?.result.accounts
+  const providerNewerThanBrowser = Boolean(providerResult?.observed_at && data?.browser_check?.observed_at &&
+    Date.parse(providerResult.observed_at) > Date.parse(data.browser_check.observed_at))
+  const transactionVisibility = providerResult?.transaction_visibility
   const pendingObserved = transactionVisibility?.pending_entries
     ? Object.values(transactionVisibility.pending_entries).reduce((total, count) => total + count, 0) : null
   const connectionVerified = Boolean(connectionCheck?.status === 'verified' && connectionCheck.finished_at &&
@@ -415,7 +464,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerCheck?.result.observed_at && providerCheck.result.accounts && ['verified', 'balance_only'].includes(providerCheck.status) ? { observed_at: providerCheck.result.observed_at, accounts: providerCheck.result.accounts } : null} providerLinked={data.provider_connection.linked} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -439,7 +488,7 @@ export default function BankMonitor() {
             {latestIssue && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{latestIssue.detail}</p>}
             {stale && <p className="text-sm text-amber-800">Historical snapshot. Use Check bank now before preparing a transfer.</p>}
             {latest.result.message && <p className="text-sm text-slate-700">{latest.result.message}</p>}
-            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{account.needed_cents == null ? 'Not calculated' : dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
+            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{account.current_cents === null ? 'Unknown' : dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{account.needed_cents == null ? 'Not calculated' : dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
             {latest.result.credit_accounts?.some(account => account.outstanding_cents !== null) && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Credit balances</h3>{latest.result.credit_accounts.map(account => <p key={account.last4} className="mt-2 text-sm text-slate-700">{account.nickname} · ••{account.last4}: {account.outstanding_cents === null ? 'unknown' : dollars(account.outstanding_cents)}</p>)}</div>}
             {latest.result.repayment && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Friday repayment</h3><p className="mt-1 text-sm capitalize text-slate-700">{label(latest.result.repayment.status)}</p>{latest.result.repayment.proposals.map((proposal, index) => <p key={`${proposal.from_last4}-${proposal.to_last4}-${index}`} className="mt-2 text-sm text-slate-700">{dollars(proposal.amount_cents)} from ••{proposal.from_last4} to ••{proposal.to_last4}</p>)}</div>}
             {!!latest.result.uncovered_cents && <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-800">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}</p>}
@@ -458,7 +507,7 @@ export default function BankMonitor() {
           <h2 className="mt-4 text-lg font-semibold text-slate-950">Daily 5:30 p.m. attempt</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">{!accountsConfigured ? 'Import and save the accounts to enable scheduled checks.' : !savedRules.enabled ? 'Scheduled checks are paused.' : !workerOnline ? 'Scheduled checks are enabled, but the monitoring worker is not reporting.' : data.reader_mode === 'signed_in_chrome' && data.provider_connection.linked ? `Plaid will read balances at 5:30 p.m. Eastern without your Chrome session. Chrome can still provide a complete bank-history check during that window; until pending debits are verified, the server read cannot prepare transfers. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : data.reader_mode === 'signed_in_chrome' ? `The Chrome assistant will attempt a bank read at 5:30 p.m. Eastern while Chrome is running. A complete result must reach ELIS by 5:45; otherwise the scheduled run is marked missed. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : data.reader_mode === 'plaid' && !data.provider_connection.linked ? 'Connect Truliant through the provider below before server checks can read accounts.' : connectionVerified ? `The worker completed a read-only bank verification. Next scheduled attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : latestIssue ? `The last scheduled attempt did not read the bank: ${latestIssue.title.toLowerCase()}. See its details for the required setup. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.` : `Worker is running; bank access is only confirmed by a completed check. Next attempt: ${new Date(data.next_check).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Eastern.`}</p>
           {savedRules.repayment.enabled && <p className="mt-3 rounded-xl bg-violet-50 p-3 text-xs leading-5 text-violet-900">Friday repayment can be evaluated during a completed 5:30 p.m. bank check. A proposal appears only when Friday income, settled cash, pending debits, and payoff balances are all verified.</p>}
-          <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>
+          {!providerResult?.cash_plan && <button type="button" disabled={!savedRules.repayment.enabled || !accountsConfigured} onClick={openRepayment} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white transition hover:bg-violet-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">Run repayment check now</button>}
           <div className="mt-4 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">The server worker records proposals only. It does not submit transfers.</div>
         </section>
 
@@ -476,7 +525,7 @@ export default function BankMonitor() {
             <p className="mt-4 text-sm font-medium text-slate-800">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server read has not been verified yet.'}</p>
             {data.provider_connection.last_error && <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Last provider read: {label(data.provider_connection.last_error)}. Review access or renew consent.</p>}
             {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'verified' && <p role="status" className="mt-3 text-sm text-emerald-800">A read-only server check verified {connectionCheck.result.account_count} accounts. No transfer was submitted.</p>}
-            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'balance_only' && <p role="status" className="mt-3 text-sm text-amber-800">Balances were read, but pending debits could not be verified. No coverage proposal can be calculated under this rule.</p>}
+            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'balance_only' && <p role="status" className="mt-3 text-sm text-amber-800">Plaid read account data, but at least one balance or pending-debit requirement remains unverified. Review the cash view before moving money.</p>}
             {connectionCheck && !connectionPending && !['verified', 'balance_only'].includes(connectionCheck.status) && <p role="alert" className="mt-3 text-sm text-amber-800">Server check stopped: {label(connectionCheck.status)}. No bank proposal was calculated.</p>}
             {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Checking bank access from the server…</p>}
             <div className="mt-4 grid gap-2"><button type="button" disabled={!workerOnline || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="min-h-11 rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{connectionPending || verifyingWorker ? 'Checking…' : 'Verify server bank read'}</button><button type="button" disabled={linkingProvider} onClick={() => void connectProvider(true)} className="min-h-11 rounded-xl border border-slate-300 px-4 font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : 'Renew bank access'}</button></div>
@@ -499,9 +548,9 @@ export default function BankMonitor() {
           <h2 id="provider-stage-title" className="text-lg font-semibold text-slate-950">Server bank connection</h2>
           <p className="mt-2 text-sm leading-6 text-slate-700">Plaid can read balances and report transaction-feed visibility without an active Chrome bank session. Chrome remains available for detailed charge review and transfer preparation. You approve transfers in Truliant.</p>
           {data.provider_connection.linked ? <p className="mt-3 text-sm font-medium text-emerald-900">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server balance read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server balance read has not completed yet.'}</p> : <p className="mt-3 text-sm text-slate-700">No provider consent saved yet.</p>}
-          {providerCheck && ['verified', 'balance_only'].includes(providerCheck.status) && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerCheck.result.account_count} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
+          {providerResult && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerAccounts?.length ?? 0} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'not_ready' ? 'Plaid is still preparing the transaction feed.' : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
           {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Reading bank balances and transaction visibility from the server…</p>}
-          <div className="mt-4 grid gap-2"><button type="button" disabled={!data.provider_connection.linked || !workerOnline || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="min-h-11 w-full whitespace-nowrap rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{connectionPending || verifyingWorker ? 'Checking…' : 'Check server data now'}</button><button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="min-h-11 w-full whitespace-nowrap rounded-xl border border-blue-200 bg-white px-4 font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button></div>
+          <button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="mt-4 min-h-11 w-full rounded-xl border border-blue-200 bg-white px-4 font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button>
           {providerNotice && <p role="status" className="mt-3 text-sm text-emerald-900">{providerNotice}</p>}
           {verificationError && <p role="alert" className="mt-3 text-sm text-red-800">{verificationError}</p>}
         </section>}
@@ -518,16 +567,17 @@ export default function BankMonitor() {
               <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
             </header>
           <form onSubmit={save} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
-            {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3"><legend className="text-sm font-semibold text-slate-950">{group === 'checking' ? 'Checking accounts' : 'Funding priority'}</legend>{rules[group].map((account, index) => <div key={`${group}-${account.last4 || 'new'}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`}<input required maxLength={80} value={account.nickname} onChange={event => editAccount(group, index, 'nickname', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><div className="mt-2 flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium text-slate-600">Last four<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={event => editAccount(group, index, 'last4', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><button type="button" className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => setRules(current => ({ ...current, [group]: current[group].filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`Remove ${account.nickname || group}`}>Remove</button></div></div>)}<button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45" onClick={() => setRules(current => ({ ...current, [group]: [...current[group], { nickname: '', last4: '' }] }))}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button></fieldset>)}
+            {data.provider_connection.linked && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-sm leading-6 text-blue-950">Add accounts already included in your Truliant consent without opening the Chrome bank assistant.</p><button type="button" disabled={discoveringAccounts} onClick={() => void discoverProviderAccounts()} className="mt-3 min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-blue-800 ring-1 ring-blue-200 hover:bg-blue-100 disabled:opacity-45">{discoveringAccounts ? 'Finding accounts…' : 'Find connected Plaid accounts'}</button></div>}
+            {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3"><legend className="text-sm font-semibold text-slate-950">{group === 'checking' ? 'Checking accounts' : 'Funding priority'}</legend>{rules[group].map((account, index) => <div key={`${group}-${account.last4 || 'new'}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`}<input required maxLength={80} value={account.nickname} onChange={event => editAccount(group, index, 'nickname', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><div className="mt-2 flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium text-slate-600">Last four<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={event => editAccount(group, index, 'last4', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><button type="button" className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => removeAccount(group, index)} aria-label={`Remove ${account.nickname || group}`}>Remove</button></div></div>)}<button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45" onClick={() => setRules(current => ({ ...current, [group]: [...current[group], { nickname: '', last4: '' }] }))}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button></fieldset>)}
 
             <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Coverage rule</legend><label className="block text-xs font-medium text-slate-600">Calculate from<BankSelect ariaLabel="Calculate coverage from" value={rules.basis} options={[{ value: 'posted', label: 'Posted balance only' }, { value: 'posted_and_pending', label: 'Posted plus verified pending debits' }]} onChange={value => setRules(current => ({ ...current, basis: value }))} /></label></fieldset>
 
-            <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Friday repayment</legend>{[0, 1].map(index => <label key={index} className="block text-xs font-medium text-slate-600">{index === 0 ? 'Repay first' : 'Repay second'}<BankSelect ariaLabel={index === 0 ? 'Repay first' : 'Repay second'} value={rules.repayment.priority[index] || ''} options={[{ value: '', label: 'Select source' }, ...rules.sources.filter(account => /^[0-9]{4}$/.test(account.last4)).map(account => ({ value: account.last4, label: `${account.nickname} · ••${account.last4}` }))]} onChange={value => { const priority = [...rules.repayment.priority]; priority[index] = value; setRules(current => ({ ...current, repayment: { ...current.repayment, priority } })) }} /></label>)}<label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.repayment.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, repayment: { ...current.repayment, enabled: event.target.checked, reserve_cents: 0 } })) }} /><span>Include verified Friday income repayment proposals</span></label></fieldset>
+            <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Credit repayment order</legend><p className="text-xs leading-5 text-slate-600">ELIS applies reviewed repayment cash to these accounts from top to bottom. Add any configured credit account and change the order as your priorities change.</p>{rules.repayment.priority.map((last4, index) => <div key={`${last4}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">Priority {index + 1}<BankSelect ariaLabel={`Repay priority ${index + 1}`} value={last4} options={[{ value: '', label: 'Select credit account' }, ...rules.sources.filter(account => /^[0-9]{4}$/.test(account.last4) && (account.last4 === last4 || !rules.repayment.priority.includes(account.last4))).map(account => ({ value: account.last4, label: `${account.nickname} · ••${account.last4}` }))]} onChange={value => setRules(current => ({ ...current, repayment: { ...current.repayment, priority: current.repayment.priority.map((item, position) => position === index ? value : item).filter(Boolean) } }))} /></label><div className="mt-2 flex justify-end gap-1"><button type="button" disabled={index === 0} onClick={() => setRules(current => { const priority = [...current.repayment.priority]; [priority[index - 1], priority[index]] = [priority[index], priority[index - 1]]; return { ...current, repayment: { ...current.repayment, priority } } })} className="min-h-9 rounded-lg px-2 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-40">Move up</button><button type="button" disabled={index === rules.repayment.priority.length - 1} onClick={() => setRules(current => { const priority = [...current.repayment.priority]; [priority[index], priority[index + 1]] = [priority[index + 1], priority[index]]; return { ...current, repayment: { ...current.repayment, priority } } })} className="min-h-9 rounded-lg px-2 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-40">Move down</button><button type="button" onClick={() => setRules(current => ({ ...current, repayment: { ...current.repayment, priority: current.repayment.priority.filter((_, position) => position !== index) } }))} className="min-h-9 rounded-lg px-2 text-xs font-semibold text-red-700 hover:bg-red-50">Remove</button></div></div>)}<button type="button" disabled={rules.repayment.priority.length >= Math.min(5, rules.sources.filter(account => /^[0-9]{4}$/.test(account.last4)).length)} onClick={() => setRules(current => { const next = current.sources.find(account => /^[0-9]{4}$/.test(account.last4) && !current.repayment.priority.includes(account.last4)); return next ? { ...current, repayment: { ...current.repayment, priority: [...current.repayment.priority, next.last4] } } : current })} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45">Add credit account to repayment</button><label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.repayment.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, repayment: { ...current.repayment, enabled: event.target.checked, reserve_cents: 0 } })) }} /><span>Include verified Friday income repayment proposals</span></label></fieldset>
 
             <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Schedule</legend><label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, enabled: event.target.checked })) }} /><span>Run daily at 5:30 p.m. Eastern, including weekends</span></label></fieldset>
 
             {settingsDirty && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Unsaved changes</div>}
-            {!settingsDirty && settingsNotice && <div role="status" className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon name="check" className="h-4 w-4 shrink-0" />{settingsNotice}</div>}
+            {settingsNotice && <div role="status" className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon name="check" className="h-4 w-4 shrink-0" />{settingsNotice}</div>}
             {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
             <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
           </form>
@@ -537,13 +587,14 @@ export default function BankMonitor() {
         {repaymentOpen && <>
           <button type="button" aria-label="Close manual repayment check" onClick={() => setRepaymentOpen(false)} className="fixed inset-0 z-40 cursor-default bg-slate-950/45 backdrop-blur-[1px]" />
           <section role="dialog" aria-modal="true" aria-labelledby="manual-repayment-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">On-demand check</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Calculate repayment available now</h2><p className="mt-1 text-sm leading-6 text-slate-600">Enter values you just verified in Truliant. ELIS will protect pending debits and calculate the repayment order; it will not move money.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">Transfer review</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Review credit repayment</h2><p className="mt-1 text-sm leading-6 text-slate-600">Confirm pending debits, usable cash and each full payoff before ELIS creates a transfer proposal. You will submit the prepared form in Truliant.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
             <form onSubmit={runRepayment} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Each checking account funds its own repayments.</strong> ELIS prefills the posted balance and pending debits from the latest bank check, protects those debits, and applies confirmed incoming funds to the credit lines in your repayment priority.</div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Each checking account funds its own repayments.</strong> ELIS prefills a posted balance when a bank read exists. Plaid pending entries are not complete evidence, so verify pending debits and usable cash, then choose how much current cash to apply to the credit accounts in your repayment priority.</div>
               {savedRules.checking.map(account => {
                 const values = checkingEvidence[account.last4]
                 if (!values) return null
                 const prefilled = Boolean(latestBankRead?.accounts.some(item => item.last4 === account.last4))
+                const providerPrefilled = !prefilled && Boolean(providerResult?.cash_plan?.cash_accounts.some(item => item.last4 === account.last4))
                 const overLimit = incomeExceedsCash(values.income, values.settled)
                 let cashLimit: number | null = null
                 try { cashLimit = centsFromMoneyInput(values.settled) } catch { /* Wait for a valid cash amount. */ }
@@ -551,6 +602,7 @@ export default function BankMonitor() {
                 return <fieldset key={account.last4} className="rounded-xl border border-slate-200 p-4">
                   <legend className="px-1 font-semibold text-slate-950">{account.nickname} · ••{account.last4}</legend>
                   {prefilled && <p className="mb-3 text-xs font-medium text-emerald-700">Balance and pending debits prefilled from the latest bank check.</p>}
+                  {providerPrefilled && <p className="mb-3 text-xs font-medium text-blue-700">Posted balance prefilled from Plaid. Pending debits and cash available after them still need confirmation.</p>}
                   <div className="mt-2 grid gap-4 sm:grid-cols-2">
                     <label className="text-sm font-medium text-slate-700">Current posted balance
                       <MoneyInput required allowNegative value={values.current} onChange={value => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], current: value } }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
@@ -563,19 +615,16 @@ export default function BankMonitor() {
                       <MoneyInput required value={values.settled} onChange={value => { setRepaymentError(''); setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], settled: value } })) }} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
                       <span className="mt-1 block text-xs font-normal text-slate-500">Exclude any amount supplied by overdraft protection or a credit draw.</span>
                     </label>
-                    <label className="text-sm font-medium text-slate-700">Incoming funds to reimburse credit
+                    <label className="text-sm font-medium text-slate-700">Cash to apply to credit repayment
                       <MoneyInput required invalid={overLimit} describedBy={incomeHelpId} value={values.income} onChange={value => { setRepaymentError(''); setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], income: value } })) }} className={`block min-h-11 w-full rounded-xl border px-3 ${overLimit ? 'border-red-400 focus:border-red-500' : 'border-slate-300'}`} />
-                      <span className="mt-1 block text-xs font-normal text-slate-500">Enter cleared income from this account that you want applied to the credit lines.</span>
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Choose an amount from verified cash in this account. It can be less than the available amount.</span>
                       <span id={incomeHelpId} role={overLimit ? 'alert' : undefined} className={`mt-1 block text-xs font-medium ${overLimit ? 'text-red-700' : 'text-slate-600'}`}>{overLimit ? `Reduce this amount to ${dollars(cashLimit ?? 0)} or less.` : cashLimit === null ? 'Cannot exceed cash available after pending debits.' : `Maximum ${dollars(cashLimit)}: cash available after pending debits in this account.`}</span>
-                    </label>
-                    <label className="text-sm font-medium text-slate-700 sm:col-span-2">Income received date
-                      <input required type="date" value={values.incomeDate} onChange={event => setCheckingEvidence(current => ({ ...current, [account.last4]: { ...current[account.last4], incomeDate: event.target.value } }))} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3" />
                     </label>
                   </div>
                 </fieldset>
               })}
               <fieldset className="space-y-4"><legend className="font-semibold text-slate-950">Full payoff amounts</legend>{savedRules.repayment.priority.map(last4 => { const account = savedRules.sources.find(item => item.last4 === last4); return <label key={last4} className="block text-sm font-medium text-slate-700">{account?.nickname || 'Credit source'} · ••{last4}<MoneyInput required value={sourceEvidence[last4] || ''} onChange={value => setSourceEvidence(current => ({ ...current, [last4]: value }))} className="block min-h-11 w-full rounded-xl border border-slate-300 px-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the full verified payoff, including accrued interest—not amount due or available credit.</span></label> })}</fieldset>
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><input required type="checkbox" checked={evidenceConfirmed} onChange={event => setEvidenceConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /><span>I verified these values in Truliant and understand this check records a proposal only.</span></label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><input required type="checkbox" checked={evidenceConfirmed} onChange={event => setEvidenceConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /><span>I verified the pending debits, usable cash and full payoff amounts from current bank records. I understand this creates a proposal only; I will review and submit the transfer in Truliant.</span></label>
               {repaymentError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
               <div className="flex flex-col gap-2 sm:flex-row"><button disabled={repaying || !evidenceConfirmed || incomeOverLimit} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-700 px-5 font-semibold text-white hover:bg-violet-800 disabled:opacity-45">{repaying ? 'Calculating…' : 'Calculate repayment'}</button><button type="button" disabled={repaying} onClick={() => setRepaymentOpen(false)} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button></div>
             </form>

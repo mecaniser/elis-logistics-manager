@@ -36,16 +36,29 @@ store bank cookies, initiate a payment, or submit a transfer.
    reauthorization.
 
 Balance reads use Plaid `/accounts/balance/get`. The worker checks the Item and
-each mapped account before recording balances. A missing account, credit
-availability, provider error, or reauthorization request blocks the run. This
-implementation also reads the transaction feed and reports the number of
-pending entries supplied per configured account and Plaid's last successful
-transaction update. It does **not** interpret a zero count, or a nonzero count,
-as proof that every pending debit is present. With `posted_and_pending`, it records balances but withholds
+each mapped account before recording balances. A missing account, provider error,
+or reauthorization request blocks the run; a missing individual balance is
+shown as unavailable and blocks automatic proposals. The cash view displays
+posted and bank-available balances, a conservative per-account planning limit,
+and the pending debits actually reported by Plaid. Available cash may already
+reflect holds, so reported pending debits are not subtracted again. The view
+can show planning ceilings between checking accounts and toward credit lines,
+but these are not payment instructions or verified payoff amounts. The feed
+does **not** treat a zero count, or a nonzero count, as proof that every pending
+debit is present. With `posted_and_pending`, it records balances but withholds
 coverage and repayment proposals. `posted` can produce a coverage proposal from
 a complete current balance read. Friday repayment remains blocked unless all
 cash, income, pending-debit, and payoff evidence is verified by an appropriate
 source or manually entered in the existing on-demand flow.
+
+The main refresh action uses Plaid when a consented connection exists. Chrome
+remains a separate detailed bank-history and transfer-preparation path. A
+prepared transfer may be reconciled from Plaid only after a unique posted debit
+and credit pair is displayed and explicitly confirmed; feed gaps or ambiguous
+entries keep it open. The current Link Item covers one Truliant institution
+connection. Additional accounts already consented in that Item can be discovered
+and added in settings. Other banks, duplicate last-four-digit suffixes, and
+payments submitted through the bank are outside this reader's current scope.
 
 The first production observation on September 25, 2026 found four mapped
 accounts and zero pending entries in Plaid's feed. A contemporaneous Chrome

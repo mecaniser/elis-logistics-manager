@@ -3,18 +3,20 @@ import { bankMonitorApi } from '../services/api'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
 import { centsFromMoneyInput } from '../components/moneyAmount'
+import BankCashPlan, { type CashPlan } from './BankCashPlan'
 
 type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
 type Draft = { id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; kind: 'coverage' | 'repayment'; status: string; bank_date: string; bank_state?: 'posted' | 'pending' | null; bank_effective_date?: string | null }
 type ExtensionResponse = { ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
 type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callback: (response?: ExtensionResponse) => void) => void; lastError?: unknown }
-type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }
+type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null; outstanding_cents?: number | null }
 type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type SavedCheck = { observed_at: string; result: { accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
 type ServerCheck = { observed_at: string; accounts: BalanceAccount[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 type MonitoredAccounts = { checking: Account[]; sources: Account[] }
+type PlaidMatch = { status: string; source_posted?: number; destination_posted?: number; source?: { description: string; date: string; amount_cents: number }; destination?: { description: string; date: string; amount_cents: number }; source_evidence?: string; destination_evidence?: string }
 
 const REQUIRED_EXTENSION_VERSION = '0.1.22'
 const SELF_RELOAD_VERSION = '0.1.19'
@@ -35,6 +37,13 @@ const versionAtLeast = (current: string | undefined, minimum: string) => {
 const runtime = () => (window as Window & { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown } } }).response
+    if (typeof response?.data?.detail === 'string') return response.data.detail.replace(/_/g, ' ')
+  }
+  return errorMessage(error, fallback)
+}
 const draftReference = (last4: string, transaction: PostedDebit) => `bank-${last4}-${transaction.reference.slice(0, 32)}`
 const memoFor = (transaction: PostedDebit) => {
   const clean = transaction.description.replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -90,8 +99,15 @@ const statusMeta = (status: string) => {
   if (status === 'preparation_failed') return { label: 'Preparation interrupted', tone: 'bg-amber-50 text-amber-800 ring-amber-200', action: 'retry' as const }
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
+const plaidMatchMessage = (match: PlaidMatch) => ({
+  feed_not_ready: 'Plaid is still preparing transaction history. Check again after its next update.',
+  posting_pending: 'At least one side is still pending or missing. Wait for both entries to post before confirming.',
+  not_found: 'Neither exact posted pair is available in Plaid yet. No completion was assumed.',
+  ambiguous: 'More than one entry has this amount. Review the transfer in Truliant before marking it complete.',
+  needs_bank_review: 'Plaid found two entries, but could not identify them as a transfer. Review the bank histories.',
+})[match.status] || 'Plaid could not verify this transfer.'
 
-export default function BankTransferQueue({ tenantId, checking, sources, basis, lastSavedCheck, lastServerCheck, providerLinked, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; lastServerCheck: ServerCheck | null; providerLinked: boolean; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, lastSavedCheck, lastServerCheck, cashPlan, providerLinked, serverOnline, serverChecking, onServerCheck, onReviewRepayment, repaymentEnabled, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; lastServerCheck: ServerCheck | null; cashPlan: CashPlan | null; providerLinked: boolean; serverOnline: boolean; serverChecking: boolean; onServerCheck: () => void; onReviewRepayment: () => void; repaymentEnabled: boolean; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -114,6 +130,8 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const [balanceCheck, setBalanceCheck] = useState<BalanceCheck | null>(null)
   const [coverageIssue, setCoverageIssue] = useState('')
   const [waitingForPosting, setWaitingForPosting] = useState<Set<string>>(new Set())
+  const [plaidMatches, setPlaidMatches] = useState<Record<string, PlaidMatch>>({})
+  const [plaidMatchBusy, setPlaidMatchBusy] = useState<string | null>(null)
   const active = useRef(true)
   const autoVerification = useRef<{ returnedFromBank: boolean; armed: Set<string> }>({ returnedFromBank: false, armed: new Set() })
   const automaticVerificationAttempts = useRef(new Set<string>())
@@ -160,6 +178,25 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   }, [operation])
 
   const reload = async () => { const r = await bankMonitorApi.drafts(tenantId); if (active.current) setDrafts(r.data) }
+  const checkPlaidMatch = async (draft: Draft, confirm = false) => {
+    const match = plaidMatches[draft.id]
+    if (confirm && (!match?.source_evidence || !match.destination_evidence)) return
+    setPlaidMatchBusy(draft.id); setError(''); setNotice('')
+    try {
+      const response = await bankMonitorApi.draftPlaidMatch(tenantId, draft.id, confirm ? {
+        confirm: true, source_evidence: match!.source_evidence,
+        destination_evidence: match!.destination_evidence,
+      } : {})
+      if (!active.current) return
+      if (confirm) {
+        await reload()
+        setPlaidMatches(current => { const next = { ...current }; delete next[draft.id]; return next })
+        setNotice('Both posted bank entries were confirmed from Plaid. This transfer is marked complete; no new transfer was submitted.')
+      } else setPlaidMatches(current => ({ ...current, [draft.id]: response.data as PlaidMatch }))
+    } catch (error: unknown) {
+      if (active.current) setError(apiErrorMessage(error, 'Unable to check this transfer in Plaid.'))
+    } finally { if (active.current) setPlaidMatchBusy(null) }
+  }
   const fail = (error: unknown, fallback: string) => { markDisconnected(); if (active.current) setError(errorMessage(error, fallback)) }
   const create = async (event: React.FormEvent) => {
     event.preventDefault(); if (!reviewed) return
@@ -468,8 +505,8 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   }, [busy, connected, drafts])
 
   const savedAccounts = lastSavedCheck?.result.accounts && lastSavedCheck.result.credit_accounts ? [
-    ...lastSavedCheck.result.accounts.map(account => ({ ...account, available_credit_cents: null })),
-    ...lastSavedCheck.result.credit_accounts.map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents })),
+    ...lastSavedCheck.result.accounts.map(account => ({ ...account, available_credit_cents: null, outstanding_cents: null })),
+    ...lastSavedCheck.result.credit_accounts.map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents, outstanding_cents: null })),
   ] : null
   const observedChecks = [
     balanceCheck ? { checked_at: balanceCheck.checked_at, accounts: balanceCheck.accounts, source: 'Chrome' } : null,
@@ -480,10 +517,12 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const checkedRows = displayedCheck ? checking.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const fundingRows = displayedCheck ? sources.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const negativePosted = checkedRows.reduce((sum, row) => sum + Math.max(0, -(row.balance?.current_cents ?? 0)), 0)
+  const missingCash = checkedRows.some(row => row.balance?.current_cents == null || row.balance.available_cents == null)
+  const unavailableCash = checkedRows.some(row => row.balance?.available_cents != null && row.balance.available_cents <= 0)
   const actionableDrafts = drafts.filter(draft => statusMeta(draft.status).action !== 'done')
   const completedDrafts = drafts.filter(draft => statusMeta(draft.status).action === 'done')
   const pendingConfirmation = drafts.find(draft => draft.status === 'prepared_awaiting_submission')
-  const connectionText = connected ? 'Bank assistant connected automatically' : connectionState === 'checking' ? 'Checking the saved bank assistant…' : connectionState === 'outdated' ? `Bank assistant update required · ${detectedVersion} loaded` : providerLinked ? 'Plaid connection saved · Chrome assistant needed for detailed charge review' : extension ? 'Saved bank assistant is temporarily unavailable' : 'Connect the bank assistant once to get started'
+  const connectionText = connected ? 'Chrome assistant ready for detailed bank review' : connectionState === 'checking' ? 'Checking the saved Chrome assistant…' : connectionState === 'outdated' ? `Chrome assistant update required · ${detectedVersion} loaded` : extension ? 'Chrome assistant unavailable for detailed bank review' : 'Chrome assistant needed for detailed bank review'
 
   return <div className="space-y-5">
     <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-sm ring-1 ring-slate-900/10">
@@ -491,23 +530,37 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300"><Icon name="clock" className="h-4 w-4" /> Current funding status</div>
-            {!displayedCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : displayedCheck.source === 'Plaid server' ? 'Posted balances are positive' : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">{displayedCheck.source} balance read {new Date(displayedCheck.checked_at).toLocaleString()} · {displayedCheck.source === 'Plaid server' ? 'Pending debits unverified' : 'Bank histories reviewed'} · No transfer submitted.</p></div></div>}
+            {!displayedCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Read every configured account, then review cash availability and transfer possibilities.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted || unavailableCash || missingCash ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted || unavailableCash || missingCash ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{missingCash ? 'Some checking balances are unavailable' : negativePosted ? `${money(negativePosted)} negative posted balance` : unavailableCash ? 'Checking cash needs review' : displayedCheck.source === 'Plaid server' ? 'Posted balances are positive' : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">{displayedCheck.source} balance read {new Date(displayedCheck.checked_at).toLocaleString()} · {displayedCheck.source === 'Plaid server' ? 'Pending debits not fully verified' : 'Bank histories reviewed'} · No transfer submitted.</p></div></div>}
           </div>
-          <button type="button" disabled={busy || !connected} onClick={() => void checkBalances()} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto"><button type="button" disabled={providerLinked ? !serverOnline || serverChecking : busy || !connected} onClick={() => providerLinked ? onServerCheck() : void checkBalances()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${serverChecking || operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{providerLinked ? serverChecking ? 'Refreshing…' : 'Refresh via Plaid' : operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>{providerLinked && <button type="button" disabled={busy || !connected} onClick={() => void checkBalances()} className="min-h-11 rounded-xl border border-white/25 px-4 text-sm font-semibold text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45">Review Truliant history</button>}</div>
         </div>
-        {displayedCheck && <div className="mt-7 grid gap-6 lg:grid-cols-2">
+        {displayedCheck && !cashPlan && <div className="mt-7 grid gap-6 lg:grid-cols-2">
           <section aria-labelledby="cash-accounts-heading">
-            <div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Icon name="wallet" className="h-4 w-4" /></span><h3 id="cash-accounts-heading" className="text-sm font-semibold text-emerald-100">Cash accounts</h3></div><span className="text-xs text-emerald-200/70">Available for bills and repayment</span></div>
+            <div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Icon name="wallet" className="h-4 w-4" /></span><h3 id="cash-accounts-heading" className="text-sm font-semibold text-emerald-100">Cash accounts</h3></div><span className="text-xs text-emerald-200/70">Posted and bank-available balances</span></div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">{checkedRows.map(({ account, balance }) => <article key={account.last4} className="min-h-44 rounded-2xl bg-emerald-950/55 p-5 ring-1 ring-inset ring-emerald-400/20"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-200">Checking</span><span className="text-sm font-medium tabular-nums text-emerald-200/75">••{account.last4}</span></div><h4 className="mt-4 min-h-10 text-sm font-medium leading-5 text-emerald-50">{account.nickname}</h4><p className={`mt-3 text-2xl font-semibold tracking-tight tabular-nums ${balance?.current_cents != null && balance.current_cents < 0 ? 'text-red-300' : 'text-white'}`}>{balance?.current_cents == null ? 'Unavailable' : money(balance.current_cents)}</p><div className="mt-4 flex items-center justify-between gap-3 border-t border-emerald-300/15 pt-3 text-xs"><span className="text-emerald-100/65">Posted balance</span><span className="font-medium tabular-nums text-emerald-100">{balance?.available_cents == null ? 'Available unknown' : `${money(balance.available_cents)} available`}</span></div></article>)}</div>
           </section>
           <section aria-labelledby="credit-lines-heading">
             <div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-400/15 text-blue-300"><Icon name="credit" className="h-4 w-4" /></span><h3 id="credit-lines-heading" className="text-sm font-semibold text-blue-100">Credit lines</h3></div><span className="text-xs text-blue-200/70">Borrowing capacity and payoff</span></div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">{fundingRows.map(({ account, balance }) => <article key={account.last4} className="min-h-44 rounded-2xl bg-blue-950/55 p-5 ring-1 ring-inset ring-blue-400/20"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-blue-400/15 px-2.5 py-1 text-xs font-semibold text-blue-200">Credit line</span><span className="text-sm font-medium tabular-nums text-blue-200/75">••{account.last4}</span></div><h4 className="mt-4 min-h-10 text-sm font-medium leading-5 text-blue-50">{account.nickname}</h4><p className="mt-3 text-2xl font-semibold tracking-tight tabular-nums text-white">{balance?.available_credit_cents == null ? 'Unavailable' : money(balance.available_credit_cents)}</p><div className="mt-4 flex items-center justify-between gap-3 border-t border-blue-300/15 pt-3 text-xs"><span className="text-blue-100/65">Available credit</span><span className="font-medium tabular-nums text-blue-100">{balance?.current_cents == null ? 'Payoff unknown' : `${money(balance.current_cents)} outstanding`}</span></div></article>)}</div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">{fundingRows.map(({ account, balance }) => <article key={account.last4} className="min-h-44 rounded-2xl bg-blue-950/55 p-5 ring-1 ring-inset ring-blue-400/20"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-blue-400/15 px-2.5 py-1 text-xs font-semibold text-blue-200">Credit line</span><span className="text-sm font-medium tabular-nums text-blue-200/75">••{account.last4}</span></div><h4 className="mt-4 min-h-10 text-sm font-medium leading-5 text-blue-50">{account.nickname}</h4><p className="mt-3 text-2xl font-semibold tracking-tight tabular-nums text-white">{balance?.available_credit_cents == null ? 'Unavailable' : money(balance.available_credit_cents)}</p><div className="mt-4 flex items-center justify-between gap-3 border-t border-blue-300/15 pt-3 text-xs"><span className="text-blue-100/65">Available credit</span><span className="font-medium tabular-nums text-blue-100">{balance?.outstanding_cents == null ? 'Balance owed unknown' : `${money(balance.outstanding_cents)} balance owed`}</span></div></article>)}</div>
           </section>
         </div>}
       </div>
-      <div className="border-t border-white/10 bg-white/[0.03] px-5 py-3 text-sm sm:px-7"><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : connectionState === 'checking' ? 'animate-pulse bg-blue-400 motion-reduce:animate-none' : 'bg-amber-400'}`} /><span className="text-slate-300">{connectionText}</span></div></div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-white/10 bg-white/[0.03] px-5 py-3 text-sm sm:px-7">{providerLinked && <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${serverOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} /><span className="text-slate-300">{serverOnline ? 'Plaid server read available' : 'Plaid connection saved · worker offline'}</span></div>}<div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : connectionState === 'checking' ? 'animate-pulse bg-blue-400 motion-reduce:animate-none' : 'bg-amber-400'}`} /><span className="text-slate-300">{connectionText}</span></div></div>
     </section>
+
+    {cashPlan && <BankCashPlan plan={cashPlan} creditAccounts={sources.map(account => ({ ...account, balance: displayedCheck?.accounts.find(item => item.last4 === account.last4) }))} balanceObservedAt={displayedCheck?.checked_at || null} providerAccountLast4={lastServerCheck?.accounts.map(account => account.last4) || []} repaymentEnabled={repaymentEnabled} onReviewRepayment={onReviewRepayment} />}
+
+    {providerLinked && drafts.some(draft => draft.status === 'prepared_awaiting_submission' || draft.status === 'preparation_failed') && <section aria-labelledby="plaid-reconciliation-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 id="plaid-reconciliation-title" className="text-xl font-semibold text-slate-950">Reconcile completed transfers with Plaid</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">After submitting a transfer, check for one posted debit and one posted credit of the same amount. You can review and confirm the pair here without signing in to Truliant again when Plaid supplies both entries.</p>
+      <div className="mt-4 space-y-3">{drafts.filter(draft => draft.status === 'prepared_awaiting_submission' || draft.status === 'preparation_failed').map(draft => {
+        const match = plaidMatches[draft.id]
+        return <article key={draft.id} className="rounded-xl border border-slate-200 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-950">{money(draft.amount_cents)} · ••{draft.from_last4} → ••{draft.to_last4}</p><p className="mt-1 text-sm text-slate-600">{draft.memo}</p></div><button type="button" disabled={plaidMatchBusy !== null} onClick={() => void checkPlaidMatch(draft)} className="min-h-11 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-45">{plaidMatchBusy === draft.id ? 'Checking Plaid…' : 'Check in Plaid'}</button></div>
+          {match && <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm" aria-live="polite">{match.status === 'ready_for_confirmation' && match.source && match.destination ? <><p className="font-semibold text-slate-950">Both posted entries found. Confirm they represent this transfer:</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><p className="rounded-lg bg-white p-3 text-slate-700"><strong className="block text-slate-900">Debit · ••{draft.from_last4}</strong>{match.source.description} · {match.source.date} · {money(match.source.amount_cents)}</p><p className="rounded-lg bg-white p-3 text-slate-700"><strong className="block text-slate-900">Credit · ••{draft.to_last4}</strong>{match.destination.description} · {match.destination.date} · {money(-match.destination.amount_cents)}</p></div><button type="button" disabled={plaidMatchBusy !== null} onClick={() => void checkPlaidMatch(draft, true)} className="mt-3 min-h-11 rounded-xl bg-emerald-700 px-4 font-semibold text-white hover:bg-emerald-800 disabled:opacity-45">Confirm posted pair</button></> : <p className="text-slate-700">{plaidMatchMessage(match)}</p>}</div>}
+        </article>
+      })}</div>
+    </section>}
 
     {(error || notice || coverageIssue || operation) && <div className="space-y-2" aria-live="polite">{error && <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900"><Icon name="alert" className="h-5 w-5 shrink-0" /><span>{error}</span></div>}{coverageIssue && <div role="alert" className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><Icon name="alert" className="h-5 w-5 shrink-0" /><span><strong>Coverage needs review.</strong> {coverageIssue}</span></div>}{notice && <div role="status" className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><Icon name="check" className="h-5 w-5 shrink-0" /><span>{notice}</span></div>}{operation && <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" /><span>{operation.message} <span className="tabular-nums text-blue-700">{Math.max(0, Math.floor((clock - operation.started) / 1000))}s</span></span></div>}</div>}
 
