@@ -1,8 +1,8 @@
 # ELIS rebuild execution tracker
 
-Updated 2026-09-25 after isolated integration with current main and fresh release checks. Production unchanged.
+Updated 2026-09-25: production schema and reviewed data carryover applied; application deployment/acceptance is the next gate.
 
-Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Integration, fresh production-copy migrations, restore rehearsal and signed three-business scope checks passed. Backend suite now passes (249 tests); selective local-data carryover rehearsal passed. Full frontend lint remains non-green; live carryover and production acceptance are still pending.
+Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Full lint/build, 263 backend tests and 57 frontend/extension tests pass. Fresh production migration/restore/auth checks passed. Production carryover preserved 303 evidence/account records, one invoice correction and three historical reimbursements with zero outstanding claims; repeat import added zero records. Code deployment/live browser acceptance remains pending at this checkpoint.
 
 ## Current execution lane — keep the original objective in view
 
@@ -10,7 +10,7 @@ The original question is whether fuel use and other costs explain why one truck 
 
 | Order | Work | Status and next exit condition |
 | --- | --- | --- |
-| Current | Repair payees, payment methods, personal/business account identities, owner reimbursements | Local integrated path now records eligible confirmed personal payments once; connects selected identities to existing statement or monitored sources; matches actual repayments. Verify the owner's real account links and three earlier personal confirmations without assuming prior reimbursements. |
+| Current | Repair payees, payment methods, personal/business account identities, owner reimbursements | Local integrated path now records eligible confirmed personal payments once; connects selected identities to existing statement or monitored sources; matches actual repayments. The owner confirmed all three historical personal payments were reimbursed; carried to production with zero outstanding balance. Continue prospective invoice/account matching. |
 | Next | Outside costs → available cash and pair retention | Validate a real repair through expense, owner funding/repayment and the truck/trailer results; reconcile business cash/Zelle evidence and funded repair reserves. Business cash, card and mixed-payment intake still need a simpler operator path. |
 | Then | Original fuel and settlement anomaly investigation | Return to the historical register, 21 unexplained $200 gross differences and missing originals. Compare matched fuel purchases, driver pay and mileage windows; add independent Motive/odometer evidence before calling anything consumption. Existing fuel-spending signals are not evidence of missing freight or theft. |
 | Remaining | Capital, HELOC and lifetime return | Finish statement-based mixed-use financing allocation, actual payments, recovery targets and disposal acceptance. Preserve gaps instead of inferring payoff or saved reserves. |
@@ -44,7 +44,7 @@ Update this tracker at each implementation milestone and handoff. Do not assign 
 | 3. Equipment, repair funding and HELOC | Dated assignments, capital plans, reserves, owner claims, financing entries and disposal checks exist | Confirm acquisitions, protected balances and opening obligations. HELOC currently supports manually evidenced allocations; complete statement-driven tracing/reconciliation and a usable review flow. Verify lifetime history and sale scenarios. |
 | 4. Reconstruct history | 175 source records inventoried; 37 derived allocations excluded; 78 real PDFs preserved; 77 arithmetic matched and one row ambiguity. Per-record review and CSV register exist | 97 originals unavailable. Reconcile 21 unexplained $200 gross differences, bank receipts and historical outside costs; only the September 21 pair is posted in staging. Historical review is not completed accrual reconstruction. |
 | 5. Operations, Motive and screens | Familiar five-section Dashboard now has source-based revenue shares, paired costs/mile and exact earnings-gap explanation; linked historical reconciliation and selectable line trends | Finish existing intake/repair workflow integration, pair capital detail and full outside-cost performance. Add independent travel and load/payment matching. Verify Motive vehicle mapping, pagination, resets and interval coverage; implement the validated reconciliation flow. |
-| 6. Acceptance and release | Synthetic desktop/mobile review and 24 financial tests recorded; cutover gate exists | Real-business acceptance, staging migration/auth checks, complete difference report, documented rollback and live verification. Full repository checks still have known baseline failures/lint debt. |
+| 6. Acceptance and release | Synthetic desktop/mobile review and 24 financial tests recorded; cutover gate exists | Real-business acceptance, staging migration/auth checks, complete difference report, documented rollback and live verification. Full lint/build and 263 backend/57 Node tests now pass; exact deployed identity and live browser acceptance are next. |
 
 ## Does Home answer the owner's questions yet?
 

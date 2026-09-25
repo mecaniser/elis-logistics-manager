@@ -104,3 +104,10 @@ Fresh carryover comparison still permits only 303 evidence rows and repair 138's
 At this checkpoint production is still unchanged. Next: apply the additive schema and the verified atomic carryover, then land/deploy the candidate and verify authenticated live behavior. Keep incomplete accounting/fuel evidence provisional.
 
 The production carryover's source volume exposed unnecessary original-byte loading in metadata-only queries. Evidence listing and repair history now defer stored file bytes; reconstruction planning also defers them until a source hash actually needs validation. Original downloads and integrity validation remain intact. A query-level regression test verifies metadata views do not select the original-byte column. Full backend rerun: **263 passed**. Business changes now explicitly refresh active settlement searches and legacy time series; lint/build remain green.
+
+
+### Production carryover applied
+
+Applied the additive migration and atomic carryover against production base `80bb800`, using code candidate `1ceb7f9`. Schema changes preserved existing operational records. The rollback-only pass changed no protected table; the committed pass added 303 evidence records and corrected repair 138 by $0.86 using normal journal/reserve synchronization; the repeat committed pass added zero records and made no further correction. All 31 confirmation snapshots matched, with 28 not applicable and three already reimbursed; no finance events/postings/reports were added.
+
+Read-only pre-carryover and post-carryover custom-format database backups are retained privately. Post-carryover backup SHA-256: `7c5bcab9be6ef1df33106bd39020d18a6e47e836b02c2198afae94140db0f17e`. Local port 8016 has been restarted on the final candidate with its original data and session settings. Application deployment and authenticated live browser acceptance remain next.
