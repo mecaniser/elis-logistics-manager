@@ -237,3 +237,7 @@ Engineering completed locally:
 Still open: unmatched business cash/Zelle/card history; mixed-funding split intake; actual reserves; manual-existing-claim corrections; actual monitoring authentication and provider records; full cutover. The legacy upload journal remains separate until reconciled migration, so the two ledgers must never be summed.
 
 Verification for this checkpoint: 72 targeted backend tests passed across finance, cashbook, payment identities, balance links, owner postings and repair confirmations/history; 23 frontend tests passed; scoped frontend lint/build and whitespace checks passed. The build retains its existing bundle-size warning. Desktop/mobile account form, keyboard type selection/Cancel, actual saved-card ownership selection, review checklist and unavailable-monitor state were inspected in the in-app browser without saving invented facts. The local Bank Monitor still requires its authenticated monitoring session; no live balance source or production reimbursement was claimed verified.
+
+### 2026-09-25 — Bank Monitor hierarchy and runtime alignment
+
+Restored monitoring as the first section, with payment accounts and owner reimbursements below. Fixed duplicate sibling keys found during browser verification. Port 8016 now runs the current-main integration branch with the preserved local review database and local authentication. Production bank setup is not present in the local review database; no provider connection or production data was modified. Release carryover and baseline-check gates above remain open.

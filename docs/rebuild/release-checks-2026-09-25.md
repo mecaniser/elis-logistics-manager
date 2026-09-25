@@ -39,3 +39,9 @@ Prepare a reviewed, idempotent carryover for the evidence, account identity and 
 3. Land the reviewed candidate, deploy in the agreed sequence, verify the deployed SHA, migrations, authorized access and real-record browser workflows. No deployment has occurred in this step.
 4. Keep financial results provisional wherever cash, reserves, outside costs, owner repayment, financing or accounting-policy evidence is incomplete. A code release is not finalized books.
 5. Continue the original sequence: repair/outside-cost reconciliation into pair retention, then historical fuel/settlement anomalies, independent mileage, and capital/HELOC history. Missing records block dependent conclusions, not unrelated engineering.
+
+## Local runtime follow-up
+
+Bank monitoring now precedes payment accounts and owner reimbursements. Distinct component keys prevent stale sibling sections during reconciliation. The frontend build and browser reload passed with monitoring first and accounting sections below.
+
+Port 8016 now serves this integration worktree, including current main, using the original local review database after a SQLite backup. The original checkout's uncommitted changes remain untouched. A local-only authenticated session replaces the previous unauthenticated preview runtime. The local database has no monitored-bank configuration; production balances and bank connections were not copied or changed. Existing local card and repair evidence remain available. This supersedes the earlier statement that port 8016 still ran the older checkout.

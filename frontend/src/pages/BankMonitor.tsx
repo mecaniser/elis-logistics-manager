@@ -398,9 +398,6 @@ export default function BankMonitor() {
       <div className="flex items-center gap-2 text-sm text-slate-600"><Icon name="shield" className="h-4 w-4 text-emerald-700" /><span>You approve every transfer in Truliant</span></div>
     </header>
 
-    <PaymentAccounts key={currentTenantId} />
-    {currentTenantId && <OwnerReimbursements key={currentTenantId} />}
-
     {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">{error}</div>}
     {loading && <div role="status" className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" />Loading bank monitor…</div>}
 
@@ -572,5 +569,8 @@ export default function BankMonitor() {
         </>}
       </aside>
     </div>}
+
+    <PaymentAccounts key={`payment-accounts-${currentTenantId}`} />
+    {currentTenantId && <OwnerReimbursements key={`owner-reimbursements-${currentTenantId}`} />}
   </div>
 }
