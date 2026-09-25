@@ -1,8 +1,8 @@
 # ELIS rebuild execution tracker
 
-Updated 2026-09-25: production schema and reviewed data carryover applied; application deployment/acceptance is the next gate.
+Updated 2026-09-25: PR #55 merged and production release 37d785c deployed and browser-verified. Financial cutover remains gated.
 
-Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Full lint/build, 263 backend tests and 57 frontend/extension tests pass. Fresh production migration/restore/auth checks passed. Production carryover preserved 303 evidence/account records, one invoice correction and three historical reimbursements with zero outstanding claims; repeat import added zero records. Code deployment/live browser acceptance remains pending at this checkpoint.
+Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Full lint/build, 263 backend tests and 57 frontend/extension tests pass. Fresh production migration/restore/auth checks passed. Production carryover preserved 303 evidence/account records, one invoice correction and three historical reimbursements with zero outstanding claims; repeat import added zero records. Railway reports SUCCESS for 37d785c; public asset hash matches the tested build. Authenticated desktop/mobile workflows and all three business scopes were verified.
 
 ## Current execution lane — keep the original objective in view
 
@@ -14,7 +14,7 @@ The original question is whether fuel use and other costs explain why one truck 
 | Next | Outside costs → available cash and pair retention | Validate a real repair through expense, owner funding/repayment and the truck/trailer results; reconcile business cash/Zelle evidence and funded repair reserves. Business cash, card and mixed-payment intake still need a simpler operator path. |
 | Then | Original fuel and settlement anomaly investigation | Return to the historical register, 21 unexplained $200 gross differences and missing originals. Compare matched fuel purchases, driver pay and mileage windows; add independent Motive/odometer evidence before calling anything consumption. Existing fuel-spending signals are not evidence of missing freight or theft. |
 | Remaining | Capital, HELOC and lifetime return | Finish statement-based mixed-use financing allocation, actual payments, recovery targets and disposal acceptance. Preserve gaps instead of inferring payoff or saved reserves. |
-| Release | Integrate and reconcile before cutover | Current main integrated in isolated branch; fresh production-copy migration/restore and auth checks passed. Selective evidence/correction carryover rehearsal passed with zero duplicate inserts and no stale confirmations; backend 249 passed. Frontend lint disposition, final live carryover and deployed browser acceptance remain. Local functionality does not establish production readiness. |
+| Release | Integrate and reconcile before cutover | Complete: PR #55 merged; production 37d785c is live. Full lint/build, 263 backend and 57 Node tests pass; fresh backup/migration/restore and atomic carryover verified. Production Bank Monitor, repairs and three-business accounting access verified. Financial dashboard activation remains gated on reconciled evidence. |
 
 Do not hide pending engineering under “waiting for records.” Missing private bank/card/HELOC statements, opening balances and Motive coverage block their dependent conclusions only. The stage-by-stage baseline and dated evidence below remain part of this same plan.
 
@@ -22,7 +22,7 @@ Do not hide pending engineering under “waiting for records.” Missing private
 
 The owner needs an understandable, familiar dashboard that explains truck–trailer performance, spending, protected capital and cash available to withdraw. A collection of financial forms and passing unit tests does not complete that outcome.
 
-The financial foundation is useful and retained. The separate Finance workspace is a staging implementation, not an accepted replacement for the existing dashboard. Remaining work includes product integration and analysis features as well as missing business records. The earlier handoff must not be interpreted as “all development finished; only the owner's documents remain.”
+The financial foundation is useful and retained. The separate Finance workspace is deployed at /finance alongside the familiar dashboard. The default dashboard remains unchanged until a reconciled financial snapshot can pass the cutover gate. Remaining work includes product integration and analysis features as well as missing business records. The earlier handoff must not be interpreted as “all development finished; only the owner's documents remain.”
 
 ## Status definitions
 
@@ -276,3 +276,10 @@ Release decision: technical checks completed with lint non-green. Before landing
 Full lint is green without suppressions; TypeScript/build, 262 backend tests and 57 Node tests pass. Local dashboard period switching, vehicle form and settlement search/reset were checked in the browser. Fresh production backup/migration/restore/auth checks preserve 2,373 legacy rows. The reviewed atomic carryover passes rollback, first import and repeat import checks: 303 evidence records, one $0.86 invoice correction, no fabricated reimbursement cash or ledger entries.
 
 Next authorized sequence: apply schema/carryover, merge and deploy, verify live identity/access/real records. Then return to historical settlement/fuel anomalies and the remaining cash/reserve/HELOC/Motive evidence. Existing legacy income-statement date-label timezone formatting is a separate follow-up; incomplete evidence must not be labeled final.
+
+
+### 2026-09-25 — Production release verified
+
+PR #55 merged to main at `37d785cd569c8f77b0a9bad6df40583c2b84b1d3`; Railway deployment `e3df2ed9-766a-4546-a499-9d6c07c9f145` succeeded. Live JavaScript asset matches the local tested build. Health is 200; anonymous accounting access is 401. Existing signed session opens all three businesses. Bank Monitor retains upstream Plaid/Chrome behavior and displays the saved personal card and all three historical reimbursements at $0 owed. Repair 138 displays $238.86; payee/method filters and 31 confirmations are present. Mobile repairs at 390px have no horizontal overflow. Post-carryover backup restored with all 303 original hashes intact.
+
+Next: historical settlement/fuel reconciliation and reviewed posting of eligible source records; keep source-date exceptions explicit. Production intentionally has no copied staging ledger events or invented opening balances. Thus /finance lists unposted settlements and incomplete scores; / remains the familiar dashboard. Actual cash/reserve/HELOC records and independent mileage remain necessary for their respective final results. This is a completed software release, not completed financial reconstruction.

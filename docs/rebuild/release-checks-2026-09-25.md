@@ -111,3 +111,17 @@ The production carryover's source volume exposed unnecessary original-byte loadi
 Applied the additive migration and atomic carryover against production base `80bb800`, using code candidate `1ceb7f9`. Schema changes preserved existing operational records. The rollback-only pass changed no protected table; the committed pass added 303 evidence records and corrected repair 138 by $0.86 using normal journal/reserve synchronization; the repeat committed pass added zero records and made no further correction. All 31 confirmation snapshots matched, with 28 not applicable and three already reimbursed; no finance events/postings/reports were added.
 
 Read-only pre-carryover and post-carryover custom-format database backups are retained privately. Post-carryover backup SHA-256: `7c5bcab9be6ef1df33106bd39020d18a6e47e836b02c2198afae94140db0f17e`. Local port 8016 has been restarted on the final candidate with its original data and session settings. Application deployment and authenticated live browser acceptance remain next.
+
+
+### Deployed and accepted — 2026-09-25
+
+- PR #55 merged: `37d785cd569c8f77b0a9bad6df40583c2b84b1d3`. Merge tree is identical to the tested candidate.
+- Railway web deployment `e3df2ed9-766a-4546-a499-9d6c07c9f145`: SUCCESS. Bank worker and PostgreSQL remain SUCCESS.
+- Live and locally built entry asset: `/assets/index-CVoXVC_K.js`. Health 200; unauthenticated accounting context 401.
+- Existing signed-in browser session: all three business accounting workspaces open; original Bank Monitor layout/provider state retained; saved Tru CC identity and all three historical reimbursements visible with $0 owed; repair correction visible; payee and payment-method filters present. Mobile repairs checked at 390px with no horizontal overflow; viewport restored.
+- Backup after carryover restored into isolated PostgreSQL; all 303 original hashes verified, repair 138 is $238.86, and no finance ledger/report records were imported. Browser viewing subsequently generates normal draft report snapshots.
+- No new application errors observed in the tested release workflows. A diesel benchmark error was recorded before deployment in the old asset, not in this acceptance run.
+
+The familiar dashboard remains the default because no `activate_finance` event was invented. `/finance` is deployed but correctly reports unposted settlements, missing opening/cash evidence and incomplete scores. Local staging postings, asset assumptions and balances were deliberately not copied. The next milestone is reviewed historical posting/reconciliation, not enabling the cutover gate by bypassing its requirements.
+
+Application rollback target is `80bb800`; retain additive finance tables and carried evidence. Do not restore over live data blindly. Private pre/post backups and the atomic-import result are retained in the ignored release evidence directory.
