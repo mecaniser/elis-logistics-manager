@@ -55,6 +55,36 @@ def _add_bank_draft_transaction_details(engine: Engine) -> None:
             connection.execute(text(statement))
 
 
+def _add_reconciled_finance(engine: Engine) -> None:
+    """Install additive tables and protect existing tables restored without triggers."""
+    from app.models.finance import FinanceEvent, FinanceEvidence, FinancePosting, FinanceLine, FinanceReport
+    models = (FinanceEvent, FinanceEvidence, FinancePosting, FinanceLine, FinanceReport)
+    with engine.begin() as connection:
+        for model in models:
+            model.__table__.create(connection, checkfirst=True)
+        for model in models:
+            table = model.__tablename__
+            if engine.dialect.name == 'postgresql':
+                connection.execute(text(
+                    f"CREATE OR REPLACE FUNCTION {table}_immutable() RETURNS trigger AS $$ "
+                    "BEGIN RAISE EXCEPTION 'Accounting history is immutable'; END; $$ LANGUAGE plpgsql"
+                ))
+                connection.execute(text(f'DROP TRIGGER IF EXISTS {table}_immutable ON {table}'))
+                connection.execute(text(
+                    f'CREATE TRIGGER {table}_immutable BEFORE UPDATE OR DELETE ON {table} '
+                    f'FOR EACH ROW EXECUTE FUNCTION {table}_immutable()'
+                ))
+            elif engine.dialect.name == 'sqlite':
+                for operation in ('UPDATE', 'DELETE'):
+                    connection.execute(text(
+                        f"CREATE TRIGGER IF NOT EXISTS {table}_no_{operation.lower()} "
+                        f"BEFORE {operation} ON {table} BEGIN "
+                        "SELECT RAISE(ABORT, 'Accounting history is immutable'); END"
+                    ))
+            else:
+                raise RuntimeError('Reconciled finance requires PostgreSQL or SQLite history guards.')
+
+
 def _add_auth_account(engine: Engine) -> None:
     from app.models.auth_account import AuthAccount
     AuthAccount.__table__.create(engine, checkfirst=True)
@@ -90,6 +120,9 @@ MIGRATIONS: List[Migration] = [
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),
     ("2026_07_30_trailer_resale_plan", _add_trailer_resale_plan),
     ("2026_09_15_bank_draft_transaction_details", _add_bank_draft_transaction_details),
+    ("2026_09_24_reconciled_finance", _add_reconciled_finance),
+
+
     ("2026_09_24_auth_account", _add_auth_account),
     ("2026_09_24_auth_login_throttle", _add_auth_login_throttle),
     ("2026_09_24_auth_recovery_email", _add_auth_recovery_email),

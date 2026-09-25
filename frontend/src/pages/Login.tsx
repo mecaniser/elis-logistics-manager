@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/authState'
 
 const safeReturnPath = (value: string | null | undefined) => value?.startsWith('/') && !value.startsWith('//') ? value : '/'
 

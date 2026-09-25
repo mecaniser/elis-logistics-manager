@@ -1,9 +1,10 @@
+import { apiError } from '../utils/apiError'
 import { useEffect, useRef, useState } from 'react'
 import { tenantsApi, Tenant, BankAccount } from '../services/api'
 import Toast from './Toast'
 import { tenantColor } from '../utils/tenantAppearance'
 import BusinessDetailsForm from './BusinessDetailsForm'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
   logistics: 'Logistics (Transportation)',
@@ -210,7 +211,8 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
           setBusiness(response.data)
           setError(null)
         }
-      } catch (err: any) {
+      } catch (caught: unknown) {
+      const err = apiError(caught)
         if (!cancelled) {
           setError(err.response?.data?.detail || 'Could not refresh business details')
         }
@@ -221,7 +223,7 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     return () => {
       cancelled = true
     }
-  }, [isOpen, tenant?.id])
+  }, [isOpen, tenant])
 
   const handleCopied = (label: string, ok: boolean) => {
     setToast({

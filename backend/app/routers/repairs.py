@@ -557,6 +557,22 @@ async def upload_repair_invoice(
         )
         db.add(db_repair)
         db.flush()
+        # Preserve the exact uploaded invoice in the same transaction as the repair.
+        import base64
+        import hashlib
+        from app.models.finance import FinanceEvidence
+        digest = hashlib.sha256(content).hexdigest()
+        prior = db.query(FinanceEvidence).filter_by(tenant_id=tenant_id, sha256=digest).first()
+        if prior:
+            raise HTTPException(status_code=409, detail='This exact invoice is already preserved. Review the existing document before adding another repair.')
+        db.add(FinanceEvidence(tenant_id=tenant_id, sha256=digest,
+            filename=os.path.basename(file.filename or 'repair.pdf')[:255], media_type='application/pdf',
+            content_base64=base64.b64encode(content).decode(), source_key=f'repair-upload:{db_repair.id}',
+            extraction_version='repair-invoice-v1', extracted={
+                'legacy_repair_ids': [db_repair.id],
+                'invoice_review': {'source_total': str(cost) if cost is not None else None},
+                'parsed': {k: str(v) if v is not None else None for k, v in repair_data.items()},
+                'payment_basis': 'not_established'}))
         sync_repair_reserve_withdrawal(db, db_repair)
         create_repair_journal_entry(db, db_repair, auto_commit=False)
         db.commit()

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
+import OwnerReimbursements from '../components/OwnerReimbursements'
+import PaymentAccounts from '../components/PaymentAccounts'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
 import { centsFromMoneyInput, incomeExceedsCash } from '../components/moneyAmount'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
 type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number | null }
@@ -581,5 +583,8 @@ export default function BankMonitor() {
         </>}
       </aside>
     </div>}
+
+    <PaymentAccounts key={`payment-accounts-${currentTenantId}`} />
+    {currentTenantId && <OwnerReimbursements key={`owner-reimbursements-${currentTenantId}`} />}
   </div>
 }

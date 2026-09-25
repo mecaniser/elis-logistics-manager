@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi, BalanceSheet as BalanceSheetType } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
 
@@ -11,24 +13,27 @@ export default function BalanceSheet() {
   const [error, setError] = useState<string | null>(null)
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
 
-  useEffect(() => {
-    setBalanceSheet(null)
-    loadBalanceSheet()
-  }, [asOfDate, currentTenant?.id])
-
-  const loadBalanceSheet = async () => {
+  const loadBalanceSheet = useEventCallback(async () => {
     try {
       setLoading(true)
       setError(null)
       // Always shows total for all business assets
       const response = await accountingApi.getBalanceSheet(asOfDate)
       setBalanceSheet(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load balance sheet')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    setBalanceSheet(null)
+    loadBalanceSheet()
+  }, [asOfDate, currentTenant?.id, loadBalanceSheet])
+
+
 
   const formatCurrency = (amount: number) => {
     const safeAmount = isNaN(amount) || amount === null || amount === undefined ? 0 : amount
@@ -83,7 +88,8 @@ export default function BalanceSheet() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export balance sheet')
     }
@@ -340,4 +346,3 @@ export default function BalanceSheet() {
     </div>
   )
 }
-

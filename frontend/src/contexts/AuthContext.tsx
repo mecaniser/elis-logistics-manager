@@ -1,14 +1,7 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { AuthContext } from './authState'
+import { useEffect, useState, ReactNode } from 'react'
 import { authApi } from '../services/api'
 
-interface AuthContextType {
-  authenticated: boolean
-  loading: boolean
-  login: (username: string, password: string, remember: boolean, mfaCode?: string) => Promise<boolean>
-  logout: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [authenticated, setAuthenticated] = useState(false)
@@ -38,7 +31,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     await authApi.logout()
-    setAuthenticated(false)
+    // The server remains authoritative: a local preview without configured
+    // authentication must not strand the user on an unusable login form.
+    await checkAuth()
   }
 
   return (
@@ -46,12 +41,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return ctx
 }

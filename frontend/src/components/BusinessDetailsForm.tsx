@@ -1,3 +1,5 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { tenantsApi, Tenant, BankAccount } from '../services/api'
 
@@ -61,7 +63,7 @@ export default function BusinessDetailsForm({
       prev.map((account, i) => (i === index ? { ...account, [field]: value } : account))
     )
 
-  const handleSave = async () => {
+  const handleSave = useEventCallback(async () => {
     if (!form.name.trim()) {
       onError('Business name is required')
       return
@@ -87,17 +89,19 @@ export default function BusinessDetailsForm({
         bank_accounts: cleanedAccounts.length > 0 ? cleanedAccounts : undefined,
       })
       onSaved(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       onError(err.response?.data?.detail || 'Could not save changes')
     } finally {
       setSaving(false)
     }
-  }
+  })
+  const handleCancel = useEventCallback(onCancel)
 
   // Keep the pinned footer actions in sync with save state
   useEffect(() => {
-    renderActions({ saving, onSave: handleSave, onCancel })
-  }, [saving, form, bankAccounts])
+    renderActions({ saving, onSave: handleSave, onCancel: handleCancel })
+  }, [saving, handleSave, handleCancel, renderActions])
 
   return (
     <div className="px-4 sm:px-6 py-4 space-y-5">

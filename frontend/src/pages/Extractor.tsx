@@ -1,3 +1,4 @@
+import { apiError } from '../utils/apiError'
 import { useState } from 'react'
 import Toast from '../components/Toast'
 import Modal from '../components/Modal'
@@ -256,7 +257,8 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
       setUploadFile(null)
       setUploadFiles([])
       setSelectedSettlementType('')
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Extraction error:', err)
       const errorMessage = err.message || 'Failed to extract PDF'
       showToast(errorMessage, 'error')
@@ -603,7 +605,7 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                           </div>
                           <div className="mt-2 max-h-20 overflow-y-auto">
                             {Object.entries(settlement.expenses.categories)
-                              .filter(([_, value]) => value > 0)
+                              .filter(([, value]) => value > 0)
                               .map(([key, value]) => {
                                 const isDeduction = key === 'deduct' && value > 0
                                 return (
@@ -862,7 +864,7 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                           </div>
                           <div className="mt-2 max-h-32 overflow-y-auto">
                             {Object.entries(settlement.expenses.categories)
-                              .filter(([_, value]) => value > 0)
+                              .filter(([, value]) => value > 0)
                               .map(([key, value]) => {
                                 const isDeduction = key === 'deduct' && value > 0
                                 return (
@@ -1020,8 +1022,8 @@ export default function Extractor({ hideTitle = false }: { hideTitle?: boolean }
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {Object.entries(selectedSettlement.settlement.expenses.categories)
-                      .filter(([_, value]) => value > 0)
-                      .sort(([_, a], [__, b]) => (b as number) - (a as number))
+                      .filter(([, value]) => value > 0)
+                      .sort(([, a], [, b]) => (b as number) - (a as number))
                       .map(([key, value]) => {
                         const isDeduction = key === 'deduct' && value > 0
                         return (

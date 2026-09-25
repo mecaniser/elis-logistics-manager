@@ -1,15 +1,7 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { TenantContext } from './tenantState'
+import { useState, useEffect, ReactNode } from 'react'
 import { tenantsApi, Tenant } from '../services/api'
 
-interface TenantContextType {
-  currentTenant: Tenant | null
-  tenants: Tenant[]
-  setCurrentTenant: (tenant: Tenant) => void
-  loadTenants: () => Promise<void>
-  loading: boolean
-}
-
-const TenantContext = createContext<TenantContextType | undefined>(undefined)
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const [currentTenant, setCurrentTenantState] = useState<Tenant | null>(null)
@@ -71,12 +63,3 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     </TenantContext.Provider>
   )
 }
-
-export function useTenant() {
-  const context = useContext(TenantContext)
-  if (context === undefined) {
-    throw new Error('useTenant must be used within a TenantProvider')
-  }
-  return context
-}
-

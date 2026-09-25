@@ -1,8 +1,10 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { tenantsApi, Tenant } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 const BUSINESS_TYPES = [
   { value: 'logistics', label: 'Logistics (Transportation)' },
@@ -41,23 +43,26 @@ export default function Businesses() {
   })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    loadBusinesses()
-  }, [])
-
-  const loadBusinesses = async () => {
+  const loadBusinesses = useEventCallback(async () => {
     try {
       setLoading(true)
       const response = await tenantsApi.getTenants()
       setBusinesses(response.data)
       setError(null)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load businesses')
       showToast('Failed to load businesses', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    loadBusinesses()
+  }, [loadBusinesses])
+
+
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
@@ -111,7 +116,8 @@ export default function Businesses() {
       resetForm()
       await loadBusinesses()
       await loadTenants() // Refresh the tenant context so new business appears in switcher
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || 'Failed to create business', 'error')
     } finally {
       setSaving(false)
@@ -148,7 +154,8 @@ export default function Businesses() {
       resetForm()
       await loadBusinesses()
       await loadTenants() // Refresh the tenant context
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || 'Failed to update business', 'error')
     } finally {
       setSaving(false)
@@ -165,7 +172,8 @@ export default function Businesses() {
       setBusinessToDeleteName('')
       await loadBusinesses()
       await loadTenants() // Refresh the tenant context
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || 'Failed to delete business', 'error')
     }
   }
@@ -649,4 +657,3 @@ export default function Businesses() {
     </div>
   )
 }
-

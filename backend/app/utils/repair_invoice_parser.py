@@ -37,6 +37,10 @@ def parse_repair_invoice_pdf(file_path: str) -> Dict:
             for page in pdf.pages:
                 text += page.extract_text() or ""
             
+            from app.services.repair_payee import invoice_payee
+            vendors = invoice_payee(text)
+            repair_data['vendor'] = vendors[0] if len(vendors) == 1 else None
+
             # Extract Invoice Date
             # Format in header: "3528 10/30/2025 $798.54 11/08/2025"
             # Look for date pattern after invoice number or in header row

@@ -1,8 +1,16 @@
 import axios from 'axios'
 
-const handleAuthFailure = (error: unknown) => {
+const handleAuthFailure = async (error: unknown) => {
   const status = (error as { response?: { status?: number } })?.response?.status
   if (status === 401 && window.location.pathname !== '/login') {
+    // An endpoint can require stronger authorization than the app shell.
+    // A valid shell session (including local-dev mode) must not loop through Login.
+    try {
+      await axios.get('/api/auth/me', { withCredentials: true })
+      return Promise.reject(error)
+    } catch {
+      // Only recover through Login when the shell session check also fails.
+    }
     const from = `${window.location.pathname}${window.location.search}${window.location.hash}`
     const query = new URLSearchParams({ from, reason: 'session-expired' })
     window.location.replace(`/login?${query.toString()}`)
@@ -80,13 +88,13 @@ export interface Truck {
   estimated_mpg?: number | null
   fuel_card_discount_per_gallon?: number | null
   license_plate_history?: string[]
-  cash_investment?: number  // Cash invested in vehicle
-  loan_amount?: number  // Loan amount for financed vehicles
+  cash_investment?: number | null  // Cash invested in vehicle
+  loan_amount?: number | null  // Loan amount for financed vehicles
   current_loan_balance?: number  // Current loan balance (reduces as principal is paid)
   loan_term_months?: number | null  // Original loan duration in months
   interest_rate?: number  // Annual interest rate (default 0.07 = 7%)
   total_cost?: number  // Total purchase cost (cash + loan + fees)
-  registration_fee?: number  // Registration fee for vehicle
+  registration_fee?: number | null  // Registration fee for vehicle
   // Depreciation fields
   purchase_date?: string  // Date vehicle was purchased/placed in service (ISO date string)
   depreciation_method?: 'MACRS_5' | 'straight_line' | 'none'  // Depreciation method
@@ -240,6 +248,9 @@ export interface ReserveLedgerEntry {
 }
 
 export interface DashboardData {
+  repairs_by_month?: Array<{ repair_id?: number; truck_id: number; month_key: string; month: string; category?: string; cost: number; truck_name?: string; description?: string; repair_date?: string }>
+  blocks_by_truck_month?: Array<{ truck_id: number; month_key: string; month: string; blocks: number; block_ids?: (string | {block_id:string; delivery_date?:string})[]; truck_name?:string }>
+
   total_trucks: number
   total_settlements: number
   total_revenue: number
@@ -395,7 +406,7 @@ export const trucksApi = {
 // Settlement API
 export const settlementsApi = {
   getAll: (truckId?: number, skip?: number, limit?: number, search?: string) => {
-    const params: any = {}
+    const params: Record<string, string | number | boolean> = {}
     if (truckId) params.truck_id = truckId
     if (skip !== undefined) params.skip = skip
     if (limit !== undefined) params.limit = limit
@@ -512,7 +523,7 @@ export const repairsApi = {
     const formData = new FormData()
     
     // Clean data - remove undefined values before stringifying
-    const cleanedData: any = {}
+    const cleanedData: Record<string, unknown> = {}
     Object.keys(data).forEach(key => {
       const value = data[key as keyof Repair]
       if (value !== undefined && value !== null && value !== '') {
@@ -577,6 +588,11 @@ export const reserveApi = {
 }
 
 export interface TimeSeriesPeriod {
+  service_on_truck?: number
+  total_expenses?: number
+  settlement_count?: number
+  settlements?: TimeSeriesData['by_month'][number]['settlements']
+
   week_key?: string
   week_label?: string
   week_start?: string | null
@@ -723,7 +739,7 @@ export interface TimeSeriesData {
 // Analytics API
 export const analyticsApi = {
   getDashboard: (truckId?: number, vehicleType?: 'truck' | 'trailer') => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (truckId) params.truck_id = truckId
     if (vehicleType) params.vehicle_type = vehicleType
     return api.get<DashboardData>('/analytics/dashboard', { params })
@@ -743,7 +759,7 @@ export const analyticsApi = {
     vehicleType?: 'truck' | 'trailer',
     includeDiesel?: boolean,
   ) => {
-    const params: any = {}
+    const params: Record<string, string | number | boolean> = {}
     if (groupBy) params.group_by = groupBy
     if (truckId) params.truck_id = truckId
     if (vehicleType) params.vehicle_type = vehicleType
@@ -907,7 +923,7 @@ export const accountingApi = {
   resetChartOfAccounts: () =>
     api.delete<{ message: string }>('/accounting/chart-of-accounts/reset', { params: { confirm: 'CONFIRM_RESET' } }),
   getChartOfAccounts: (accountType?: string, isActive?: boolean, truckId?: number) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (accountType) params.account_type = accountType
     if (isActive !== undefined) params.is_active = isActive
     if (truckId) params.truck_id = truckId
@@ -918,7 +934,7 @@ export const accountingApi = {
   getChartOfAccount: (accountId: number) =>
     api.get<ChartOfAccount>(`/accounting/chart-of-accounts/${accountId}`),
   getJournalEntries: (startDate?: string, endDate?: string, referenceType?: string, referenceId?: number, truckId?: number) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
     if (referenceType) params.reference_type = referenceType
@@ -931,42 +947,42 @@ export const accountingApi = {
   getJournalEntry: (entryId: number) =>
     api.get<JournalEntry>(`/accounting/journal-entries/${entryId}`),
   getGeneralLedger: (accountId: number, startDate?: string, endDate?: string) => {
-    const params: Record<string, any> = { account_id: accountId }
+    const params: Record<string, string | number | boolean> = { account_id: accountId }
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
     return api.get<GeneralLedger>('/accounting/general-ledger', { params })
   },
   getBalanceSheet: (asOfDate?: string, truckId?: number) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (asOfDate) params.as_of_date = asOfDate
     if (truckId) params.truck_id = truckId
     return api.get<BalanceSheet>('/accounting/balance-sheet', { params })
   },
   getIncomeStatement: (startDate: string, endDate: string, truckId?: number, source?: 'all' | 'csv_only' | 'app_only') => {
-    const params: Record<string, any> = { start_date: startDate, end_date: endDate }
+    const params: Record<string, string | number | boolean> = { start_date: startDate, end_date: endDate }
     if (truckId) params.truck_id = truckId
     if (source) params.source = source
     return api.get<IncomeStatement>('/accounting/income-statement', { params })
   },
   calculateDepreciation: (truckId: number, asOfDate?: string) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (asOfDate) params.as_of_date = asOfDate
     return api.post(`/accounting/depreciation/calculate/${truckId}`, null, { params })
   },
   recordDepreciation: (truckId: number, entryDate?: string, description?: string) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (entryDate) params.entry_date = entryDate
     if (description) params.description = description
     return api.post(`/accounting/depreciation/record/${truckId}`, null, { params })
   },
   recordDepreciationAll: (entryDate?: string) => {
-    const params: Record<string, any> = {}
+    const params: Record<string, string | number | boolean> = {}
     if (entryDate) params.entry_date = entryDate
     return api.post('/accounting/depreciation/record-all', null, { params })
   },
   // Export methods
   exportJournalEntries: (format: 'csv' | 'excel', startDate?: string, endDate?: string, referenceType?: string, truckId?: number) => {
-    const params: Record<string, any> = { format }
+    const params: Record<string, string | number | boolean> = { format }
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
     if (referenceType) params.reference_type = referenceType
@@ -974,35 +990,35 @@ export const accountingApi = {
     return api.get('/accounting/export/journal-entries', { params, responseType: 'blob' })
   },
   exportGeneralLedger: (accountId: number, format: 'csv' | 'excel', startDate?: string, endDate?: string) => {
-    const params: Record<string, any> = { account_id: accountId, format }
+    const params: Record<string, string | number | boolean> = { account_id: accountId, format }
     if (startDate) params.start_date = startDate
     if (endDate) params.end_date = endDate
     return api.get('/accounting/export/general-ledger', { params, responseType: 'blob' })
   },
   exportBalanceSheet: (format: 'pdf' | 'excel', asOfDate?: string) => {
-    const params: Record<string, any> = { format }
+    const params: Record<string, string | number | boolean> = { format }
     if (asOfDate) params.as_of_date = asOfDate
     return api.get('/accounting/export/balance-sheet', { params, responseType: 'blob' })
   },
   exportIncomeStatement: (format: 'pdf' | 'excel', startDate: string, endDate: string, truckId?: number) => {
-    const params: Record<string, any> = { format, start_date: startDate, end_date: endDate }
+    const params: Record<string, string | number | boolean> = { format, start_date: startDate, end_date: endDate }
     if (truckId) params.truck_id = truckId
     return api.get('/accounting/export/income-statement', { params, responseType: 'blob' })
   },
   exportTrialBalance: (format: 'csv' | 'excel' | 'pdf', asOfDate?: string, truckId?: number) => {
-    const params: Record<string, any> = { format }
+    const params: Record<string, string | number | boolean> = { format }
     if (asOfDate) params.as_of_date = asOfDate
     if (truckId) params.truck_id = truckId
     return api.get('/accounting/export/trial-balance', { params, responseType: 'blob' })
   },
   // Tax report methods
   getTaxYearSummary: (year: number, truckId?: number) => {
-    const params: Record<string, any> = { year }
+    const params: Record<string, string | number | boolean> = { year }
     if (truckId) params.truck_id = truckId
     return api.get('/accounting/tax-year-summary', { params })
   },
   getScheduleC: (year: number, truckId?: number) => {
-    const params: Record<string, any> = { year }
+    const params: Record<string, string | number | boolean> = { year }
     if (truckId) params.truck_id = truckId
     return api.get('/accounting/schedule-c', { params })
   },

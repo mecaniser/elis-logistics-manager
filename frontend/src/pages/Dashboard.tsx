@@ -1,8 +1,10 @@
+import { useEventCallback } from '../utils/useEventCallback'
+interface ChartDatum { value: number; dataIndex: number; name: string; seriesName: string; seriesType: string; axisValue: string; marker: string; percent?: number }
 import { useEffect, useRef, useState } from 'react'
-import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, TimeSeriesPeriod, ReserveBalance } from '../services/api'
+import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, TimeSeriesPeriod, ReserveBalance, DashboardData, OperationalMetrics } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import AccountingTooltip from '../components/AccountingTooltip'
 
 // Type definitions for dashboard data structures
@@ -188,8 +190,8 @@ function MetricSparkline({
 export default function Dashboard() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
-  const [data, setData] = useState<any>(null)
-  const [businessSummary, setBusinessSummary] = useState<any>(null)
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [businessSummary, setBusinessSummary] = useState<DashboardData | null>(null)
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [selectedTruck, setSelectedTruck] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -218,6 +220,95 @@ export default function Dashboard() {
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
   const timeSeriesRequestRef = useRef(0)
 
+  const loadDashboard = useEventCallback(async () => {
+    try {
+      setLoading(true)
+      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : 'trailer'
+      const response = await analyticsApi.getDashboard(selectedTruck || undefined, vehicleType)
+      setData(response.data)
+    } catch (err) {
+      console.error('Failed to load dashboard:', err)
+    } finally {
+      setLoading(false)
+    }
+  })
+
+  const loadTimeSeries = useEventCallback(async () => {
+    const requestId = ++timeSeriesRequestRef.current
+    try {
+      setTimeSeriesLoading(true)
+      setTimeSeriesReady(false)
+      // Map vehicle type filter to backend parameter
+      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
+      const dieselRequest =
+        vehicleTypeFilter === 'trucks'
+          ? analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, true)
+          : null
+
+      if (dieselRequest) {
+        setDieselBenchmarkLoading(true)
+      } else {
+        setDieselBenchmarkLoading(false)
+      }
+
+      const response = await analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, false)
+      if (requestId !== timeSeriesRequestRef.current) return
+
+      const normalizedData = normalizeTimeSeries(response.data || {})
+      setTimeSeriesData(normalizedData)
+      setTimeSeriesReady(true)
+
+      if (dieselRequest) {
+        dieselRequest
+          .then((dieselResponse) => {
+            if (requestId !== timeSeriesRequestRef.current) return
+            const normalizedDieselData = normalizeTimeSeries(dieselResponse.data || {})
+            setTimeSeriesData((currentData) => mergeDieselBenchmarks(currentData || normalizedData, normalizedDieselData))
+          })
+          .catch((err) => {
+            console.error('Failed to load diesel benchmark time-series:', err)
+          })
+          .finally(() => {
+            if (requestId === timeSeriesRequestRef.current) {
+              setDieselBenchmarkLoading(false)
+            }
+          })
+      }
+    } catch (err) {
+      console.error('Failed to load time-series data:', err)
+      if (requestId !== timeSeriesRequestRef.current) return
+      setTimeSeriesData({
+        by_week: [],
+        by_month: [],
+        by_year: [],
+      })
+      setTimeSeriesReady(true)
+    } finally {
+      if (requestId === timeSeriesRequestRef.current) {
+        setTimeSeriesLoading(false)
+        if (vehicleTypeFilter !== 'trucks') {
+          setDieselBenchmarkLoading(false)
+        }
+      }
+    }
+  })
+
+  const loadBusinessTimeSeries = useEventCallback(async () => {
+    try {
+      const [truckResponse, trailerResponse] = await Promise.all([
+        analyticsApi.getTimeSeries(undefined, undefined, 'truck'),
+        analyticsApi.getTimeSeries(undefined, undefined, 'trailer'),
+      ])
+      setBusinessTimeSeries({
+        truck: normalizeTimeSeries(truckResponse.data),
+        trailer: normalizeTimeSeries(trailerResponse.data),
+      })
+    } catch (err) {
+      console.error('Failed to load business time series:', err)
+      setBusinessTimeSeries({ truck: null, trailer: null })
+    }
+  })
+
   useEffect(() => {
     // Reset vehicle-scoped dashboard state when the tenant changes.
     setSelectedTruck(null)
@@ -243,7 +334,7 @@ export default function Dashboard() {
       loadDashboard()
       loadReserveBalances()
     }
-  }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type])
+  }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type, loadDashboard])
 
   useEffect(() => {
     if (currentTenant?.business_type === 'logistics') {
@@ -259,7 +350,7 @@ export default function Dashboard() {
     } else {
       setBusinessTimeSeries({ truck: null, trailer: null })
     }
-  }, [currentTenant?.id, currentTenant?.business_type])
+  }, [currentTenant?.id, currentTenant?.business_type, loadBusinessTimeSeries])
 
   useEffect(() => {
     const handleResize = () => {
@@ -276,17 +367,14 @@ export default function Dashboard() {
     // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
     setSelectedExpensePeriod('')
     // Set default view based on vehicle type: weekly for trucks, monthly for trailers
-    if (vehicleTypeFilter === 'trucks' && expenseAnalysisView === 'monthly') {
-      setExpenseAnalysisView('weekly')
-    } else if (vehicleTypeFilter === 'trailers' && expenseAnalysisView === 'weekly') {
-      setExpenseAnalysisView('monthly')
-    }
+    setExpenseAnalysisView(view => vehicleTypeFilter === 'trucks' && view === 'monthly'
+      ? 'weekly' : vehicleTypeFilter === 'trailers' && view === 'weekly' ? 'monthly' : view)
     loadTimeSeries()
-  }, [selectedTruck, vehicleTypeFilter, currentTenant?.business_type])
+  }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type, loadTimeSeries])
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
-    let expenseCategories: any = {}
+    let expenseCategories: Record<string, number> = {}
     if (vehicleTypeFilter === 'trucks' && data?.trucks?.expense_categories) {
       expenseCategories = data.trucks.expense_categories
     } else if (vehicleTypeFilter === 'trailers' && data?.trailers?.expense_categories) {
@@ -338,7 +426,7 @@ export default function Dashboard() {
       
       if (periods.length > 0) {
         const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-        setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
+        setSelectedExpensePeriod((periods[periods.length - 1] as TimeSeriesPeriod)[periodKey] || '')
       }
     }
   }, [timeSeriesData, expenseAnalysisView, selectedExpensePeriod, vehicleTypeFilter])
@@ -360,10 +448,10 @@ export default function Dashboard() {
       
       if (periods.length > 0) {
         const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-        const currentPeriod = periods.find(p => (p as any)[periodKey] === selectedExpensePeriod)
+        const currentPeriod = periods.find(p => (p as TimeSeriesPeriod)[periodKey] === selectedExpensePeriod)
         if (!currentPeriod) {
           // Period doesn't exist in new data, reset to most recent
-          setSelectedExpensePeriod((periods[periods.length - 1] as any)[periodKey])
+          setSelectedExpensePeriod((periods[periods.length - 1] as TimeSeriesPeriod)[periodKey] || '')
         }
       } else if (selectedExpensePeriod) {
         // No periods available, clear selection
@@ -432,18 +520,7 @@ export default function Dashboard() {
     }
   }
 
-  const loadDashboard = async () => {
-    try {
-      setLoading(true)
-      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : 'trailer'
-      const response = await analyticsApi.getDashboard(selectedTruck || undefined, vehicleType)
-      setData(response.data)
-    } catch (err) {
-      console.error('Failed to load dashboard:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   const loadBusinessSummary = async () => {
     try {
@@ -465,76 +542,18 @@ export default function Dashboard() {
     }
   }
 
-  const loadTimeSeries = async () => {
-    const requestId = ++timeSeriesRequestRef.current
-    try {
-      setTimeSeriesLoading(true)
-      setTimeSeriesReady(false)
-      // Map vehicle type filter to backend parameter
-      const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
-      const dieselRequest =
-        vehicleTypeFilter === 'trucks'
-          ? analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, true)
-          : null
 
-      if (dieselRequest) {
-        setDieselBenchmarkLoading(true)
-      } else {
-        setDieselBenchmarkLoading(false)
-      }
 
-      const response = await analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, false)
-      if (requestId !== timeSeriesRequestRef.current) return
-
-      const normalizedData = normalizeTimeSeries(response.data || {})
-      setTimeSeriesData(normalizedData)
-      setTimeSeriesReady(true)
-
-      if (dieselRequest) {
-        dieselRequest
-          .then((dieselResponse) => {
-            if (requestId !== timeSeriesRequestRef.current) return
-            const normalizedDieselData = normalizeTimeSeries(dieselResponse.data || {})
-            setTimeSeriesData((currentData) => mergeDieselBenchmarks(currentData || normalizedData, normalizedDieselData))
-          })
-          .catch((err) => {
-            console.error('Failed to load diesel benchmark time-series:', err)
-          })
-          .finally(() => {
-            if (requestId === timeSeriesRequestRef.current) {
-              setDieselBenchmarkLoading(false)
-            }
-          })
-      }
-    } catch (err) {
-      console.error('Failed to load time-series data:', err)
-      if (requestId !== timeSeriesRequestRef.current) return
-      setTimeSeriesData({
-        by_week: [],
-        by_month: [],
-        by_year: [],
-      })
-      setTimeSeriesReady(true)
-    } finally {
-      if (requestId === timeSeriesRequestRef.current) {
-        setTimeSeriesLoading(false)
-        if (vehicleTypeFilter !== 'trucks') {
-          setDieselBenchmarkLoading(false)
-        }
-      }
-    }
-  }
-
-  const normalizeTimeSeries = (rawData: any): TimeSeriesData => ({
+  const normalizeTimeSeries = (rawData: TimeSeriesData): TimeSeriesData => ({
     by_week: Array.isArray(rawData?.by_week) ? rawData.by_week : [],
     by_month: Array.isArray(rawData?.by_month) ? rawData.by_month : [],
     by_year: Array.isArray(rawData?.by_year) ? rawData.by_year : [],
   })
 
   const mergeDieselBenchmarks = (baseData: TimeSeriesData, dieselData: TimeSeriesData): TimeSeriesData => {
-    const mergePeriods = (
-      basePeriods: any[],
-      dieselPeriods: any[],
+    const mergePeriods = <T extends TimeSeriesPeriod,>(
+      basePeriods: T[],
+      dieselPeriods: T[],
       key: 'week_key' | 'month_key' | 'year_key',
     ) => {
       const dieselByKey = new Map(
@@ -554,21 +573,7 @@ export default function Dashboard() {
     }
   }
 
-  const loadBusinessTimeSeries = async () => {
-    try {
-      const [truckResponse, trailerResponse] = await Promise.all([
-        analyticsApi.getTimeSeries(undefined, undefined, 'truck'),
-        analyticsApi.getTimeSeries(undefined, undefined, 'trailer'),
-      ])
-      setBusinessTimeSeries({
-        truck: normalizeTimeSeries(truckResponse.data),
-        trailer: normalizeTimeSeries(trailerResponse.data),
-      })
-    } catch (err) {
-      console.error('Failed to load business time series:', err)
-      setBusinessTimeSeries({ truck: null, trailer: null })
-    }
-  }
+
 
   // Show placeholder dashboard for non-logistics businesses FIRST (before any data checks)
   if (currentTenant && currentTenant.business_type !== 'logistics') {
@@ -623,7 +628,7 @@ export default function Dashboard() {
 
   // Get expense categories based on vehicle type filter
   const getExpenseCategoriesData = () => {
-    let expenseCategories: any = {}
+    let expenseCategories: Record<string, number> = {}
     if (vehicleTypeFilter === 'trucks' && data?.trucks?.expense_categories) {
       expenseCategories = data.trucks.expense_categories
     } else if (vehicleTypeFilter === 'trailers' && data?.trailers?.expense_categories) {
@@ -663,7 +668,7 @@ export default function Dashboard() {
   const blocksByTruckMonth: BlockByTruckMonth[] = data.blocks_by_truck_month || []
   const repairsByMonth: RepairByMonth[] = data.repairs_by_month || []
 
-  const getRepairsForSelectedPeriod = (pd: any): RepairByMonth[] => {
+  const getRepairsForSelectedPeriod = (pd: TimeSeriesPeriod): RepairByMonth[] => {
     if (!pd || vehicleTypeFilter !== 'trucks') return []
 
     if (expenseAnalysisView === 'monthly') {
@@ -679,8 +684,8 @@ export default function Dashboard() {
     }
 
     if (expenseAnalysisView === 'weekly') {
-      const weekStart = pd.week_start ? new Date(pd.week_start) : new Date(new Date(pd.week_key).getTime() - 7 * 24 * 60 * 60 * 1000)
-      const weekEnd = pd.week_end ? new Date(pd.week_end) : new Date(pd.week_key)
+      const weekStart = pd.week_start ? new Date(pd.week_start) : new Date(new Date(pd.week_key || '').getTime() - 7 * 24 * 60 * 60 * 1000)
+      const weekEnd = pd.week_end ? new Date(pd.week_end) : new Date(pd.week_key || '')
 
       return repairsByMonth.filter((repair: RepairByMonth) => {
         if (!repair.repair_date) return false
@@ -692,7 +697,7 @@ export default function Dashboard() {
     return []
   }
 
-  const getRepairCostForSelectedPeriod = (pd: any): number => {
+  const getRepairCostForSelectedPeriod = (pd: TimeSeriesPeriod): number => {
     if (!pd) return 0
 
     if (vehicleTypeFilter === 'trucks') {
@@ -802,7 +807,7 @@ export default function Dashboard() {
     
     const expenses: ExpenseData = {
       fuel: data.by_week.map((item) => item.fuel),
-      tolls: data.by_week.map((item) => (item as any).tolls || 0),
+      tolls: data.by_week.map((item) => (item as TimeSeriesPeriod).tolls || 0),
       dispatch_fee: data.by_week.map((item) => item.dispatch_fee),
       deduct: data.by_week.map((item) => item.deduct || 0),
       fleet_manager_support: data.by_week.map((item) => item.fleet_manager_support || 0),
@@ -831,7 +836,7 @@ export default function Dashboard() {
     
     const expenses: ExpenseData = {
       fuel: data.by_month.map((item) => item.fuel),
-      tolls: data.by_month.map((item) => (item as any).tolls || 0),
+      tolls: data.by_month.map((item) => (item as TimeSeriesPeriod).tolls || 0),
       dispatch_fee: data.by_month.map((item) => item.dispatch_fee),
       deduct: data.by_month.map((item) => item.deduct || 0),
       fleet_manager_support: data.by_month.map((item) => item.fleet_manager_support || 0),
@@ -868,7 +873,7 @@ export default function Dashboard() {
     setSelectedCategories(allDeselected)
   }
 
-  const handleLegendSelectChange = (params: any) => {
+  const handleLegendSelectChange = (params: {selected:Record<string, boolean>}) => {
     if (params && params.selected) {
       setSelectedCategories(params.selected)
     }
@@ -896,7 +901,7 @@ export default function Dashboard() {
       if (revenue > 0) {
     const categories = ['fuel', 'tolls', 'dispatch_fee', 'deduct', 'insurance', 'safety', 'prepass', 'ifta', 'truck_parking', 'driver_pay', 'payroll_fee']
         categories.forEach(cat => {
-          const amount = (period as any)[cat] || 0
+          const amount = Number((period as TimeSeriesPeriod)[cat as keyof TimeSeriesPeriod]) || 0
           const percent = (amount / revenue) * 100
           if (!totals[cat]) {
             totals[cat] = { total: 0, count: 0 }
@@ -927,12 +932,12 @@ export default function Dashboard() {
       if (!data) return null
       
       // Get expense categories based on vehicle type filter
-      let expenseCategories: any = {}
+      let expenseCategories: Record<string, number> = {}
       let grossRevenue = 0
       let netProfit = 0
-      let truckProfits: any[] = []
+      let truckProfits: DashboardData['truck_profits'] = []
       let totalExpensesFromBackend = 0
-      let operationalMetrics: any = {}
+      let operationalMetrics: Partial<OperationalMetrics> = {}
       
       if (vehicleTypeFilter === 'trucks' && data.trucks) {
         expenseCategories = data.trucks.expense_categories || {}
@@ -965,7 +970,8 @@ export default function Dashboard() {
       const adjustedTotalExpenses = Math.max(0, (totalExpensesFromBackend || 0) - customAmount)
       const adjustedNetProfit = netProfit + customAmount
       
-      const aggregated = {
+      const aggregated: TimeSeriesPeriod & {all_time_key:string; all_time_label:string} = {
+        fleet_manager_support: expenseCategories.fleet_manager_support || 0,
         all_time_key: 'all_time',
         all_time_label: 'All Time',
         gross_revenue: grossRevenue,
@@ -992,7 +998,7 @@ export default function Dashboard() {
         service_on_truck: expenseCategories.service_on_truck || 0,
         custom: 0,
         repairs: operationalMetrics.repair_costs || expenseCategories.repairs || 0,
-        trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp: any) => ({
+        trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp) => ({
           truck_id: tp.truck_id,
           truck_name: tp.truck_name
         }))
@@ -1012,7 +1018,7 @@ export default function Dashboard() {
       : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
     
     const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-    return periods.find(p => (p as any)[periodKey] === selectedExpensePeriod) || null
+    return periods.find(p => (p as TimeSeriesPeriod)[periodKey] === selectedExpensePeriod) || null
   }
 
   const selectedPeriodData = getSelectedPeriodData()
@@ -1058,7 +1064,7 @@ export default function Dashboard() {
     return 'period'
   }
 
-  const getPeriodDisplayLabel = (periodData: any) => {
+  const getPeriodDisplayLabel = (periodData: TimeSeriesPeriod | null) => {
     if (!periodData) return getComparisonPeriodLabel()
     if (expenseAnalysisView === 'weekly') return periodData.week_label || periodData.week_key || getComparisonPeriodLabel()
     if (expenseAnalysisView === 'monthly') return periodData.month_label || periodData.month_key || getComparisonPeriodLabel()
@@ -1066,19 +1072,19 @@ export default function Dashboard() {
     return getComparisonPeriodLabel()
   }
 
-  const getPeriodComparisonSignature = (periodData: any) => {
+  const getPeriodComparisonSignature = (periodData: TimeSeriesPeriod | null) => {
     if (!periodData) return null
 
     const truckIds = Array.isArray(periodData.trucks)
       ? periodData.trucks
-          .map((truck: any) => Number(truck?.truck_id))
+          .map((truck) => Number(truck?.truck_id))
           .filter((truckId: number) => Number.isFinite(truckId))
           .sort((a: number, b: number) => a - b)
       : []
 
     const settlementTypes = Array.isArray(periodData.settlement_types)
       ? periodData.settlement_types
-          .map((settlementType: any) => String(settlementType || '').trim())
+          .map((settlementType) => String(settlementType || '').trim())
           .filter(Boolean)
           .sort()
       : []
@@ -1089,19 +1095,19 @@ export default function Dashboard() {
     })
   }
 
-  const getPeriodComparisonContext = (periodData: any) => {
+  const getPeriodComparisonContext = (periodData: TimeSeriesPeriod | null) => {
     if (!periodData) return null
 
     const comparisonSignature = getPeriodComparisonSignature(periodData)
     const truckIds = Array.isArray(periodData.trucks)
       ? periodData.trucks
-          .map((truck: any) => Number(truck?.truck_id))
+          .map((truck) => Number(truck?.truck_id))
           .filter((truckId: number) => Number.isFinite(truckId))
           .sort((a: number, b: number) => a - b)
       : []
     const settlementTypes = Array.isArray(periodData.settlement_types)
       ? periodData.settlement_types
-          .map((settlementType: any) => String(settlementType || '').trim())
+          .map((settlementType) => String(settlementType || '').trim())
           .filter(Boolean)
           .sort()
       : []
@@ -1113,7 +1119,7 @@ export default function Dashboard() {
     }
   }
 
-  const isComparablePreviousPeriod = (currentPeriod: any, candidatePeriod: any) => {
+  const isComparablePreviousPeriod = (currentPeriod: TimeSeriesPeriod, candidatePeriod: TimeSeriesPeriod) => {
     const currentContext = getPeriodComparisonContext(currentPeriod)
     const candidateContext = getPeriodComparisonContext(candidatePeriod)
 
@@ -1175,7 +1181,7 @@ export default function Dashboard() {
       const candidatePeriod = selectedPeriods[index]
       if (isComparablePreviousPeriod(selectedPeriodData, candidatePeriod)) {
         return {
-          period: candidatePeriod as any,
+          period: candidatePeriod as TimeSeriesPeriod,
           index,
         }
       }
@@ -1200,12 +1206,12 @@ export default function Dashboard() {
     ? `Comparison unavailable. No comparable prior ${getComparisonPeriodUnit()} for this truck/source mix.`
     : `Comparison unavailable. No comparable prior ${getComparisonPeriodUnit()} for this vehicle/source mix.`
 
-  const getPeriodRepairCost = (periodData: any) => {
+  const getPeriodRepairCost = (periodData: TimeSeriesPeriod | null) => {
     if (!periodData) return 0
     return getRepairCostForSelectedPeriod(periodData)
   }
 
-  const calculatePeriodMetrics = (periodData: any) => {
+  const calculatePeriodMetrics = (periodData: TimeSeriesPeriod | null) => {
     if (!periodData) {
       return {
         totalMiles: null,
@@ -1233,7 +1239,7 @@ export default function Dashboard() {
 
   const previousPeriodMetrics = calculatePeriodMetrics(previousPeriodData)
   const previousDieselBenchmarkInfo = getPreviousPeriodWithValue((period) => {
-    const price = Number((period as any).diesel_price_per_gallon) || 0
+    const price = Number((period as TimeSeriesPeriod).diesel_price_per_gallon) || 0
     return price > 0 ? price : null
   })
   const previousDieselBenchmarkLabel = previousDieselBenchmarkInfo
@@ -1298,8 +1304,8 @@ export default function Dashboard() {
         : series.by_year
     const keyName = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
     if (!periods.length) return null
-    if (!selectedExpensePeriod) return periods[periods.length - 1] as any
-    return ((periods as any[]).find((period) => period[keyName] === selectedExpensePeriod) || null) as any
+    if (!selectedExpensePeriod) return periods[periods.length - 1] as TimeSeriesPeriod
+    return ((periods as TimeSeriesPeriod[]).find((period) => period[keyName] === selectedExpensePeriod) || null) as TimeSeriesPeriod
   }
 
   const sumNetProfitAcrossSeries = (series: TimeSeriesData | null) => {
@@ -1320,13 +1326,13 @@ export default function Dashboard() {
   const businessTrailerPeriod = getMatchingBusinessPeriod(businessTimeSeries.trailer)
   const businessReserveDepositsThisPeriod = expenseAnalysisView === 'all_time'
     ? summaryReserveDepositsToDate
-    : Number((businessTruckPeriod as any)?.repair_reserve_amount) || 0
+    : Number((businessTruckPeriod as TimeSeriesPeriod)?.repair_reserve_amount) || 0
   const truckNetProfitTotal = expenseAnalysisView === 'all_time'
     ? sumNetProfitAcrossSeries(businessTimeSeries.truck) || Number(businessSummary?.trucks?.net_profit) || 0
-    : Number((businessTruckPeriod as any)?.net_profit) || 0
+    : Number((businessTruckPeriod as TimeSeriesPeriod)?.net_profit) || 0
   const trailerNetProfitTotal = expenseAnalysisView === 'all_time'
     ? sumNetProfitAcrossSeries(businessTimeSeries.trailer) || Number(businessSummary?.trailers?.net_profit) || 0
-    : Number((businessTrailerPeriod as any)?.net_profit) || 0
+    : Number((businessTrailerPeriod as TimeSeriesPeriod)?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
   const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
 
@@ -1592,7 +1598,7 @@ export default function Dashboard() {
                     disabled={isTimeSeriesPending || availableExpensePeriods.length === 0}
                     className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    {availableExpensePeriods.map((period: any) => {
+                    {availableExpensePeriods.map((period: TimeSeriesPeriod) => {
                       const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
                       const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
                       return (
@@ -1631,7 +1637,7 @@ export default function Dashboard() {
             <div className="space-y-6">
               {(() => {
                 // Calculate repairs for the selected period to show True Net Profit
-                const pd = selectedPeriodData as any
+                const pd = selectedPeriodData as TimeSeriesPeriod
                 const repairsForPeriod = getRepairCostForSelectedPeriod(pd)
                 
                     const netProfitValue = Number(selectedPeriodData.net_profit) || 0
@@ -1653,7 +1659,7 @@ export default function Dashboard() {
                       ? Array.from(
                           new Set(
                             pd.trucks
-                              .map((truck: any) => String(truck?.truck_name || '').trim())
+                              .map((truck) => String(truck?.truck_name || '').trim())
                               .filter(Boolean)
                           )
                         )
@@ -1688,7 +1694,7 @@ export default function Dashboard() {
                     const revenuePerMileTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).revenuePerMile)
                     const settlementCostTrendPoints = buildSelectedPeriodTrendPoints((period) => calculatePeriodMetrics(period).settlementCostPerMile)
                     const dieselBenchmarkTrendPoints = buildSelectedPeriodTrendPoints((period) => {
-                      const price = Number((period as any).diesel_price_per_gallon) || 0
+                      const price = Number((period as TimeSeriesPeriod).diesel_price_per_gallon) || 0
                       return price > 0 ? price : null
                     })
                 
@@ -1732,7 +1738,7 @@ export default function Dashboard() {
                               <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
                               <span className="text-base sm:text-xl font-bold text-red-600">
                                 ${(() => {
-                                  const customAmt = Number((selectedPeriodData as any).custom) || 0
+                                  const customAmt = Number((selectedPeriodData as TimeSeriesPeriod).custom) || 0
                                   if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
                                     return Math.max(0, pd.total_expenses - customAmt)
                                   }
@@ -1897,14 +1903,14 @@ export default function Dashboard() {
               {/* Net Profit Details & Repair Expenses - Only show for trucks in weekly/monthly/yearly view */}
               {vehicleTypeFilter === 'trucks' && (expenseAnalysisView === 'weekly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'yearly') && selectedPeriodData && (() => {
                 const periodLabel = expenseAnalysisView === 'weekly' 
-                  ? ((selectedPeriodData as any).week_label || 'Selected Week')
+                  ? ((selectedPeriodData as TimeSeriesPeriod).week_label || 'Selected Week')
                   : expenseAnalysisView === 'monthly'
-                  ? ((selectedPeriodData as any).month_label || 'Selected Month')
-                  : ((selectedPeriodData as any).year_label || 'Selected Year')
-                const loanInterest = Number((selectedPeriodData as any).loan_interest) || 0
+                  ? ((selectedPeriodData as TimeSeriesPeriod).month_label || 'Selected Month')
+                  : ((selectedPeriodData as TimeSeriesPeriod).year_label || 'Selected Year')
+                const loanInterest = Number((selectedPeriodData as TimeSeriesPeriod).loan_interest) || 0
                 const netProfitValue = Number(selectedPeriodData.net_profit) || 0
-                const trailerSplitThisPeriod = Number((selectedPeriodData as any).trailer_income_split_amount) || 0
-                const repairReserveThisPeriod = Number((selectedPeriodData as any).repair_reserve_amount) || 0
+                const trailerSplitThisPeriod = Number((selectedPeriodData as TimeSeriesPeriod).trailer_income_split_amount) || 0
+                const repairReserveThisPeriod = Number((selectedPeriodData as TimeSeriesPeriod).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
                 const cumulativeTrailerContribution = selectedTrailerContributionTotal
                 const reserveDepositsToDate = detailReserveDepositsToDate
@@ -2140,13 +2146,13 @@ export default function Dashboard() {
               })()}
 
               {/* Trucks Involved - Only show for trucks */}
-              {vehicleTypeFilter === 'trucks' && (selectedPeriodData as any).trucks && Array.isArray((selectedPeriodData as any).trucks) && (selectedPeriodData as any).trucks.length > 0 && (
+              {vehicleTypeFilter === 'trucks' && ((selectedPeriodData as TimeSeriesPeriod).trucks || []) && Array.isArray(((selectedPeriodData as TimeSeriesPeriod).trucks || [])) && ((selectedPeriodData as TimeSeriesPeriod).trucks || []).length > 0 && (
                 <div className="mb-4">
                   <div className="text-sm font-medium text-gray-700 mb-2">
                     Vehicles Involved ({expenseAnalysisView === 'all_time' ? 'all time' : expenseAnalysisView === 'weekly' ? 'this week' : expenseAnalysisView === 'monthly' ? 'this month' : 'this year'}):
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {(selectedPeriodData as any).trucks.map((truck: any) => (
+                    {((selectedPeriodData as TimeSeriesPeriod).trucks || []).map((truck) => (
                       <span
                         key={truck.truck_id}
                         className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
@@ -2159,14 +2165,14 @@ export default function Dashboard() {
               )}
 
               {/* Settlement Breakdown - Show which settlements contribute - Only for trucks */}
-              {vehicleTypeFilter === 'trucks' && expenseAnalysisView === 'monthly' && (selectedPeriodData as any).settlements && Array.isArray((selectedPeriodData as any).settlements) && (selectedPeriodData as any).settlements.length > 0 && (
+              {vehicleTypeFilter === 'trucks' && expenseAnalysisView === 'monthly' && ((selectedPeriodData as TimeSeriesPeriod).settlements || []) && Array.isArray(((selectedPeriodData as TimeSeriesPeriod).settlements || [])) && ((selectedPeriodData as TimeSeriesPeriod).settlements || []).length > 0 && (
                 <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <button
                     onClick={() => setSettlementsInfoExpanded(!settlementsInfoExpanded)}
                     className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
                   >
                     <div className="text-sm font-medium text-gray-700">
-                      Settlements Included (this month): {(selectedPeriodData as any).settlement_count || (selectedPeriodData as any).settlements.length}
+                      Settlements Included (this month): {(selectedPeriodData as TimeSeriesPeriod).settlement_count || ((selectedPeriodData as TimeSeriesPeriod).settlements || []).length}
                     </div>
                     <svg
                       className={`w-5 h-5 text-gray-600 transition-transform ${settlementsInfoExpanded ? 'transform rotate-180' : ''}`}
@@ -2195,7 +2201,7 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-yellow-200">
-                        {(selectedPeriodData as any).settlements.map((settlement: any, idx: number) => (
+                        {((selectedPeriodData as TimeSeriesPeriod).settlements || []).map((settlement, idx: number) => (
                           <tr key={settlement.settlement_id || idx} className="bg-white">
                             <td className="px-2 py-1">{settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : '-'}</td>
                             <td className="px-2 py-1">{settlement.week_start ? new Date(settlement.week_start).toLocaleDateString() : '-'}</td>
@@ -2209,10 +2215,10 @@ export default function Dashboard() {
                         <tr>
                           <td colSpan={3} className="px-2 py-1 text-right">Totals:</td>
                           <td className="px-2 py-1 text-right">
-                            ${(selectedPeriodData as any).settlements.reduce((sum: number, s: any) => sum + (s.insurance || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${((selectedPeriodData as TimeSeriesPeriod).settlements || []).reduce((sum: number, s) => sum + (s.insurance || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-2 py-1 text-right">
-                            ${(selectedPeriodData as any).settlements.reduce((sum: number, s: any) => sum + (s.driver_pay || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${((selectedPeriodData as TimeSeriesPeriod).settlements || []).reduce((sum: number, s) => sum + (s.driver_pay || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       </tfoot>
@@ -2227,25 +2233,25 @@ export default function Dashboard() {
               {vehicleTypeFilter === 'trucks' && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Expenses by Category - 🚚 Trucks - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                  Expenses by Category - 🚚 Trucks - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as TimeSeriesPeriod).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as TimeSeriesPeriod).month_label : (selectedPeriodData as TimeSeriesPeriod).year_label}
                 </h3>
                 {(() => {
                   // For trucks, show all categories (trailers are not shown in this view)
                   const standardCategories = [
-                        { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as any).fuel || 0 },
-                        { key: 'tolls', label: 'Tolls', value: (selectedPeriodData as any).tolls || 0 },
-                        { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as any).dispatch_fee || 0 },
-                        { key: 'deduct', label: 'Deductions', value: (selectedPeriodData as any).deduct || 0 },
-                        { key: 'fleet_manager_support', label: 'Fleet Manager Support', value: (selectedPeriodData as any).fleet_manager_support || 0 },
-                        { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as any).insurance || 0 },
-                        { key: 'safety', label: 'Safety', value: (selectedPeriodData as any).safety || 0 },
-                        { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as any).prepass || 0 },
-                        { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as any).ifta || 0 },
-                        { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as any).loan_interest || 0 },
-                        { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as any).truck_parking || 0 },
-                        { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as any).driver_pay || 0 },
-                        { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as any).payroll_fee || 0 },
-                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as any).repairs || 0 }] : []),
+                        { key: 'fuel', label: 'Fuel', value: (selectedPeriodData as TimeSeriesPeriod).fuel || 0 },
+                        { key: 'tolls', label: 'Tolls', value: (selectedPeriodData as TimeSeriesPeriod).tolls || 0 },
+                        { key: 'dispatch_fee', label: 'Dispatch Fee', value: (selectedPeriodData as TimeSeriesPeriod).dispatch_fee || 0 },
+                        { key: 'deduct', label: 'Deductions', value: (selectedPeriodData as TimeSeriesPeriod).deduct || 0 },
+                        { key: 'fleet_manager_support', label: 'Fleet Manager Support', value: (selectedPeriodData as TimeSeriesPeriod).fleet_manager_support || 0 },
+                        { key: 'insurance', label: 'Insurance', value: (selectedPeriodData as TimeSeriesPeriod).insurance || 0 },
+                        { key: 'safety', label: 'Safety', value: (selectedPeriodData as TimeSeriesPeriod).safety || 0 },
+                        { key: 'prepass', label: 'Prepass', value: (selectedPeriodData as TimeSeriesPeriod).prepass || 0 },
+                        { key: 'ifta', label: 'IFTA', value: (selectedPeriodData as TimeSeriesPeriod).ifta || 0 },
+                        { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as TimeSeriesPeriod).loan_interest || 0 },
+                        { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as TimeSeriesPeriod).truck_parking || 0 },
+                        { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as TimeSeriesPeriod).driver_pay || 0 },
+                        { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as TimeSeriesPeriod).payroll_fee || 0 },
+                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as TimeSeriesPeriod).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as TimeSeriesPeriod).repairs || 0 }] : []),
                       ]
                   
                   // Keep "Custom" label simple - descriptions are shown in settlement details, not in chart
@@ -2266,9 +2272,9 @@ export default function Dashboard() {
                         tooltip: {
                           trigger: 'axis',
                           axisPointer: { type: 'shadow' },
-                          formatter: (params: any) => {
+                          formatter: (params: ChartDatum[]) => {
                             let result = `${params[0]?.axisValue}<br/>`
-                            params.forEach((param: any) => {
+                            params.forEach((param) => {
                               const value = param.value || 0
                               const seriesName = param.seriesName
                               if (seriesName === 'Selected Period') {
@@ -2347,7 +2353,7 @@ export default function Dashboard() {
                             type: 'bar',
                             data: sortedValues,
                         itemStyle: {
-                          color: (params: any) => {
+                          color: (params: ChartDatum) => {
                             const categoryIndex = params.dataIndex
                             const amount = params.value
                             const revenue = selectedPeriodData.gross_revenue || 1
@@ -2367,7 +2373,7 @@ export default function Dashboard() {
                         label: {
                           show: !isMobile, // Hide labels on mobile to prevent overlap
                           position: 'top',
-                          formatter: (params: any) => {
+                          formatter: (params: ChartDatum) => {
                             const value = params.value || 0
                             const revenue = selectedPeriodData.gross_revenue || 1
                             const percent = ((value / revenue) * 100).toFixed(1)
@@ -2394,7 +2400,7 @@ export default function Dashboard() {
                         label: {
                           show: true,
                           position: 'top',
-                          formatter: (params: any) => {
+                          formatter: (params: ChartDatum) => {
                             const value = params.value || 0
                             return value > 0 ? `${value.toFixed(1)}%` : ''
                           },
@@ -2421,7 +2427,7 @@ export default function Dashboard() {
                     className="w-full flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
                   >
                     <h3 className="text-lg font-semibold text-gray-900">
-                      Expense Details - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as any).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as any).month_label : (selectedPeriodData as any).year_label}
+                      Expense Details - {expenseAnalysisView === 'all_time' ? 'All Time' : expenseAnalysisView === 'weekly' ? (selectedPeriodData as TimeSeriesPeriod).week_label : expenseAnalysisView === 'monthly' ? (selectedPeriodData as TimeSeriesPeriod).month_label : (selectedPeriodData as TimeSeriesPeriod).year_label}
                     </h3>
                     <svg
                       className={`w-5 h-5 text-gray-600 transition-transform ${expenseDetailsExpanded ? 'transform rotate-180' : ''}`}
@@ -2468,16 +2474,16 @@ export default function Dashboard() {
                         { key: 'payroll_fee', label: 'Payroll Fee' },
                         { key: 'loan_interest', label: 'Loan Interest' },
                         { key: 'truck_parking', label: 'Truck Parking' },
-                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as any).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
+                        ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as TimeSeriesPeriod).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
                       ]
                         .map(({ key, label }) => ({
                           key,
                           label,
-                          amount: (selectedPeriodData as any)[key] || 0
+                          amount: Number((selectedPeriodData as TimeSeriesPeriod)[key as keyof TimeSeriesPeriod]) || 0
                         }))
                         .sort((a, b) => b.amount - a.amount)
                         .map(({ key, label }) => {
-                        const amount = (selectedPeriodData as any)[key] || 0
+                        const amount = Number((selectedPeriodData as TimeSeriesPeriod)[key as keyof TimeSeriesPeriod]) || 0
                         const revenue = selectedPeriodData.gross_revenue || 1
                         const percent = (amount / revenue) * 100
                         const avgPercent = averagePercentages[key] || 0
@@ -2501,8 +2507,8 @@ export default function Dashboard() {
                         }
                         
                         // Get custom expense descriptions for the "custom" category
-                        const customDescriptions = key === 'custom' && (selectedPeriodData as any).custom_descriptions 
-                          ? Object.values((selectedPeriodData as any).custom_descriptions).filter((d: any) => d && d.trim()).join('; ')
+                        const customDescriptions = key === 'custom' && (selectedPeriodData as TimeSeriesPeriod).custom_descriptions
+                          ? Object.values((selectedPeriodData as TimeSeriesPeriod).custom_descriptions || {}).filter((d) => d && d.trim()).join('; ')
                           : null
                         
                         return (
@@ -2576,7 +2582,7 @@ export default function Dashboard() {
               option={{
                 tooltip: {
                   trigger: 'item',
-                  formatter: (params: any) => {
+                  formatter: (params: ChartDatum) => {
                     const value = params.value || 0
                     const percent = params.percent || 0
                     return `${params.name}<br/>$${safeToLocaleString(value)} (${percent}%)`
@@ -2765,7 +2771,7 @@ export default function Dashboard() {
                   axisPointer: {
                     type: 'shadow'
                   },
-                  formatter: (params: any) => {
+                  formatter: (params: ChartDatum[]) => {
                     const param = params[0]
                     const index = param.dataIndex
                     return repairTooltips[index] || `${param.axisValue}<br/>$${safeToLocaleString(param.value)}`
@@ -2819,7 +2825,7 @@ export default function Dashboard() {
                     label: {
                       show: !isMobile, // Hide labels on mobile to prevent overlap
                       position: 'top',
-                      formatter: (params: any) => {
+                      formatter: (params: ChartDatum) => {
                         const value = params.value || 0
                         return value > 0 ? `$${safeToLocaleString(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''
                       },
@@ -2854,9 +2860,9 @@ export default function Dashboard() {
                 axisPointer: {
                   type: 'shadow'
                 },
-                formatter: (params: any) => {
+                formatter: (params: ChartDatum[]) => {
                   let result = `${params[0]?.axisValue}<br/>`
-                  params.forEach((param: any) => {
+                  params.forEach((param) => {
                     const blockCount = param.value || 0
                     result += `${param.seriesName}: ${blockCount} blocks<br/>`
                   })
@@ -2917,7 +2923,7 @@ export default function Dashboard() {
                   const pmMonths = truckId ? pmMonthsByTruck[truckId] : null
                   
                   // Create markArea data for PM months
-                  const markAreaData: any[] = []
+                  const markAreaData: Array<[{ xAxis: number }, { xAxis: number }]> = []
                   if (pmMonths && pmMonths.size > 0) {
                     blocksChartData.months.forEach((monthLabel: string, index: number) => {
                       // Extract month_key from month label or use index
@@ -2938,7 +2944,7 @@ export default function Dashboard() {
                     ...series,
                     itemStyle: {
                       borderRadius: [4, 4, 0, 0],
-                      color: (params: any) => {
+                      color: (params: ChartDatum) => {
                         // Color bars based on whether they meet the 11 blocks target
                         return params.value >= 11 ? '#10b981' : '#ef4444'
                       }
@@ -2946,7 +2952,7 @@ export default function Dashboard() {
                     label: {
                       show: true,
                       position: 'inside',
-                      formatter: (params: any) => {
+                      formatter: (params: ChartDatum) => {
                         const value = params.value || 0
                         return value > 0 ? value.toString() : ''
                       },
@@ -3007,7 +3013,7 @@ export default function Dashboard() {
                   label: {
                     show: true,
                     position: 'top',
-                    formatter: (params: any) => {
+                    formatter: (params: ChartDatum) => {
                       const value = params.value || 0
                       return value > 0 ? value.toFixed(1) : ''
                     },
@@ -3016,7 +3022,7 @@ export default function Dashboard() {
                     fontWeight: 'bold'
                   },
                   tooltip: {
-                    formatter: (params: any) => {
+                    formatter: (params: ChartDatum) => {
                       const value = params.value || 0
                       return `Average: ${value.toFixed(2)} blocks`
                     }
@@ -3027,7 +3033,7 @@ export default function Dashboard() {
             style={{ height: isMobile ? '300px' : '450px', width: '100%' }}
             opts={{ renderer: 'svg' }}
             onEvents={{
-              click: (params: any) => {
+              click: (params: ChartDatum) => {
                 // Handle click on chart bars
                 if (params.seriesType === 'bar' && params.seriesName !== 'Average') {
                   const monthLabel = params.name
@@ -3286,9 +3292,9 @@ export default function Dashboard() {
                       tooltip: {
                         trigger: 'axis',
                         axisPointer: { type: 'cross' },
-                        formatter: (params: any) => {
+                        formatter: (params: ChartDatum[]) => {
                           let result = `${params[0]?.axisValue}<br/>`
-                          params.forEach((param: any) => {
+                          params.forEach((param) => {
                             const value = param.value || 0
                             result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
                           })
@@ -3380,9 +3386,9 @@ export default function Dashboard() {
                       tooltip: {
                         trigger: 'axis',
                         axisPointer: { type: 'cross' },
-                        formatter: (params: any) => {
+                        formatter: (params: ChartDatum[]) => {
                           let result = `${params[0]?.axisValue}<br/>`
-                          params.forEach((param: any) => {
+                          params.forEach((param) => {
                             const value = param.value || 0
                             result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`
                           })
@@ -3475,9 +3481,9 @@ export default function Dashboard() {
                     tooltip: {
                       trigger: 'axis',
                       axisPointer: { type: 'cross' },
-                      formatter: (params: any) => {
+                      formatter: (params: ChartDatum[]) => {
                         let result = `${params[0]?.axisValue}<br/>`
-                        params.forEach((param: any) => {
+                        params.forEach((param) => {
                           const value = param.value || 0
                           if (value > 0) {
                             result += `${param.marker}${param.seriesName}: $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<br/>`

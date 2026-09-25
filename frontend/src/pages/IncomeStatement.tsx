@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi, IncomeStatement as IncomeStatementType } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
 
@@ -38,14 +40,7 @@ export default function IncomeStatement() {
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(lastDay.toISOString().split('T')[0])
 
-  useEffect(() => {
-    if (startDate && endDate) {
-      setIncomeStatement(null)
-      loadIncomeStatement()
-    }
-  }, [startDate, endDate, currentTenant?.id])
-
-  const loadIncomeStatement = async () => {
+  const loadIncomeStatement = useEventCallback(async () => {
     if (!startDate || !endDate) return
     
     try {
@@ -56,12 +51,22 @@ export default function IncomeStatement() {
         endDate
       )
       setIncomeStatement(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load income statement')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    if (startDate && endDate) {
+      setIncomeStatement(null)
+      loadIncomeStatement()
+    }
+  }, [startDate, endDate, currentTenant?.id, loadIncomeStatement])
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -74,7 +79,7 @@ export default function IncomeStatement() {
   const setDateRange = (range: '1month' | '3months' | '1year') => {
     const today = new Date()
     let start: Date
-    let end: Date = new Date(today.getFullYear(), today.getMonth() + 1, 0) // Last day of current month
+    const end: Date = new Date(today.getFullYear(), today.getMonth() + 1, 0) // Last day of current month
 
     switch (range) {
       case '1month':
@@ -143,7 +148,8 @@ export default function IncomeStatement() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export income statement')
     }
@@ -392,4 +398,3 @@ export default function IncomeStatement() {
     </div>
   )
 }
-

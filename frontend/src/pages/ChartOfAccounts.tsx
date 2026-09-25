@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi, ChartOfAccount as ChartOfAccountType, trucksApi, Truck } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import ConfirmModal from '../components/ConfirmModal'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
@@ -61,6 +63,24 @@ export default function ChartOfAccounts() {
   const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
   
   // Load trucks for logistics businesses
+  const loadAccounts = useEventCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await accountingApi.getChartOfAccounts(
+        accountTypeFilter || undefined,
+        true,
+        selectedTruckId || undefined
+      )
+      setAccounts(response.data)
+    } catch (caught: unknown) {
+      const err = apiError(caught)
+      setError(err.response?.data?.detail || 'Failed to load chart of accounts')
+    } finally {
+      setLoading(false)
+    }
+  })
+
   useEffect(() => {
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
@@ -82,24 +102,9 @@ export default function ChartOfAccounts() {
   useEffect(() => {
     setAccounts([])
     loadAccounts()
-  }, [accountTypeFilter, selectedTruckId, currentTenant?.id])
+  }, [accountTypeFilter, selectedTruckId, currentTenant?.id, loadAccounts])
 
-  const loadAccounts = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const response = await accountingApi.getChartOfAccounts(
-        accountTypeFilter || undefined,
-        true,
-        selectedTruckId || undefined
-      )
-      setAccounts(response.data)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load chart of accounts')
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   const initializeAccounts = async () => {
     try {
@@ -107,7 +112,8 @@ export default function ChartOfAccounts() {
       setError(null)
       await accountingApi.initializeChartOfAccounts()
       await loadAccounts()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to initialize chart of accounts')
     } finally {
       setLoading(false)
@@ -121,7 +127,8 @@ export default function ChartOfAccounts() {
       await accountingApi.resetChartOfAccounts()
       await loadAccounts()
       setShowResetModal(false)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to reset chart of accounts')
     } finally {
       setLoading(false)
@@ -330,4 +337,3 @@ export default function ChartOfAccounts() {
     </div>
   )
 }
-

@@ -27,7 +27,7 @@ const LOGISTICS_LINKS: NavLink[] = [
  * it operates on.
  */
 export function getNavLinks(businessType?: string): NavLink[] {
-  const links: NavLink[] = [{ path: '/', label: 'Dashboard' }]
+  const links: NavLink[] = [{ path: '/', label: 'Dashboard' }, { path: '/finance/money', label: 'Money & Accounting' }]
   if (businessType === 'logistics') {
     links.push(...LOGISTICS_LINKS)
   }

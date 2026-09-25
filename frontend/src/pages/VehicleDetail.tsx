@@ -1,9 +1,11 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { analyticsApi, trucksApi, repairsApi, settlementsApi, reserveApi, Truck, VehicleROI, Repair, Settlement, ReserveBalance } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 // Helper function to safely format numbers (handles null/undefined)
 const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
@@ -61,19 +63,7 @@ export default function VehicleDetail() {
     isVisible: false
   })
 
-  useEffect(() => {
-    if (id) {
-      setVehicle(null)
-      setRoiData(null)
-      setAttachedTrailer(null)
-      setAttachedTrailerRoi(null)
-      setSettlements([])
-      setReserveBalance(null)
-      loadVehicleData()
-    }
-  }, [id, currentTenant?.id])
-
-  const loadVehicleData = async () => {
+  const loadVehicleData = useEventCallback(async () => {
     if (!id) return
     
     try {
@@ -115,13 +105,28 @@ export default function VehicleDetail() {
         const reserveResponse = await reserveApi.getBalance(vehicleId)
         setReserveBalance(reserveResponse.data)
       }
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
       showToast('Failed to load vehicle data', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    if (id) {
+      setVehicle(null)
+      setRoiData(null)
+      setAttachedTrailer(null)
+      setAttachedTrailerRoi(null)
+      setSettlements([])
+      setReserveBalance(null)
+      loadVehicleData()
+    }
+  }, [id, currentTenant?.id, loadVehicleData])
+
+
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
@@ -530,7 +535,7 @@ export default function VehicleDetail() {
             </div>
           )}
 
-          {/* Loan Balance After Cash Recovery */}
+          {/* Forecast balance from earnings */}
           {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
             <div className={`mt-4 p-4 rounded-lg ${
               roiData.current_loan_balance === 0 ? 'bg-green-50 border-2 border-green-200' :
@@ -538,7 +543,7 @@ export default function VehicleDetail() {
               'bg-gray-50 border-2 border-gray-200'
             }`}>
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">Loan Balance After Cash Recovery</span>
+                <span className="text-sm font-medium text-gray-700">Forecast balance from earnings</span>
                 <span className={`text-2xl font-bold ${
                   roiData.current_loan_balance === 0 ? 'text-green-600' :
                   roiData.current_loan_balance < roiData.loan_amount ? 'text-orange-600' :
@@ -564,19 +569,19 @@ export default function VehicleDetail() {
                       <span className="font-medium">${safeToLocaleString((roiData.loan_amount || 0) - (roiData.current_loan_balance || 0))}</span>
                     ) : null}
                     {roiData.current_loan_balance < roiData.loan_amount && (
-                      <span> paid off ${safeToLocaleString(roiData.loan_amount)} total</span>
+                      <span> modeled reduction of ${safeToLocaleString(roiData.loan_amount)} total</span>
                     )}
                   </div>
                 </>
               )}
               {roiData.current_loan_balance === 0 && (
                 <div className="text-xs text-green-600 font-medium">
-                  ✓ Loan fully paid off
+                  Forecast reaches zero; verify lender records
                 </div>
               )}
               {roiData.loan_payoff_date && (
                 <div className="text-xs text-gray-600 mt-2">
-                  Paid off date: <span className="font-medium">{new Date(roiData.loan_payoff_date).toLocaleDateString()}</span>
+                  Modeled payoff date: <span className="font-medium">{new Date(roiData.loan_payoff_date).toLocaleDateString()}</span>
                 </div>
               )}
               {roiData.current_loan_balance > 0 && roiData.projected_payoff_date && (
@@ -937,7 +942,7 @@ export default function VehicleDetail() {
                   
                   {roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
                     <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
-                      <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Remaining Balance</span>
+                      <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Forecast balance</span>
                       <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold ${
                         roiData.current_loan_balance === 0 ? 'text-green-600' : 
                         roiData.current_loan_balance < displayLoanAmount ? 'text-orange-600' : 
@@ -947,15 +952,15 @@ export default function VehicleDetail() {
                       </p>
                       {roiData.current_loan_balance < displayLoanAmount && roiData.current_loan_balance > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
-                          ${safeToLocaleString(displayLoanAmount - (roiData.current_loan_balance || 0))} principal paid
+                          ${safeToLocaleString(displayLoanAmount - (roiData.current_loan_balance || 0))} modeled principal reduction
                         </p>
                       )}
                       {roiData.current_loan_balance === 0 && (
-                        <p className="text-xs text-green-600 font-medium mt-1">✓ Loan fully paid off!</p>
+                        <p className="text-xs text-green-600 font-medium mt-1">Forecast reaches zero; verify lender records</p>
                       )}
                       {roiData.loan_payoff_date && (
                         <p className="text-xs text-gray-500 mt-1">
-                          Paid off on {new Date(roiData.loan_payoff_date).toLocaleDateString()}
+                          Modeled payoff on {new Date(roiData.loan_payoff_date).toLocaleDateString()}
                         </p>
                       )}
                       {roiData.current_loan_balance > 0 && roiData.projected_payoff_date && (

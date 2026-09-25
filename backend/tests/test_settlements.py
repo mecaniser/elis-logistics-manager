@@ -3,7 +3,12 @@ Tests for settlements API endpoints
 """
 import pytest
 from fastapi.testclient import TestClient
-from datetime import date
+from decimal import Decimal
+
+
+@pytest.fixture(autouse=True)
+def scoped_client(client, tenant_headers):
+    client.headers.update(tenant_headers)
 
 
 def test_create_settlement(client: TestClient):
@@ -32,9 +37,9 @@ def test_create_settlement(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["truck_id"] == truck_id
-    assert data["miles_driven"] == 1200.5
+    assert Decimal(str(data["miles_driven"])) == Decimal("1200.5")
     assert data["blocks_delivered"] == 45
-    assert data["gross_revenue"] == 5000.00
+    assert Decimal(str(data["gross_revenue"])) == Decimal("5000.00")
 
 
 def test_get_settlements(client: TestClient):
@@ -143,7 +148,7 @@ def test_get_settlement_by_id(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == settlement_id
-    assert data["miles_driven"] == 1200.5
+    assert Decimal(str(data["miles_driven"])) == Decimal("1200.5")
 
 
 def test_get_settlement_not_found(client: TestClient):
@@ -152,3 +157,9 @@ def test_get_settlement_not_found(client: TestClient):
     assert response.status_code == 404
 
 
+
+
+def test_missing_business_scope_is_rejected(client):
+    client.headers.pop("X-Tenant-ID")
+    response = client.get("/api/settlements")
+    assert response.status_code == 400

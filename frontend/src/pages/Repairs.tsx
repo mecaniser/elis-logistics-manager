@@ -1,15 +1,30 @@
+import { apiError } from '../utils/apiError'
+import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
+import RepairEvidence from '../components/repairs/RepairEvidence'
+import { useRepairReview } from '../components/repairs/useRepairReview'
+import { matchesReview, repairMethod, type ReviewFilter } from '../components/repairs/repairReview'
 import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 export default function Repairs() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [repairs, setRepairs] = useState<Repair[]>([])
+  const [payeeFilter, setPayeeFilter] = useState('all')
+  const [methodFilter, setMethodFilter] = useState('all')
+  useEffect(() => { setPayeeFilter('all'); setMethodFilter('all') }, [currentTenant?.id])
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
+  const [reviewAsOf, setReviewAsOf] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
+  const review = useRepairReview(currentTenant?.id, repairs, reviewAsOf)
+  const reviewRows = new Map(review.data?.rows.map(row => [row.legacy_id, row]))
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +71,7 @@ export default function Repairs() {
   useEffect(() => {
     // Reset state when tenant changes
     setRepairs([])
+    setReviewFilter('all')
     setTrucks([])
     loadTrucks()
     loadRepairs()
@@ -76,7 +92,8 @@ export default function Repairs() {
       setLoading(true)
       const response = await repairsApi.getAll()
       setRepairs(Array.isArray(response.data) ? response.data : [])
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.message || 'Failed to load repairs')
       setRepairs([])
     } finally {
@@ -142,7 +159,8 @@ export default function Repairs() {
       setRequiresTruckSelection(false)
       setShowUploadForm(false)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to upload repair'
       
       // Check if error indicates VIN not found - allow truck selection
@@ -218,7 +236,8 @@ export default function Repairs() {
       setManualFormImages([])
       setShowManualForm(false)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Error creating repair:', err)
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to create repair'
       showModal('Creation Failed', errorMessage, 'error')
@@ -274,7 +293,8 @@ export default function Repairs() {
       setEditCustomCategory('')
       setEditImages([])
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to update repair', 'error')
     } finally {
       setSaving(false)
@@ -288,7 +308,8 @@ export default function Repairs() {
       showToast('Repair deleted successfully!', 'success')
       setRepairToDelete(null)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete repair', 'error')
       setRepairToDelete(null)
     }
@@ -319,7 +340,8 @@ export default function Repairs() {
       }
       
       setImageToDelete(null)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
       setImageToDelete(null)
     }
@@ -364,6 +386,10 @@ export default function Repairs() {
 
   // Filter repairs based on search term
   const filteredRepairs = repairs.filter(repair => {
+    const row = reviewRows.get(repair.id)
+    if (payeeFilter !== 'all' && (row?.payee?.name || 'unknown') !== payeeFilter) return false
+    if (methodFilter !== 'all' && repairMethod(row) !== methodFilter) return false
+    if (review.data && !matchesReview(reviewRows.get(repair.id), reviewFilter)) return false
     if (!searchFilter.trim()) return true
     
     const searchLower = searchFilter.toLowerCase()
@@ -375,6 +401,7 @@ export default function Repairs() {
     const truckId = repair.truck_id.toString()
     
     return (
+      (row?.payee?.name || '').toLowerCase().includes(searchLower) ||
       truckName.includes(searchLower) ||
       title.includes(searchLower) ||
       details.includes(searchLower) ||
@@ -395,7 +422,7 @@ export default function Repairs() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search by invoice #, description, or truck..."
+              placeholder="Search vendor, invoice #, description, or truck..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-[42px]"
@@ -635,8 +662,8 @@ export default function Repairs() {
               </div>
               <div className="md:col-span-2">
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-                  <div className="text-sm font-medium text-gray-900">Reserve-funded automatically</div>
-                  <div className="text-xs text-gray-600">All repairs are recorded as reserve withdrawals. A repair date is required so the ledger stays accurate.</div>
+                  <div className="text-sm font-medium text-gray-900">Legacy reserve tracking</div>
+                  <div className="text-xs text-gray-600">This form updates the legacy reserve tracker. Actual cash payment and funded reserves require separate evidence review.</div>
                 </div>
               </div>
               <div>
@@ -769,7 +796,30 @@ export default function Repairs() {
         </div>
       )}
 
-      {searchFilter && (
+      <section aria-labelledby="repair-review-heading" className="mb-6 border-y border-gray-200 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="repair-review-heading" className="text-lg font-semibold text-gray-900">Invoice review</h2>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Review as of
+            <input type="date" value={reviewAsOf} onChange={e => { if (e.target.value) setReviewAsOf(e.target.value) }} className="min-h-11 border border-gray-300 rounded-md px-2 text-base focus-visible:outline-blue-600" />
+          </label>
+        </div>
+        {review.loading && <p role="status" className="text-sm text-gray-600 mt-2">Loading preserved documents and payment links…</p>}
+        {review.error && <div role="alert" className="mt-2 text-sm text-red-700">Evidence review could not load: {review.error}. Existing repair records remain available. <button type="button" onClick={review.retry} className="min-h-11 underline focus-visible:outline focus-visible:outline-2">Retry evidence review</button></div>}
+        {review.data && <>
+          <p className="text-sm text-gray-700 mt-2">Upload your invoices as usual. Review differences here and add payment details only where needed. {review.data.coverage.with_preserved_evidence} of {review.data.coverage.records} repairs have preserved documents.</p>
+          <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Filter repair evidence">
+            {([['all', 'All repairs'], ['amount', 'Invoice differences'], ['documents', 'Missing documents'], ['payment', 'Payment questions'], ['treatment', 'Cost treatment']] as [ReviewFilter, string][]).map(([value, label]) => <button key={value} type="button" aria-pressed={reviewFilter === value} onClick={() => setReviewFilter(value)} className={`min-h-11 px-3 py-2 text-sm rounded-md border focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${reviewFilter === value ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{label} <span className="tabular-nums">({value === 'all' ? repairs.length : review.data!.rows.filter(row => matchesReview(row, value)).length})</span></button>)}
+          </div>
+          <p className="text-sm text-gray-600 mt-3">77 Cargo deductions stay in settlements. These are your separate repair records; confirming payment does not charge them again.</p>
+          <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-700">
+            <label>Paid to / vendor<select value={payeeFilter} onChange={e => setPayeeFilter(e.target.value)} className="block min-h-11 max-w-full border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All payees</option>{Array.from(new Set(['CaroMeck Diesel PM LLC', 'Truck Pit Stop', ...review.data.rows.map(r => r.payee?.name).filter((n): n is string => !!n)])).sort().map(name => <option key={name} value={name}>{name} ({review.data!.rows.filter(r => r.payee?.name === name).length})</option>)}<option value="unknown">Payee not identified ({review.data.rows.filter(r => !r.payee?.name).length})</option></select></label>
+            <label>Payment method<select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className="block min-h-11 border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All methods</option><option value="cash">Cash</option><option value="zelle">Zelle</option><option value="credit_card">Credit card</option><option value="other">Other / multiple methods</option><option value="unknown">Not confirmed</option></select></label>
+          </div>
+          <RepairBatchReview key={`${currentTenant?.id}-${reviewAsOf}`} rows={review.data.rows.filter(r => filteredRepairs.some(repair => repair.id === r.legacy_id))} onSaved={review.retry} />
+        </>}
+      </section>
+
+      {(searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all') && (
         <div className="mb-4 text-sm text-gray-600">
           Showing {filteredRepairs.length} of {repairs.length} repair{repairs.length !== 1 ? 's' : ''}
         </div>
@@ -778,7 +828,7 @@ export default function Repairs() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredRepairs.length === 0 ? (
           <div className="px-6 py-4 text-gray-500 text-center">
-            {searchFilter ? `No repairs found matching "${searchFilter}"` : 'No repairs found.'}
+            {searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs, All payees and All methods.' : 'No repairs found.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
@@ -797,7 +847,7 @@ export default function Repairs() {
                       {getTruckName(repair.truck_id)}
                     </p>
                     <p className="text-xs text-gray-400 mb-2">
-                      {new Date(repair.repair_date).toLocaleDateString()}
+                      {new Date(`${repair.repair_date}T12:00:00`).toLocaleDateString()}
                       {repair.category && (
                         <span className="ml-2 text-xs bg-gray-100 px-2 py-0.5 rounded">{repair.category}</span>
                       )}
@@ -835,6 +885,7 @@ export default function Repairs() {
                         )}
                       </>
                     )}
+                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} onSaved={review.retry} />}
                     {/* Show images with expandable functionality */}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mb-3">
@@ -998,8 +1049,8 @@ export default function Repairs() {
             </div>
             <div>
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-                <div className="text-sm font-medium text-gray-900">Reserve-funded automatically</div>
-                <div className="text-xs text-gray-600">Every repair stays synced as a reserve withdrawal. Keep the repair date accurate so the ledger date stays correct.</div>
+                <div className="text-sm font-medium text-gray-900">Legacy reserve tracking</div>
+                <div className="text-xs text-gray-600">This form updates the legacy reserve tracker. It does not confirm the payer, a cash payment or a funded reserve balance.</div>
               </div>
             </div>
             <div>

@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { ReactNode } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/authState'
 
 const RequireAuth = ({ children }: { children: ReactNode }) => {
   const { authenticated, loading } = useAuth()
