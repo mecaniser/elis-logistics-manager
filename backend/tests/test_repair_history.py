@@ -63,3 +63,25 @@ def test_optional_repair_link_preserves_old_command_idempotency(db, truck):
     event = FinanceEvent(tenant_id=1,key='old-command-key',digest=f.digest(old_data),kind='bill',effective_date=ASOF,payload=old_data['payload'])
     db.add(event);db.commit()
     assert f.append_command(db,1,command,'old-command-key').id == event.id
+
+
+def test_metadata_views_do_not_fetch_original_invoice_bytes(db, truck):
+    from sqlalchemy import event
+    from tests.test_finance import doc
+    from app.routers.finance import list_evidence
+    repair(db, truck)
+    evidence_id = doc(db, b'large preserved invoice content')
+    db.expire_all()
+    statements = []
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith('SELECT'):
+            statements.append(statement)
+    event.listen(db.bind, 'before_cursor_execute', capture)
+    try:
+        result = repair_history(db, 1, ASOF)
+        evidence = list_evidence(limit=100, cursor=None, db=db, tenant=1)
+        assert result['rows'][0]['recorded_cost'] == '500.00'
+        assert evidence['items'][0]['id'] == evidence_id
+        assert not any('content_base64' in statement for statement in statements)
+    finally:
+        event.remove(db.bind, 'before_cursor_execute', capture)

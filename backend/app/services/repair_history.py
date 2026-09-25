@@ -1,5 +1,6 @@
 """Repair evidence and explicitly linked obligations, without inferred payments."""
 from collections import Counter
+from sqlalchemy.orm import defer
 from app.services.repair_payee import payee_details
 from app.models.repair import Repair
 from app.models.truck import Truck
@@ -9,7 +10,7 @@ from app.services import finance as f
 
 def repair_history(db, tenant, as_of):
     records = db.query(Repair, Truck).join(Truck, Repair.truck_id == Truck.id).filter(Truck.tenant_id == tenant).order_by(Repair.id).all()
-    docs = db.query(FinanceEvidence).filter_by(tenant_id=tenant).all()
+    docs = db.query(FinanceEvidence).options(defer(FinanceEvidence.content_base64)).filter_by(tenant_id=tenant).all()
     superseded = {d.supersedes_id for d in docs if d.supersedes_id}
     confirmations = {d.extracted['repair_id']: d for d in docs if d.id not in superseded and d.extraction_version == 'owner-confirmation-v1'}
     by_repair = {}

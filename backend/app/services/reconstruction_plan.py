@@ -2,6 +2,7 @@
 import base64
 import hashlib
 from collections import Counter
+from sqlalchemy.orm import defer
 from pydantic import ValidationError
 from app.models.finance import FinanceEvidence
 from app.schemas.finance import Command
@@ -17,7 +18,7 @@ BLOCKING = {'missing_source', 'mapping', 'payout_difference', 'load_total',
 
 def reconstruction_plan(db, tenant):
     history = settlement_history(db, tenant)
-    docs = {e.id: e for e in db.query(FinanceEvidence).filter_by(tenant_id=tenant).all()}
+    docs = {e.id: e for e in db.query(FinanceEvidence).options(defer(FinanceEvidence.content_base64)).filter_by(tenant_id=tenant).all()}
     events = f.events(db, tenant)
     posted = [e for e in events if e.kind == 'settlement']
     closed = {}

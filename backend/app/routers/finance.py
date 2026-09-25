@@ -9,7 +9,7 @@ from datetime import date
 from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, Request
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.finance_auth import accounting_tenant
@@ -104,7 +104,7 @@ async def upload_evidence(file: UploadFile = File(...), source_key: str = Form(.
 
 @router.get('/evidence')
 def list_evidence(limit: int = Query(100, ge=1, le=500), cursor: str | None = None, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
-    q = db.query(FinanceEvidence).filter_by(tenant_id=tenant)
+    q = db.query(FinanceEvidence).options(defer(FinanceEvidence.content_base64)).filter_by(tenant_id=tenant)
     if cursor: q = q.filter(FinanceEvidence.id > cursor)
     items = q.order_by(FinanceEvidence.id).limit(limit + 1).all()
     return {'items': [{'id': e.id, 'filename': e.filename, 'source_key': e.source_key, 'sha256': e.sha256, 'supersedes_id': e.supersedes_id, 'extraction_version': e.extraction_version, 'extracted': e.extracted} for e in items[:limit]], 'next_cursor': items[limit - 1].id if len(items) > limit else None}
