@@ -509,8 +509,8 @@ def test_create_settlement_with_trailer_income_split_creates_managed_trailer_set
     assert trailer_roi.json()["cumulative_revenue"] == 400.0
 
 
-def test_financed_trailer_split_accrues_interest_and_replays_payoff(client: TestClient, db, tenant_headers):
-    """Managed trailer income should deduct trailer loan interest and reduce principal from net profit."""
+def test_legacy_financed_trailer_forecast_caps_replacement_target(client: TestClient, db, tenant_headers):
+    """Preserve the legacy forecast formula; it is not evidence of actual payoff or reserves."""
     truck = Truck(
         tenant_id=1,
         name="Truck With Financed Trailer",
@@ -569,8 +569,11 @@ def test_financed_trailer_split_accrues_interest_and_replays_payoff(client: Test
     assert data["trailer_depreciation_reserve_total"] == 160.0
     assert data["trailer_free_profit"] == 235.0
     assert data["trailer_cash_position_total"] == 395.0
-    assert data["trailer_break_even_sale_price"] == 0.0
-    assert data["trailer_projected_three_year_reserve"] == 24960.0
+    # Sale must cover forecast debt (205) plus unfunded replacement target (600 - 160).
+    # This legacy forecast does not prove actual debt payments or protected cash.
+    assert data["trailer_reserve_remaining"] == 440.0
+    assert data["trailer_break_even_sale_price"] == 645.0
+    assert data["trailer_projected_three_year_reserve"] == 600.0
     assert data["current_loan_balance"] == 205.0
     assert data["principal_paid_from_excess"] == 295.0
     assert data["projected_payoff_date"] == "2024-01-28"

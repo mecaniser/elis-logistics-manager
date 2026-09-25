@@ -2,7 +2,7 @@
 
 Updated 2026-09-25 after isolated integration with current main and fresh release checks. Production unchanged.
 
-Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Integration, fresh production-copy migrations, restore rehearsal and signed three-business scope checks passed. Full-suite baseline failures remain; reviewed local-data carryover and live acceptance are still pending.
+Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Integration, fresh production-copy migrations, restore rehearsal and signed three-business scope checks passed. Backend suite now passes (249 tests); selective local-data carryover rehearsal passed. Full frontend lint remains non-green; live carryover and production acceptance are still pending.
 
 ## Current execution lane — keep the original objective in view
 
@@ -14,7 +14,7 @@ The original question is whether fuel use and other costs explain why one truck 
 | Next | Outside costs → available cash and pair retention | Validate a real repair through expense, owner funding/repayment and the truck/trailer results; reconcile business cash/Zelle evidence and funded repair reserves. Business cash, card and mixed-payment intake still need a simpler operator path. |
 | Then | Original fuel and settlement anomaly investigation | Return to the historical register, 21 unexplained $200 gross differences and missing originals. Compare matched fuel purchases, driver pay and mileage windows; add independent Motive/odometer evidence before calling anything consumption. Existing fuel-spending signals are not evidence of missing freight or theft. |
 | Remaining | Capital, HELOC and lifetime return | Finish statement-based mixed-use financing allocation, actual payments, recovery targets and disposal acceptance. Preserve gaps instead of inferring payoff or saved reserves. |
-| Release | Integrate and reconcile before cutover | Current main integrated in isolated branch; fresh production-copy migration/restore and auth checks passed. Carry over 31 local confirmations, one payment identity and repair 138 cost correction through a reviewed rehearsal; disposition baseline check failures, then deployed browser acceptance. Local functionality does not establish production readiness. |
+| Release | Integrate and reconcile before cutover | Current main integrated in isolated branch; fresh production-copy migration/restore and auth checks passed. Selective evidence/correction carryover rehearsal passed with zero duplicate inserts and no stale confirmations; backend 249 passed. Frontend lint disposition, final live carryover and deployed browser acceptance remain. Local functionality does not establish production readiness. |
 
 Do not hide pending engineering under “waiting for records.” Missing private bank/card/HELOC statements, opening balances and Motive coverage block their dependent conclusions only. The stage-by-stage baseline and dated evidence below remain part of this same plan.
 
@@ -241,3 +241,10 @@ Verification for this checkpoint: 72 targeted backend tests passed across financ
 ### 2026-09-25 — Bank Monitor hierarchy and runtime alignment
 
 Restored monitoring as the first section, with payment accounts and owner reimbursements below. Fixed duplicate sibling keys found during browser verification. Port 8016 now runs the current-main integration branch with the preserved local review database and local authentication. Production bank setup is not present in the local review database; no provider connection or production data was modified. Release carryover and baseline-check gates above remain open.
+
+
+### 2026-09-25 — Release failures resolved and carryover rehearsed
+
+Completed: repaired obsolete CRUD/forecast tests without weakening production behavior; added explicit missing-business rejection checks. Verified full backend suite: 249 passed. Rehearsed preserving all 300 evidence records (including 31 confirmations and one account), the invoice-supported $0.86 cost correction and normal journal/reserve effects on an isolated production copy. Repeat import added zero records; every review snapshot matched; zero stale confirmations; no local ledger or report copy.
+
+Remaining business question: three personally paid repairs total $943.96, but whether they remain unreimbursed is unconfirmed. Asked the owner; do not create an owner claim from elapsed time or assumed approval. Engineering next: validate confirmed personal payment through accounting and pair retention, retain lint debt explicitly, then final release and real-data carryover. Original fuel/history analysis remains next in the main scope. Production unchanged.

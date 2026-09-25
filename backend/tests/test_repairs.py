@@ -3,7 +3,13 @@ Tests for repairs API endpoints
 """
 import pytest
 from fastapi.testclient import TestClient
-from datetime import date
+from decimal import Decimal
+import json
+
+
+@pytest.fixture(autouse=True)
+def scoped_client(client, tenant_headers):
+    client.headers.update(tenant_headers)
 
 
 def test_create_repair(client: TestClient):
@@ -18,17 +24,18 @@ def test_create_repair(client: TestClient):
     # Create a repair
     repair_data = {
         "truck_id": truck_id,
-        "date": "2024-01-15",
+        "repair_date": "2024-01-15",
         "description": "Oil change",
         "cost": 75.50
     }
     
-    response = client.post("/api/repairs", json=repair_data)
+    response = client.post("/api/repairs/", data={"repair_json": json.dumps(repair_data)})
     assert response.status_code == 200
     data = response.json()
     assert data["truck_id"] == truck_id
     assert data["description"] == "Oil change"
-    assert data["cost"] == 75.50
+    assert Decimal(str(data["cost"])) == Decimal("75.50")
+    assert data["repair_date"] == "2024-01-15"
     assert "id" in data
     assert "created_at" in data
 
@@ -43,13 +50,13 @@ def test_get_repairs(client: TestClient):
     truck_id = truck_response.json()["id"]
     
     client.post(
-        "/api/repairs",
-        json={
+        "/api/repairs/",
+        data={"repair_json": json.dumps({
             "truck_id": truck_id,
-            "date": "2024-01-15",
+            "repair_date": "2024-01-15",
             "description": "Oil change",
             "cost": 75.50
-        }
+        })}
     )
     
     response = client.get("/api/repairs")
@@ -75,23 +82,23 @@ def test_get_repairs_filtered_by_truck(client: TestClient):
     
     # Create repairs for both trucks
     client.post(
-        "/api/repairs",
-        json={
+        "/api/repairs/",
+        data={"repair_json": json.dumps({
             "truck_id": truck1_id,
-            "date": "2024-01-15",
+            "repair_date": "2024-01-15",
             "description": "Oil change",
             "cost": 75.50
-        }
+        })}
     )
     
     client.post(
-        "/api/repairs",
-        json={
+        "/api/repairs/",
+        data={"repair_json": json.dumps({
             "truck_id": truck2_id,
-            "date": "2024-01-16",
+            "repair_date": "2024-01-16",
             "description": "Tire replacement",
             "cost": 500.00
-        }
+        })}
     )
     
     # Get repairs for truck1 only
@@ -112,13 +119,13 @@ def test_get_repair_by_id(client: TestClient):
     truck_id = truck_response.json()["id"]
     
     create_response = client.post(
-        "/api/repairs",
-        json={
+        "/api/repairs/",
+        data={"repair_json": json.dumps({
             "truck_id": truck_id,
-            "date": "2024-01-15",
+            "repair_date": "2024-01-15",
             "description": "Oil change",
             "cost": 75.50
-        }
+        })}
     )
     repair_id = create_response.json()["id"]
     
@@ -140,13 +147,13 @@ def test_delete_repair(client: TestClient):
     truck_id = truck_response.json()["id"]
     
     create_response = client.post(
-        "/api/repairs",
-        json={
+        "/api/repairs/",
+        data={"repair_json": json.dumps({
             "truck_id": truck_id,
-            "date": "2024-01-15",
+            "repair_date": "2024-01-15",
             "description": "Oil change",
             "cost": 75.50
-        }
+        })}
     )
     repair_id = create_response.json()["id"]
     
@@ -165,3 +172,9 @@ def test_get_repair_not_found(client: TestClient):
     assert response.status_code == 404
 
 
+
+
+def test_missing_business_scope_is_rejected(client):
+    client.headers.pop("X-Tenant-ID")
+    response = client.get("/api/repairs")
+    assert response.status_code == 400
