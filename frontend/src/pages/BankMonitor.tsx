@@ -392,6 +392,8 @@ export default function BankMonitor() {
   const connectionCheck = data?.connection_check
   const connectionPending = connectionCheck?.status === 'pending' || connectionCheck?.status === 'running'
   const providerCheck = connectionCheck?.result.source === 'plaid' ? connectionCheck : null
+  const providerNewerThanBrowser = Boolean(providerCheck?.result.observed_at && data?.browser_check?.observed_at &&
+    Date.parse(providerCheck.result.observed_at) > Date.parse(data.browser_check.observed_at))
   const transactionVisibility = providerCheck?.result.transaction_visibility
   const pendingObserved = transactionVisibility?.pending_entries
     ? Object.values(transactionVisibility.pending_entries).reduce((total, count) => total + count, 0) : null
@@ -417,7 +419,7 @@ export default function BankMonitor() {
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
         }} />
 
-        {data.browser_check && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Chrome bank read saved in ELIS at {new Date(data.browser_check.observed_at).toLocaleString()}. Result: {label(data.browser_check.status)}. {data.browser_check.result.repayment?.status === 'repayment_data_required' ? 'Friday repayment remains blocked until income, usable cash, pending debits, and full payoff are verified.' : ''}</div>}
+        {data.browser_check && <div role="status" className={`rounded-xl border p-4 text-sm ${providerNewerThanBrowser ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-emerald-200 bg-emerald-50 text-emerald-950'}`}>{providerNewerThanBrowser ? `Earlier Chrome history check: ${new Date(data.browser_check.observed_at).toLocaleString()} (${label(data.browser_check.status)}). The newer Plaid balance read does not verify pending debits or update that coverage result.` : `Chrome bank read saved in ELIS at ${new Date(data.browser_check.observed_at).toLocaleString()}. Result: ${label(data.browser_check.status)}.`} {data.browser_check.result.repayment?.status === 'repayment_data_required' ? 'Friday repayment remains blocked until income, usable cash, pending debits, and full payoff are verified.' : ''}</div>}
 
         {repaymentNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{repaymentNotice}</div>}
         {repaymentError && !repaymentOpen && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{repaymentError}</div>}
