@@ -1,6 +1,7 @@
 """Consented Plaid bank reads. No bank password or transfer API is used here."""
 import os
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -122,23 +123,34 @@ def real_time_accounts(access_token: str) -> list[dict]:
     return accounts
 
 
-def transaction_visibility(access_token: str, account_map: dict) -> dict:
-    """Report what Plaid supplied, without treating an empty pending feed as complete.
+def discover_accounts(access_token: str) -> list[dict]:
+    """List consented account labels without requesting another paid balance read."""
+    accounts = request('/accounts/get', {'access_token': access_token}).get('accounts')
+    if not isinstance(accounts, list):
+        raise PlaidBankError('provider_invalid_response')
+    discovered = []
+    for row in accounts:
+        kind = ('checking' if row.get('type') == 'depository' and row.get('subtype') == 'checking'
+                else 'credit' if row.get('type') in {'credit', 'loan'} else None)
+        mask = row.get('mask')
+        if kind and isinstance(mask, str) and len(mask) == 4 and mask.isdigit():
+            discovered.append({'nickname': str(row.get('name') or row.get('official_name') or kind)[:80],
+                               'last4': mask, 'kind': kind})
+    return discovered
 
-    A full sync is used here because this is an infrequent verification read.
-    Applying removals and modifications matters: a pending entry can disappear
-    when it posts, including between pages of the initial history download.
-    """
-    item_data = request('/item/get', {'access_token': access_token})
-    status = item_data.get('status', {}).get('transactions', {})
-    ids = {entry['account_id']: suffix for suffix, entry in account_map.items()}
+
+def synced_transactions(access_token: str, account_map: dict) -> tuple[dict, str | None]:
+    """Apply all sync pages, including pending-to-posted removals."""
+    ids = {entry['account_id'] for entry in account_map.values()}
     active = {}
     cursor = None
+    update_status = None
     for _ in range(50):
         payload = {'access_token': access_token, 'count': 500}
         if cursor:
             payload['cursor'] = cursor
         data = request('/transactions/sync', payload)
+        update_status = data.get('transactions_update_status', update_status)
         for row in data.get('added', []) + data.get('modified', []):
             if row.get('account_id') in ids and isinstance(row.get('transaction_id'), str):
                 active[row['transaction_id']] = row
@@ -151,14 +163,97 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
         raise PlaidBankError('provider_history_incomplete')
     if not isinstance(cursor, str):
         raise PlaidBankError('provider_history_incomplete')
+    return active, update_status
+
+
+def transaction_visibility(access_token: str, account_map: dict) -> dict:
+    """Report what Plaid supplied, without treating an empty pending feed as complete."""
+    item_data = request('/item/get', {'access_token': access_token})
+    status = item_data.get('status', {}).get('transactions', {})
+    ids = {entry['account_id']: suffix for suffix, entry in account_map.items()}
+    active, update_status = synced_transactions(access_token, account_map)
     pending = {suffix: 0 for suffix in account_map}
     posted = {suffix: 0 for suffix in account_map}
+    pending_debit_cents = {suffix: 0 for suffix in account_map}
+    pending_debit_entries = {suffix: 0 for suffix in account_map}
+    pending_credit_cents = {suffix: 0 for suffix in account_map}
+    pending_details = {suffix: [] for suffix in account_map}
     for row in active.values():
         suffix = ids[row['account_id']]
         (pending if row.get('pending') is True else posted)[suffix] += 1
+        if row.get('pending') is True:
+            amount = cents(row.get('amount'))
+            if amount is None:
+                continue
+            if amount > 0:
+                pending_debit_cents[suffix] += amount
+                pending_debit_entries[suffix] += 1
+            elif amount < 0:
+                pending_credit_cents[suffix] += -amount
+            pending_details[suffix].append({
+                'description': str(row.get('merchant_name') or row.get('name') or 'Pending transaction')[:120],
+                'amount_cents': amount,
+                'date': row.get('authorized_date') or row.get('date'),
+            })
+    for suffix, details in pending_details.items():
+        details.sort(key=lambda row: row['date'] or '', reverse=True)
+        pending_details[suffix] = details[:30]
     return {'pending_entries': pending, 'posted_entries': posted,
+            'pending_debit_cents': pending_debit_cents,
+            'pending_debit_entries': pending_debit_entries,
+            'pending_credit_cents': pending_credit_cents,
+            'pending_details': pending_details,
+            'pending_details_truncated': {suffix: pending[suffix] > 30 for suffix in account_map},
+            'transactions_update_status': update_status,
             'last_successful_update': status.get('last_successful_update'),
             'pending_complete': False}
+
+
+def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
+                   to_last4: str, amount_cents: int, earliest: date) -> dict:
+    """Find one exact posted debit and credit, never infer completion from one side."""
+    source = account_map.get(from_last4)
+    destination = account_map.get(to_last4)
+    if not source or not destination or source['account_id'] == destination['account_id']:
+        raise PlaidBankError('provider_account_mapping_required')
+    active, update_status = synced_transactions(access_token, account_map)
+    if update_status == 'NOT_READY':
+        return {'status': 'feed_not_ready'}
+    latest = datetime.now(timezone.utc).date() + timedelta(days=1)
+
+    def candidates(account_id: str, expected: int) -> tuple[list[dict], int]:
+        posted, pending = [], 0
+        for row in active.values():
+            if row.get('account_id') != account_id or cents(row.get('amount')) != expected:
+                continue
+            try:
+                bank_date = date.fromisoformat(row.get('date', ''))
+            except (TypeError, ValueError):
+                continue
+            if bank_date < earliest or bank_date > latest:
+                continue
+            if row.get('pending') is True:
+                pending += 1
+                continue
+            posted.append({'transaction_id': row['transaction_id'],
+                           'description': str(row.get('name') or row.get('merchant_name') or '')[:120],
+                           'date': bank_date.isoformat(), 'amount_cents': expected})
+        return posted, pending
+
+    debits, pending_debits = candidates(source['account_id'], amount_cents)
+    credits, pending_credits = candidates(destination['account_id'], -amount_cents)
+    if not debits or not credits:
+        return {'status': 'posting_pending' if pending_debits or pending_credits or debits or credits else 'not_found',
+                'source_posted': len(debits), 'destination_posted': len(credits)}
+    if len(debits) != 1 or len(credits) != 1:
+        return {'status': 'ambiguous', 'source_posted': len(debits), 'destination_posted': len(credits)}
+    debit, credit = debits[0], credits[0]
+    if abs((date.fromisoformat(debit['date']) - date.fromisoformat(credit['date'])).days) > 3:
+        return {'status': 'ambiguous', 'source_posted': 1, 'destination_posted': 1}
+    descriptions = f"{debit['description']} {credit['description']}".lower()
+    if not re.search(r'\b(transfer|xfer|payment|pymt|payoff)\b', descriptions):
+        return {'status': 'needs_bank_review', 'source_posted': 1, 'destination_posted': 1}
+    return {'status': 'ready_for_confirmation', 'source': debit, 'destination': credit}
 
 
 def map_accounts(accounts: list[dict], rules: MonitorRules) -> dict:
@@ -203,12 +298,10 @@ def balance_snapshot(access_token: str, rules: MonitorRules, account_map: dict,
         current = cents(balances.get('current'))
         available = cents(balances.get('available'))
         if expected_kind == 'checking':
-            if current is None:
-                raise PlaidBankError('provider_balance_incomplete')
             values.append(AccountBalance(last4=configured_account.last4,
                                          current_cents=current, available_cents=available))
         else:
-            if available is None or available < 0:
+            if available is not None and available < 0:
                 raise PlaidBankError('provider_credit_incomplete')
             values.append(AccountBalance(last4=configured_account.last4,
                                          available_credit_cents=available,

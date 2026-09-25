@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
+import type { CashPlan } from './BankCashPlan'
 import OwnerReimbursements from '../components/OwnerReimbursements'
 import PaymentAccounts from '../components/PaymentAccounts'
 import BankSelect from '../components/BankSelect'
@@ -16,7 +17,7 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   credit_accounts?: { last4: string; nickname: string; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
   repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
   observed_at?: string; uncovered_cents?: number; message?: string;
-  accounts?: { last4: string; nickname: string; current_cents: number; available_cents: number | null; needed_cents?: number }[];
+  accounts?: { last4: string; nickname: string; current_cents: number | null; available_cents: number | null; needed_cents?: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
   transaction_visibility?: TransactionVisibility;
 } }
@@ -24,7 +25,7 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
-type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility; accounts?: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }[] } }
+type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility; cash_plan?: CashPlan; accounts?: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null; outstanding_cents?: number | null }[] } }
 type BrowserCheck = { id: number; status: string; observed_at: string; result: { source: string; repayment?: { status: string }; accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
 type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome' | 'plaid'; provider_connection: { configured: boolean; linked: boolean; status: string; last_checked_at: string | null; last_error: string | null; accounts: string[] }; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
@@ -38,8 +39,8 @@ const dollars = (cents: number) => (cents / 100).toLocaleString('en-US', { style
 const label = (status: string) => status.replace(/_/g, ' ')
 const scheduledIssue = (status: string) => {
   if (status === 'provider_pending_unverified') return {
-    title: 'Balances read; pending unverified',
-    detail: 'Plaid read the configured account balances without a Chrome sign-in. Its transaction feed does not prove every pending debit is present, so ELIS did not prepare a coverage or repayment proposal. A complete Chrome check can replace this result during the scheduled window.',
+    title: 'Bank read needs more evidence',
+    detail: 'Plaid supplied account data without a Chrome sign-in, but one or more balances or pending debits needed for an automatic proposal are unverified. Review the per-account cash view. A complete Chrome check can replace this result during the scheduled window.',
   }
   if (status === 'chrome_check_missed') return {
     title: 'Chrome check missed',
@@ -76,7 +77,7 @@ const scheduledIssue = (status: string) => {
   if (status.startsWith('provider_')) return {
     title: 'Provider bank read needs review',
     detail: status === 'provider_pending_unverified'
-      ? 'Current balances were read, but Plaid could not verify pending debits. Coverage and repayment proposals were withheld under the selected rule.'
+      ? 'Plaid supplied account data, but balances or pending debits needed for a proposal remain unverified. Review the cash view and use a complete Chrome check for exact coverage.'
       : `The provider did not complete this bank check (${label(status)}). No transfer proposal was calculated. Review the bank connection below.`,
   }
   return null
@@ -139,6 +140,7 @@ export default function BankMonitor() {
   const [settingsError, setSettingsError] = useState('')
   const [settingsNotice, setSettingsNotice] = useState('')
   const [saving, setSaving] = useState(false)
+  const [discoveringAccounts, setDiscoveringAccounts] = useState(false)
   const [loading, setLoading] = useState(true)
   const [verifyingWorker, setVerifyingWorker] = useState(false)
   const [verificationError, setVerificationError] = useState('')
@@ -305,11 +307,37 @@ export default function BankMonitor() {
     } finally { setSaving(false) }
   }
   const editAccount = (group: 'checking' | 'sources', index: number, key: keyof Account, value: string) => setRules(current => ({ ...current, [group]: current[group].map((account, itemIndex) => itemIndex === index ? { ...account, [key]: value } : account) }))
+  const discoverProviderAccounts = async () => {
+    if (!currentTenantId || loadedTenant !== currentTenantId) return
+    const tenantId = currentTenantId
+    setDiscoveringAccounts(true); setSettingsError(''); setSettingsNotice('')
+    try {
+      const { data: discovered } = await bankMonitorApi.providerAccounts(tenantId)
+      if (tenantRef.current !== tenantId) return
+      const existing = new Set([...rules.checking, ...rules.sources].map(account => account.last4))
+      const nextChecking = [...rules.checking]
+      const nextSources = [...rules.sources]
+      let added = 0
+      let skipped = 0
+      for (const account of discovered.accounts) {
+        if (existing.has(account.last4)) { skipped += 1; continue }
+        const target = account.kind === 'checking' ? nextChecking : nextSources
+        if (target.length >= (account.kind === 'checking' ? 10 : 5)) { skipped += 1; continue }
+        target.push({ nickname: account.nickname, last4: account.last4 })
+        existing.add(account.last4)
+        added += 1
+      }
+      if (added) setRules(current => ({ ...current, checking: nextChecking, sources: nextSources }))
+      setSettingsNotice(added ? `${added} Plaid account${added === 1 ? '' : 's'} added for review. Save settings to monitor them.${skipped ? ` ${skipped} already configured or could not be added.` : ''}` : 'No new eligible Plaid accounts were found. If you added an account at Truliant, renew bank access first.')
+    } catch (error: unknown) {
+      if (tenantRef.current === tenantId) setSettingsError(apiError(error, 'Unable to list connected Plaid accounts.'))
+    } finally { setDiscoveringAccounts(false) }
+  }
   const importAccounts = async (accounts: Account[]) => {
     if (!currentTenantId || loadedTenant !== currentTenantId || !data) return { checking: rules.checking, sources: rules.sources }
     const tenantId = currentTenantId
     const checking = accounts.filter(account => account.kind === 'checking' || (!account.kind && /checking/i.test(account.nickname))).map(({ nickname, last4 }) => ({ nickname, last4 }))
-    const sources = accounts.filter(account => /(line of credit|heloc|home equity)/i.test(account.nickname)).map(({ nickname, last4 }) => ({ nickname, last4 }))
+    const sources = accounts.filter(account => account.kind === 'credit' || /(line of credit|heloc|home equity|credit card)/i.test(account.nickname)).map(({ nickname, last4 }) => ({ nickname, last4 }))
     const saved = { ...data.rules, repayment: data.rules.repayment || defaults.repayment }
     const configured = new Set([...saved.checking, ...saved.sources].map(account => account.last4))
     const newChecking = checking.filter(account => !configured.has(account.last4))
@@ -415,7 +443,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerCheck?.result.observed_at && providerCheck.result.accounts && ['verified', 'balance_only'].includes(providerCheck.status) ? { observed_at: providerCheck.result.observed_at, accounts: providerCheck.result.accounts } : null} providerLinked={data.provider_connection.linked} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerCheck?.result.observed_at && providerCheck.result.accounts && ['verified', 'balance_only'].includes(providerCheck.status) ? { observed_at: providerCheck.result.observed_at, accounts: providerCheck.result.accounts } : null} cashPlan={providerCheck?.result.cash_plan && ['verified', 'balance_only'].includes(providerCheck.status) ? providerCheck.result.cash_plan : null} providerLinked={data.provider_connection.linked} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -439,7 +467,7 @@ export default function BankMonitor() {
             {latestIssue && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">{latestIssue.detail}</p>}
             {stale && <p className="text-sm text-amber-800">Historical snapshot. Use Check bank now before preparing a transfer.</p>}
             {latest.result.message && <p className="text-sm text-slate-700">{latest.result.message}</p>}
-            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{account.needed_cents == null ? 'Not calculated' : dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
+            {latest.result.accounts && <div role="region" aria-label="Latest scheduled account balances" tabIndex={0} className="overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><caption className="sr-only">Balances from the latest scheduled bank check</caption><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th scope="col" className="pb-2 font-semibold">Checking</th><th scope="col" className="pb-2 font-semibold">Current</th><th scope="col" className="pb-2 font-semibold">Available</th><th scope="col" className="pb-2 font-semibold">Needed</th></tr></thead><tbody>{latest.result.accounts.map(account => <tr key={account.last4} className="border-t border-slate-200"><td className="py-3 font-medium text-slate-800">{account.nickname} · ••{account.last4}</td><td className="tabular-nums">{account.current_cents === null ? 'Unknown' : dollars(account.current_cents)}</td><td className="tabular-nums">{account.available_cents === null ? 'Unknown' : dollars(account.available_cents)}</td><td className="tabular-nums">{account.needed_cents == null ? 'Not calculated' : dollars(account.needed_cents)}</td></tr>)}</tbody></table></div>}
             {latest.result.credit_accounts?.some(account => account.outstanding_cents !== null) && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Credit balances</h3>{latest.result.credit_accounts.map(account => <p key={account.last4} className="mt-2 text-sm text-slate-700">{account.nickname} · ••{account.last4}: {account.outstanding_cents === null ? 'unknown' : dollars(account.outstanding_cents)}</p>)}</div>}
             {latest.result.repayment && <div className="border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Friday repayment</h3><p className="mt-1 text-sm capitalize text-slate-700">{label(latest.result.repayment.status)}</p>{latest.result.repayment.proposals.map((proposal, index) => <p key={`${proposal.from_last4}-${proposal.to_last4}-${index}`} className="mt-2 text-sm text-slate-700">{dollars(proposal.amount_cents)} from ••{proposal.from_last4} to ••{proposal.to_last4}</p>)}</div>}
             {!!latest.result.uncovered_cents && <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-800">Uncovered shortfall: {dollars(latest.result.uncovered_cents)}</p>}
@@ -476,7 +504,7 @@ export default function BankMonitor() {
             <p className="mt-4 text-sm font-medium text-slate-800">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server read has not been verified yet.'}</p>
             {data.provider_connection.last_error && <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Last provider read: {label(data.provider_connection.last_error)}. Review access or renew consent.</p>}
             {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'verified' && <p role="status" className="mt-3 text-sm text-emerald-800">A read-only server check verified {connectionCheck.result.account_count} accounts. No transfer was submitted.</p>}
-            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'balance_only' && <p role="status" className="mt-3 text-sm text-amber-800">Balances were read, but pending debits could not be verified. No coverage proposal can be calculated under this rule.</p>}
+            {connectionCheck?.result.source === 'plaid' && connectionCheck.status === 'balance_only' && <p role="status" className="mt-3 text-sm text-amber-800">Plaid read account data, but at least one balance or pending-debit requirement remains unverified. Review the cash view before moving money.</p>}
             {connectionCheck && !connectionPending && !['verified', 'balance_only'].includes(connectionCheck.status) && <p role="alert" className="mt-3 text-sm text-amber-800">Server check stopped: {label(connectionCheck.status)}. No bank proposal was calculated.</p>}
             {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Checking bank access from the server…</p>}
             <div className="mt-4 grid gap-2"><button type="button" disabled={!workerOnline || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="min-h-11 rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{connectionPending || verifyingWorker ? 'Checking…' : 'Verify server bank read'}</button><button type="button" disabled={linkingProvider} onClick={() => void connectProvider(true)} className="min-h-11 rounded-xl border border-slate-300 px-4 font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : 'Renew bank access'}</button></div>
@@ -499,9 +527,9 @@ export default function BankMonitor() {
           <h2 id="provider-stage-title" className="text-lg font-semibold text-slate-950">Server bank connection</h2>
           <p className="mt-2 text-sm leading-6 text-slate-700">Plaid can read balances and report transaction-feed visibility without an active Chrome bank session. Chrome remains available for detailed charge review and transfer preparation. You approve transfers in Truliant.</p>
           {data.provider_connection.linked ? <p className="mt-3 text-sm font-medium text-emerald-900">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server balance read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server balance read has not completed yet.'}</p> : <p className="mt-3 text-sm text-slate-700">No provider consent saved yet.</p>}
-          {providerCheck && ['verified', 'balance_only'].includes(providerCheck.status) && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerCheck.result.account_count} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
+          {providerCheck && ['verified', 'balance_only'].includes(providerCheck.status) && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerCheck.result.account_count} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'not_ready' ? 'Plaid is still preparing the transaction feed.' : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
           {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Reading bank balances and transaction visibility from the server…</p>}
-          <div className="mt-4 grid gap-2"><button type="button" disabled={!data.provider_connection.linked || !workerOnline || connectionPending || verifyingWorker} onClick={verifyWorkerConnection} className="min-h-11 w-full whitespace-nowrap rounded-xl bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-45">{connectionPending || verifyingWorker ? 'Checking…' : 'Check server data now'}</button><button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="min-h-11 w-full whitespace-nowrap rounded-xl border border-blue-200 bg-white px-4 font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button></div>
+          <button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="mt-4 min-h-11 w-full rounded-xl border border-blue-200 bg-white px-4 font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button>
           {providerNotice && <p role="status" className="mt-3 text-sm text-emerald-900">{providerNotice}</p>}
           {verificationError && <p role="alert" className="mt-3 text-sm text-red-800">{verificationError}</p>}
         </section>}
@@ -518,6 +546,7 @@ export default function BankMonitor() {
               <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
             </header>
           <form onSubmit={save} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+            {data.provider_connection.linked && <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-sm leading-6 text-blue-950">Add accounts already included in your Truliant consent without opening the Chrome bank assistant.</p><button type="button" disabled={discoveringAccounts} onClick={() => void discoverProviderAccounts()} className="mt-3 min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-blue-800 ring-1 ring-blue-200 hover:bg-blue-100 disabled:opacity-45">{discoveringAccounts ? 'Finding accounts…' : 'Find connected Plaid accounts'}</button></div>}
             {(['checking', 'sources'] as const).map(group => <fieldset key={group} className="space-y-3"><legend className="text-sm font-semibold text-slate-950">{group === 'checking' ? 'Checking accounts' : 'Funding priority'}</legend>{rules[group].map((account, index) => <div key={`${group}-${account.last4 || 'new'}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><label className="block text-xs font-medium text-slate-600">{group === 'sources' ? `Priority ${index + 1}` : `Account ${index + 1}`}<input required maxLength={80} value={account.nickname} onChange={event => editAccount(group, index, 'nickname', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><div className="mt-2 flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-medium text-slate-600">Last four<input required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={account.last4} onChange={event => editAccount(group, index, 'last4', event.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900" /></label><button type="button" className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50" onClick={() => setRules(current => ({ ...current, [group]: current[group].filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`Remove ${account.nickname || group}`}>Remove</button></div></div>)}<button type="button" disabled={rules[group].length >= (group === 'checking' ? 10 : 5)} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-45" onClick={() => setRules(current => ({ ...current, [group]: [...current[group], { nickname: '', last4: '' }] }))}>Add {group === 'checking' ? 'checking account' : 'funding source'}</button></fieldset>)}
 
             <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Coverage rule</legend><label className="block text-xs font-medium text-slate-600">Calculate from<BankSelect ariaLabel="Calculate coverage from" value={rules.basis} options={[{ value: 'posted', label: 'Posted balance only' }, { value: 'posted_and_pending', label: 'Posted plus verified pending debits' }]} onChange={value => setRules(current => ({ ...current, basis: value }))} /></label></fieldset>
@@ -527,7 +556,7 @@ export default function BankMonitor() {
             <fieldset className="space-y-3 border-t border-slate-200 pt-5"><legend className="text-sm font-semibold text-slate-950">Schedule</legend><label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={rules.enabled} onChange={event => { setSettingsNotice(''); setRules(current => ({ ...current, enabled: event.target.checked })) }} /><span>Run daily at 5:30 p.m. Eastern, including weekends</span></label></fieldset>
 
             {settingsDirty && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Unsaved changes</div>}
-            {!settingsDirty && settingsNotice && <div role="status" className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon name="check" className="h-4 w-4 shrink-0" />{settingsNotice}</div>}
+            {settingsNotice && <div role="status" className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon name="check" className="h-4 w-4 shrink-0" />{settingsNotice}</div>}
             {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
             <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
           </form>

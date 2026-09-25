@@ -12,6 +12,7 @@ from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionChe
                                      BankMonitorRun, BankMonitorWorkerHeartbeat, BankProviderConnection)
 from app.models.tenant import Tenant
 from app.services.bank_monitor import EASTERN, MonitorRules, calculate, due_date
+from app.services.bank_cash_plan import calculate_cash_plan
 from app.services.truliant_reader import BankReadError, read_balances
 from app.services import plaid_bank
 
@@ -27,12 +28,15 @@ def read_provider(db, tenant_id, rules, now):
         bank_item = plaid_bank.item(token)
         if bank_item.get('item_id') != connection.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
             raise plaid_bank.PlaidBankError('provider_institution_mismatch')
-        snapshot = plaid_bank.balance_snapshot(token, rules, connection.account_map, now)
+        rows = plaid_bank.real_time_accounts(token)
+        account_map = plaid_bank.map_accounts(rows, rules)
+        snapshot = plaid_bank.balance_snapshot(token, rules, account_map, now, rows)
     except plaid_bank.PlaidBankError as exc:
         connection.status = 'reauthorization_required' if str(exc) == 'provider_reauthorization_required' else 'read_blocked'
         connection.last_error = str(exc)
         raise
-    connection.status = 'balance_verified'
+    connection.status = 'balance_verified' if provider_balances_complete(snapshot, rules) else 'balance_partial'
+    connection.account_map = account_map
     connection.last_error = None
     connection.last_checked_at = now
     return snapshot
@@ -48,7 +52,16 @@ def provider_pending_result(snapshot, rules):
                 configured.nickname for configured in rules.sources if configured.last4 == account.last4)}
                                 for account in snapshot.accounts if account.last4 in {a.last4 for a in rules.sources}],
             'proposals': [], 'transfers_executed': False,
-            'message': 'Current balances were read, but pending debits were not verifiable. No coverage or repayment proposal was calculated.'}
+            'message': 'The provider read was incomplete for automated coverage or repayment. Review available balances and pending evidence in the cash view; no proposal was calculated.'}
+
+
+def provider_balances_complete(snapshot, rules):
+    balances = {account.last4: account for account in snapshot.accounts}
+    return all((account := balances.get(configured.last4)) is not None and
+               account.current_cents is not None and account.available_cents is not None
+               for configured in rules.checking) and all(
+                   (account := balances.get(configured.last4)) is not None and
+                   account.available_credit_cents is not None for configured in rules.sources)
 
 
 def provider_visibility(db, tenant_id):
@@ -61,7 +74,8 @@ def provider_visibility(db, tenant_id):
             plaid_bank.decrypt_token(connection.encrypted_access_token), connection.account_map)
     except plaid_bank.PlaidBankError:
         return {'status': 'unavailable'}
-    return {'status': 'observed', **evidence}
+    return {'status': 'not_ready' if evidence.get('transactions_update_status') == 'NOT_READY' else 'observed',
+            **evidence}
 
 
 def run_due(db, now, reader=read_balances):
@@ -99,10 +113,12 @@ def run_due(db, now, reader=read_balances):
                 raise BankReadError('chrome_check_missed')
             if use_provider:
                 snapshot = read_provider(db, config.tenant_id, rules, now)
-                result = (provider_pending_result(snapshot, rules) if rules.basis == 'posted_and_pending'
+                result = (provider_pending_result(snapshot, rules) if rules.basis == 'posted_and_pending' or
+                          not provider_balances_complete(snapshot, rules)
                           else calculate(rules, snapshot, now))
                 result['source'] = 'plaid_background' if chrome_reader else 'plaid'
                 result['transaction_visibility'] = provider_visibility(db, config.tenant_id)
+                result['cash_plan'] = calculate_cash_plan(rules, snapshot, result['transaction_visibility'])
             else:
                 profile = os.getenv(f'BANK_MONITOR_PROFILE_{config.tenant_id}')
                 if not profile:
@@ -165,7 +181,8 @@ def run_connection_checks(db, reader=read_balances):
             rules = MonitorRules.model_validate(config.rules)
             if mode == 'plaid' or (mode == 'signed_in_chrome' and db.get(BankProviderConnection, check.tenant_id)):
                 snapshot = read_provider(db, check.tenant_id, rules, datetime.now(timezone.utc))
-                check.status = 'balance_only' if rules.basis == 'posted_and_pending' else 'verified'
+                check.status = ('verified' if rules.basis != 'posted_and_pending' and
+                                provider_balances_complete(snapshot, rules) else 'balance_only')
                 visibility = provider_visibility(db, check.tenant_id)
             else:
                 if mode == 'signed_in_chrome':
@@ -183,6 +200,7 @@ def run_connection_checks(db, reader=read_balances):
             if check.result['source'] == 'plaid':
                 check.result['transaction_visibility'] = visibility
                 check.result['accounts'] = [account.model_dump() for account in snapshot.accounts]
+                check.result['cash_plan'] = calculate_cash_plan(rules, snapshot, visibility)
         except plaid_bank.PlaidBankError as exc:
             check.status = str(exc)
             check.result = {'transfers_executed': False}
