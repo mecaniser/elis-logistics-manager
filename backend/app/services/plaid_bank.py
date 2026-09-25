@@ -122,6 +122,45 @@ def real_time_accounts(access_token: str) -> list[dict]:
     return accounts
 
 
+def transaction_visibility(access_token: str, account_map: dict) -> dict:
+    """Report what Plaid supplied, without treating an empty pending feed as complete.
+
+    A full sync is used here because this is an infrequent verification read.
+    Applying removals and modifications matters: a pending entry can disappear
+    when it posts, including between pages of the initial history download.
+    """
+    item_data = request('/item/get', {'access_token': access_token})
+    status = item_data.get('status', {}).get('transactions', {})
+    ids = {entry['account_id']: suffix for suffix, entry in account_map.items()}
+    active = {}
+    cursor = None
+    for _ in range(50):
+        payload = {'access_token': access_token, 'count': 500}
+        if cursor:
+            payload['cursor'] = cursor
+        data = request('/transactions/sync', payload)
+        for row in data.get('added', []) + data.get('modified', []):
+            if row.get('account_id') in ids and isinstance(row.get('transaction_id'), str):
+                active[row['transaction_id']] = row
+        for row in data.get('removed', []):
+            active.pop(row.get('transaction_id'), None)
+        cursor = data.get('next_cursor')
+        if not data.get('has_more'):
+            break
+    else:
+        raise PlaidBankError('provider_history_incomplete')
+    if not isinstance(cursor, str):
+        raise PlaidBankError('provider_history_incomplete')
+    pending = {suffix: 0 for suffix in account_map}
+    posted = {suffix: 0 for suffix in account_map}
+    for row in active.values():
+        suffix = ids[row['account_id']]
+        (pending if row.get('pending') is True else posted)[suffix] += 1
+    return {'pending_entries': pending, 'posted_entries': posted,
+            'last_successful_update': status.get('last_successful_update'),
+            'pending_complete': False}
+
+
 def map_accounts(accounts: list[dict], rules: MonitorRules) -> dict:
     """Bind every configured suffix to one exact, typed provider account."""
     mapping = {}
