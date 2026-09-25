@@ -1,5 +1,7 @@
 """Period management contribution, distinct from bank cash and book net income."""
 from collections import defaultdict
+from app.models.repair import Repair
+from app.models.truck import Truck
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal
@@ -85,6 +87,23 @@ def retention_report(db, tenant, report):
             shared += value
         else:
             unassigned += value
+    # Management-only bridge: legacy repairs remain expenses even when owner
+    # repayment history is not posted. Never duplicate an explicitly linked bill,
+    # including a reversed bill that needs an accounting correction.
+    linked_repairs = {e.payload.get('legacy_repair_id') for e in closing['events']
+                      if e.kind in ('bill', 'owner_advance')}
+    historical_repairs = defaultdict(lambda: ZERO)
+    historical_ids = defaultdict(list)
+    for repair in db.query(Repair).join(Truck, Repair.truck_id == Truck.id).filter(
+            Truck.tenant_id == tenant, Repair.repair_date >= start, Repair.repair_date <= min(end, date.fromisoformat(report['as_of']))):
+        if repair.id in linked_repairs or repair.cost is None:
+            continue
+        pair = owner(repair.truck_id, repair.repair_date.isoformat())
+        if pair is None:
+            unassigned -= D(repair.cost)
+            continue
+        historical_repairs[pair] += D(repair.cost)
+        historical_ids[pair].append(repair.id)
     shares = allocate(shared, weights)
     reserve_delta = defaultdict(lambda: ZERO)
     funding = defaultdict(lambda: ZERO)
@@ -124,6 +143,7 @@ def retention_report(db, tenant, report):
         rows = [
             ('Statement remainder', remainder),
             ('Outside costs and income, including incurred interest', contribution[i] - remainder),
+            ('Historical repairs not yet posted to Accounting', -historical_repairs[i]),
             ('Shared company result allocated by freight', shares[i]),
             ('Business-paid equipment obligations', -principal[i]),
             ('New repair and capital funding', -funding[i]),
@@ -137,6 +157,8 @@ def retention_report(db, tenant, report):
             'Verify repair and capital funding against required targets; unfunded targets are not deducted here.',
             'Verify financing statements and scheduled obligations. This period score is not cash available to withdraw.',
         ] + gaps[i]
+        if historical_ids[i]:
+            issues.append('Historical repair costs are included from the repair register; payment and reserve treatment must be reconciled before finalized accounting.')
         if not all(a in closing['plans'] for a in p['asset_ids']):
             issues.append('Equipment acquisition, resale and payoff evidence is incomplete.')
         if report['owner_insights']['unposted_in_period']:
@@ -149,7 +171,7 @@ def retention_report(db, tenant, report):
                        **score(retained, weights[i], D(targets['target_percent']), D(targets['acceptable_percent'])),
                        'status': 'provisional', 'issues': list(dict.fromkeys(issues)),
                        'bridge': [{'label': label, 'amount': money(amount)} for label, amount in rows],
-                       'source_event_ids': sorted(sources[i])})
+                       'source_event_ids': sorted(sources[i]), 'source_repair_ids': sorted(historical_ids[i])})
     return {'version': 1, 'period': report['period'], 'as_of': report['as_of'],
             'basis': 'recorded_period_contribution_after_funded_protection', 'targets': targets,
             'settings_timezone': timezone, 'minimum_effective_date': datetime.now(ZoneInfo(timezone)).date().isoformat(),

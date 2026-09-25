@@ -1,6 +1,7 @@
 import { FormEvent, useRef, useState } from 'react'
 import { Report, dollars, financeApi, financeError } from '../../services/finance'
 import './RetentionScore.css'
+import { Link } from 'react-router-dom'
 
 type Retention = Report['retention']
 const bands = {target_met:'Target met', acceptable:'Acceptable', below_floor:'Below acceptable', no_revenue:'No positive freight revenue'}
@@ -54,6 +55,7 @@ export default function RetentionScore({pair, data}: {pair:Retention['pairs'][nu
     </div>}
     <details className="owner-details"><summary>How this score is calculated</summary><dl className="finance-waterfall">{pair.bridge.map(row=><div key={row.label}><dt>{row.label}</dt><dd>{dollars(row.amount)}</dd></div>)}<div><dt>Recorded retained contribution</dt><dd><strong>{dollars(pair.retained)}</strong></dd></div><div><dt>Freight revenue</dt><dd>{dollars(pair.freight)}</dd></div></dl>
       <p className="finance-help">Recorded amounts only. Zero means no amount recorded in this calculation; it does not confirm that a cost is absent. Book depreciation and equipment sale results are kept in the ownership reports.</p>
+      {Boolean(pair.source_repair_ids?.length) && <p className="finance-help"><Link to="/repairs">Review {pair.source_repair_ids!.length} included historical repair records</Link> · references {pair.source_repair_ids!.join(', ')}</p>}
       <h4>Before relying on the score</h4><ul className="retention-gaps">{pair.issues.map(issue=><li key={issue}>{issue}</li>)}</ul>
     </details>
   </div>

@@ -92,3 +92,52 @@ def test_target_validation_prospective_history_and_tenant_scope(db,truck):
     assert not f.report(db,2,future,future,future)['retention']['pairs']
     assert f.report(db,2,future,future,future)['retention']['targets']['target_percent']=='30.00'
     assert event.kind=='retention_targets'
+
+
+@pytest.mark.parametrize('reimbursement', ['unknown', 'owed', 'reimbursed'])
+def test_historical_repair_cost_survives_personal_payment_status(db, truck, reimbursement):
+    from tests.test_repair_history import repair
+    from tests.test_repair_owner_posting import personal
+    from app.services.repair_confirmation import save_confirmation
+    d = policy_setup(db); settlement(db, d, truck)
+    r = repair(db, truck)
+    save_confirmation(db, 1, personal(db, reimbursement=reimbursement)); db.commit()
+    actual = result(db)
+    assert actual['retained'] == '2500.00'
+    assert actual['retained_per_100'] == '25.00'
+    assert actual['score'] == '83.33'
+    assert actual['source_repair_ids'] == ([] if reimbursement == 'owed' else [r.id])
+    assert result(db, date(2026, 9, 1), date(2026, 9, 30))['retained'] == '2500.00'
+    assert result(db, date(2026, 1, 1), date(2026, 12, 31))['retained'] == '2500.00'
+
+
+def test_legacy_repair_period_and_business_isolation(db, truck):
+    from tests.test_repair_history import repair
+    from app.models.tenant import Tenant
+    from app.models.truck import Truck
+    d = policy_setup(db); settlement(db, d, truck)
+    db.add(Tenant(id=2, name='Other', business_type='logistics')); db.commit()
+    other = Truck(name='Other truck', tenant_id=2, vehicle_type='truck'); db.add(other); db.commit()
+    repair(db, other)
+    r = repair(db, truck); r.repair_date = date(2026, 9, 20); db.commit()
+    assert result(db)['retained'] == '3000.00'
+    assert result(db, date(2026, 9, 20), ASOF)['retained'] == '2500.00'
+
+
+def test_trailer_repair_follows_dated_assignment_and_asof(db, truck):
+    from app.models.truck import Truck
+    from app.models.repair import Repair
+    d = policy_setup(db); settlement(db, d, truck)
+    trailer = Truck(name='Trailer', tenant_id=1, vehicle_type='trailer')
+    db.add(trailer); db.commit()
+    cmd(db, 'assignment', truck_id=truck.id, trailer_id=trailer.id, when='2026-09-01', end='2026-09-21')
+    db.add_all([
+        Repair(truck_id=trailer.id, repair_date=ASOF, cost=100, paid_from_reserve=False),
+        Repair(truck_id=trailer.id, repair_date=date(2026,9,22), cost=200, paid_from_reserve=False),
+    ]); db.commit()
+    r = f.report(db, 1, date(2026,9,1), date(2026,9,30), ASOF)['retention']
+    assert r['pairs'][0]['retained'] == '2900.00'
+    assert r['unassigned_asset_result'] == '0.00'
+    r = f.report(db, 1, date(2026,9,1), date(2026,9,30), date(2026,9,30))['retention']
+    assert r['pairs'][0]['retained'] == '2900.00'
+    assert r['unassigned_asset_result'] == '-200.00'
