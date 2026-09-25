@@ -182,6 +182,7 @@ def run_connection_checks(db, reader=read_balances):
                             'source': 'plaid' if mode == 'plaid' or mode == 'signed_in_chrome' else 'private_worker'}
             if check.result['source'] == 'plaid':
                 check.result['transaction_visibility'] = visibility
+                check.result['accounts'] = [account.model_dump() for account in snapshot.accounts]
         except plaid_bank.PlaidBankError as exc:
             check.status = str(exc)
             check.result = {'transfers_executed': False}

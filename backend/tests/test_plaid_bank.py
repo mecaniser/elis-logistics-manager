@@ -172,6 +172,7 @@ def test_chrome_mode_gets_unattended_plaid_observation_without_preparing_transfe
     check = db.query(BankMonitorConnectionCheck).one()
     assert check.status == 'balance_only'
     assert check.result['transaction_visibility']['pending_complete'] is False
+    assert {row['last4'] for row in check.result['accounts']} == {'1111', '2222'}
     assert run_due(db, datetime.fromisoformat('2026-09-25T21:30:00+00:00'), forbidden_browser) == 1
     run = db.query(BankMonitorRun).one()
     assert run.status == 'provider_pending_unverified'

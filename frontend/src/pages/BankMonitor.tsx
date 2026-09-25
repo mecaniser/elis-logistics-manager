@@ -22,7 +22,7 @@ type RepaymentRun = { id: number; started_at: string; status: string; result: {
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
-type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility } }
+type ConnectionCheck = { id: number; status: string; requested_at: string; finished_at: string | null; result: { observed_at?: string; account_count?: number; source?: string; transaction_visibility?: TransactionVisibility; accounts?: { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }[] } }
 type BrowserCheck = { id: number; status: string; observed_at: string; result: { source: string; repayment?: { status: string }; accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
 type Dashboard = { rules: Rules; reader_mode: 'private_worker' | 'signed_in_chrome' | 'plaid'; provider_connection: { configured: boolean; linked: boolean; status: string; last_checked_at: string | null; last_error: string | null; accounts: string[] }; next_check: string; worker: { status: 'online' | 'offline'; last_seen_at: string | null }; connection_check: ConnectionCheck | null; browser_check: BrowserCheck | null; runs: Run[]; repayment_runs: RepaymentRun[] }
 type CheckingEvidence = { current: string; pending: string; settled: string; income: string; incomeDate: string }
@@ -411,7 +411,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerCheck?.result.observed_at && providerCheck.result.accounts && ['verified', 'balance_only'].includes(providerCheck.status) ? { observed_at: providerCheck.result.observed_at, accounts: providerCheck.result.accounts } : null} providerLinked={data.provider_connection.linked} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -460,7 +460,7 @@ export default function BankMonitor() {
 
         {data.reader_mode === 'signed_in_chrome' ? <section aria-labelledby="chrome-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 id="chrome-access-title" className="text-lg font-semibold text-slate-950">Chrome bank access</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">The bank assistant checks Truliant in your signed-in Chrome profile at 5:30 p.m. Eastern. Keep this Bank Monitor tab open with the current assistant version. ELIS records a complete result; if Chrome or either sign-in is unavailable, the check is marked missed at 5:45. No password is sent from Chrome to ELIS.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{data.provider_connection.linked ? 'Plaid reads account balances on the server at 5:30 p.m. Eastern. Chrome can add a complete bank-history check for pending-aware transfer preparation during that window. If Chrome is unavailable, ELIS keeps the balance-only server result and withholds unverified proposals.' : 'The bank assistant checks Truliant in your signed-in Chrome profile at 5:30 p.m. Eastern. Keep this Bank Monitor tab open with the current assistant version. ELIS records a complete result; if Chrome or either sign-in is unavailable, the check is marked missed at 5:45. No password is sent from Chrome to ELIS.'}</p>
           {data.browser_check ? <p className="mt-4 text-sm font-medium text-emerald-800">Last complete browser read: {new Date(data.browser_check.observed_at).toLocaleString()}</p> : <p className="mt-4 text-sm text-amber-800">No complete browser read has been recorded yet.</p>}
           <p className="mt-2 text-xs leading-5 text-slate-500">The bank may require you to sign in again when its session expires. Transfers still require your approval in Truliant.</p>
         </section> : data.reader_mode === 'plaid' ? <section aria-labelledby="provider-access-title" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

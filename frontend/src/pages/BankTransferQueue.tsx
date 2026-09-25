@@ -12,6 +12,7 @@ type BalanceAccount = { last4: string; current_cents: number | null; available_c
 type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
 type SavedCheck = { observed_at: string; result: { accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
+type ServerCheck = { observed_at: string; accounts: BalanceAccount[] }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 type MonitoredAccounts = { checking: Account[]; sources: Account[] }
 
@@ -90,7 +91,7 @@ const statusMeta = (status: string) => {
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
 
-export default function BankTransferQueue({ tenantId, checking, sources, basis, lastSavedCheck, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, lastSavedCheck, lastServerCheck, providerLinked, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; lastServerCheck: ServerCheck | null; providerLinked: boolean; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -470,14 +471,19 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     ...lastSavedCheck.result.accounts.map(account => ({ ...account, available_credit_cents: null })),
     ...lastSavedCheck.result.credit_accounts.map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents })),
   ] : null
-  const displayedCheck = balanceCheck || (savedAccounts ? { checked_at: lastSavedCheck!.observed_at, accounts: savedAccounts } : null)
+  const observedChecks = [
+    balanceCheck ? { checked_at: balanceCheck.checked_at, accounts: balanceCheck.accounts, source: 'Chrome' } : null,
+    savedAccounts ? { checked_at: lastSavedCheck!.observed_at, accounts: savedAccounts, source: 'Chrome' } : null,
+    lastServerCheck ? { checked_at: lastServerCheck.observed_at, accounts: lastServerCheck.accounts, source: 'Plaid server' } : null,
+  ].filter((check): check is { checked_at: string; accounts: BalanceAccount[]; source: string } => check !== null)
+  const displayedCheck = observedChecks.sort((a, b) => Date.parse(b.checked_at) - Date.parse(a.checked_at))[0] || null
   const checkedRows = displayedCheck ? checking.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const fundingRows = displayedCheck ? sources.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const negativePosted = checkedRows.reduce((sum, row) => sum + Math.max(0, -(row.balance?.current_cents ?? 0)), 0)
   const actionableDrafts = drafts.filter(draft => statusMeta(draft.status).action !== 'done')
   const completedDrafts = drafts.filter(draft => statusMeta(draft.status).action === 'done')
   const pendingConfirmation = drafts.find(draft => draft.status === 'prepared_awaiting_submission')
-  const connectionText = connected ? 'Bank assistant connected automatically' : connectionState === 'checking' ? 'Checking the saved bank assistant…' : connectionState === 'outdated' ? `Bank assistant update required · ${detectedVersion} loaded` : extension ? 'Saved bank assistant is temporarily unavailable' : 'Connect the bank assistant once to get started'
+  const connectionText = connected ? 'Bank assistant connected automatically' : connectionState === 'checking' ? 'Checking the saved bank assistant…' : connectionState === 'outdated' ? `Bank assistant update required · ${detectedVersion} loaded` : providerLinked ? 'Plaid connection saved · Chrome assistant needed for detailed charge review' : extension ? 'Saved bank assistant is temporarily unavailable' : 'Connect the bank assistant once to get started'
 
   return <div className="space-y-5">
     <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-sm ring-1 ring-slate-900/10">
@@ -485,7 +491,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300"><Icon name="clock" className="h-4 w-4" /> Current funding status</div>
-            {!displayedCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">Checked {new Date(displayedCheck.checked_at).toLocaleString()} · Read-only; no transfer submitted.</p></div></div>}
+            {!displayedCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">{displayedCheck.source} balance read {new Date(displayedCheck.checked_at).toLocaleString()} · {displayedCheck.source === 'Plaid server' ? 'Pending debits unverified' : 'Bank histories reviewed'} · No transfer submitted.</p></div></div>}
           </div>
           <button type="button" disabled={busy || !connected} onClick={() => void checkBalances()} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
         </div>
