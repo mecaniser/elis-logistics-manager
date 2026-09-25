@@ -1,10 +1,39 @@
 import {allowedSender, validDraft, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
 import {fillForm} from './fill-form.js';
+import {startScheduledChromeRead} from './scheduled-check.js';
 let busy = false;
 const stageError = (code, message) => Object.assign(new Error(message), {code});
+const scheduledAlarm = 'elis-bank-monitor-daily';
+const scheduledCleanup = 'elis-bank-monitor-cleanup';
+if (chrome.alarms) {
+  chrome.alarms.get(scheduledAlarm).then(existing => {
+    if (!existing) chrome.alarms.create(scheduledAlarm, {periodInMinutes: 1});
+  });
+}
+chrome.alarms?.onAlarm.addListener(async alarm => {
+  if (alarm.name === scheduledCleanup) {
+    const {scheduledElisTabId} = await chrome.storage.session.get('scheduledElisTabId');
+    if (scheduledElisTabId) await chrome.tabs.remove(scheduledElisTabId).catch(() => {});
+    await chrome.storage.session.remove('scheduledElisTabId');
+    return;
+  }
+  if (alarm.name !== scheduledAlarm) return;
+  await startScheduledChromeRead(chrome);
+});
 chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(sender.id || sender.frameId !== 0 || !sender.tab?.id || !allowedSender(sender.url)) {reply({ok:false,error:'ELIS origin not allowed.'});return;}
   if(message?.type==='ELIS_PING') {reply({ok:true,version:chrome.runtime.getManifest().version});return;}
+  if(message?.type==='ELIS_SCHEDULED_DONE') {
+    chrome.storage.session.get('scheduledElisTabId').then(async ({scheduledElisTabId})=>{
+      if (sender.tab.id === scheduledElisTabId) {
+        await chrome.storage.session.remove('scheduledElisTabId');
+        await chrome.alarms.clear(scheduledCleanup);
+        await chrome.tabs.remove(scheduledElisTabId).catch(()=>{});
+      }
+      reply({ok:true});
+    });
+    return true;
+  }
   if(message?.type==='ELIS_RELOAD') {
     if(busy) {reply({ok:false,error:'The bank assistant is busy.'});return;}
     reply({ok:true,version:chrome.runtime.getManifest().version});
@@ -16,7 +45,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:message.background !== true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>
@@ -39,7 +68,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     busy=true;
     (async()=>{
       const open=await chrome.tabs.query({url:'https://www.truliantfcuonline.org/*'});
-      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:true});
+      const tab=open.find(item=>item.status==='complete' && /\/dbank\/live\/app\/home\/?$/.test(item.url || '')) || await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:message.background !== true});
       for(let attempt=0;attempt<50;attempt++) {
         await new Promise(resolve=>setTimeout(resolve,300));
         const results=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>

@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "ELIS Bank Form Assistant",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Prepare reviewed Truliant forms. Never submits or schedules transfers.",
   "permissions": [
     "scripting",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
-    "https://www.truliantfcuonline.org/*"
+    "https://www.truliantfcuonline.org/*",
+    "https://www.elisprotech.com/bank-monitor"
   ],
   "externally_connectable": {
     "matches": [

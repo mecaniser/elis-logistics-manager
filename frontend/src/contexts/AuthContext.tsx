@@ -4,7 +4,7 @@ import { authApi } from '../services/api'
 interface AuthContextType {
   authenticated: boolean
   loading: boolean
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, remember: boolean, mfaCode?: string) => Promise<boolean>
   logout: () => Promise<void>
 }
 
@@ -29,9 +29,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuth()
   }, [])
 
-  const login = async (username: string, password: string) => {
-    await authApi.login(username, password)
+  const login = async (username: string, password: string, remember: boolean, mfaCode?: string) => {
+    const response = await authApi.login(username, password, remember, mfaCode)
+    if (response.data.mfa_required) return false
     setAuthenticated(true)
+    return true
   }
 
   const logout = async () => {

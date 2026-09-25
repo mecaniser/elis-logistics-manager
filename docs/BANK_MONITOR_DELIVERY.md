@@ -1,7 +1,64 @@
 # Bank monitor delivery checklist
 
-Updated 2026-09-14. This is the authoritative completion checklist; historical
-implementation notes in BANK_MONITOR.md are not deployment evidence.
+## Private worker sign-in path (2026-09-24)
+
+The dedicated Railway worker now provisions one mode-0700 browser profile per
+allowed tenant on its mounted `/data` volume at startup. The profile path must
+match `BANK_MONITOR_PROFILE_<tenant ID>=/data/profiles/<tenant ID>` exactly; a
+missing, mismatched, or symlinked path stops startup. The worker runs as UID
+10001 after provisioning. It never copies cookies from the operator's Chrome.
+
+The app's **Verify worker bank access** action queues a separate read-only check
+without using the daily scheduler slot. It accepts no credentials or MFA codes.
+The worker submits the worker-only username/password at most once to the exact
+observed Truliant login origin, verifies that all configured checking and credit
+accounts can be read, and records only a status, count, and observation time.
+Duplicate/premature requests are blocked. No form is prepared or transfer made.
+
+To complete live sign-in, the account owner must enter
+`BANK_MONITOR_USERNAME_<tenant ID>` and `BANK_MONITOR_PASSWORD_<tenant ID>` directly
+in the **bank-monitor Railway service's Variables**. Do not provide these values
+in ELIS, chat, shell arguments, or source control. Then use the on-page
+verification action and inspect its result. Truliant MFA, CAPTCHA, unexpected
+login screens, or an interrupted attempt stop the worker and require operator
+recovery of that private session. The current flow cannot complete MFA from
+the ELIS page; unattended checks must not be called verified until an actual
+read-only server check succeeds. The bank may require renewed sign-in later.
+
+The live worker check on 2026-09-24 reached Truliant's security interstitial before
+the login form. Worker-only secrets were present, but no bank access was
+verified. A separate signed-in Chrome assistant read both checking accounts,
+both credit lines, and checking histories at 12:58 Eastern. That proves only
+the interactive Chrome reader, not unattended scheduling.
+
+## Chrome-assisted scheduled reader candidate (2026-09-24)
+
+Extension 0.1.23 has a daily Eastern-time alarm. It opens an inactive ELIS Bank
+Monitor tab once between 5:30 and 5:45 p.m. while Chrome is running. The page
+invokes the existing signed-in extension reader; no Truliant password is sent
+from Chrome to ELIS. A fresh, complete account snapshot and verified checking
+histories go to the tenant-scoped ELIS API, which calculates proposals and
+records a browser read. Only a read in that time window counts as scheduled.
+
+After the extension is installed and a live browser check is recorded, set
+`BANK_MONITOR_READER_MODE=signed_in_chrome` on both web and worker services. In
+that mode the Railway worker never attempts bank login. At 5:45 it records
+`chrome_check_missed` if no complete read arrived. A closed Chrome, disabled
+extension, expired ELIS session, or expired Truliant session can cause a miss;
+no balances or repayments are inferred. Friday repayment still requires
+verified eligible income, cash without borrowing, pending debits, and full
+payoff amounts. Missing evidence blocks the proposal.
+
+Acceptance still requires a deployed API, the updated extension with its new
+ELIS site access, a live browser read recorded by ELIS, and an observed 5:30
+scheduled run or explicit missed state. Synthetic tests alone do not prove it.
+
+The historical checklist below describes the original pilot state. The live
+worker and web service must still be checked against their current deployment
+and an actual verified bank read before claiming this milestone complete.
+
+Original checklist recorded 2026-09-14. Historical implementation notes in
+BANK_MONITOR.md and the entries below are not current deployment evidence.
 
 ## Current production evidence
 

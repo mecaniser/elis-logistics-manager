@@ -9,7 +9,8 @@ import os
 from pathlib import Path
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
+from app.models.auth_account import AuthAccount
 from app.migration_runner import run_startup_migrations
 from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants, auth, repair_reserves
 from app.routers import finance
@@ -33,6 +34,10 @@ install_finance_http(app)
 # Session-based auth middleware to keep the app private while allowing a custom login page.
 APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME")
 APP_AUTH_PASSWORD = os.getenv("APP_AUTH_PASSWORD")
+with SessionLocal() as _auth_db:
+    _auth_account = _auth_db.get(AuthAccount, 1)
+    APP_AUTH_HAS_STORED_PASSWORD = bool(_auth_account and _auth_account.password_hash)
+APP_AUTH_REQUIRED = bool(APP_AUTH_USERNAME or APP_AUTH_PASSWORD or APP_AUTH_HAS_STORED_PASSWORD)
 
 
 class SessionAuthMiddleware(BaseHTTPMiddleware):
@@ -45,10 +50,6 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         return path in self.allow_exact or any(path.startswith(prefix) for prefix in self.allow_prefixes)
 
     async def dispatch(self, request: Request, call_next):
-        # If credentials are not configured, skip auth (useful for local/dev).
-        if not (APP_AUTH_USERNAME and APP_AUTH_PASSWORD):
-            return await call_next(request)
-
         path = request.url.path
         # Allow all non-API routes so the frontend (login page) can load;
         # API calls remain protected.
@@ -70,13 +71,17 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-if APP_AUTH_USERNAME and APP_AUTH_PASSWORD:
+if APP_AUTH_REQUIRED:
     app.add_middleware(
         SessionAuthMiddleware,
         allow_prefixes=[
             "/api/auth/login",
             "/api/auth/logout",
             "/api/auth/me",
+            "/api/auth/capabilities",
+            "/api/auth/password/reset-request",
+            "/api/auth/password/reset",
+            "/api/auth/recovery-email/confirm",
             "/api/health",
             "/docs",
             "/openapi.json",

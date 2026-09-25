@@ -12,6 +12,10 @@ from typing import Optional, Tuple
 # Config
 SESSION_COOKIE_NAME = "session_token"
 SESSION_DURATION_SECONDS = int(os.getenv("APP_SESSION_DURATION_SECONDS", 60 * 60 * 12))  # 12 hours default
+REMEMBER_DURATION_SECONDS = min(
+    int(os.getenv("APP_REMEMBER_SESSION_DURATION_SECONDS", 60 * 60 * 24 * 7)),
+    60 * 60 * 24 * 7,
+)
 
 
 def _get_secret() -> Optional[bytes]:
@@ -25,7 +29,16 @@ def _sign(message: str, secret: bytes) -> str:
     return hmac.new(secret, message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def create_session_token(username: str) -> Optional[str]:
+def _session_version() -> int:
+    from app.database import SessionLocal
+    from app.models.auth_account import AuthAccount
+    from sqlalchemy import select
+    with SessionLocal() as db:
+        version = db.execute(select(AuthAccount.session_version).where(AuthAccount.id == 1)).scalar_one_or_none()
+        return version if version is not None else 0
+
+
+def create_session_token(username: str, remember: bool = False) -> Optional[str]:
     """
     Create a signed session token for the given username.
     """
@@ -35,8 +48,9 @@ def create_session_token(username: str) -> Optional[str]:
 
     payload = {
         "u": username,
-        "exp": int(time.time()) + SESSION_DURATION_SECONDS,
+        "exp": int(time.time()) + (REMEMBER_DURATION_SECONDS if remember else SESSION_DURATION_SECONDS),
         "v": 1,
+        "sv": _session_version(),
     }
     payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode("utf-8").rstrip("=")
@@ -65,7 +79,10 @@ def verify_session_token(token: str) -> Tuple[bool, Optional[str]]:
     except Exception:
         return False, None
 
-    if payload.get("exp", 0) < int(time.time()):
+    if payload.get("exp", 0) <= int(time.time()):
+        return False, None
+
+    if payload.get("sv", 0) != _session_version():
         return False, None
 
     username = payload.get("u")

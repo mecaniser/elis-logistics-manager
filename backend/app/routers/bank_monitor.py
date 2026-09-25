@@ -1,15 +1,20 @@
 """Strictly authenticated, tenant-scoped settings and read-only run history."""
 import os
-from datetime import date, datetime, timezone
+import hashlib
+from uuid import uuid4
+from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.models.bank_monitor import BankMonitorConfig, BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun
+from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck, BankMonitorBrowserCheck,
+                                     BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun,
+                                     BankProviderConnection, BankProviderLinkAttempt)
 from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
                                        MonitorRules, StrictModel,
-                                       calculate_repayment, next_check)
+                                       calculate, calculate_repayment, due_date, next_check)
+from app.services import plaid_bank
 
 router = APIRouter()
 
@@ -43,15 +48,250 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
         last_seen = last_seen.replace(tzinfo=timezone.utc)
     worker_online = bool(last_seen and (now - last_seen).total_seconds() <= 120)
     runs = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id).order_by(BankMonitorRun.id.desc()).limit(30).all()
+    connection_check = db.query(BankMonitorConnectionCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorConnectionCheck.id.desc()).first()
+    browser_check = db.query(BankMonitorBrowserCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorBrowserCheck.id.desc()).first()
     repayment_runs = db.query(BankRepaymentRun).filter_by(tenant_id=tenant_id).order_by(BankRepaymentRun.id.desc()).limit(30).all()
+    provider = db.get(BankProviderConnection, tenant_id)
+    reader_mode = os.getenv('BANK_MONITOR_READER_MODE', 'private_worker')
     return {'rules': config.rules if config else MonitorRules().model_dump(),
+            'reader_mode': reader_mode if reader_mode in {'signed_in_chrome', 'plaid'} else 'private_worker',
+            'provider_connection': {
+                'configured': plaid_bank.configured(), 'linked': bool(provider),
+                'status': provider.status if provider else 'not_linked',
+                'last_checked_at': provider.last_checked_at if provider else None,
+                'last_error': provider.last_error if provider else None,
+                'accounts': sorted(provider.account_map.keys()) if provider else [],
+            },
             'mode': 'proposal_only', 'next_check': next_check(datetime.now(timezone.utc)),
             'worker': {'status': 'online' if worker_online else 'offline', 'last_seen_at': last_seen},
+            'connection_check': ({'id': connection_check.id, 'status': connection_check.status,
+                                  'requested_at': connection_check.requested_at,
+                                  'finished_at': connection_check.finished_at,
+                                  'result': connection_check.result} if connection_check else None),
+            'browser_check': ({'id': browser_check.id, 'observed_at': browser_check.observed_at,
+                               'status': browser_check.status, 'result': browser_check.result} if browser_check else None),
             'runs': [{'id': r.id, 'scheduled_date': r.scheduled_date, 'started_at': r.started_at,
                       'finished_at': r.finished_at, 'status': r.status, 'result': r.result} for r in runs],
             'repayment_runs': [{'id': r.id, 'started_at': r.started_at,
                                 'finished_at': r.finished_at, 'status': r.status,
                                 'result': r.result} for r in repayment_runs]}
+
+
+def provider_action(request: Request, action: str):
+    if request.headers.get('x-bank-monitor-action') != action:
+        raise HTTPException(403, 'Missing bank connection action header.')
+    if not plaid_bank.configured():
+        raise HTTPException(409, 'Bank connection provider is not configured.')
+    if plaid_bank.environment() != 'production':
+        raise HTTPException(409, 'Production bank provider access is required.')
+
+
+class ProviderLinkRequest(StrictModel):
+    """Plaid Link handles bank credentials and consent outside ELIS."""
+
+
+@router.post('/provider/link-token')
+def create_provider_link_token(data: ProviderLinkRequest, request: Request,
+                               tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'start-provider-link')
+    if db.get(BankProviderConnection, tenant_id):
+        raise HTTPException(409, 'Bank connection already exists. Use reconnect to renew access.')
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        raise HTTPException(409, 'Configure monitored accounts before connecting the bank.')
+    rules = MonitorRules.model_validate(config.rules)
+    if not rules.checking or not rules.sources:
+        raise HTTPException(409, 'Configure checking and funding accounts first.')
+    try:
+        token = plaid_bank.link_token(tenant_id)
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(503, str(exc)) from None
+    now = datetime.now(timezone.utc)
+    attempt = BankProviderLinkAttempt(id=str(uuid4()), tenant_id=tenant_id,
+                                      token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                                      expires_at=now + timedelta(hours=1))
+    db.add(attempt)
+    db.commit()
+    return {'link_token': token, 'attempt_id': attempt.id}
+
+
+class ProviderExchangeInput(StrictModel):
+    link_token: str
+    attempt_id: str
+    public_token: str
+
+
+@router.post('/provider/exchange')
+def exchange_provider_token(data: ProviderExchangeInput, request: Request,
+                            tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'finish-provider-link')
+    attempt = db.query(BankProviderLinkAttempt).filter_by(id=data.attempt_id, tenant_id=tenant_id).with_for_update().one_or_none()
+    now = datetime.now(timezone.utc)
+    if not attempt or attempt.consumed_at or attempt.token_hash != hashlib.sha256(data.link_token.encode()).hexdigest() or (
+            attempt.expires_at.replace(tzinfo=timezone.utc) if attempt.expires_at.tzinfo is None else attempt.expires_at) < now:
+        raise HTTPException(409, 'Bank connection session expired. Start again.')
+    attempt.consumed_at = now
+    db.commit()
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
+    if not config:
+        raise HTTPException(409, 'Configure monitored accounts first.')
+    if db.get(BankProviderConnection, tenant_id):
+        raise HTTPException(409, 'Bank connection already exists. Use reconnect to renew access.')
+    rules = MonitorRules.model_validate(config.rules)
+    try:
+        access_token, item_id = plaid_bank.exchange(data.public_token)
+        bank_item = plaid_bank.item(access_token)
+        if bank_item.get('item_id') != item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
+            raise plaid_bank.PlaidBankError('provider_institution_mismatch')
+        accounts = plaid_bank.real_time_accounts(access_token)
+        account_map = plaid_bank.map_accounts(accounts, rules)
+        plaid_bank.balance_snapshot(access_token, rules, account_map, now, accounts)
+        encrypted = plaid_bank.encrypt_token(access_token)
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(422, str(exc)) from None
+    db.add(BankProviderConnection(tenant_id=tenant_id, provider='plaid', item_id=item_id,
+                                  institution_id=plaid_bank.TRULIANT_INSTITUTION_ID,
+                                  encrypted_access_token=encrypted, account_map=account_map,
+                                  status='linked_unverified', linked_at=now))
+    db.commit()
+    return {'linked': True, 'accounts': sorted(account_map.keys()), 'status': 'linked_unverified'}
+
+
+@router.post('/provider/update-link-token')
+def create_provider_update_token(data: ProviderLinkRequest, request: Request,
+                                 tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'renew-provider-link')
+    provider = db.get(BankProviderConnection, tenant_id)
+    if not provider:
+        raise HTTPException(409, 'Connect the bank first.')
+    try:
+        token = plaid_bank.link_token(tenant_id, access_token=plaid_bank.decrypt_token(provider.encrypted_access_token))
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(503, str(exc)) from None
+    return {'link_token': token}
+
+
+@router.post('/provider/renewed')
+def confirm_provider_renewal(data: ProviderLinkRequest, request: Request,
+                             tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'confirm-provider-renewal')
+    provider = db.get(BankProviderConnection, tenant_id)
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not provider or not config:
+        raise HTTPException(409, 'Bank connection and monitored accounts are required.')
+    rules = MonitorRules.model_validate(config.rules)
+    try:
+        token = plaid_bank.decrypt_token(provider.encrypted_access_token)
+        bank_item = plaid_bank.item(token)
+        if bank_item.get('item_id') != provider.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
+            raise plaid_bank.PlaidBankError('provider_institution_mismatch')
+        accounts = plaid_bank.real_time_accounts(token)
+        account_map = plaid_bank.map_accounts(accounts, rules)
+        plaid_bank.balance_snapshot(token, rules, account_map, datetime.now(timezone.utc), accounts)
+    except plaid_bank.PlaidBankError as exc:
+        raise HTTPException(422, str(exc)) from None
+    provider.account_map = account_map
+    provider.status = 'linked_unverified'
+    provider.last_error = None
+    db.commit()
+    return {'linked': True, 'status': 'linked_unverified', 'accounts': sorted(account_map.keys())}
+
+
+class ConnectionCheckInput(StrictModel):
+    """The request cannot carry a username, password, or MFA code."""
+
+
+@router.post('/connection-checks', status_code=202)
+def request_connection_check(data: ConnectionCheckInput, request: Request, tenant_id: int = Depends(bank_tenant),
+                             db: Session = Depends(get_db)):
+    """Ask the private worker for one read-only account check; never accept secrets."""
+    if request.headers.get('x-bank-monitor-action') != 'verify-worker-bank-access':
+        raise HTTPException(403, 'Missing bank verification action header.')
+    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome':
+        raise HTTPException(409, 'Server bank access is disabled in Chrome reader mode.')
+    # Serialize requests for this tenant so two clicks cannot queue two logins.
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
+    if not config:
+        raise HTTPException(409, 'Configure monitored bank accounts first.')
+    rules = MonitorRules.model_validate(config.rules)
+    if not rules.checking or not rules.sources:
+        raise HTTPException(409, 'Configure checking and funding accounts first.')
+    now = datetime.now(timezone.utc)
+    heartbeat = db.get(BankMonitorWorkerHeartbeat, tenant_id)
+    if not heartbeat:
+        raise HTTPException(409, 'The private bank worker is offline.')
+    seen = heartbeat.last_seen_at.replace(tzinfo=timezone.utc) if heartbeat.last_seen_at.tzinfo is None else heartbeat.last_seen_at
+    if now - seen > timedelta(seconds=120):
+        raise HTTPException(409, 'The private bank worker is offline.')
+    latest = db.query(BankMonitorConnectionCheck).filter_by(tenant_id=tenant_id).order_by(BankMonitorConnectionCheck.id.desc()).first()
+    if latest and latest.status in ('pending', 'running'):
+        raise HTTPException(409, 'A bank connection check is already in progress.')
+    if latest:
+        requested = latest.requested_at.replace(tzinfo=timezone.utc) if latest.requested_at.tzinfo is None else latest.requested_at
+        if now - requested < timedelta(minutes=2):
+            raise HTTPException(429, 'Wait two minutes before requesting another bank connection check.')
+    check = BankMonitorConnectionCheck(tenant_id=tenant_id, requested_at=now,
+                                       status='pending', result={'transfers_executed': False})
+    db.add(check)
+    db.commit()
+    db.refresh(check)
+    return {'id': check.id, 'status': check.status}
+
+
+class BrowserCheckInput(StrictModel):
+    """Only explicit account values; no cookies, credentials, or raw bank HTML."""
+    snapshot: BalanceSnapshot
+    histories_verified: list[str]
+
+
+@router.post('/browser-checks')
+def record_browser_check(data: BrowserCheckInput, request: Request,
+                         tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    if request.headers.get('x-bank-monitor-action') != 'record-browser-check':
+        raise HTTPException(403, 'Missing browser check action header.')
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        raise HTTPException(409, 'Configure bank monitoring first.')
+    rules = MonitorRules.model_validate(config.rules)
+    required = {account.last4 for account in rules.checking + rules.sources}
+    observed = {account.last4 for account in data.snapshot.accounts}
+    histories = data.histories_verified
+    if observed != required or len(histories) != len(set(histories)) or set(histories) != {a.last4 for a in rules.checking}:
+        raise HTTPException(422, 'Every configured account and checking history must be verified.')
+    now = datetime.now(timezone.utc)
+    try:
+        result = calculate(rules, data.snapshot, now)
+    except ValueError:
+        raise HTTPException(422, 'The bank snapshot is incomplete or stale; no check was recorded.') from None
+    result['source'] = 'signed_in_chrome_assistant'
+    browser_check = BankMonitorBrowserCheck(tenant_id=tenant_id, observed_at=data.snapshot.observed_at,
+                                            received_at=now, status=result['status'], result=result)
+    db.add(browser_check)
+    scheduled_run = None
+    local = now.astimezone(EASTERN)
+    # A browser read is a scheduled run only when captured near the actual slot.
+    if rules.enabled and due_date(now) == local.date() and local.hour == 17 and local.minute < 45:
+        existing = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id, scheduled_date=local.date()).first()
+        if existing and existing.status in {'bank_read_failed', 'bank_security_challenge', 'chrome_check_missed'}:
+            # Replace only a failed same-day read with a contemporaneous complete
+            # Chrome result. Never rewrite a successful run or a prior day.
+            existing.status = result['status']
+            existing.result = result
+            existing.finished_at = now
+            scheduled_run = existing
+        elif not existing:
+            scheduled_run = BankMonitorRun(tenant_id=tenant_id, scheduled_date=local.date(),
+                                           started_at=now, finished_at=now, status=result['status'], result=result)
+            db.add(scheduled_run)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'A check for this scheduled time was already recorded.') from None
+    db.refresh(browser_check)
+    return {'id': browser_check.id, 'status': browser_check.status,
+            'scheduled_run_id': scheduled_run.id if scheduled_run else None,
+            'observed_at': browser_check.observed_at, 'transfers_executed': False}
 
 
 @router.put('')

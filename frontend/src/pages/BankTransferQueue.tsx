@@ -11,6 +11,7 @@ type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callba
 type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null }
 type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
 type BalanceCheck = { checked_at: string; accounts: BalanceAccount[]; coverage: { last4: string; transactions: PostedDebit[]; overdraft_detected?: boolean; error?: string | null }[] }
+type SavedCheck = { observed_at: string; result: { accounts?: { last4: string; current_cents: number | null; available_cents: number | null }[]; credit_accounts?: { last4: string; available_credit_cents: number | null }[] } }
 type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceCheck
 type MonitoredAccounts = { checking: Account[]; sources: Account[] }
 
@@ -89,7 +90,7 @@ const statusMeta = (status: string) => {
   return { label: status.replace(/_/g, ' '), tone: 'bg-slate-100 text-slate-700 ring-slate-200', action: 'blocked' as const }
 }
 
-export default function BankTransferQueue({ tenantId, checking, sources, basis, onAccountsDiscovered, onBalanceObserved }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void }) {
+export default function BankTransferQueue({ tenantId, checking, sources, basis, lastSavedCheck, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [extension, setExtension] = useState(localStorage.getItem('elis-bank-extension-id') || '')
   const [draftExtension, setDraftExtension] = useState(extension)
@@ -117,6 +118,7 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
   const automaticVerificationAttempts = useRef(new Set<string>())
   const automaticVerificationRunning = useRef(false)
   const verifyRef = useRef<(draft: Draft, automatic?: boolean) => Promise<void>>(async () => undefined)
+  const scheduledCheckRef = useRef<() => void>(() => undefined)
 
   const markDisconnected = useCallback(() => { setConnected(false); setConnectionState(extension ? 'unavailable' : 'unconfigured') }, [extension])
   const ping = useCallback(async () => {
@@ -215,20 +217,20 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     } catch (error: unknown) { if (active.current) setError(errorMessage(error, 'Unable to reload the bank assistant.')) }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
-  const checkBalances = async () => {
+  const checkBalances = async (background = false) => {
     setBusy(true); setError(''); setNotice(''); setCoverageIssue(''); setOperation({ message: 'Confirming your ELIS session…', started: Date.now() })
     let bankRead = false
     try {
       await bankMonitorApi.drafts(tenantId)
       if (active.current) setOperation({ message: 'Synchronizing the current Truliant account list…', started: Date.now() })
-      const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS' })
+      const discovered = await send<ExtensionResponse>(extension, { type: 'ELIS_DISCOVER_ACCOUNTS', background })
       const monitored = await onAccountsDiscovered(discovered.accounts || [])
       const effectiveChecking = monitored.checking
       const effectiveSources = monitored.sources
       if (!effectiveChecking.length || !effectiveSources.length) throw new Error('Import and save the checking and credit accounts first.')
       if (active.current) setOperation({ message: 'Reading balances and transaction histories from Truliant…', started: Date.now() })
       const suffixes = [...effectiveChecking, ...effectiveSources].map(account => account.last4)
-      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: effectiveChecking.map(account => account.last4), include_pending: basis === 'posted_and_pending' })
+      const result = await send<BalanceResponse>(extension, { type: 'ELIS_CHECK_BALANCES', suffixes, checking_suffixes: effectiveChecking.map(account => account.last4), include_pending: basis === 'posted_and_pending', background })
       bankRead = true
       if (!active.current) return
       setConnected(true); setBalanceCheck(result); onBalanceObserved(result)
@@ -288,6 +290,25 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
         if (balance.current_cents < 0 && remaining > 0) issues.push(`${money(remaining)} of the negative balance in ••${destination.last4} could not be tied to an uncovered posted charge.`)
       }
       await reload()
+      const verifiedHistories = effectiveChecking.map(account => result.coverage?.find(item => item.last4 === account.last4))
+      if (verifiedHistories.every(history => history && !history.error)) {
+        const accountRows = result.accounts.map(account => ({
+          last4: account.last4,
+          current_cents: account.current_cents,
+          available_cents: account.available_cents,
+          available_credit_cents: account.available_credit_cents,
+          pending_debits_cents: basis === 'posted_and_pending'
+            ? verifiedHistories.find(history => history?.last4 === account.last4)?.transactions
+                .filter(transaction => transaction.pending)
+                .reduce((total, transaction) => total + transaction.amount_cents, 0) ?? null
+            : null,
+        }))
+        await bankMonitorApi.recordBrowserCheck(tenantId, {
+          snapshot: { observed_at: result.checked_at, accounts: accountRows },
+          histories_verified: effectiveChecking.map(account => account.last4),
+        })
+        onBrowserCheckRecorded()
+      }
       if (issues.length) setCoverageIssue(issues.join(' '))
       const negative = result.accounts.filter(account => effectiveChecking.some(item => item.last4 === account.last4) && (account.current_cents ?? 0) < 0)
       if (!issues.length && !negative.length && !created && !identified) setNotice('All configured accounts and transaction histories were checked. No new coverage transfer is needed.')
@@ -304,6 +325,47 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     }
     finally { if (active.current) { setBusy(false); setOperation(null) } }
   }
+  useEffect(() => {
+    document.documentElement.dataset.elisBankMonitorReady = connected && !busy ? 'true' : 'false'
+    const scheduled = () => {
+      if (!connected || busy) return
+      void checkBalances(true).finally(() => {
+        void send<ExtensionResponse>(extension, {type:'ELIS_SCHEDULED_DONE'}).catch(() => {})
+      })
+    }
+    window.addEventListener('elis:scheduled-bank-check', scheduled)
+    return () => {
+      delete document.documentElement.dataset.elisBankMonitorReady
+      window.removeEventListener('elis:scheduled-bank-check', scheduled)
+    }
+  })
+  scheduledCheckRef.current = () => {
+    // Older installed assistants have no Chrome alarm. An already-open ELIS
+    // page can still perform today's scheduled read without new permissions.
+    if (!connected || busy || versionAtLeast(detectedVersion, '0.1.23')) return
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date()).map(part => [part.type, part.value]))
+    const minute = Number(parts.hour) * 60 + Number(parts.minute)
+    if (minute < 17 * 60 + 30 || minute >= 17 * 60 + 45) return
+    const key = `elis-bank-check-attempt:${tenantId}:${parts.year}-${parts.month}-${parts.day}`
+    if (localStorage.getItem(key)) return
+    localStorage.setItem(key, 'started')
+    void checkBalances(true)
+  }
+  useEffect(() => {
+    const attempt = () => scheduledCheckRef.current()
+    const timer = window.setInterval(attempt, 30_000)
+    window.addEventListener('focus', attempt)
+    document.addEventListener('visibilitychange', attempt)
+    attempt()
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', attempt)
+      document.removeEventListener('visibilitychange', attempt)
+    }
+  }, [tenantId])
   const prepare = async (draft: Draft) => {
     const blockingDraft = drafts.find(item => item.id !== draft.id && item.status === 'prepared_awaiting_submission')
     if (blockingDraft) {
@@ -404,8 +466,13 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
     return () => { window.removeEventListener('focus', checkAfterReturn); document.removeEventListener('visibilitychange', checkAfterReturn) }
   }, [busy, connected, drafts])
 
-  const checkedRows = balanceCheck ? checking.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
-  const fundingRows = balanceCheck ? sources.map(account => ({ account, balance: balanceCheck.accounts.find(item => item.last4 === account.last4) })) : []
+  const savedAccounts = lastSavedCheck?.result.accounts && lastSavedCheck.result.credit_accounts ? [
+    ...lastSavedCheck.result.accounts.map(account => ({ ...account, available_credit_cents: null })),
+    ...lastSavedCheck.result.credit_accounts.map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents })),
+  ] : null
+  const displayedCheck = balanceCheck || (savedAccounts ? { checked_at: lastSavedCheck!.observed_at, accounts: savedAccounts } : null)
+  const checkedRows = displayedCheck ? checking.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
+  const fundingRows = displayedCheck ? sources.map(account => ({ account, balance: displayedCheck.accounts.find(item => item.last4 === account.last4) })) : []
   const negativePosted = checkedRows.reduce((sum, row) => sum + Math.max(0, -(row.balance?.current_cents ?? 0)), 0)
   const actionableDrafts = drafts.filter(draft => statusMeta(draft.status).action !== 'done')
   const completedDrafts = drafts.filter(draft => statusMeta(draft.status).action === 'done')
@@ -418,11 +485,11 @@ export default function BankTransferQueue({ tenantId, checking, sources, basis, 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300"><Icon name="clock" className="h-4 w-4" /> Current funding status</div>
-            {!balanceCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">Checked {new Date(balanceCheck.checked_at).toLocaleString()} · Read-only; no transfer submitted.</p></div></div>}
+            {!displayedCheck ? <><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Are your checking accounts covered?</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Check both business checking accounts and every funding source, then build the transfer queue from uncovered posted charges.</p></> : <div className="flex items-start gap-3"><span className={`mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full ${negativePosted ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}><Icon name={negativePosted ? 'alert' : 'check'} /></span><div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{negativePosted ? `${money(negativePosted)} negative posted balance` : 'Checking accounts are positive'}</h2><p className="mt-2 text-sm text-slate-300">Checked {new Date(displayedCheck.checked_at).toLocaleString()} · Read-only; no transfer submitted.</p></div></div>}
           </div>
-          <button type="button" disabled={busy || !connected} onClick={checkBalances} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
+          <button type="button" disabled={busy || !connected} onClick={() => void checkBalances()} className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 font-semibold text-white shadow-sm transition-[background-color,transform] duration-150 hover:bg-blue-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"><Icon name="refresh" className={`h-4 w-4 ${operation?.message.startsWith('Reading balances') ? 'animate-spin motion-reduce:animate-none' : ''}`} />{operation?.message.startsWith('Reading balances') ? 'Checking bank…' : 'Check bank now'}</button>
         </div>
-        {balanceCheck && <div className="mt-7 grid gap-6 lg:grid-cols-2">
+        {displayedCheck && <div className="mt-7 grid gap-6 lg:grid-cols-2">
           <section aria-labelledby="cash-accounts-heading">
             <div className="mb-3 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-400/15 text-emerald-300"><Icon name="wallet" className="h-4 w-4" /></span><h3 id="cash-accounts-heading" className="text-sm font-semibold text-emerald-100">Cash accounts</h3></div><span className="text-xs text-emerald-200/70">Available for bills and repayment</span></div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">{checkedRows.map(({ account, balance }) => <article key={account.last4} className="min-h-44 rounded-2xl bg-emerald-950/55 p-5 ring-1 ring-inset ring-emerald-400/20"><div className="flex items-start justify-between gap-3"><span className="rounded-lg bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-200">Checking</span><span className="text-sm font-medium tabular-nums text-emerald-200/75">••{account.last4}</span></div><h4 className="mt-4 min-h-10 text-sm font-medium leading-5 text-emerald-50">{account.nickname}</h4><p className={`mt-3 text-2xl font-semibold tracking-tight tabular-nums ${balance?.current_cents != null && balance.current_cents < 0 ? 'text-red-300' : 'text-white'}`}>{balance?.current_cents == null ? 'Unavailable' : money(balance.current_cents)}</p><div className="mt-4 flex items-center justify-between gap-3 border-t border-emerald-300/15 pt-3 text-xs"><span className="text-emerald-100/65">Posted balance</span><span className="font-medium tabular-nums text-emerald-100">{balance?.available_cents == null ? 'Available unknown' : `${money(balance.available_cents)} available`}</span></div></article>)}</div>

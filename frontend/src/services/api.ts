@@ -350,10 +350,20 @@ export interface PMStatusResponse {
 
 // Auth API (no tenant header)
 export const authApi = {
-  login: (username: string, password: string) =>
-    axios.post('/api/auth/login', { username, password }, { withCredentials: true }),
+  login: (username: string, password: string, remember: boolean, mfaCode?: string) =>
+    axios.post<{ mfa_required?: boolean }>('/api/auth/login', { username, password, remember, mfa_code: mfaCode }, { withCredentials: true }),
   logout: () => axios.post('/api/auth/logout', {}, { withCredentials: true }),
   me: () => axios.get<{ username: string }>('/api/auth/me', { withCredentials: true }),
+  capabilities: () => axios.get<{ password_recovery: boolean; recovery_email_hint: string | null }>('/api/auth/capabilities'),
+  requestReset: (email: string) => axios.post('/api/auth/password/reset-request', { email }),
+  resetPassword: (token: string, password: string) => axios.post('/api/auth/password/reset', { token, password }),
+  changePassword: (currentPassword: string, newPassword: string) => axios.post<{ message: string }>('/api/auth/password/change', { current_password: currentPassword, new_password: newPassword }, { withCredentials: true }),
+  recoveryEmail: () => axios.get<{ email: string; pending_email_hint: string | null }>('/api/auth/recovery-email', { withCredentials: true }),
+  requestRecoveryEmailChange: (currentPassword: string, newEmail: string) => axios.post<{ message: string }>('/api/auth/recovery-email/change-request', { current_password: currentPassword, new_email: newEmail }, { withCredentials: true }),
+  confirmRecoveryEmail: (token: string) => axios.post<{ message: string }>('/api/auth/recovery-email/confirm', { token }),
+  mfaStatus: () => axios.get<{ enabled: boolean }>('/api/auth/mfa', { withCredentials: true }),
+  mfaSetup: (password: string) => axios.post<{ secret: string; uri: string }>('/api/auth/mfa/setup', { password }, { withCredentials: true }),
+  mfaConfirm: (code: string) => axios.post<{ recovery_codes: string[] }>('/api/auth/mfa/confirm', { code }, { withCredentials: true }),
 }
 
 // Truck API (also handles trailers and SUVs)
@@ -1022,6 +1032,12 @@ export const bankMonitorApi = {
   retryDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/retry`, { reason: 'signed_out_before_form' }, draftHeaders(tenantId)),
   updateDraftBankDetails: (tenantId: number, id: string, details: { bank_state: 'posted' | 'pending'; bank_effective_date: string }) => bankMonitorClient.put(`/bank-monitor/drafts/${id}/bank-details`, details, draftHeaders(tenantId)),
   get: (tenantId: number) => bankMonitorClient.get('/bank-monitor', { headers: { 'X-Tenant-ID': String(tenantId) } }),
+  verifyWorkerConnection: (tenantId: number) => bankMonitorClient.post('/bank-monitor/connection-checks', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'verify-worker-bank-access' } }),
+  providerLinkToken: (tenantId: number) => bankMonitorClient.post<{ link_token: string; attempt_id: string }>('/bank-monitor/provider/link-token', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'start-provider-link' } }),
+  providerUpdateToken: (tenantId: number) => bankMonitorClient.post<{ link_token: string }>('/bank-monitor/provider/update-link-token', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'renew-provider-link' } }),
+  providerRenewed: (tenantId: number) => bankMonitorClient.post('/bank-monitor/provider/renewed', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'confirm-provider-renewal' } }),
+  providerExchange: (tenantId: number, input: { link_token: string; attempt_id: string; public_token: string }) => bankMonitorClient.post('/bank-monitor/provider/exchange', input, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'finish-provider-link' } }),
+  recordBrowserCheck: (tenantId: number, evidence: unknown) => bankMonitorClient.post('/bank-monitor/browser-checks', evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'record-browser-check' } }),
   save: (tenantId: number, rules: unknown) => bankMonitorClient.put('/bank-monitor', rules, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'save-settings' } }),
   runRepayment: (tenantId: number, evidence: unknown) => bankMonitorClient.post('/bank-monitor/repayment-runs', evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'run-repayment-check' } }),
   createRepaymentDrafts: (tenantId: number, runId: number) => bankMonitorClient.post(`/bank-monitor/repayment-runs/${runId}/drafts`, {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-repayment-drafts' } }),

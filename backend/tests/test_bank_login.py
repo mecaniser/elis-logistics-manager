@@ -19,13 +19,17 @@ class Page:
             def first(self):
                 return self
             def wait_for(self, **kwargs):
-                if 'account-link' in selector and page.outcome != 'success':
+                if page.outcome == 'challenge' or ('account-link' in selector and page.outcome != 'success'):
                     raise RuntimeError('private provider error')
+            def count(self):
+                return 1 if page.outcome == 'challenge' and 'challenge-platform' in selector else 0
             def fill(self, value):
                 page.filled.append(selector)
         return Field()
     def frame_locator(self, selector):
         return self
+    def title(self):
+        return 'Just a moment...' if self.outcome == 'challenge' else 'Truliant'
     def get_by_role(self, *args, **kwargs):
         page = self
         class Submit:
@@ -75,4 +79,13 @@ def test_success_clears_guard(tmp_path, secrets):
     page = Page()
     sign_in(page, tmp_path, 1)
     assert page.submissions == 1
+    assert not (tmp_path / '.login-needs-review').exists()
+
+
+def test_security_challenge_stops_before_credentials(tmp_path, secrets):
+    page = Page(outcome='challenge')
+    with pytest.raises(BankReadError, match='^bank_security_challenge$'):
+        sign_in(page, tmp_path, 1)
+    assert page.submissions == 0
+    assert page.filled == []
     assert not (tmp_path / '.login-needs-review').exists()

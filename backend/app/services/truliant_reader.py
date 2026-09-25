@@ -19,6 +19,12 @@ class BankReadError(Exception):
     pass
 
 
+def bank_challenge_visible(page):
+    """Recognize the bank's security interstitial without reading its contents."""
+    return (page.locator('iframe[src*="/cdn-cgi/challenge-platform/"]').count() > 0 or
+            page.title().strip().lower() == 'just a moment...')
+
+
 def parse_card(text):
     """Parse only explicitly labeled amounts; no currency/zero guessing."""
     text = ' '.join(text.split())
@@ -49,7 +55,12 @@ def sign_in(page, profile, tenant_id):
     if not username or not password:
         raise BankReadError('credentials_required')
     page.goto(LOGIN, wait_until='domcontentloaded', timeout=45000)
-    page.locator('#username').wait_for(state='visible', timeout=20000)
+    try:
+        page.locator('#username').wait_for(state='visible', timeout=20000)
+    except Exception:
+        if bank_challenge_visible(page):
+            raise BankReadError('bank_security_challenge') from None
+        raise BankReadError('unexpected_login_page') from None
     # Only the observed first-party login page may receive credentials.
     parsed = urlsplit(page.url)
     if (parsed.scheme, parsed.netloc, parsed.path) != (
@@ -182,6 +193,8 @@ def read_balances(profile_path, rules, tenant_id=None):
                 try:
                     cards.first.wait_for(state='visible', timeout=20000)
                 except Exception:
+                    if bank_challenge_visible(page):
+                        raise BankReadError('bank_security_challenge') from None
                     if tenant_id is None:
                         raise BankReadError('sign_in_required') from None
                     sign_in(page, profile, tenant_id)
