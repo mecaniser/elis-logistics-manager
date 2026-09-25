@@ -110,23 +110,29 @@ def run_due(db, now, reader=read_balances):
                 snapshot = (reader(profile, rules, tenant_id=config.tenant_id)
                             if reader is read_balances else reader(profile, rules))
                 result = calculate(rules, snapshot, datetime.now(timezone.utc))
-            run.status = result['status']
-            run.result = result
+            candidate_status, candidate_result = result['status'], result
         except plaid_bank.PlaidBankError as exc:
-            run.status = str(exc)
-            run.result = {'transfers_executed': False,
-                          'source': 'plaid_background' if chrome_reader else 'plaid'}
+            candidate_status = str(exc)
+            candidate_result = {'transfers_executed': False,
+                                'source': 'plaid_background' if chrome_reader else 'plaid'}
         except BankReadError as exc:
-            run.status = str(exc)
-            run.result = {'transfers_executed': False}
+            candidate_status = str(exc)
+            candidate_result = {'transfers_executed': False}
         except ValueError:
-            run.status = 'balance_review_required'
-            run.result = {'transfers_executed': False,
-                          'message': 'Missing, ambiguous, or stale balance data. No proposal calculated.'}
+            candidate_status = 'balance_review_required'
+            candidate_result = {'transfers_executed': False,
+                                'message': 'Missing, ambiguous, or stale balance data. No proposal calculated.'}
         except Exception:
-            run.status = 'check_failed'
-            run.result = {'transfers_executed': False}
-        run.finished_at = datetime.now(timezone.utc)
+            candidate_status = 'check_failed'
+            candidate_result = {'transfers_executed': False}
+        # A complete Chrome check may have finished during the Plaid read.
+        # Lock and refresh before writing so a provisional result or error
+        # cannot overwrite that more complete same-slot observation.
+        db.refresh(run, with_for_update=True)
+        if run.result.get('source') != 'signed_in_chrome_assistant':
+            run.status = candidate_status
+            run.result = candidate_result
+            run.finished_at = datetime.now(timezone.utc)
         db.commit()
         completed += 1
     return completed
