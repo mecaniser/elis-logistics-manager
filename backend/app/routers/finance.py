@@ -15,6 +15,7 @@ from app.database import get_db
 from app.finance_auth import accounting_tenant
 from app.models.finance import FinanceEvidence, FinanceEvent, FinanceReport
 from app.models.truck import Truck
+from app.models.settlement import Settlement
 from app.schemas.finance import Command, ReportRequest, MotiveRequest, ReconstructionRequest
 from app.schemas.repair_review import RepairConfirmation
 from app.services import finance as f
@@ -65,6 +66,13 @@ def get_event(event_id: str, db: Session = Depends(get_db), tenant: int = Depend
 async def upload_evidence(file: UploadFile = File(...), source_key: str = Form(..., max_length=160), supersedes_id: str | None = Form(None), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     content = await file.read(20 * 1024 * 1024 + 1)
     if not content or len(content) > 20 * 1024 * 1024: f.fail('Upload a non-empty file up to 20 MB.', status=400)
+    legacy_settlement = None
+    if source_key.startswith('legacy-settlement:'):
+        try: legacy_id = int(source_key.split(':', 1)[1])
+        except ValueError: f.fail('Select an existing settlement before attaching its original.', status=400)
+        legacy_settlement = db.query(Settlement).join(Truck, Settlement.truck_id == Truck.id).filter(Settlement.id == legacy_id, Truck.tenant_id == tenant).first()
+        if not legacy_settlement: f.fail('Settlement not found for this business.', 'RESOURCE_NOT_FOUND', 404)
+        if not content.startswith(b'%PDF'): f.fail('Attach the original PDF for this settlement.', status=400)
     digest = hashlib.sha256(content).hexdigest()
     prior = db.query(FinanceEvidence).filter_by(tenant_id=tenant, sha256=digest).first()
     if prior: return {'id': prior.id, 'duplicate': True, 'sha256': digest, 'extracted': prior.extracted}
@@ -90,6 +98,10 @@ async def upload_evidence(file: UploadFile = File(...), source_key: str = Form(.
                 extracted['fuel_sections'] = _extract_77_cargo_sections(text, 'Fuel')
                 from app.services.settlement_evidence import normalize_77
                 extracted['proposal'] = normalize_77(text)
+                if legacy_settlement and extracted['proposal'].get('period_end') != legacy_settlement.settlement_date.isoformat():
+                    f.fail('The PDF statement date does not match the saved settlement. Select its correct record.', 'SOURCE_DATE_MISMATCH')
+        except HTTPException:
+            raise
         except Exception as exc:
             extracted['error'] = f'Extraction requires review: {type(exc).__name__}'
     e = FinanceEvidence(tenant_id=tenant, sha256=digest, filename=(file.filename or 'document')[:255], media_type=file.content_type or 'application/octet-stream', content_base64=base64.b64encode(content).decode(), source_key=source_key, supersedes_id=supersedes_id, extraction_version='elis-evidence-v1', extracted=extracted)
