@@ -1,10 +1,12 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { trucksApi, analyticsApi, Truck, PMStatus, VehicleDocument } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 // Label with tooltip icon next to it
 function LabelWithTooltip({ 
@@ -281,13 +283,43 @@ export default function Trucks() {
     })
   }
 
+  const loadTrucks = useEventCallback(async () => {
+    try {
+      setLoading(true)
+      const response = await trucksApi.getAll(
+        vehicleTypeFilter !== 'all' ? vehicleTypeFilter : undefined
+      )
+      setTrucks(Array.isArray(response.data) ? response.data : [])
+    } catch (caught: unknown) {
+      const err = apiError(caught)
+      setError(err.message || 'Failed to load vehicles')
+      setTrucks([])
+    } finally {
+      setLoading(false)
+    }
+  })
+
+  const loadVehicleDocuments = useEventCallback(async (truckId: number) => {
+    try {
+      setDocumentsLoading(true)
+      const response = await trucksApi.getDocuments(truckId)
+      setVehicleDocuments(response.data || [])
+    } catch (caught: unknown) {
+      const err = apiError(caught)
+      setVehicleDocuments([])
+      showToast(err.response?.data?.detail || err.message || 'Failed to load vehicle documents', 'error')
+    } finally {
+      setDocumentsLoading(false)
+    }
+  })
+
   useEffect(() => {
     // Reset state when tenant changes
     setTrucks([])
     setPmStatus([])
     loadTrucks()
     loadPMStatus()
-  }, [vehicleTypeFilter, currentTenant?.id])
+  }, [vehicleTypeFilter, currentTenant?.id, loadTrucks])
 
   // Handle edit query param from VehicleDetail page
   useEffect(() => {
@@ -303,10 +335,10 @@ export default function Trucks() {
         setSearchParams({})
       }
     }
-  }, [searchParams, trucks])
+  }, [searchParams, setSearchParams, trucks])
 
   // Helper to measure a single label container width (placeholder for future use)
-  const measureLabelContainerWidth = (_key: string) => {
+  const measureLabelContainerWidth = () => {
     // Width measurement available via labelContainerRefs if needed
   }
 
@@ -333,14 +365,12 @@ export default function Trucks() {
     
     const total = cash + loan + registration + additionalTotal
     return total > 0 ? total.toFixed(2) : ''
-  }, [showForm, formData.cash_investment, formData.loan_amount, formData.registration_fee, JSON.stringify(formData.additional_expenses), formData.vehicle_type])
+  }, [showForm, formData.cash_investment, formData.loan_amount, formData.registration_fee, formData.additional_expenses])
 
   // Sync calculatedTotalCost to formData.total_cost
   useEffect(() => {
     if (!showForm) return
-    if (calculatedTotalCost !== formData.total_cost) {
-      setFormData(prev => ({ ...prev, total_cost: calculatedTotalCost }))
-    }
+    setFormData(prev => calculatedTotalCost === prev.total_cost ? prev : ({ ...prev, total_cost: calculatedTotalCost }))
   }, [calculatedTotalCost, showForm])
 
   useEffect(() => {
@@ -361,7 +391,7 @@ export default function Trucks() {
     }
 
     loadVehicleDocuments(editingTruck.id)
-  }, [showForm, editingTruck?.id])
+  }, [showForm, editingTruck, loadVehicleDocuments])
 
   // Initialize input widths when additional expenses are added/removed
   useEffect(() => {
@@ -389,7 +419,7 @@ export default function Trucks() {
       })
       return updated
     })
-  }, [formData.additional_expenses.length, showForm])
+  }, [formData.additional_expenses, showForm])
 
   // Initialize input widths for depreciation fields
   useEffect(() => {
@@ -413,20 +443,6 @@ export default function Trucks() {
     }
   }
 
-  // Auto-calculate total cost when investment fields change
-  useEffect(() => {
-    const cash = parseFloat(formData.cash_investment) || 0
-    const loan = parseFloat(formData.loan_amount) || 0
-    const registration = parseFloat(formData.registration_fee) || 0
-    const total = cash + loan + registration
-    
-    if (total > 0) {
-      setFormData(prev => ({ ...prev, total_cost: total.toFixed(2) }))
-    } else {
-      setFormData(prev => ({ ...prev, total_cost: '' }))
-    }
-  }, [formData.cash_investment, formData.loan_amount, formData.registration_fee, formData.vehicle_type])
-
   // Auto-calculate cost basis when total cost or deductions change
   useEffect(() => {
     const totalCost = parseFloat(formData.total_cost) || 0
@@ -439,26 +455,13 @@ export default function Trucks() {
       const costBasis = totalCost - section179 - bonusAmount
       
       // Only auto-calculate if cost_basis is empty (user hasn't manually set it)
-      if (!formData.cost_basis && costBasis > 0) {
-        setFormData(prev => ({ ...prev, cost_basis: Math.max(0, costBasis).toFixed(2) }))
+      if (costBasis > 0) {
+        setFormData(prev => prev.cost_basis ? prev : ({ ...prev, cost_basis: Math.max(0, costBasis).toFixed(2) }))
       }
     }
   }, [formData.total_cost, formData.section_179_deduction, formData.bonus_depreciation])
 
-  const loadTrucks = async () => {
-    try {
-      setLoading(true)
-      const response = await trucksApi.getAll(
-        vehicleTypeFilter !== 'all' ? vehicleTypeFilter : undefined
-      )
-      setTrucks(Array.isArray(response.data) ? response.data : [])
-    } catch (err: any) {
-      setError(err.message || 'Failed to load vehicles')
-      setTrucks([])
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
@@ -494,18 +497,7 @@ export default function Trucks() {
     )
   }
 
-  const loadVehicleDocuments = async (truckId: number) => {
-    try {
-      setDocumentsLoading(true)
-      const response = await trucksApi.getDocuments(truckId)
-      setVehicleDocuments(response.data || [])
-    } catch (err: any) {
-      setVehicleDocuments([])
-      showToast(err.response?.data?.detail || err.message || 'Failed to load vehicle documents', 'error')
-    } finally {
-      setDocumentsLoading(false)
-    }
-  }
+
 
   const handleDocumentUpload = async () => {
     if (!editingTruck) {
@@ -536,7 +528,8 @@ export default function Trucks() {
         documentFileInputRef.current.value = ''
       }
       loadVehicleDocuments(editingTruck.id)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || err.message || 'Failed to upload document', 'error')
     } finally {
       setUploadingDocument(false)
@@ -551,7 +544,8 @@ export default function Trucks() {
       await trucksApi.deleteDocument(editingTruck.id, documentId)
       setVehicleDocuments(prev => prev.filter(document => document.id !== documentId))
       showToast('Vehicle document deleted successfully!', 'success')
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || err.message || 'Failed to delete document', 'error')
     } finally {
       setDeletingDocumentId(null)
@@ -595,7 +589,7 @@ export default function Trucks() {
         return isNaN(parsed) ? 0 : parsed
       }
       
-      const investmentData: any = {}
+      const investmentData: Partial<Truck> = {}
       const cash = parseNumeric(formData.cash_investment)
       const loan = parseNumeric(formData.loan_amount)
       const loanTermMonths = formData.loan_term_months ? Math.round(parseNumeric(formData.loan_term_months)) : null
@@ -729,7 +723,8 @@ export default function Trucks() {
       resetForm()
       setExpandedFormSections(new Set(['vehicle_info', 'investment']))
       loadTrucks()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       const vehicleLabel = formData.vehicle_type === 'truck' ? 'truck' : formData.vehicle_type === 'suv' ? 'SUV' : 'trailer'
       const errorMessage = err.response?.data?.detail || err.message || `Failed to save ${vehicleLabel}`
       showToast(errorMessage, 'error')
@@ -801,7 +796,8 @@ export default function Trucks() {
       setTruckToDelete(null)
       setTruckToDeleteName('')
       loadTrucks()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || err.message || 'Failed to delete vehicle', 'error')
       setTruckToDelete(null)
       setTruckToDeleteName('')
@@ -1871,7 +1867,7 @@ export default function Trucks() {
                         tooltip="Date vehicle was purchased/placed in service"
                         containerRef={(el) => { 
                           labelContainerRefs.current['purchase_date'] = el
-                          if (el) setTimeout(() => measureLabelContainerWidth('purchase_date'), 0)
+                          if (el) setTimeout(() => measureLabelContainerWidth(), 0)
                         }}
                       />
                     </div>
@@ -1890,7 +1886,7 @@ export default function Trucks() {
                         tooltip="Method for calculating depreciation"
                         containerRef={(el) => { 
                           labelContainerRefs.current['depreciation_method'] = el
-                          if (el) setTimeout(() => measureLabelContainerWidth('depreciation_method'), 0)
+                          if (el) setTimeout(() => measureLabelContainerWidth(), 0)
                         }}
                       />
                     </div>
@@ -1912,7 +1908,7 @@ export default function Trucks() {
                         tooltip="Depreciable amount (total cost - Section 179 - bonus depreciation)"
                         containerRef={(el) => { 
                           labelContainerRefs.current['cost_basis'] = el
-                          if (el) setTimeout(() => measureLabelContainerWidth('cost_basis'), 0)
+                          if (el) setTimeout(() => measureLabelContainerWidth(), 0)
                         }}
                       />
                     </div>
@@ -1966,7 +1962,7 @@ export default function Trucks() {
                         tooltip="First-year Section 179 deduction (if applicable)"
                         containerRef={(el) => { 
                           labelContainerRefs.current['section_179_deduction'] = el
-                          if (el) setTimeout(() => measureLabelContainerWidth('section_179_deduction'), 0)
+                          if (el) setTimeout(() => measureLabelContainerWidth(), 0)
                         }}
                       />
                     </div>
@@ -2020,7 +2016,7 @@ export default function Trucks() {
                         tooltip="Bonus depreciation percentage (e.g., 100 for 100%)"
                         containerRef={(el) => { 
                           labelContainerRefs.current['bonus_depreciation'] = el
-                          if (el) setTimeout(() => measureLabelContainerWidth('bonus_depreciation'), 0)
+                          if (el) setTimeout(() => measureLabelContainerWidth(), 0)
                         }}
                       />
                     </div>

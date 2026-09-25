@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import { dollars, financeApi, financeError } from '../services/finance'
 import { HistoryReport } from '../components/finance/historyTypes'
 import HistoryTrend from '../components/finance/HistoryTrend'

@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi, JournalEntry as JournalEntryType, ChartOfAccount, trucksApi, Truck } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 import AccountingTooltip from '../components/AccountingTooltip'
 
@@ -19,6 +21,35 @@ export default function JournalEntries() {
   const isLSLogistics = currentTenant?.name.toLowerCase() === 'ls logistics'
   
   // Load trucks for logistics businesses
+  const loadEntries = useEventCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await accountingApi.getJournalEntries(
+        startDate || undefined,
+        endDate || undefined,
+        referenceTypeFilter || undefined,
+        undefined,
+        selectedTruckId || undefined
+      )
+      setEntries(response.data)
+    } catch (caught: unknown) {
+      const err = apiError(caught)
+      setError(err.response?.data?.detail || 'Failed to load journal entries')
+    } finally {
+      setLoading(false)
+    }
+  })
+
+  const loadAccounts = useEventCallback(async () => {
+    try {
+      const response = await accountingApi.getChartOfAccounts(undefined, undefined, selectedTruckId || undefined)
+      setAccounts(response.data)
+    } catch (err) {
+      // Ignore errors loading accounts
+    }
+  })
+
   useEffect(() => {
     if (currentTenant?.business_type === 'logistics') {
       loadTrucks()
@@ -42,35 +73,11 @@ export default function JournalEntries() {
     setAccounts([])
     loadEntries()
     loadAccounts()
-  }, [startDate, endDate, referenceTypeFilter, selectedTruckId, currentTenant?.id])
+  }, [startDate, endDate, referenceTypeFilter, selectedTruckId, currentTenant?.id, loadEntries, loadAccounts])
 
-  const loadEntries = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const response = await accountingApi.getJournalEntries(
-        startDate || undefined,
-        endDate || undefined,
-        referenceTypeFilter || undefined,
-        undefined,
-        selectedTruckId || undefined
-      )
-      setEntries(response.data)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load journal entries')
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  const loadAccounts = async () => {
-    try {
-      const response = await accountingApi.getChartOfAccounts(undefined, undefined, selectedTruckId || undefined)
-      setAccounts(response.data)
-    } catch (err) {
-      // Ignore errors loading accounts
-    }
-  }
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -117,7 +124,8 @@ export default function JournalEntries() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export journal entries')
     }
@@ -426,4 +434,3 @@ export default function JournalEntries() {
     </div>
   )
 }
-

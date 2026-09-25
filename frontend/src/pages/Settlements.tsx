@@ -1,3 +1,5 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { Link } from 'react-router-dom'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { settlementsApi, trucksApi, Settlement, Truck } from '../services/api'
@@ -6,7 +8,7 @@ import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import Extractor from './Extractor'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 const SETTLEMENTS_PER_PAGE = 20
 
@@ -24,7 +26,7 @@ const InputWithClear = ({
   children, 
   showClear = true 
 }: { 
-  value: any, 
+  value: unknown,
   onClear: () => void, 
   children: React.ReactElement,
   showClear?: boolean 
@@ -123,24 +125,7 @@ export default function Settlements() {
   const hadActiveSearchRef = useRef(false)
   const trailers = useMemo(() => trucks.filter((truck) => truck.vehicle_type === 'trailer'), [trucks])
 
-  const getTruckDefaultTrailerSplit = (vehicleId?: number | null) => {
-    const selectedVehicle = trucks.find((truck) => truck.id === vehicleId)
-    if (!selectedVehicle || selectedVehicle.vehicle_type !== 'truck') {
-      return { trailerId: null as number | null, amount: '', repairReserveAmount: '' }
-    }
 
-    const defaultTrailerId = selectedVehicle.default_trailer_id ?? null
-    const trailerExists = defaultTrailerId != null && trailers.some((trailer) => trailer.id === defaultTrailerId)
-    return {
-      trailerId: trailerExists ? defaultTrailerId : null,
-      amount: selectedVehicle.default_trailer_income_split_amount != null
-        ? String(Number(selectedVehicle.default_trailer_income_split_amount))
-        : '',
-      repairReserveAmount: selectedVehicle.default_repair_reserve_amount != null
-        ? String(Number(selectedVehicle.default_repair_reserve_amount))
-        : '',
-    }
-  }
 
   // Standard expense categories that should always be displayed
   const STANDARD_EXPENSE_CATEGORIES = [
@@ -234,6 +219,81 @@ export default function Settlements() {
   }
 
 
+  const getTruckDefaultTrailerSplit = useEventCallback((vehicleId?: number | null) => {
+    const selectedVehicle = trucks.find((truck) => truck.id === vehicleId)
+    if (!selectedVehicle || selectedVehicle.vehicle_type !== 'truck') {
+      return { trailerId: null as number | null, amount: '', repairReserveAmount: '' }
+    }
+
+    const defaultTrailerId = selectedVehicle.default_trailer_id ?? null
+    const trailerExists = defaultTrailerId != null && trailers.some((trailer) => trailer.id === defaultTrailerId)
+    return {
+      trailerId: trailerExists ? defaultTrailerId : null,
+      amount: selectedVehicle.default_trailer_income_split_amount != null
+        ? String(Number(selectedVehicle.default_trailer_income_split_amount))
+        : '',
+      repairReserveAmount: selectedVehicle.default_repair_reserve_amount != null
+        ? String(Number(selectedVehicle.default_repair_reserve_amount))
+        : '',
+    }
+  })
+
+  const loadSettlements = useEventCallback(async (reset: boolean = false) => {
+    const requestId = ++settlementsRequestIdRef.current
+    try {
+      if (reset) {
+        setLoading(true)
+        setSkip(0)
+        setHasMore(true)
+      } else {
+        setLoadingMore(true)
+      }
+
+      const currentSkip = reset ? 0 : skip
+      const response = await settlementsApi.getAll(
+        selectedTruck || undefined,
+        currentSkip,
+        SETTLEMENTS_PER_PAGE
+      )
+      if (settlementsRequestIdRef.current !== requestId) {
+        return
+      }
+      const newSettlements = Array.isArray(response.data) ? response.data : []
+
+      if (reset) {
+        setSettlements(newSettlements)
+      } else {
+        setSettlements(prev => [...prev, ...newSettlements])
+      }
+
+      // Check if there are more settlements to load
+      setHasMore(newSettlements.length === SETTLEMENTS_PER_PAGE)
+      setSkip(currentSkip + newSettlements.length)
+
+      // Clear selections if any selected IDs don't exist in the new settlements
+      const allSettlements = reset ? newSettlements : [...settlements, ...newSettlements]
+      const newSettlementIds = new Set(allSettlements.map(s => s.id))
+      const validSelections = Array.from(selectedSettlements).filter(id => newSettlementIds.has(id))
+      if (validSelections.length !== selectedSettlements.size) {
+        setSelectedSettlements(new Set(validSelections))
+      }
+    } catch (caught: unknown) {
+      const err = apiError(caught)
+      if (settlementsRequestIdRef.current !== requestId) {
+        return
+      }
+      setError(err.message || 'Failed to load settlements')
+      if (reset) {
+        setSettlements([])
+      }
+    } finally {
+      if (settlementsRequestIdRef.current === requestId) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
+    }
+  })
+
   useEffect(() => {
     // Reset state when tenant changes
     setSettlements([])
@@ -244,7 +304,7 @@ export default function Settlements() {
     setIsSearchLoading(false)
     loadTrucks()
     loadSettlements(true)
-  }, [currentTenant?.id])
+  }, [currentTenant?.id, loadSettlements])
 
   useEffect(() => {
     settlementsRequestIdRef.current += 1
@@ -252,7 +312,7 @@ export default function Settlements() {
     if (!searchFilter.trim()) {
       loadSettlements(true)
     }
-  }, [selectedTruck])
+  }, [loadSettlements, searchFilter, selectedTruck])
 
   useEffect(() => {
     const trimmedSearch = searchFilter.trim()
@@ -260,7 +320,6 @@ export default function Settlements() {
       if (hadActiveSearchRef.current) {
         hadActiveSearchRef.current = false
         setIsSearchLoading(false)
-        loadSettlements(true)
       }
       return
     }
@@ -286,7 +345,8 @@ export default function Settlements() {
           setSkip(matchingSettlements.length)
           setHasMore(false)
         }
-      } catch (err: any) {
+      } catch (caught: unknown) {
+      const err = apiError(caught)
         if (!cancelled && settlementsRequestIdRef.current === requestId) {
           setError(err.message || 'Failed to load search results')
         }
@@ -311,7 +371,7 @@ export default function Settlements() {
     setSelectedTrailerForUpload(defaults.trailerId)
     setTrailerSplitAmountForUpload(defaults.amount)
     setRepairReserveAmountForUpload(defaults.repairReserveAmount)
-  }, [selectedTruckForUpload, showUploadForm, trucks, trailers])
+  }, [selectedTruckForUpload, showUploadForm, trucks, trailers, getTruckDefaultTrailerSplit])
 
   useEffect(() => {
     if (!showManualForm) return
@@ -336,7 +396,7 @@ export default function Settlements() {
         repair_reserve_amount: nextRepairReserveAmount,
       }
     })
-  }, [manualFormData.truck_id, showManualForm, trucks, trailers])
+  }, [manualFormData.truck_id, showManualForm, trucks, trailers, getTruckDefaultTrailerSplit])
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -373,7 +433,7 @@ export default function Settlements() {
         observer.unobserve(currentTarget)
       }
     }
-  }, [hasMore, loadingMore, loading, searchFilter])
+  }, [hasMore, loadingMore, loading, searchFilter, loadSettlements])
 
   const getTruckName = (truckId: number) => {
     const truck = trucks.find(t => t.id === truckId)
@@ -412,7 +472,7 @@ export default function Settlements() {
     
     const searchLower = searchFilter.toLowerCase()
     return settlements.filter(settlement => {
-      const truckName = getTruckName(settlement.truck_id).toLowerCase()
+      const truckName = (trucks.find(truck => truck.id === settlement.truck_id)?.name || `Truck #${settlement.truck_id}`).toLowerCase()
       const settlementDate = settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString().toLowerCase() : ''
       const settlementType = (settlement.settlement_type || '').toLowerCase()
       const customExpenses = (settlement.custom_expense_descriptions?.total_expenses || '').toLowerCase()
@@ -442,60 +502,7 @@ export default function Settlements() {
     }
   }
 
-  const loadSettlements = async (reset: boolean = false) => {
-    const requestId = ++settlementsRequestIdRef.current
-    try {
-      if (reset) {
-        setLoading(true)
-        setSkip(0)
-        setHasMore(true)
-      } else {
-        setLoadingMore(true)
-      }
 
-      const currentSkip = reset ? 0 : skip
-      const response = await settlementsApi.getAll(
-        selectedTruck || undefined,
-        currentSkip,
-        SETTLEMENTS_PER_PAGE
-      )
-      if (settlementsRequestIdRef.current !== requestId) {
-        return
-      }
-      const newSettlements = Array.isArray(response.data) ? response.data : []
-      
-      if (reset) {
-        setSettlements(newSettlements)
-      } else {
-        setSettlements(prev => [...prev, ...newSettlements])
-      }
-      
-      // Check if there are more settlements to load
-      setHasMore(newSettlements.length === SETTLEMENTS_PER_PAGE)
-      setSkip(currentSkip + newSettlements.length)
-      
-      // Clear selections if any selected IDs don't exist in the new settlements
-      const allSettlements = reset ? newSettlements : [...settlements, ...newSettlements]
-      const newSettlementIds = new Set(allSettlements.map(s => s.id))
-      const validSelections = Array.from(selectedSettlements).filter(id => newSettlementIds.has(id))
-      if (validSelections.length !== selectedSettlements.size) {
-        setSelectedSettlements(new Set(validSelections))
-      }
-    } catch (err: any) {
-      if (settlementsRequestIdRef.current !== requestId) {
-        return
-      }
-      setError(err.message || 'Failed to load settlements')
-      if (reset) {
-        setSettlements([])
-      }
-    } finally {
-      if (settlementsRequestIdRef.current === requestId) {
-        setLoading(false)
-        setLoadingMore(false)
-      }
-    }
-  }
 
   const showModal = (title: string, message: string | React.ReactNode, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
     setModalTitle(title)
@@ -553,7 +560,8 @@ export default function Settlements() {
       setShowUploadForm(false)
       setSelectedSettlements(new Set()) // Clear any selected settlements
       loadSettlements(true)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Upload error:', err)
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to upload settlement'
       showToast(errorMessage, 'error')
@@ -569,7 +577,8 @@ export default function Settlements() {
       showToast('Settlement deleted successfully!', 'success')
       setSettlementToDelete(null)
       loadSettlements(true)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showToast(err.response?.data?.detail || err.message || 'Failed to delete settlement', 'error')
       setSettlementToDelete(null)
     }
@@ -583,7 +592,8 @@ export default function Settlements() {
         try {
           await settlementsApi.delete(id)
           return { id, success: true }
-        } catch (err: any) {
+        } catch (caught: unknown) {
+      const err = apiError(caught)
           return { 
             id, 
             success: false, 
@@ -607,7 +617,8 @@ export default function Settlements() {
       setSettlementToDelete(null)
       setDeleteMode(false)
       loadSettlements(true)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete settlements', 'error')
       setSettlementToDelete(null)
     }
@@ -948,7 +959,8 @@ export default function Settlements() {
       setExpensesDescription('')
       setVinLookup('')
       loadSettlements(true)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Error creating settlement:', err)
       console.error('Error response:', err.response?.data)
       showToast(err.response?.data?.detail || err.message || 'Failed to create settlement', 'error')
@@ -969,8 +981,8 @@ export default function Settlements() {
     ]
     
     for (const field of fieldsToCompare) {
-      const original = (originalFormData as any)[field]
-      const current = (editFormData as any)[field]
+      const original = originalFormData[field as keyof typeof originalFormData]
+      const current = editFormData[field as keyof typeof editFormData]
       
       if (original !== current) {
         // Handle null/undefined comparison
@@ -1024,7 +1036,8 @@ export default function Settlements() {
         showToast('Settlement saved successfully', 'success')
         // Reset PDF file after save
         setEditPdfFile(null)
-      } catch (err: any) {
+      } catch (caught: unknown) {
+      const err = apiError(caught)
         const errorMessage = err.response?.data?.detail || err.message || 'Failed to update settlement'
         showToast(errorMessage, 'error')
         setIsNavigating(false)
@@ -1092,7 +1105,8 @@ export default function Settlements() {
       setOriginalFormData({ ...editFormData })
       showToast('Settlement updated successfully!', 'success')
       handleCancelEdit()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to update settlement'
       showToast(errorMessage, 'error')
     }
@@ -2699,7 +2713,7 @@ export default function Settlements() {
                               
                               // Add subcategory values to group subtotal
                               if ('subcategories' in group && group.subcategories) {
-                                Object.values(group.subcategories).forEach((subcat: any) => {
+                                Object.values(group.subcategories).forEach((subcat) => {
                                   subcat.categories.forEach((cat: string) => {
                                     const val = editFormData.expense_categories?.[cat] || 0
                                     groupSubtotal += typeof val === 'number' ? val : parseFloat(String(val)) || 0
@@ -2812,7 +2826,7 @@ export default function Settlements() {
                                   </div>
                                   
                                   {/* Subcategories */}
-                                  {'subcategories' in group && group.subcategories && Object.entries(group.subcategories).map(([subKey, subcat]: [string, any]) => {
+                                  {'subcategories' in group && group.subcategories && Object.entries(group.subcategories).map(([subKey, subcat]) => {
                                     const subcatSubtotal = subcat.categories.reduce((sum: number, cat: string) => {
                                       const val = editFormData.expense_categories?.[cat] || 0
                                       return sum + (typeof val === 'number' ? val : parseFloat(String(val)) || 0)
@@ -3076,7 +3090,7 @@ export default function Settlements() {
                       const customExpenses = editFormData.expense_categories 
                         ? Object.entries(editFormData.expense_categories)
                             .filter(([key]) => !STANDARD_EXPENSE_CATEGORIES.includes(key) && key !== 'reimbursement')
-                            .filter(([_, value]) => value !== 0 && value !== null && value !== undefined)
+                            .filter(([, value]) => value !== 0 && value !== null && value !== undefined)
                         : []
                       
                       if (customExpenses.length === 0) return null
@@ -3086,8 +3100,8 @@ export default function Settlements() {
                         // For deduct category, check deduction_details
                         if (key === 'deduct' && editingSettlement?.deduction_details && editingSettlement.deduction_details.length > 0) {
                           const details = editingSettlement.deduction_details
-                            .filter((d: any) => d.description && d.description.trim())
-                            .map((d: any) => d.description.trim())
+                            .filter((d) => d.description && d.description.trim())
+                            .map((d) => d.description.trim())
                           if (details.length > 0) {
                             return details.join('; ')
                           }

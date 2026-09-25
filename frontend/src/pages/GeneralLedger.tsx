@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi, ChartOfAccount, GeneralLedger } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 
 export default function GeneralLedgerPage() {
@@ -13,31 +15,20 @@ export default function GeneralLedgerPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  useEffect(() => {
-    loadAccounts()
-  }, [currentTenant?.id])
-
-  useEffect(() => {
-    if (selectedAccountId) {
-      loadGeneralLedger()
-    } else {
-      setGeneralLedger(null)
-    }
-  }, [selectedAccountId, startDate, endDate, currentTenant?.id])
-
-  const loadAccounts = async () => {
+  const loadAccounts = useEventCallback(async () => {
     try {
       const response = await accountingApi.getChartOfAccounts()
       setAccounts(response.data)
       if (response.data.length > 0 && !selectedAccountId) {
         setSelectedAccountId(response.data[0].id)
       }
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load accounts')
     }
-  }
+  })
 
-  const loadGeneralLedger = async () => {
+  const loadGeneralLedger = useEventCallback(async () => {
     if (!selectedAccountId) return
     
     try {
@@ -49,12 +40,29 @@ export default function GeneralLedgerPage() {
         endDate || undefined
       )
       setGeneralLedger(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load general ledger')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    loadAccounts()
+  }, [currentTenant?.id, loadAccounts])
+
+  useEffect(() => {
+    if (selectedAccountId) {
+      loadGeneralLedger()
+    } else {
+      setGeneralLedger(null)
+    }
+  }, [selectedAccountId, startDate, endDate, currentTenant?.id, loadGeneralLedger])
+
+
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -89,7 +97,8 @@ export default function GeneralLedgerPage() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export general ledger')
     }
@@ -316,4 +325,3 @@ export default function GeneralLedgerPage() {
     </div>
   )
 }
-

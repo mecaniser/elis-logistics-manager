@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import { financeApi } from '../services/finance'
 import Dashboard from './Dashboard'
 import Finance from './Finance'

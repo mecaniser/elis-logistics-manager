@@ -1,3 +1,4 @@
+import { apiError } from '../utils/apiError'
 import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
@@ -8,7 +9,7 @@ import Modal from '../components/Modal'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 export default function Repairs() {
   const isMobile = useMobile()
@@ -91,7 +92,8 @@ export default function Repairs() {
       setLoading(true)
       const response = await repairsApi.getAll()
       setRepairs(Array.isArray(response.data) ? response.data : [])
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.message || 'Failed to load repairs')
       setRepairs([])
     } finally {
@@ -157,7 +159,8 @@ export default function Repairs() {
       setRequiresTruckSelection(false)
       setShowUploadForm(false)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to upload repair'
       
       // Check if error indicates VIN not found - allow truck selection
@@ -233,7 +236,8 @@ export default function Repairs() {
       setManualFormImages([])
       setShowManualForm(false)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Error creating repair:', err)
       const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to create repair'
       showModal('Creation Failed', errorMessage, 'error')
@@ -289,7 +293,8 @@ export default function Repairs() {
       setEditCustomCategory('')
       setEditImages([])
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to update repair', 'error')
     } finally {
       setSaving(false)
@@ -303,7 +308,8 @@ export default function Repairs() {
       showToast('Repair deleted successfully!', 'success')
       setRepairToDelete(null)
       loadRepairs()
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete repair', 'error')
       setRepairToDelete(null)
     }
@@ -334,7 +340,8 @@ export default function Repairs() {
       }
       
       setImageToDelete(null)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       showModal('Error', err.response?.data?.detail || err.message || 'Failed to delete image', 'error')
       setImageToDelete(null)
     }

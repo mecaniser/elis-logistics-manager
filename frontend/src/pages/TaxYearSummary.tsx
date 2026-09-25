@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 
 interface TaxYearSummary {
@@ -33,22 +35,25 @@ export default function TaxYearSummary() {
   const [error, setError] = useState<string | null>(null)
   const [year, setYear] = useState(new Date().getFullYear())
 
-  useEffect(() => {
-    loadSummary()
-  }, [year, currentTenant?.id])
-
-  const loadSummary = async () => {
+  const loadSummary = useEventCallback(async () => {
     try {
       setLoading(true)
       setError(null)
       const response = await accountingApi.getTaxYearSummary(year)
       setSummary(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load tax year summary')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    loadSummary()
+  }, [year, currentTenant?.id, loadSummary])
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -80,7 +85,8 @@ export default function TaxYearSummary() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export tax year summary')
     }
@@ -245,4 +251,3 @@ export default function TaxYearSummary() {
     </div>
   )
 }
-

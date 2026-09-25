@@ -1,6 +1,8 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { accountingApi } from '../services/api'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import InfoPanel from '../components/InfoPanel'
 
 interface ScheduleC {
@@ -20,22 +22,25 @@ export default function ScheduleC() {
   const [error, setError] = useState<string | null>(null)
   const [year, setYear] = useState(new Date().getFullYear())
 
-  useEffect(() => {
-    loadScheduleC()
-  }, [year, currentTenant?.id])
-
-  const loadScheduleC = async () => {
+  const loadScheduleC = useEventCallback(async () => {
     try {
       setLoading(true)
       setError(null)
       const response = await accountingApi.getScheduleC(year)
       setScheduleC(response.data)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || 'Failed to load Schedule C')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    loadScheduleC()
+  }, [year, currentTenant?.id, loadScheduleC])
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -64,7 +69,8 @@ export default function ScheduleC() {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       console.error('Export failed:', err)
       alert('Failed to export Schedule C')
     }
@@ -197,4 +203,3 @@ export default function ScheduleC() {
     </div>
   )
 }
-

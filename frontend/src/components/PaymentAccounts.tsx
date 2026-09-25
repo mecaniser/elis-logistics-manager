@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useId } from 'react'
 import { financeApi, financeError, type PaymentAccount } from '../services/finance'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 import { accountControl as control, accountPrimary as primary, accountSecondary as secondary } from './paymentAccountStyles'
 import PaymentAccountBalance from './PaymentAccountBalance'
 

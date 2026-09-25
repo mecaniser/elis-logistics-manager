@@ -1,9 +1,11 @@
+import { useEventCallback } from '../utils/useEventCallback'
+import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { analyticsApi, trucksApi, repairsApi, settlementsApi, reserveApi, Truck, VehicleROI, Repair, Settlement, ReserveBalance } from '../services/api'
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
-import { useTenant } from '../contexts/TenantContext'
+import { useTenant } from '../contexts/tenantState'
 
 // Helper function to safely format numbers (handles null/undefined)
 const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
@@ -61,19 +63,7 @@ export default function VehicleDetail() {
     isVisible: false
   })
 
-  useEffect(() => {
-    if (id) {
-      setVehicle(null)
-      setRoiData(null)
-      setAttachedTrailer(null)
-      setAttachedTrailerRoi(null)
-      setSettlements([])
-      setReserveBalance(null)
-      loadVehicleData()
-    }
-  }, [id, currentTenant?.id])
-
-  const loadVehicleData = async () => {
+  const loadVehicleData = useEventCallback(async () => {
     if (!id) return
     
     try {
@@ -115,13 +105,28 @@ export default function VehicleDetail() {
         const reserveResponse = await reserveApi.getBalance(vehicleId)
         setReserveBalance(reserveResponse.data)
       }
-    } catch (err: any) {
+    } catch (caught: unknown) {
+      const err = apiError(caught)
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
       showToast('Failed to load vehicle data', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  })
+
+  useEffect(() => {
+    if (id) {
+      setVehicle(null)
+      setRoiData(null)
+      setAttachedTrailer(null)
+      setAttachedTrailerRoi(null)
+      setSettlements([])
+      setReserveBalance(null)
+      loadVehicleData()
+    }
+  }, [id, currentTenant?.id, loadVehicleData])
+
+
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info') => {
     setToast({ message, type, isVisible: true })
