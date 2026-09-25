@@ -14,9 +14,9 @@ type Repayment = { enabled: boolean; priority: string[]; reserve_cents: number |
 type Rules = { repayment: Repayment; enabled: boolean; checking: Account[]; sources: Account[]; basis: string; buffer_cents: number }
 type TransactionVisibility = { status: string; pending_entries?: Record<string, number>; posted_entries?: Record<string, number>; last_successful_update?: string | null; pending_complete?: boolean }
 type Run = { id: number; scheduled_date: string; started_at: string; status: string; result: {
-  credit_accounts?: { last4: string; nickname: string; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
+  credit_accounts?: { last4: string; nickname: string; available_credit_cents?: number | null; outstanding_cents: number | null; accrued_interest_cents: number | null }[];
   repayment?: { status: string; proposals: { from_last4: string; to_last4: string; amount_cents: number }[] };
-  observed_at?: string; uncovered_cents?: number; message?: string;
+  observed_at?: string; uncovered_cents?: number; message?: string; source?: string; cash_plan?: CashPlan;
   accounts?: { last4: string; nickname: string; current_cents: number | null; available_cents: number | null; needed_cents?: number }[];
   proposals?: { from_last4: string; to_last4: string; amount_cents: number }[];
   transaction_visibility?: TransactionVisibility;
@@ -421,10 +421,19 @@ export default function BankMonitor() {
   const workerOnline = data?.worker.status === 'online'
   const connectionCheck = data?.connection_check
   const connectionPending = connectionCheck?.status === 'pending' || connectionCheck?.status === 'running'
-  const providerCheck = connectionCheck?.result.source === 'plaid' ? connectionCheck : null
-  const providerNewerThanBrowser = Boolean(providerCheck?.result.observed_at && data?.browser_check?.observed_at &&
-    Date.parse(providerCheck.result.observed_at) > Date.parse(data.browser_check.observed_at))
-  const transactionVisibility = providerCheck?.result.transaction_visibility
+  const onDemandProvider = connectionCheck?.result.source === 'plaid' ? connectionCheck : null
+  const scheduledProvider = latest?.result.source?.startsWith('plaid') && latest.result.observed_at && latest.result.cash_plan ? latest : null
+  const scheduledIsNewer = Boolean(scheduledProvider && (!onDemandProvider?.result.observed_at ||
+    Date.parse(scheduledProvider.result.observed_at!) > Date.parse(onDemandProvider.result.observed_at)))
+  const providerResult = scheduledIsNewer ? scheduledProvider!.result : onDemandProvider?.result
+  const providerStatus = scheduledIsNewer ? scheduledProvider!.status : onDemandProvider?.status
+  const providerAccounts = scheduledIsNewer ? [
+    ...(scheduledProvider!.result.accounts || []).map(account => ({ last4: account.last4, current_cents: account.current_cents, available_cents: account.available_cents, available_credit_cents: null, outstanding_cents: null })),
+    ...(scheduledProvider!.result.credit_accounts || []).map(account => ({ last4: account.last4, current_cents: null, available_cents: null, available_credit_cents: account.available_credit_cents ?? null, outstanding_cents: account.outstanding_cents })),
+  ] : onDemandProvider?.result.accounts
+  const providerNewerThanBrowser = Boolean(providerResult?.observed_at && data?.browser_check?.observed_at &&
+    Date.parse(providerResult.observed_at) > Date.parse(data.browser_check.observed_at))
+  const transactionVisibility = providerResult?.transaction_visibility
   const pendingObserved = transactionVisibility?.pending_entries
     ? Object.values(transactionVisibility.pending_entries).reduce((total, count) => total + count, 0) : null
   const connectionVerified = Boolean(connectionCheck?.status === 'verified' && connectionCheck.finished_at &&
@@ -443,7 +452,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerCheck?.result.observed_at && providerCheck.result.accounts && ['verified', 'balance_only'].includes(providerCheck.status) ? { observed_at: providerCheck.result.observed_at, accounts: providerCheck.result.accounts } : null} cashPlan={providerCheck?.result.cash_plan && ['verified', 'balance_only'].includes(providerCheck.status) ? providerCheck.result.cash_plan : null} providerLinked={data.provider_connection.linked} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -527,7 +536,7 @@ export default function BankMonitor() {
           <h2 id="provider-stage-title" className="text-lg font-semibold text-slate-950">Server bank connection</h2>
           <p className="mt-2 text-sm leading-6 text-slate-700">Plaid can read balances and report transaction-feed visibility without an active Chrome bank session. Chrome remains available for detailed charge review and transfer preparation. You approve transfers in Truliant.</p>
           {data.provider_connection.linked ? <p className="mt-3 text-sm font-medium text-emerald-900">Consent saved for {data.provider_connection.accounts.map(value => `••${value}`).join(', ')}. {data.provider_connection.last_checked_at ? `Last server balance read: ${new Date(data.provider_connection.last_checked_at).toLocaleString()}.` : 'A server balance read has not completed yet.'}</p> : <p className="mt-3 text-sm text-slate-700">No provider consent saved yet.</p>}
-          {providerCheck && ['verified', 'balance_only'].includes(providerCheck.status) && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerCheck.result.account_count} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'not_ready' ? 'Plaid is still preparing the transaction feed.' : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
+          {providerResult && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') && <div role="status" className="mt-3 rounded-xl border border-blue-200 bg-white p-3 text-sm leading-6 text-slate-700"><p>Server read: {providerAccounts?.length ?? 0} accounts. {transactionVisibility?.status === 'observed' ? `${pendingObserved} pending entries appeared in Plaid’s transaction feed.` : transactionVisibility?.status === 'not_ready' ? 'Plaid is still preparing the transaction feed.' : transactionVisibility?.status === 'unavailable' ? 'Transaction feed was unavailable.' : 'Transaction feed was not checked in this read.'}</p><p>Even an empty feed does not verify that Truliant has no pending debits. Exact coverage and repayment proposals still require complete evidence.</p>{transactionVisibility?.last_successful_update && <p className="text-xs text-slate-500">Last Plaid transaction update: {new Date(transactionVisibility.last_successful_update).toLocaleString()}</p>}</div>}
           {connectionPending && <p role="status" className="mt-3 text-sm text-blue-800">Reading bank balances and transaction visibility from the server…</p>}
           <button type="button" disabled={!accountsConfigured || linkingProvider} onClick={() => void connectProvider(data.provider_connection.linked)} className="mt-4 min-h-11 w-full rounded-xl border border-blue-200 bg-white px-4 font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-45">{linkingProvider ? 'Opening…' : data.provider_connection.linked ? 'Renew bank access' : 'Connect Truliant'}</button>
           {providerNotice && <p role="status" className="mt-3 text-sm text-emerald-900">{providerNotice}</p>}
