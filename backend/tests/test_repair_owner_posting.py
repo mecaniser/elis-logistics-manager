@@ -123,3 +123,46 @@ def test_existing_manual_claim_is_not_duplicated(db,truck):
     result=save_confirmation(db,1,personal(db));db.commit()
     assert result['accounting'][0]['status']=='review_required'
     assert db.query(FinancePosting).count()==1
+
+
+def test_historical_reimbursed_preserves_evidence_without_cash_or_expense(db, truck):
+    repair(db, truck)
+    request = personal(db, reimbursement='reimbursed', paid_date=None)
+    first = save_confirmation(db, 1, request); db.commit()
+    assert first['accounting'][0]['status'] == 'historical_reimbursed'
+    assert first['accounting'][0]['remaining'] == '0.00'
+    assert first['accounting'][0]['owner_claim_id'] is None
+    assert save_confirmation(db, 1, request)['ids'] == first['ids']
+    assert db.query(FinanceEvent).count() == 0
+    assert db.query(FinancePosting).count() == 0
+    row = repair_history(db, 1, date.today())['rows'][0]
+    assert row['confirmation']['paid_date'] is None
+    assert row['confirmation']['paid_amount'] == '500.00'
+    assert row['recorded_cost'] == '500.00'
+
+
+def test_reimbursed_confirmation_cannot_silently_clear_posted_claim(db, truck):
+    repair(db, truck)
+    original = save_confirmation(db, 1, personal(db)); db.commit()
+    changed = save_confirmation(db, 1, personal(db, reimbursement='reimbursed')); db.commit()
+    assert changed['accounting'][0]['status'] == 'review_required'
+    claim_id = original['accounting'][0]['owner_claim_id']
+    assert f.state(db, 1, date.today())['claims'][claim_id]['remaining'] == 500
+    assert db.query(FinancePosting).count() == 2
+
+
+def test_historical_repayment_does_not_clear_a_new_personal_invoice(db, truck):
+    repair(db, truck)
+    save_confirmation(db, 1, personal(db, reimbursement='reimbursed')); db.commit()
+    from app.models.repair import Repair
+    from app.schemas.repair_review import RepairConfirmation
+    new = Repair(truck_id=truck.id, repair_date=date.today(), title='New invoice', cost=120, paid_from_reserve=False)
+    db.add(new); db.commit()
+    row = next(r for r in repair_history(db, 1, date.today())['rows'] if r['legacy_id'] == new.id)
+    result = save_confirmation(db, 1, RepairConfirmation(
+        items=[{'repair_id': new.id, 'snapshot': row['review_snapshot']}],
+        status='paid', source='personal', method='credit_card', reimbursement='owed', paid_date=date.today()))
+    db.commit()
+    assert result['posted']
+    claim = result['accounting'][0]['owner_claim_id']
+    assert f.state(db, 1, date.today())['claims'][claim]['remaining'] == 120

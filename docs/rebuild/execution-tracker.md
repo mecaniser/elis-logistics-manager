@@ -248,3 +248,14 @@ Restored monitoring as the first section, with payment accounts and owner reimbu
 Completed: repaired obsolete CRUD/forecast tests without weakening production behavior; added explicit missing-business rejection checks. Verified full backend suite: 249 passed. Rehearsed preserving all 300 evidence records (including 31 confirmations and one account), the invoice-supported $0.86 cost correction and normal journal/reserve effects on an isolated production copy. Repeat import added zero records; every review snapshot matched; zero stale confirmations; no local ledger or report copy.
 
 Remaining business question: three personally paid repairs total $943.96, but whether they remain unreimbursed is unconfirmed. Asked the owner; do not create an owner claim from elapsed time or assumed approval. Engineering next: validate confirmed personal payment through accounting and pair retention, retain lint debt explicitly, then final release and real-data carryover. Original fuel/history analysis remains next in the main scope. Production unchanged.
+
+
+### Historical personal payments confirmed reimbursed
+
+Owner explicitly confirmed existing personal payments were already reimbursed, with new invoices tracked prospectively. Applied three append-only confirmation revisions locally for $455.10, $250.00 and $238.86 ($943.96 total). Earlier evidence remains preserved. Each now shows `historical_reimbursed`, $0 remaining and owner-confirmation basis. No repayment date, bank match, cash movement or additional expense was invented. Existing posted claims still require matched repayment or review; a status edit cannot silently clear them. This resolves the previously pending question about the three personal payments.
+
+Bank Monitor displays a historical reimbursement section with paid-personally, repaid and outstanding amounts. Browser verification confirmed all three records and $0 total owed. Full backend suite passed 251 tests before the additional new-invoice isolation test; targeted owner-posting suite also verifies new invoices still create outstanding claims. Frontend build, changed-component lint and whitespace checks passed.
+
+Carryover rehearsal repeated with 303 evidence records (34 confirmation versions, 31 current confirmations). Three current personal confirmations are historically reimbursed, 28 other confirmations remain unchanged; zero stale snapshots, zero duplicates on repeat, no ledger events created or copied. This supersedes the earlier 300-record inventory. Private confirmation manifest and refreshed rehearsal script/result remain in the ignored release evidence directory. Production remains unchanged.
+
+Next release work: retain these revisions in the final live carryover, finish frontend lint disposition and real-record performance acceptance, then deployment checks. The historical repayment question is closed; do not ask it again without conflicting evidence.

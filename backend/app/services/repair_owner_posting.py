@@ -32,6 +32,9 @@ def assessment(db, tenant, row, ledger_state=None, posting_links=None):
                 'reason': 'Recorded once in Accounting; reimbursements reduce the amount still owed.'}
     if c['source'] != 'personal' or c['status'] not in ('paid', 'partial'): return result
     if c['stale']: return review('Repair details changed. Review the payment confirmation.')
+    if c.get('reimbursement') == 'reimbursed':
+        return {**result, 'status': 'historical_reimbursed', 'remaining': '0.00',
+                'reason': 'Reimbursed—confirmed by owner. Repayment date and bank transaction are not verified.'}
     if c.get('reimbursement') != 'owed': return review('Confirm how much the business still owes you before creating a reimbursement balance.')
     if not row['date'] or not c['paid_date']: return review('Confirm the invoice and payment dates.')
     if c['paid_date'] < row['date']: return review('Payment precedes the invoice. Review the advance payment treatment.')

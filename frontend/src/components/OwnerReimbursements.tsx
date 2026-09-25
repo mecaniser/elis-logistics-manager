@@ -11,6 +11,7 @@ const usd = (value: string) => Number(value).toLocaleString('en-US', {style:'cur
 export default function OwnerReimbursements() {
   const [data, setData] = useState<Reimbursements | null>(null)
   const [rows, setRows] = useState<RepairReviewRow[]>([])
+  const [settled, setSettled] = useState<RepairReviewRow[]>([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -21,7 +22,7 @@ export default function OwnerReimbursements() {
   const [version, setVersion] = useState(0)
   useEffect(() => {
     let active = true
-    Promise.all([financeApi.ownerReimbursements(), financeApi.repairHistory(new Date().toLocaleDateString('en-CA'))]).then(([money, history]) => { if (active) { setData(money as Reimbursements); setRows(history.rows.filter(r => r.owner_posting && ['ready','review_required'].includes(r.owner_posting.status))) } }).catch(e => { if(active) setError(financeError(e)) })
+    Promise.all([financeApi.ownerReimbursements(), financeApi.repairHistory(new Date().toLocaleDateString('en-CA'))]).then(([money, history]) => { if (active) { setData(money as Reimbursements); setSettled(history.rows.filter(r => r.owner_posting?.status === 'historical_reimbursed')); setRows(history.rows.filter(r => r.owner_posting && ['ready','review_required'].includes(r.owner_posting.status))) } }).catch(e => { if(active) setError(financeError(e)) })
     return () => {active = false}
   }, [version])
   async function confirmSelected() {
@@ -47,7 +48,14 @@ export default function OwnerReimbursements() {
   }
   return <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Owner reimbursements</h2><p className="mt-1 max-w-prose text-sm leading-6 text-slate-600">Business expenses paid with your personal money. Match repayments already made to you; this does not send money.</p></div>{data && <div className="text-right"><p className="text-sm text-slate-600">Recorded amount still owed</p><p className="text-2xl font-semibold tabular-nums">{usd(data.total_owed)}</p></div>}</div>
-    {data && !data.claims.length && <p className="border-t border-slate-200 pt-4 text-sm text-slate-600">No repair reimbursement balances posted yet. Eligible personal-payment confirmations create them automatically.</p>}
+    {data && !data.claims.length && !settled.length && <p className="border-t border-slate-200 pt-4 text-sm text-slate-600">No repair reimbursement balances posted yet. Eligible personal-payment confirmations create them automatically.</p>}
+    {settled.length > 0 && <div className="space-y-3 border-t border-slate-200 pt-4">
+      <div><h3 className="font-semibold">Historical payments · reimbursed</h3><p className="mt-1 text-sm leading-6 text-slate-600">You confirmed these personal payments were repaid. They remain in your history with nothing outstanding. Repayment dates and bank transactions have not been verified.</p></div>
+      {settled.map(row => <div key={row.legacy_id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="min-w-0 flex-1"><p className="font-medium text-slate-900">{row.description}</p><p className="mt-1 text-sm text-slate-600">Reimbursed—confirmed by owner</p></div>
+        <div className="text-right text-sm tabular-nums"><p>Paid personally: <strong>{usd(row.confirmation?.paid_amount || '0')}</strong></p><p>Repaid: {usd(row.confirmation?.paid_amount || '0')}</p><p className="mt-1 font-semibold text-emerald-800">Still owed: $0.00</p></div>
+      </div>)}
+    </div>}
     {data?.claims.filter(c => Number(c.remaining) > 0).map(c => <div key={c.id} className="space-y-3 border-t border-slate-200 pt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">{c.description}</p><p className="text-sm text-slate-600">Still owed: <strong className="tabular-nums text-slate-900">{usd(c.remaining)}</strong></p></div><button type="button" className={secondary} aria-expanded={matching === c.id} onClick={() => {setMatching(matching === c.id ? '' : c.id); setTransaction(''); setAmount(c.remaining)}}>{matching === c.id ? 'Cancel matching' : 'Match reimbursement'}</button></div>
       {matching === c.id && <div className="max-w-2xl space-y-3"><label className="block text-sm font-medium">Payment already made to you<select className={control} value={transaction} onChange={e => setTransaction(e.target.value)}><option value="">Choose a reconciled business payment</option>{data.transactions.map(t => <option key={t.id} value={t.id}>{t.date} · {t.account_name} · {t.description} · {usd(t.unallocated)} available</option>)}</select></label><label className="block text-sm font-medium">Amount reimbursed<input type="number" min="0.01" step="0.01" max={c.remaining} className={control} value={amount} onChange={e => setAmount(e.target.value)}/></label>{!data.transactions.length && <p className="text-sm text-slate-600">Import the business bank statement or cashbook in <Link to="/finance/money" className="text-blue-700 underline underline-offset-4">Money & Accounting</Link> first.</p>}<button type="button" disabled={busy || !transaction || !amount} className={primary} onClick={match}>{busy ? 'Matching…' : 'Record matched reimbursement'}</button></div>}
     </div>)}
