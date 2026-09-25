@@ -362,7 +362,7 @@ export default function Settlements() {
     return () => {
       cancelled = true
     }
-  }, [searchFilter, selectedTruck])
+  }, [searchFilter, selectedTruck, currentTenant?.id])
 
   useEffect(() => {
     if (!showUploadForm) return

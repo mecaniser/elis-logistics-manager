@@ -370,7 +370,7 @@ export default function Dashboard() {
     setExpenseAnalysisView(view => vehicleTypeFilter === 'trucks' && view === 'monthly'
       ? 'weekly' : vehicleTypeFilter === 'trailers' && view === 'weekly' ? 'monthly' : view)
     loadTimeSeries()
-  }, [selectedTruck, vehicleTypeFilter, currentTenant?.business_type, loadTimeSeries])
+  }, [selectedTruck, vehicleTypeFilter, currentTenant?.id, currentTenant?.business_type, loadTimeSeries])
 
   // Initialize selected categories when expense data changes
   useEffect(() => {
