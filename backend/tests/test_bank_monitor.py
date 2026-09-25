@@ -189,6 +189,11 @@ def test_manual_repayment_run_is_guarded_recorded_and_tenant_scoped(bank_auth, d
         db.commit()
     dashboard = bank_auth.get('/api/bank-monitor', headers={'X-Tenant-ID': '1'}).json()
     assert len(dashboard['repayment_runs']) == 1
+    verified_cash = {**payload, 'funding_basis': 'verified_cash'}
+    cash_run = bank_auth.post('/api/bank-monitor/repayment-runs', json=verified_cash, headers=headers)
+    assert cash_run.status_code == 200
+    assert cash_run.json()['result']['funding_basis'] == 'verified_cash'
+    assert [row['amount_cents'] for row in cash_run.json()['result']['proposals']] == [30000, 20000]
     bad = {**payload, 'sources': [{'last4': '3333', 'payoff_cents': 30000}]}
     assert bank_auth.post('/api/bank-monitor/repayment-runs', json=bad, headers=headers).status_code == 422
 

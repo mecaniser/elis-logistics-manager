@@ -3,6 +3,7 @@ import os
 import hashlib
 from uuid import uuid4
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
@@ -356,6 +357,7 @@ class ManualRepaymentInput(StrictModel):
     checking: list[RepaymentCheckingEvidence] = Field(min_length=1, max_length=10)
     sources: list[RepaymentSourceEvidence] = Field(min_length=1, max_length=5)
     evidence_confirmed: bool = Field(strict=True)
+    funding_basis: Literal['cleared_income', 'verified_cash'] = 'cleared_income'
 
 
 @router.post('/repayment-runs')
@@ -364,7 +366,7 @@ def run_repayment_now(data: ManualRepaymentInput, request: Request,
     if request.headers.get('x-bank-monitor-action') != 'run-repayment-check':
         raise HTTPException(403, 'Missing repayment check action header.')
     if data.evidence_confirmed is not True:
-        raise HTTPException(422, 'Confirm that the evidence was checked in Truliant.')
+        raise HTTPException(422, 'Confirm that the evidence was checked against current bank records.')
     config = db.get(BankMonitorConfig, tenant_id)
     if not config:
         raise HTTPException(409, 'Configure bank monitoring first.')
@@ -381,13 +383,17 @@ def run_repayment_now(data: ManualRepaymentInput, request: Request,
         raise HTTPException(422, 'Provide payoff evidence for every repayment source exactly once.')
     for account in data.checking:
         if account.eligible_income_cents > account.settled_cash_cents:
-            raise HTTPException(422, f'Incoming funds for checking account ••{account.last4} cannot exceed cash available after pending debits.')
+            label = 'Cash chosen for repayment' if data.funding_basis == 'verified_cash' else 'Incoming funds'
+            raise HTTPException(422, f'{label} for checking account ••{account.last4} cannot exceed cash available after pending debits.')
     now = datetime.now(timezone.utc)
     accounts = [AccountBalance(**account.model_dump()) for account in data.checking]
     accounts.extend(AccountBalance(**account.model_dump()) for account in data.sources)
     snapshot = BalanceSnapshot(observed_at=now, accounts=accounts)
     result = calculate_repayment(rules, snapshot, now, require_friday=False)
-    result.update({'source': 'manual', 'observed_at': now.isoformat(),
+    # The calculation uses eligible_income_cents as its per-account cap. For an
+    # on-demand verified-cash run that cap is the cash the user chose to repay;
+    # scheduled Friday runs continue to require same-day income evidence.
+    result.update({'source': 'manual', 'funding_basis': data.funding_basis, 'observed_at': now.isoformat(),
                    'evidence_confirmed': True,
                    'checking_evidence': [account.model_dump(mode='json') for account in data.checking],
                    'source_evidence': [account.model_dump(mode='json') for account in data.sources]})
