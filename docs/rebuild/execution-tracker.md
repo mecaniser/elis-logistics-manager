@@ -1,6 +1,8 @@
 # ELIS rebuild execution tracker
 
-Updated 2026-09-24 after payment-account connections and automatic owner-payment accounting. Production unchanged.
+Updated 2026-09-25 after isolated integration with current main and fresh release checks. Production unchanged.
+
+Latest evidence: [main integration and release checks](release-checks-2026-09-25.md). Integration, fresh production-copy migrations, restore rehearsal and signed three-business scope checks passed. Full-suite baseline failures remain; reviewed local-data carryover and live acceptance are still pending.
 
 ## Current execution lane — keep the original objective in view
 
@@ -12,7 +14,7 @@ The original question is whether fuel use and other costs explain why one truck 
 | Next | Outside costs → available cash and pair retention | Validate a real repair through expense, owner funding/repayment and the truck/trailer results; reconcile business cash/Zelle evidence and funded repair reserves. Business cash, card and mixed-payment intake still need a simpler operator path. |
 | Then | Original fuel and settlement anomaly investigation | Return to the historical register, 21 unexplained $200 gross differences and missing originals. Compare matched fuel purchases, driver pay and mileage windows; add independent Motive/odometer evidence before calling anything consumption. Existing fuel-spending signals are not evidence of missing freight or theft. |
 | Remaining | Capital, HELOC and lifetime return | Finish statement-based mixed-use financing allocation, actual payments, recovery targets and disposal acceptance. Preserve gaps instead of inferring payoff or saved reserves. |
-| Release | Integrate and reconcile before cutover | Difference report, main integration, production auth/migration checks and browser acceptance remain separate gates. Local functionality does not establish production readiness. |
+| Release | Integrate and reconcile before cutover | Current main integrated in isolated branch; fresh production-copy migration/restore and auth checks passed. Carry over 31 local confirmations, one payment identity and repair 138 cost correction through a reviewed rehearsal; disposition baseline check failures, then deployed browser acceptance. Local functionality does not establish production readiness. |
 
 Do not hide pending engineering under “waiting for records.” Missing private bank/card/HELOC statements, opening balances and Motive coverage block their dependent conclusions only. The stage-by-stage baseline and dated evidence below remain part of this same plan.
 
