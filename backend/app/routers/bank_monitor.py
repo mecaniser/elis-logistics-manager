@@ -207,8 +207,8 @@ def request_connection_check(data: ConnectionCheckInput, request: Request, tenan
     """Ask the private worker for one read-only account check; never accept secrets."""
     if request.headers.get('x-bank-monitor-action') != 'verify-worker-bank-access':
         raise HTTPException(403, 'Missing bank verification action header.')
-    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome':
-        raise HTTPException(409, 'Server bank access is disabled in Chrome reader mode.')
+    if os.getenv('BANK_MONITOR_READER_MODE') == 'signed_in_chrome' and not db.get(BankProviderConnection, tenant_id):
+        raise HTTPException(409, 'Connect Truliant through Plaid before requesting a server read.')
     # Serialize requests for this tenant so two clicks cannot queue two logins.
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not config:
@@ -272,7 +272,8 @@ def record_browser_check(data: BrowserCheckInput, request: Request,
     # A browser read is a scheduled run only when captured near the actual slot.
     if rules.enabled and due_date(now) == local.date() and local.hour == 17 and local.minute < 45:
         existing = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id, scheduled_date=local.date()).first()
-        if existing and existing.status in {'bank_read_failed', 'bank_security_challenge', 'chrome_check_missed'}:
+        if existing and (existing.status in {'bank_read_failed', 'bank_security_challenge', 'chrome_check_missed'}
+                         or existing.result.get('source') == 'plaid_background'):
             # Replace only a failed same-day read with a contemporaneous complete
             # Chrome result. Never rewrite a successful run or a prior day.
             existing.status = result['status']

@@ -7,7 +7,8 @@ from cryptography.fernet import Fernet
 from app.auth_utils import SESSION_COOKIE_NAME, create_session_token
 from app.bank_monitor_worker import run_connection_checks, run_due
 from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck,
-                                     BankMonitorRun, BankProviderConnection)
+                                     BankMonitorRun, BankMonitorWorkerHeartbeat,
+                                     BankProviderConnection)
 from app.services import plaid_bank
 from app.services.bank_monitor import MonitorRules
 
@@ -38,6 +39,30 @@ def provider_env(monkeypatch):
     monkeypatch.setenv('PLAID_SECRET', 'test-secret')
     monkeypatch.setenv('PLAID_REDIRECT_URI', 'https://example.test/bank-monitor')
     monkeypatch.setenv('BANK_MONITOR_TOKEN_KEY', Fernet.generate_key().decode())
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', lambda *_: {
+        'pending_entries': {'1111': 0, '2222': 0},
+        'posted_entries': {'1111': 1, '2222': 0},
+        'last_successful_update': '2026-09-25T17:30:00Z', 'pending_complete': False})
+
+
+def test_transaction_feed_applies_posting_transition_without_claiming_completeness(monkeypatch):
+    calls = iter([
+        {'added': [{'transaction_id': 'pending-id', 'account_id': 'checking-id', 'pending': True}],
+         'modified': [], 'removed': [], 'next_cursor': 'page-2', 'has_more': True},
+        {'added': [{'transaction_id': 'posted-id', 'account_id': 'checking-id', 'pending': False}],
+         'modified': [], 'removed': [{'transaction_id': 'pending-id'}],
+         'next_cursor': 'done', 'has_more': False},
+    ])
+    def fake_request(path, _payload):
+        if path == '/item/get':
+            return {'status': {'transactions': {'last_successful_update': '2026-09-25T17:30:00Z'}}}
+        assert path == '/transactions/sync'
+        return next(calls)
+    monkeypatch.setattr(plaid_bank, 'request', fake_request)
+    evidence = plaid_bank.transaction_visibility('private-token', plaid_bank.map_accounts(accounts(), rules()))
+    assert evidence['pending_entries'] == {'1111': 0, '2222': 0}
+    assert evidence['posted_entries'] == {'1111': 1, '2222': 0}
+    assert evidence['pending_complete'] is False
 
 
 def test_account_binding_and_incomplete_balances(monkeypatch, provider_env):
@@ -124,6 +149,52 @@ def test_unattended_pending_rule_never_prepares_proposal(db, monkeypatch, provid
     assert run.status == 'provider_pending_unverified'
     assert run.result['proposals'] == []
     assert run.result['transfers_executed'] is False
+
+
+def test_chrome_mode_gets_unattended_plaid_observation_without_preparing_transfer(db, monkeypatch, provider_env):
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules('posted_and_pending').model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.add(BankProviderConnection(tenant_id=1, provider='plaid', item_id='item-id',
+                                  institution_id=plaid_bank.TRULIANT_INSTITUTION_ID,
+                                  encrypted_access_token=plaid_bank.encrypt_token('access-secret'),
+                                  account_map=plaid_bank.map_accounts(accounts(), rules()),
+                                  status='linked_unverified', linked_at=datetime.now(timezone.utc)))
+    db.add(BankMonitorConnectionCheck(tenant_id=1, requested_at=datetime.now(timezone.utc),
+                                      status='pending', result={}))
+    db.commit()
+    monkeypatch.setattr(plaid_bank, 'item', lambda _token: {
+        'item_id': 'item-id', 'institution_id': plaid_bank.TRULIANT_INSTITUTION_ID})
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda _token: accounts())
+    def forbidden_browser(*_args, **_kwargs):
+        raise AssertionError('Chrome mode must not open a server browser')
+    assert run_connection_checks(db, forbidden_browser) == 1
+    check = db.query(BankMonitorConnectionCheck).one()
+    assert check.status == 'balance_only'
+    assert check.result['transaction_visibility']['pending_complete'] is False
+    assert run_due(db, datetime.fromisoformat('2026-09-25T21:30:00+00:00'), forbidden_browser) == 1
+    run = db.query(BankMonitorRun).one()
+    assert run.status == 'provider_pending_unverified'
+    assert run.result['source'] == 'plaid_background'
+    assert run.result['proposals'] == []
+
+
+def test_chrome_mode_allows_explicit_plaid_check_when_linked(client, db, monkeypatch, provider_env):
+    monkeypatch.setenv('BANK_MONITOR_READER_MODE', 'signed_in_chrome')
+    client.cookies.set(SESSION_COOKIE_NAME, create_session_token('bank-test'))
+    db.add(BankMonitorConfig(tenant_id=1, enabled=True, rules=rules('posted_and_pending').model_dump(),
+                             updated_at=datetime.now(timezone.utc)))
+    db.add(BankProviderConnection(tenant_id=1, provider='plaid', item_id='item-id',
+                                  institution_id=plaid_bank.TRULIANT_INSTITUTION_ID,
+                                  encrypted_access_token=plaid_bank.encrypt_token('access-secret'),
+                                  account_map=plaid_bank.map_accounts(accounts(), rules()),
+                                  status='balance_verified', linked_at=datetime.now(timezone.utc)))
+    db.add(BankMonitorWorkerHeartbeat(tenant_id=1, last_seen_at=datetime.now(timezone.utc)))
+    db.commit()
+    response = client.post('/api/bank-monitor/connection-checks', json={}, headers={
+        'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'verify-worker-bank-access'})
+    assert response.status_code == 202
+    assert db.query(BankMonitorConnectionCheck).one().status == 'pending'
 
 
 def test_foreign_institution_cannot_be_saved(client, db, monkeypatch, provider_env):
