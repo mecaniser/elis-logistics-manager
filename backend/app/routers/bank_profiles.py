@@ -53,7 +53,14 @@ def view(db, tenant_id):
               for r in db.query(BankProfileRoute).filter_by(tenant_id=tenant_id)]
     runs = [{'profile_id': r.profile_id, 'date': r.scheduled_date, 'status': r.status}
             for r in db.query(BankProfileRun).filter_by(tenant_id=tenant_id).order_by(BankProfileRun.started_at.desc()).limit(30)]
-    return {'profiles': result, 'routes': routes, 'runs': runs}
+    drafts = []
+    for d, binding in db.query(BankTransferDraft, BankProfileDraft).join(
+            BankProfileDraft, BankProfileDraft.draft_id == BankTransferDraft.id).filter(
+            BankTransferDraft.tenant_id == tenant_id, BankProfileDraft.tenant_id == tenant_id,
+            BankTransferDraft.status != 'cancelled'):
+        drafts.append({**draft_json(d), 'source_id': binding.source_id,
+                       'destination_id': binding.destination_id, 'profile_id': binding.profile_id})
+    return {'profiles': result, 'routes': routes, 'runs': runs, 'drafts': drafts}
 
 
 @router.get('')
@@ -233,12 +240,26 @@ def route_state(route_id: str, data: RouteState, request: Request, tenant_id: in
     return view(db, tenant_id)
 
 
+def existing_transfer(db, route):
+    # Canonical identities also catch a duplicate initiated through another login.
+    return db.query(BankTransferDraft).join(BankProfileDraft,
+        BankProfileDraft.draft_id == BankTransferDraft.id).filter(
+        BankTransferDraft.tenant_id == route.tenant_id,
+        BankProfileDraft.tenant_id == route.tenant_id,
+        BankProfileDraft.source_id == route.source_id,
+        BankProfileDraft.destination_id == route.destination_id,
+        BankTransferDraft.status.notin_(['bank_history_matched', 'cancelled'])).first()
+
+
 @router.post('/routes/{route_id}/review')
 def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     action(request)
     lock(db, tenant_id)
     row = profiles.owned(db, BankProfileRoute, route_id, tenant_id)
     profile, _, _ = profiles.route_accounts(db, row)
+    existing = existing_transfer(db, row)
+    if existing:
+        return {'existing_draft': draft_json(existing)}
     sync(db, profile)
     result = profiles.transfer_limit(db, row)
     result.update({'source': 'profile_route', 'route_id': row.id, 'item_id': profile.item_id})
@@ -250,6 +271,7 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
 
 
 class AmountInput(StrictModel):
+    intent: str = Field(default='payment', pattern=r'^(payment|full_payoff)$')
     amount_cents: int = Field(gt=0, le=100000000, strict=True)
 
 
@@ -262,6 +284,12 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     if not run or run.result.get('source') != 'profile_route' or run.result.get('drafts_created') or (now - profiles.utc(run.started_at)).total_seconds() > 300:
         raise HTTPException(409, 'Review expired or already used. Refresh the transfer review.')
     row = profiles.owned(db, BankProfileRoute, run.result['route_id'], tenant_id)
+    profiles.route_accounts(db, row)
+    existing = existing_transfer(db, row)
+    if existing:
+        raise HTTPException(409, 'A transfer between these accounts is already in progress. Continue that transfer.')
+    if data.intent == 'full_payoff':
+        raise HTTPException(409, 'Full payoff is unverified. A current bank payoff quote including accrued interest is required; the reported balance is not a payoff quote.')
     result = profiles.transfer_limit(db, row)
     if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')

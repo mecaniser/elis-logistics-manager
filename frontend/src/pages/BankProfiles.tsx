@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { bankProfilesApi } from '../services/api'
 import { loadPlaidLink } from '../services/plaidLink'
+import BankDialog from '../components/BankDialog'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
 import { centsFromMoneyInput } from '../components/moneyAmount'
@@ -9,14 +10,15 @@ import { centsFromMoneyInput } from '../components/moneyAmount'
 type Account = { id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
 type Profile = { id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
-type Data = { profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
-type Review = { id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
+type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string }
+type Data = { drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
+type Review = { kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || (e instanceof Error ? e.message : 'Banking profile request failed.')
 
-export default function BankProfiles({ tenantId, onMode, onDraft, settingsTarget, openSettings }: { settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void }) {
+export default function BankProfiles({ tenantId, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,10 +29,13 @@ export default function BankProfiles({ tenantId, onMode, onDraft, settingsTarget
   const [destination, setDestination] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
+  const [accountId, setAccountId] = useState('')
+  const [intent, setIntent] = useState<'payment' | 'full_payoff'>('payment')
   const [amount, setAmount] = useState('')
   const alive = useRef(true)
   const resumed = useRef(false)
   const active = data.profiles.find(p => p.id === selected) || data.profiles[0]
+  const account = active?.accounts.find(a => a.id === accountId)
   const mode = data.profiles.length > 1 || data.routes.length > 0
   const update = (value: Data) => { if (alive.current) { setData(value); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
   const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown) => {
@@ -78,9 +83,10 @@ export default function BankProfiles({ tenantId, onMode, onDraft, settingsTarget
     } catch (e) { setError(errorText(e)); setBusy(false) }
   }
   const startReview = async (route: Route) => {
-    setBusy(true); setError(''); setReview(null)
+    setBusy(true); setError(''); setReview(null); setIntent('payment')
     try {
-      const response = await bankProfilesApi.request<Review>(tenantId, `/routes/${route.id}/review`, 'post')
+      const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
+      if (alive.current && response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
       if (alive.current) { setReview(response.data); setAmount((response.data.limit_cents / 100).toFixed(2)) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
@@ -91,13 +97,13 @@ export default function BankProfiles({ tenantId, onMode, onDraft, settingsTarget
     if (!review) return
     setBusy(true); setError('')
     try {
-      await bankProfilesApi.request(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents })
-      if (alive.current) { setReview(null); setNotice('Draft added to the transfer queue. Prepare it using the bank login shown on the draft.'); onDraft() }
+      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent })
+      if (alive.current) { setReview(null); setAccountId(''); setNotice('Transfer saved. Continue below to prepare the bank form.'); onDraft(); onOpenTransfer(response.data.draft.id) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
   }
   return <section aria-label="Banking profiles" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{mode ? 'Accounts and transfer routes' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-600">Each profile keeps its own bank access. Transfers use the login assigned to their route.</p></div></header>
+    <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{mode ? 'Your accounts' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-600">Select an account to make a payment, move funds, or view its transfers.</p></div></header>
     {settingsTarget && createPortal(<section aria-label="Manage bank connections" className="space-y-4 rounded-xl border border-slate-200 p-4">
       <h3 className="font-semibold text-slate-950">Manage bank connections</h3>
       <p className="text-sm text-slate-600">Each connection uses its own bank login. Adding one preserves your existing connections.</p>
@@ -124,11 +130,42 @@ export default function BankProfiles({ tenantId, onMode, onDraft, settingsTarget
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-600">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p><div className="flex gap-2"><button disabled={busy} onClick={() => { setReview(null); void request(`/${active.id}/sync`) }} className={primary}>{busy ? 'Working…' : 'Refresh profile'}</button></div></div>
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-900">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{active.accounts.map(a => <article key={a.id} className={`rounded-xl border p-4 ${a.kind === 'checking' ? 'border-emerald-200 bg-emerald-50/50' : 'border-indigo-200 bg-indigo-50/50'}`}><p className="text-xs font-semibold uppercase text-slate-500">{a.kind} · ••{a.last4}</p><h3 className="mt-2 font-semibold text-slate-950">{a.name}</h3>{a.account_id ? <><p className="mt-3 text-2xl font-semibold tabular-nums text-slate-950">{money(a.balance.available_cents)}</p><p className="text-xs text-slate-600">{a.kind === 'checking' ? 'Bank available cash' : 'Available credit'}</p><p className="mt-3 text-sm text-slate-700">{a.kind === 'checking' ? 'Posted' : 'Balance owed'}: {money(a.balance.current_cents)}</p><p className="mt-1 text-sm text-slate-700">Pending debits reported: {money(a.balance.pending_debit_cents)}</p>{data.profiles.filter(p => p.accounts.some(other => other.account_id === a.account_id)).length > 1 && <p className="mt-2 text-xs font-medium text-blue-800">Shared account identity across banking profiles. Reserved drafts apply across all logins.</p>}{a.kind === 'checking' && <p className="mt-3 text-sm text-slate-600">Protected reserve: {money(a.reserve_cents)}</p>}</> : <div className="mt-3 space-y-2"><p className="text-sm text-amber-900">Possible overlapping account. Identify it before using its balance or creating a route.</p>{a.overlap_candidates.map(c => <button key={c.id} disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { account_id: c.id })}>Same account as {c.name} · ••{c.last4}{c.profiles?.length ? ` (${c.profiles.join(', ')})` : ''}</button>)}<button disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { separate_account: true })}>This is a different account</button></div>}</article>)}</div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{active.accounts.map(a => <article key={a.id} className={`relative rounded-xl border p-4 ${a.kind === 'checking' ? 'border-emerald-200 bg-emerald-50/50' : 'border-indigo-200 bg-indigo-50/50'}`}><p className="text-xs font-semibold uppercase text-slate-500">{a.kind} · ••{a.last4}</p><h3 className="mt-2 font-semibold text-slate-950">{a.account_id ? <button type="button" aria-label={`Manage ${a.name} ending ${a.last4}`} onClick={() => { setAccountId(a.id); setReview(null); setError(''); void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e))) }} className="text-left after:absolute after:inset-0 after:rounded-xl hover:text-blue-700 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-blue-600">{a.name}</button> : a.name}</h3>{a.account_id ? <><p className="mt-3 text-2xl font-semibold tabular-nums text-slate-950">{money(a.balance.available_cents)}</p><p className="text-xs text-slate-600">{a.kind === 'checking' ? 'Bank available cash' : 'Available credit'}</p><p className="mt-3 text-sm text-slate-700">{a.kind === 'checking' ? 'Posted' : 'Balance owed'}: {money(a.balance.current_cents)}</p><p className="mt-1 text-sm text-slate-700">Pending debits reported: {money(a.balance.pending_debit_cents)}</p>{data.profiles.filter(p => p.accounts.some(other => other.account_id === a.account_id)).length > 1 && <p className="mt-2 text-xs font-medium text-blue-800">Shared account identity across banking profiles. Reserved drafts apply across all logins.</p>}{a.kind === 'checking' && <p className="mt-3 text-sm text-slate-600">Protected reserve: {money(a.reserve_cents)}</p>}<p className="mt-4 text-sm font-semibold text-blue-700">Manage account →</p></> : <div className="mt-3 space-y-2"><p className="text-sm text-amber-900">Possible overlapping account. Identify it before using its balance or creating a route.</p>{a.overlap_candidates.map(c => <button key={c.id} disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { account_id: c.id })}>Same account as {c.name} · ••{c.last4}{c.profiles?.length ? ` (${c.profiles.join(', ')})` : ''}</button>)}<button disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { separate_account: true })}>This is a different account</button></div>}</article>)}</div>
         <p className="mt-3 text-xs leading-5 text-slate-500">Profiles show their own bank-reported balances; do not add overlapping profiles together. Pending feeds can omit payments. Keep a reserve for upcoming bills.</p>
-        <div className="mt-6 border-t border-slate-200 pt-5"><h3 className="font-semibold text-slate-950">Transfer routes · {active.name}</h3>{!data.routes.some(route => route.profile_id === active.id && route.enabled) && <p className="mt-3 text-sm text-slate-600">No active routes. <button type="button" onClick={openSettings} className="font-semibold text-blue-700">Configure in Monitoring settings</button></p>}<div className="mt-3 space-y-3">{data.routes.filter(r => r.profile_id === active.id && r.enabled).map(r => { const from = active.accounts.find(a => a.account_id === r.source_id); const to = active.accounts.find(a => a.account_id === r.destination_id); return <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-4"><div><p className="text-sm font-semibold text-slate-900">{from?.name || 'Unavailable account'} · ••{from?.last4} → {to?.name || 'Unavailable account'} · ••{to?.last4}</p><p className="mt-1 text-xs text-slate-500">Login: {active.name}{!r.enabled && ' · Disabled'}</p></div><div className="flex gap-2"><button disabled={busy || !r.enabled} onClick={() => void startReview(r)} className={primary}>Review transfer</button></div></div> })}</div>
-        </div>
-        {review && <section aria-label="Review profile transfer" className="mt-5 space-y-4 rounded-xl border border-blue-200 bg-blue-50 p-5"><h3 className="font-semibold text-slate-950">{review.source_name} · ••{review.from_last4} → {review.destination_name} · ••{review.to_last4}</h3><p className="text-sm text-slate-600">Required bank login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p><label className="block text-sm font-medium">Transfer amount<MoneyInput value={amount} onChange={setAmount} className="block min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /></label><p className="text-sm text-slate-600">Maximum {money(review.limit_cents)} after reserve {money(review.reserve_cents)} and unfinished drafts {money(review.reserved_draft_cents)}. This is an estimate, not a payoff quote.</p><div className="flex gap-2"><button disabled={busy || cents <= 0 || cents > review.limit_cents} onClick={() => void create()} className={primary}>Create reviewed draft</button><button disabled={busy} onClick={() => setReview(null)} className={button}>Cancel</button></div><p className="text-xs text-slate-500">No money moves here. You sign in to the required bank profile, review the prepared form, and submit it yourself.</p></section>}
+        {account && <BankDialog title={`${account.name} · ••${account.last4}`} onClose={() => { setAccountId(''); setReview(null) }}>
+          <p className="text-sm text-slate-600">Bank login: {active.name}</p>
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">{error}</p>}
+          <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4"><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Bank available cash' : 'Balance owed'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.balance.available_cents : account.balance.current_cents)}</p></div><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Protected reserve' : 'Available credit'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.reserve_cents : account.balance.available_cents)}</p></div></div>
+          {!review && <>
+            <section className="space-y-3"><h3 className="font-semibold">What would you like to do?</h3>
+              {data.routes.filter(r => r.profile_id === active.id && r.enabled && (r.source_id === account.account_id || (account.kind === 'credit' && r.destination_id === account.account_id))).map(r => {
+                const from = active.accounts.find(a => a.account_id === r.source_id)
+                const to = active.accounts.find(a => a.account_id === r.destination_id)
+                const existing = data.drafts?.find(d => d.source_id === r.source_id && d.destination_id === r.destination_id && d.status !== 'bank_history_matched')
+                const action = to?.kind === 'credit' ? 'Make a payment' : from?.kind === 'credit' ? 'Transfer credit to checking' : 'Transfer to checking'
+                return <button key={r.id} type="button" disabled={busy} onClick={() => { if (existing) { setAccountId(''); onOpenTransfer(existing.id) } else void startReview(r) }} className="block min-h-16 w-full rounded-xl border border-slate-200 p-4 text-left hover:border-blue-500 hover:bg-blue-50 disabled:opacity-50"><span className="block font-semibold text-blue-800">{existing ? 'Continue existing transfer' : action}</span><span className="mt-1 block text-sm text-slate-600">{from?.name} · ••{from?.last4} → {to?.name} · ••{to?.last4}{existing && ` · ${money(existing.amount_cents)}`}</span></button>
+              })}
+              <p className="text-xs text-slate-500">Only permitted routes for this bank login appear. <button type="button" onClick={() => { setAccountId(''); openSettings() }} className="font-semibold text-blue-700">Manage routes in settings</button></p>
+            </section>
+            <section className="space-y-3 border-t border-slate-200 pt-4"><h3 className="font-semibold">Transfers involving this account</h3>
+              {!data.drafts?.some(d => d.source_id === account.account_id || d.destination_id === account.account_id) && <p className="text-sm text-slate-600">No transfers yet.</p>}
+              {data.drafts?.filter(d => d.source_id === account.account_id || d.destination_id === account.account_id).map(d => <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{money(d.amount_cents)} · ••{d.from_last4} → ••{d.to_last4}</p><p className="text-sm text-slate-600">{d.status === 'bank_history_matched' ? d.kind === 'repayment' ? 'Payment posted · full payoff not verified' : 'Transfer completed' : d.status === 'reviewed' ? 'Ready to prepare' : 'Needs verification'}</p></div>{d.status !== 'bank_history_matched' && <button type="button" className={button} onClick={() => { setAccountId(''); onOpenTransfer(d.id) }}>Continue transfer</button>}</div>)}
+            </section>
+          </>}
+          {review && <section aria-label="Review account transfer" className="space-y-4">
+            <button type="button" onClick={() => setReview(null)} className="min-h-11 text-sm font-semibold text-blue-700">← Account actions</button>
+            <h3 className="font-semibold">{review.source_name} · ••{review.from_last4} → {review.destination_name} · ••{review.to_last4}</h3>
+            <p className="text-sm text-slate-600">1. Set amount → 2. Prepare in Truliant → 3. You approve in the bank</p>
+            {review.kind === 'repayment' && <fieldset><legend className="mb-2 font-semibold">Payment goal</legend><div className="flex flex-wrap gap-3">{(['payment', 'full_payoff'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 p-3"><input type="radio" name="payment-goal" checked={intent === value} onChange={() => setIntent(value)} />{value === 'payment' ? 'Make a payment' : 'Pay off in full'}</label>)}</div></fieldset>}
+            {intent === 'full_payoff' ? <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h4 className="font-semibold">Full payoff is not verified</h4><p className="mt-2 text-sm">This connection reports the balance owed, but does not supply a current payoff quote including accrued interest. ELIS cannot prepare a full payoff from that balance. Check the payoff amount in Truliant, or choose Make a payment for a partial payment.</p></div> : <>
+              <label className="block text-sm font-medium">{review.kind === 'repayment' ? 'Payment amount' : 'Transfer amount'}<MoneyInput value={amount} onChange={setAmount} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /></label>
+              <p className="text-sm text-slate-600">Planning limit {money(review.limit_cents)} after reserve {money(review.reserve_cents)}, reported pending debits {money(review.pending_debit_cents)}, and unfinished transfers {money(review.reserved_draft_cents)}.</p>
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>
+              <button disabled={busy || cents <= 0 || cents > review.limit_cents} onClick={() => void create()} className={primary}>{busy ? 'Saving…' : 'Continue to preparation'}</button>
+            </>}
+            <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
+          </section>}
+        </BankDialog>}
         {!!data.runs.length && <details className="mt-5 text-sm"><summary className="cursor-pointer font-semibold">Profile check history</summary>{data.runs.filter(r => r.profile_id === active.id).map(r => <p key={r.date} className="mt-2 text-slate-600">{r.date} · {r.status.replace(/_/g, ' ')}</p>)}</details>}
       </>}
     </>}
