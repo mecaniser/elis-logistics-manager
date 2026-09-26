@@ -103,7 +103,7 @@ export default function BankProfiles({ tenantId, onMode, onDraft, onOpenTransfer
     finally { if (alive.current) setBusy(false) }
   }
   return <section aria-label="Banking profiles" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{mode ? 'Your accounts' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-600">Select an account to make a payment, move funds, or view its transfers.</p></div></header>
+    <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{mode ? 'Your accounts' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-600">Choose a profile to view its accounts. Select an account to make a payment, move funds, or view its transfers.</p></div></header>
     {settingsTarget && createPortal(<section aria-label="Manage bank connections" className="space-y-4 rounded-xl border border-slate-200 p-4">
       <h3 className="font-semibold text-slate-950">Manage bank connections</h3>
       <p className="text-sm text-slate-600">Each connection uses its own bank login. Adding one preserves your existing connections.</p>
