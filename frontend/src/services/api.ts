@@ -1032,8 +1032,11 @@ const draftHeaders = (tenantId: number) => ({ withCredentials: true, headers: { 
 const bankMonitorClient = axios.create({ baseURL: '/api', withCredentials: true })
 bankMonitorClient.interceptors.response.use((response) => response, handleAuthFailure)
 export const bankMonitorApi = {
+  transferReview: (tenantId: number) => bankMonitorClient.post('/bank-monitor/transfer-reviews', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'review-bank-transfers' } }),
+  createReviewedTransfers: (tenantId: number, id: number, routes: { from_last4: string; to_last4: string; amount_cents: number }[]) => bankMonitorClient.post(`/bank-monitor/transfer-reviews/${id}/drafts`, { routes }, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-reviewed-transfers' } }),
   draftHistoryMatch: (tenantId: number, id: string, evidence: unknown) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/history-match`, evidence, draftHeaders(tenantId)),
-  draftPlaidMatch: (tenantId: number, id: string, evidence: { confirm?: boolean; source_evidence?: string; destination_evidence?: string }) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/plaid-match`, evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'verify-plaid-transfer' } }),
+  draftPlaidMatch: (tenantId: number, id: string, evidence: { confirm?: boolean; automatic?: boolean; source_evidence?: string; destination_evidence?: string }) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/plaid-match`, evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'verify-plaid-transfer' } }),
+  cancelDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/cancel`, {}, draftHeaders(tenantId)),
   drafts: (tenantId: number) => bankMonitorClient.get('/bank-monitor/drafts', draftHeaders(tenantId)),
   createDraft: (tenantId: number, draft: unknown) => bankMonitorClient.post('/bank-monitor/drafts', draft, draftHeaders(tenantId)),
   prepareDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/prepare`, {}, draftHeaders(tenantId)),

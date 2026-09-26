@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
+import BankTransferReview from './BankTransferReview'
 import type { CashPlan } from './BankCashPlan'
 import OwnerReimbursements from '../components/OwnerReimbursements'
 import PaymentAccounts from '../components/PaymentAccounts'
@@ -22,6 +23,7 @@ type Run = { id: number; scheduled_date: string; started_at: string; status: str
   transaction_visibility?: TransactionVisibility;
 } }
 type RepaymentRun = { id: number; started_at: string; status: string; result: {
+  source?: string;
   proposals: { from_last4: string; to_last4: string; amount_cents: number }[];
   observed_at: string; transfers_executed: false; drafts_created?: boolean;
 } }
@@ -148,6 +150,7 @@ export default function BankMonitor() {
   const [providerNotice, setProviderNotice] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
+  const [transferReviewOpen, setTransferReviewOpen] = useState(false)
   const [repaying, setRepaying] = useState(false)
   const [repaymentError, setRepaymentError] = useState('')
   const [repaymentNotice, setRepaymentNotice] = useState('')
@@ -180,7 +183,7 @@ export default function BankMonitor() {
     if (!currentTenantId) return
     const tenantId = currentTenantId
     let active = true
-    setData(null); setError(''); setLoading(true)
+    setData(null); setError(''); setLoading(true); setTransferReviewOpen(false)
     bankMonitorApi.get(tenantId).then(({ data: value }) => {
       if (active) { setData(value); setRules({ ...value.rules, repayment: value.rules.repayment || defaults.repayment }); setLoadedTenant(tenantId) }
     }).catch(error => { if (active) setError(apiError(error, 'Unable to load bank monitoring.')) })
@@ -367,6 +370,7 @@ export default function BankMonitor() {
   }
 
   const openRepayment = () => {
+    if (data?.provider_connection.linked) { setTransferReviewOpen(true); return }
     const today = easternDate()
     const balances = new Map((latestBankRead?.accounts || []).map(account => [account.last4, account]))
     const providerCash = new Map((providerResult?.cash_plan?.cash_accounts || []).map(account => [account.last4, account]))
@@ -423,7 +427,7 @@ export default function BankMonitor() {
 
   const latest = data?.runs[0]
   const latestIssue = latest ? scheduledIssue(latest.status) : null
-  const latestRepayment = data?.repayment_runs?.[0]
+  const latestRepayment = data?.provider_connection.linked ? undefined : data?.repayment_runs?.find(run => run.result.source !== 'plaid_review')
   const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
@@ -633,6 +637,11 @@ export default function BankMonitor() {
       </aside>
     </div>}
 
+    {transferReviewOpen && currentTenantId && loadedTenant === currentTenantId && <BankTransferReview key={currentTenantId} tenantId={currentTenantId} onClose={() => { setTransferReviewOpen(false); void bankMonitorApi.get(currentTenantId).then(response => { if (tenantRef.current === currentTenantId) setData(response.data) }).catch(() => undefined) }} onCreated={count => {
+      setTransferReviewOpen(false); setQueueVersion(value => value + 1)
+      setRepaymentNotice(`${count} reviewed transfer${count === 1 ? '' : 's'} added. Prepare each form in Truliant to continue.`)
+      void bankMonitorApi.get(currentTenantId).then(response => { if (tenantRef.current === currentTenantId) setData(response.data) }).catch(() => undefined)
+    }} />}
     <PaymentAccounts key={`payment-accounts-${currentTenantId}`} />
     {currentTenantId && <OwnerReimbursements key={`owner-reimbursements-${currentTenantId}`} />}
   </div>
