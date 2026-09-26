@@ -298,3 +298,9 @@ Investigation compares four statements per truck in each of July 28–August 24 
 Private reproducible deliverables are under backend/settlements_extracted/history-20260925/: investigation.html, investigation-report.md, settlement-review-register.csv, fuel-window-analysis.json, posting-manifest.json, production-committed.json and production-plan-after.json. Copies of batch/review calculation scripts are retained alongside them. These contain business records and are not published as static public assets.
 
 Next engineering work: support reviewed 277 mappings/unique references, source-date allocation, and linked cross-unit offsets/expense assignment. Next business evidence: product-coded fuel export and independent odometer/Motive coverage for the compared windows; source clarification for the driver exception and date conflicts. Remaining accounting work is not solely an owner-document blocker.
+
+## VIN identity checkpoint — September 25
+
+Settlement reconciliation now leads with each equipment record's saved VIN ending in chart legends/tooltips, monthly coverage, filters and record headings. The full VIN is shown inside a record; VIN and current name are searchable. Current unit/carrier/driver names remain secondary and explicitly current, not historical assignments. Chart colors follow the permanent equipment ID instead of name sorting. Reporting continues to use the existing tenant-scoped equipment ID; matching VINs never automatically merge financial records. Missing VINs have an explicit fallback and suffix collisions show full VINs. The local source-backed browser verifies VINs ending 250024 and 250022; no migration or financial backfill is required.
+
+Validation: frontend lint/build, 12 backend history tests, 3 chart/identity tests and local browser VIN search/layout checks. Dated driver/unit aliases and adoption in remaining legacy screens are separate follow-up work; this change does not establish the cause of the March history gap.

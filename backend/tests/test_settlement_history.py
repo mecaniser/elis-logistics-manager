@@ -132,3 +132,13 @@ def test_other_expense_spike_is_an_investigation_not_loss():
 def test_legacy_float_dust_does_not_create_a_money_discrepancy():
     r,s=sample();r['expense_categories']={**r['expense_categories'],'driver_pay':300.00000000001}
     assert not review_rows([r],{1:s})[0]['differences']
+
+
+def test_history_preserves_vehicle_identity_separately_from_current_name():
+    record, source = sample()
+    record.update(vin='4V4WC9EG2LN250024', vehicle_type='truck', name='609 - current driver')
+    row = review_rows([record], {record['id']: source})[0]
+    assert row['vin'] == record['vin']
+    assert row['asset_id'] == record['truck_id']
+    assert row['name'] == record['name']
+    assert row['vehicle_type'] == 'truck'
