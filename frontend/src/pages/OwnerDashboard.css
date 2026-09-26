@@ -82,3 +82,5 @@
 .history-original-upload small {font-weight:400;line-height:1.5;}
 .history-attachment-notice {background:#edf4f2;padding:12px 16px;border-radius:8px;font-size:14px;}
 @media (max-width:700px) {.history-trend-controls label,.history-trend-controls label:last-child {margin-left:0;min-width:min(100%,230px);flex:1 1 180px;}.history-trend-summary {gap:8px 16px;}}
+
+.history-identity-secondary { display: block; margin-top: 4px; color: var(--text-secondary, #526477); font-size: 12px; font-weight: 400; line-height: 1.4; }
