@@ -284,3 +284,59 @@ math, shared cash/debt, missing evidence, snapshot expiry, tampering, tenant and
 action checks, duplicate creation, cancellation boundaries, checking preparation,
 balance changes and automatic-reference matching. Browser QA uses isolated local
 test data; production transfer submission is not a QA step.
+
+## Multiple bank logins and explicit transfer routes
+
+Banking profiles are independent Plaid Items, including separate logins at the
+same institution. The existing single-provider consent can be initialized as
+`Truliant — Consolidated` without reconnecting or deleting its token/history.
+New consent is added with **Manage bank connections → Connect another bank login**.
+For the separate Main Business login, the user completes Plaid sign-in and selects
+both checking 3304 and business credit line 8264. Availability is verified by the
+resulting account read, never assumed from institution coverage.
+
+New additive tables hold profiles, canonical account identities, profile/account
+memberships, Link attempts, permitted routes, draft bindings and daily profile
+runs. Existing tables/records remain readable by the previous release. Web startup
+creates the additive tables before the updated worker is deployed.
+
+Each account is keyed by a canonical UUID and each membership by profile + Plaid
+account ID. A same-institution suffix/kind match on another login becomes an
+unresolved overlap: the operator identifies it as the existing account or a
+separate account. Unresolved memberships cannot fund a route. The UI shows one
+profile at a time and no sum across profiles. Shared identities reserve outgoing
+drafts across all logins. Legacy drafts without identities reserve conservatively
+by suffix until completed/cancelled.
+
+Routes must belong to one profile and be explicitly confirmed as available under
+that login. Checking-to-checking, checking-to-credit and bank-reported line-of-credit
+or home-equity-to-checking routes are supported. Credit-card advances and
+cross-institution preparation are not supported. Additional institutions may be
+connected for account monitoring. New Link sessions require Transactions and make
+Liabilities optional so missing Liabilities support does not exclude an institution.
+See https://plaid.com/docs/api/link/ for optional product behavior.
+
+Opening route review refreshes its profile. Limits protect reported pending debits,
+per-account cash reserves and every unfinished draft, and cap repayments at the
+reported balance owed. A five-minute review can be consumed once. Preparation
+refreshes again and refuses a reduced limit. These remain estimates, not proof of
+complete pending coverage or exact payoff. No endpoint submits money movements.
+When multiple profiles or explicit routes exist, legacy global draft-generation
+endpoints are disabled; existing draft history remains accessible.
+
+The draft carries an immutable profile/route/account binding. Plaid reconciliation
+uses that profile's token and account IDs. Extension **0.1.24** is required: its
+approval screen names the required login and account names, and form preparation
+checks both account suffixes and names before entering an amount/memo. A missing
+account returns a recoverable session-required result. Sign in with the requested
+credentials and resume the draft. ELIS does not store bank passwords, silently
+switch logins, or create isolated Chrome cookie profiles. Only one bank session
+can be active per Chrome cookie profile; separate bank logins may require signing
+out and back in. Transfers are always submitted by the user.
+
+The worker attempts each profile independently at 5:30 PM Eastern when monitoring
+is enabled. Each profile/date has a durable unique run; one failed consent cannot
+stop another profile's read. Profile history is available in the profile card.
+Existing scheduled single-connection reads are retained for backward compatibility.
+Actual new-profile production access and bank form preparation must be verified
+with the user's sign-in before calling the separate-login flow fully live.

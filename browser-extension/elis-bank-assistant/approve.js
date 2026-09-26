@@ -27,8 +27,9 @@ if(approval?.draft) {
     document.querySelector('.current-label').textContent='Approve verification';
     document.querySelector('.final-label').textContent='Confirm posted entries';
   }
-  setText('#from',`••${d.from_last4}`);
-  setText('#to',`••${d.to_last4}`);
+  if(d.bank_session) setText('#intro',`Required bank login: ${d.bank_session.profile_name}. Sign in to that Truliant profile before preparing. Both transfer accounts must be available.`);
+  setText('#from',`${d.bank_session?.source_name || ''} ••${d.from_last4}`);
+  setText('#to',`${d.bank_session?.destination_name || ''} ••${d.to_last4}`);
   setText('#amount',(d.amount_cents/100).toLocaleString('en-US',{style:'currency',currency:'USD'}));
   setText('#memo',d.memo);
   approve.disabled=false;

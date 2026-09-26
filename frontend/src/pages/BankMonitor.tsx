@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { loadPlaidLink } from '../services/plaidLink'
+import BankProfiles from './BankProfiles'
 import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
 import BankTransferReview from './BankTransferReview'
@@ -99,22 +101,6 @@ const easternDate = () => {
 }
 const dollarsInput = (cents: number | null | undefined) => cents == null ? '' : (cents / 100).toFixed(2)
 
-type PlaidHandler = { open: () => void; destroy: () => void }
-type PlaidFactory = { create: (options: { token: string; receivedRedirectUri?: string; onSuccess: (publicToken: string | null) => void; onExit: () => void }) => PlaidHandler }
-declare global { interface Window { Plaid?: PlaidFactory } }
-let plaidScript: Promise<void> | null = null
-function loadPlaidLink(): Promise<void> {
-  if (window.Plaid) return Promise.resolve()
-  if (!plaidScript) plaidScript = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
-    script.async = true
-    script.onload = () => window.Plaid ? resolve() : reject(new Error('Bank connection could not open.'))
-    script.onerror = () => reject(new Error('Bank connection could not load.'))
-    document.head.appendChild(script)
-  }).catch(error => { plaidScript = null; throw error })
-  return plaidScript!
-}
 
 function Icon({ name, className = 'h-5 w-5' }: { name: 'calendar' | 'shield' | 'settings' | 'history' | 'check' | 'pause' | 'close'; className?: string }) {
   const paths = {
@@ -148,6 +134,7 @@ export default function BankMonitor() {
   const [verificationError, setVerificationError] = useState('')
   const [linkingProvider, setLinkingProvider] = useState(false)
   const [providerNotice, setProviderNotice] = useState('')
+  const [profilesMode, setProfilesMode] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
   const [transferReviewOpen, setTransferReviewOpen] = useState(false)
@@ -275,7 +262,7 @@ export default function BankMonitor() {
   }
 
   useEffect(() => {
-    if (!window.location.search.includes('oauth_state_id=') || !currentTenantId || loadedTenant !== currentTenantId || oauthResumeRef.current) return
+    if (sessionStorage.getItem('elis-bank-profile-link') || !window.location.search.includes('oauth_state_id=') || !currentTenantId || loadedTenant !== currentTenantId || oauthResumeRef.current) return
     oauthResumeRef.current = true
     try {
       const saved = JSON.parse(sessionStorage.getItem('elis-bank-plaid-link') || 'null') as {
@@ -427,7 +414,7 @@ export default function BankMonitor() {
 
   const latest = data?.runs[0]
   const latestIssue = latest ? scheduledIssue(latest.status) : null
-  const latestRepayment = data?.provider_connection.linked ? undefined : data?.repayment_runs?.find(run => run.result.source !== 'plaid_review')
+  const latestRepayment = data?.provider_connection.linked ? undefined : data?.repayment_runs?.find(run => !['plaid_review', 'profile_route'].includes(run.result.source || ''))
   const stale = Boolean(latest?.result.observed_at && Date.now() - Date.parse(latest.result.observed_at) > 300000)
   const savedRules = data ? { ...data.rules, repayment: data.rules.repayment || defaults.repayment } : defaults
   const settingsDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
@@ -468,7 +455,8 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
-        <BankTransferQueue key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankProfiles key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
+        <BankTransferQueue profilesMode={profilesMode} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })

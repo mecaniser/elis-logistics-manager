@@ -1,7 +1,7 @@
 // Runs in Chrome's isolated content-script world. No submit control is activated.
 export async function fillForm(draft) {
   if (location.origin !== 'https://www.truliantfcuonline.org' ||
-      location.pathname !== '/dbank/live/app/home/olb/transfers') return {ok:false, code:'LOGIN_REQUIRED', error:'Sign in to Truliant, then return to ELIS and resume this draft.'};
+      location.pathname !== '/dbank/live/app/home/olb/transfers') return {ok:false, code:'LOGIN_REQUIRED', error:`Sign in to ${draft.bank_session?.profile_name || 'Truliant'}, then return to ELIS and resume this draft.`};
   const visible = e => e && e.getClientRects().length > 0;
   async function until(fn) {
     const end = Date.now() + 12000;
@@ -30,13 +30,26 @@ export async function fillForm(draft) {
       const buttons = [...labels[0].parentElement.querySelectorAll('button')].filter(visible);
       if(buttons.length!==1) throw new Error('Account selector is ambiguous.');
       buttons[0].click();
-      const options = await until(()=>{
+      let options;
+      try { options = await until(()=>{
         const found=[...document.querySelectorAll('li[role="menuitem"]')].filter(visible).filter(e=>{
           const title=e.querySelector(`[id^="listAccountDescription"][id$="${side}"]`);
           return title && new RegExp(`(?:^|\\s)${suffix}$`).test(title.textContent.trim());
         }); return found.length ? found : null;
-      });
+      }); } catch (error) {
+        if (draft.bank_session) { const e = new Error(`Use the ${draft.bank_session.profile_name} login. Account ••${suffix} is not available in this session. No amount or memo was filled.`); e.code='PROFILE_SESSION_REQUIRED'; throw e; }
+        throw error;
+      }
       if(options.length!==1) throw new Error('Account suffix is ambiguous.');
+      if(draft.bank_session) {
+        const expected = side === 'From' ? draft.bank_session.source_name : draft.bank_session.destination_name;
+        const title = options[0].querySelector(`[id^="listAccountDescription"][id$="${side}"]`)?.textContent || '';
+        const normalize = value => String(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if(!expected || normalize(title.replace(new RegExp(`${suffix}$`), '')) !== normalize(expected)) {
+          const e = new Error(`The ${side.toLowerCase()} account name does not match ${draft.bank_session.profile_name}. Check the selected bank login. No amount or memo was filled.`);
+          e.code='PROFILE_SESSION_REQUIRED'; throw e;
+        }
+      }
       if(side==='From') {
         const label=options[0].querySelector('[id^="accountBalanceLabel"]');
         const balance=[...options[0].querySelectorAll('[id^="accountBalance"]')].find(e=>!e.id.startsWith('accountBalanceLabel'));
@@ -55,5 +68,5 @@ export async function fillForm(draft) {
     if(amount.value!==(draft.amount_cents/100).toFixed(2)||memo.value!==draft.memo) throw new Error('Bank did not retain the exact amount or memo. Review the form.');
     memo.focus();
     return {ok:true,status:'prepared_awaiting_submission'};
-  } catch(e) { return {ok:false,error:e.message}; }
+  } catch(e) { return {ok:false,code:e.code,error:e.message}; }
 }

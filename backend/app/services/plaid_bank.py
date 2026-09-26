@@ -72,13 +72,15 @@ def request(endpoint: str, payload: dict) -> dict:
     return data
 
 
-def link_token(tenant_id: int, *, access_token: str | None = None) -> str:
+def link_token(tenant_id: int, *, access_token: str | None = None, optional_liabilities: bool = False) -> str:
     body = {'client_name': 'ELIS Bank Monitor', 'language': 'en',
             'country_codes': ['US'], 'user': {'client_user_id': f'elis-bank-{tenant_id}'}}
     if access_token:
         body['access_token'] = access_token
     else:
-        body['products'] = ['transactions', 'liabilities']
+        body['products'] = ['transactions'] if optional_liabilities else ['transactions', 'liabilities']
+        if optional_liabilities:
+            body['optional_products'] = ['liabilities']
     body['redirect_uri'] = os.environ['PLAID_REDIRECT_URI']
     token = request('/link/token/create', body).get('link_token')
     if not isinstance(token, str) or not token:

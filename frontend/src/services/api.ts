@@ -1055,3 +1055,7 @@ export const bankMonitorApi = {
   runRepayment: (tenantId: number, evidence: unknown) => bankMonitorClient.post('/bank-monitor/repayment-runs', evidence, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'run-repayment-check' } }),
   createRepaymentDrafts: (tenantId: number, runId: number) => bankMonitorClient.post(`/bank-monitor/repayment-runs/${runId}/drafts`, {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-repayment-drafts' } }),
 }
+
+export const bankProfilesApi = {
+  request: <T>(tenantId: number, path = '', method: 'get' | 'post' | 'put' = 'get', data?: unknown) => bankMonitorClient.request<T>({ url: `/bank-monitor/profiles${path}`, method, data, headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'manage-bank-profiles' } }),
+}

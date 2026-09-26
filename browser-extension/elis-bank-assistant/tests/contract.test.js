@@ -61,3 +61,27 @@ test('verification is bound to the original draft, origin and ELIS tab', async()
   for(const change of [{memo:'Cvr Different'},{amount_cents:1},{from_last4:'9999'},{to_last4:'9999'}]) assert(!boundDraft(active,{...draft,...change},sender));
   assert(!boundDraft(active,draft,{...sender,tab:{id:8}}));
 });
+
+test('profile transfers bind the required login and reject other institutions', async()=>{
+  const {boundDraft}=await import('../contract.js');
+  const session={profile_id:'12345678-1234-1234-1234-123456789012',profile_name:'Main Business',institution_id:'ins_109917',source_name:'Business',destination_name:'Credit'};
+  const d={...draft,bank_session:session};
+  assert(validDraft(d));
+  assert(!validDraft({...d,bank_session:{...session,institution_id:'other-bank'}}));
+  const sender={url:'https://www.elisprotech.com/bank-monitor',tab:{id:7}};
+  assert(!boundDraft({draft:d,origin:'https://www.elisprotech.com',elisTabId:7},{...d,bank_session:{...session,profile_name:'Other login'}},sender));
+});
+
+test('wrong profile account name stops before account selection or amount entry',async()=>{
+  globalThis.location={origin:'https://www.truliantfcuonline.org',pathname:'/dbank/live/app/home/olb/transfers'};
+  let chosen=false;
+  const amount={value:''},memo={value:''};
+  const label={textContent:'From',parentElement:{querySelectorAll:()=>[{getClientRects:()=>[1],click:()=>{}}]}};
+  const option={getClientRects:()=>[1],querySelector:()=>({textContent:'Different business 2222'}),click:()=>{chosen=true}};
+  const today=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  globalThis.document={querySelector:s=>s==='#amountInputField'?amount:s==='#memoInputField'?memo:s==='#frequency'?{checked:false}:null,
+    querySelectorAll:s=>s.includes('label')?[label]:s.includes('input')?[{value:today}]:s.includes('menuitem')?[option]:[]};
+  const result=await fillForm({...draft,bank_session:{profile_name:'Main Business',source_name:'Expected business'}});
+  assert.equal(result.code,'PROFILE_SESSION_REQUIRED');
+  assert.equal(chosen,false); assert.equal(amount.value,''); assert.equal(memo.value,'');
+});
