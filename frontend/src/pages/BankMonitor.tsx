@@ -133,7 +133,7 @@ export default function BankMonitor() {
   const [verificationError, setVerificationError] = useState('')
   const [linkingProvider, setLinkingProvider] = useState(false)
   const [providerNotice, setProviderNotice] = useState('')
-  const [profilesMode, setProfilesMode] = useState(false)
+  const [profilesMode, setProfilesMode] = useState<boolean | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [assistantSettingsTarget, setAssistantSettingsTarget] = useState<HTMLDivElement | null>(null)
   const [bankConnectionsTarget, setBankConnectionsTarget] = useState<HTMLDivElement | null>(null)
@@ -172,7 +172,7 @@ export default function BankMonitor() {
     if (!currentTenantId) return
     const tenantId = currentTenantId
     let active = true
-    setData(null); setError(''); setLoading(true); setTransferReviewOpen(false)
+    setData(null); setProfilesMode(null); setError(''); setLoading(true); setTransferReviewOpen(false)
     bankMonitorApi.get(tenantId).then(({ data: value }) => {
       if (active) { setData(value); setRules({ ...value.rules, repayment: value.rules.repayment || defaults.repayment }); setLoadedTenant(tenantId) }
     }).catch(error => { if (active) setError(apiError(error, 'Unable to load bank monitoring.')) })
@@ -458,7 +458,7 @@ export default function BankMonitor() {
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
         <BankProfiles onOpenTransfer={id => setTransferFocus({ id, request: Date.now() })} settingsTarget={bankConnectionsTarget} openSettings={() => setSettingsOpen(true)} key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
-        <BankTransferQueue transferFocus={transferFocus} settingsTarget={assistantSettingsTarget} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue transferFocus={transferFocus} settingsTarget={assistantSettingsTarget} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode !== false} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode === true} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
