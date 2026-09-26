@@ -22,3 +22,15 @@ test('monthly coverage keeps saved records visible without inventing plotted amo
     {month:'2026-03',matched:1,needsReview:0,missingOriginal:0}
   ])
 })
+
+test('VIN identity survives name changes and does not merge vehicle records', async () => {
+  const {vehicleIdentities}=await import('../src/components/finance/vehicleIdentity.ts')
+  const old={asset_id:1,name:'417 - previous driver',vin:'4V4WC9EG2LN250024',vehicle_type:'truck'}
+  const current={...old,name:'609 - current driver'}
+  assert.equal(vehicleIdentities([old]).get(1).label,vehicleIdentities([current]).get(1).label)
+  assert.equal(vehicleIdentities([current]).get(1).label,'Truck · VIN …250024')
+  const identities=vehicleIdentities([current,{...current,asset_id:2,vin:'1V4WC9EG2LN250024'}])
+  assert.equal(identities.size,2)
+  assert.notEqual(identities.get(1).label,identities.get(2).label)
+  assert.equal(vehicleIdentities([{...current,vin:null}]).get(1).label,'Truck #1 · VIN not recorded')
+})

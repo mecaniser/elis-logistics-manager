@@ -1,6 +1,6 @@
 export interface HistoryIssue { code: string; title: string; detail: string; amount: string | null }
 export interface HistoryRow {
-  id: number; asset_id: number; name: string; date: string; provider: string; status: string; evidence_id: string | null; basis: string; source_ref: string | null;
+  id: number; asset_id: number; name: string; vin?: string | null; vehicle_type?: string; date: string; provider: string; status: string; evidence_id: string | null; basis: string; source_ref: string | null;
   freight: string | null; carrier: string | null; driver_pay: string | null; fuel: string | null; remainder: string | null; calculated_remainder: string | null; difference: string | null;
   miles: string | null; stored_miles: string | null; mileage_basis: string; gallons_purchased: string | null; fuel_per_mile: string | null; rolling_fuel_per_mile: string | null; driver_percent: string | null;
   categories: Record<string, string>; trailer_allocation: string; repair_target: string; legacy_net: string | null;
