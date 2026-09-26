@@ -1,4 +1,5 @@
 import {allowedSender, validDraft, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
+import {openVerificationSession} from './verification-session.js';
 import {fillForm} from './fill-form.js';
 import {startScheduledChromeRead} from './scheduled-check.js';
 let busy = false;
@@ -144,6 +145,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
       const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
+      if(message.interactive === true) await openVerificationSession(chrome, message.draft, progress);
       async function inspect(suffix,source) {
         await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
         const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
