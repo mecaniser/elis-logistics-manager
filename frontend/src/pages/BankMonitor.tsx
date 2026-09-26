@@ -5,7 +5,6 @@ import { bankMonitorApi } from '../services/api'
 import BankTransferQueue from './BankTransferQueue'
 import BankTransferReview from './BankTransferReview'
 import type { CashPlan } from './BankCashPlan'
-import OwnerReimbursements from '../components/OwnerReimbursements'
 import PaymentAccounts from '../components/PaymentAccounts'
 import BankSelect from '../components/BankSelect'
 import MoneyInput from '../components/MoneyInput'
@@ -136,6 +135,7 @@ export default function BankMonitor() {
   const [providerNotice, setProviderNotice] = useState('')
   const [profilesMode, setProfilesMode] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [assistantSettingsTarget, setAssistantSettingsTarget] = useState<HTMLDivElement | null>(null)
   const [bankConnectionsTarget, setBankConnectionsTarget] = useState<HTMLDivElement | null>(null)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
   const [transferReviewOpen, setTransferReviewOpen] = useState(false)
@@ -457,7 +457,7 @@ export default function BankMonitor() {
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
         <BankProfiles settingsTarget={bankConnectionsTarget} openSettings={() => setSettingsOpen(true)} key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
-        <BankTransferQueue profilesMode={profilesMode} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue settingsTarget={assistantSettingsTarget} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -507,6 +507,7 @@ export default function BankMonitor() {
             <div className="px-5 pt-5 sm:px-6"><details className="rounded-xl border border-slate-200"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-900">Payment accounts</summary><PaymentAccounts key={`payment-accounts-${currentTenantId}`} /></details></div>
           <form onSubmit={save} className="space-y-6 p-5 sm:p-6">
             <div ref={setBankConnectionsTarget} />
+            <div ref={setAssistantSettingsTarget} />
             <section aria-label="Monitoring summary" className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
               <div className="flex items-start justify-between gap-4"><span className="text-slate-600">Schedule</span><span className="text-right font-medium text-slate-950">{!scheduleActive ? 'Paused / setup needed' : 'Daily · 5:30 p.m. Eastern'}</span></div>
               <div className="flex items-start justify-between gap-4"><span className="text-slate-600">Bank data</span><span className="text-right font-medium text-slate-950">{data.provider_connection.linked ? 'Plaid connected' : data.reader_mode === 'signed_in_chrome' ? 'Chrome bank assistant' : 'Server bank reader'}{!workerOnline && <span className="block text-amber-800">Monitoring worker offline</span>}</span></div>
@@ -644,6 +645,5 @@ export default function BankMonitor() {
       setRepaymentNotice(`${count} reviewed transfer${count === 1 ? '' : 's'} added. Prepare each form in Truliant to continue.`)
       void bankMonitorApi.get(currentTenantId).then(response => { if (tenantRef.current === currentTenantId) setData(response.data) }).catch(() => undefined)
     }} />}
-    {currentTenantId && <OwnerReimbursements key={`owner-reimbursements-${currentTenantId}`} />}
   </div>
 }
