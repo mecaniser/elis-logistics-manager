@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {allowedSender,validDraft,parseAccountSummary} from '../contract.js';
+import {allowedSender,validDraft,parseAccountSummary,boundDraft} from '../contract.js';
 import {fillForm} from '../fill-form.js';
 const draft={id:'12345678-1234-1234-1234-123456789012',amount_cents:11820,from_last4:'2222',to_last4:'1111',memo:'Cvr Utility 0914'};
 test('only exact ELIS origins and bank-monitor route may request preparation',()=>{
@@ -106,3 +106,11 @@ test('bank amount formatting is accepted without accepting a different amount', 
     assert.match((await fillForm({...draft,amount_cents:120000})).error,/Bank memo differs/);
   } finally {globalThis.setTimeout=originalTimeout}
 });
+
+ test('profile binding ignores serialization key order but not changed identity',()=>{
+ const draft={id:'draft',amount_cents:100,from_last4:'3304',to_last4:'8264',memo:'Rpy test',bank_session:{profile_id:'business',profile_name:'Main Business'}};
+ const active={draft:{...draft,bank_session:{profile_name:'Main Business',profile_id:'business'}},origin:'https://www.elisprotech.com',elisTabId:7};
+ const sender={url:'https://www.elisprotech.com/bank-monitor',tab:{id:7}};
+ assert(boundDraft(active,draft,sender));
+ assert(!boundDraft(active,{...draft,bank_session:{...draft.bank_session,profile_id:'other'}},sender));
+ });
