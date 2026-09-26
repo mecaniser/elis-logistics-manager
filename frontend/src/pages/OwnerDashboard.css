@@ -136,11 +136,20 @@
 .chart-view-switch button[aria-pressed="true"] {background:#2146d9;color:white;}
 .chart-view-switch button:hover {background:#dbe4f4;color:#172f3b;}
 .chart-view-switch button:focus-visible,.heat-cell:focus-visible,.truck-heatmap:focus-visible {outline:2px solid #2146d9;outline-offset:3px;}
-.truck-heatmap {max-width:100%;overflow:auto;max-height:350px;margin-top:16px;scrollbar-color:#94a3b8 #eef2f6;}
-.truck-heatmap table {border-collapse:separate;border-spacing:3px;width:max-content;font-variant-numeric:tabular-nums;}
-.truck-heatmap th {font-size:12px;padding:8px;color:#334155;white-space:nowrap;}
-.truck-heatmap th:first-child {position:sticky;left:0;background:white;z-index:1;max-width:130px;white-space:normal;min-width:100px;text-align:left;}
-.heat-cell {min-width:90px;min-height:44px;padding:8px;border:1px solid transparent;border-radius:4px;font:inherit;font-size:12px;cursor:pointer;}
+.truck-heatmap {width:100%;min-width:0;margin-top:16px;font-variant-numeric:tabular-nums;}
+.heat-period {display:flex;justify-content:space-between;gap:12px;color:#526477;font-size:12px;margin-bottom:8px;}
+.heat-months,.heat-week-grid {display:grid;gap:2px;min-width:0;}
+.heat-month {container-type:inline-size;container-name:heat-month;min-width:0;border-bottom:1px solid #cbd5e1;padding-bottom:5px;}
+.heat-month span {display:block;font-size:11px;white-space:nowrap;overflow:hidden;color:#526477;}
+.heat-truck-row {margin-top:14px;}
+.heat-truck-label {font-size:12px;font-weight:600;color:#334155;margin-bottom:6px;}
+.heat-week {container-type:inline-size;container-name:heat-week;min-width:0;}
+.heat-cell {display:block;width:100%;min-width:0;min-height:36px;padding:0;border:1px solid transparent;border-radius:2px;font:inherit;font-size:11px;cursor:pointer;}
+.heat-value-full,.heat-value-short,.heat-week-date {display:none;}
+.heat-detail {min-height:40px;font-size:12px;line-height:1.6;color:#334155;margin:12px 0 0;overflow-wrap:anywhere;}
+@container heat-week (min-width:32px) {.heat-value-short {display:block;}}
+@container heat-week (min-width:76px) {.heat-value-short {display:none;}.heat-value-full {display:block;}.heat-cell {min-height:48px;border-radius:5px;}.heat-week-date {display:block;text-align:center;font-size:11px;color:#526477;margin-top:5px;}}
+@container heat-month (max-width:34px) {.heat-month span {font-size:9px;}}
 .heat-cell[aria-pressed="true"] {border-color:#172f3b;box-shadow:inset 0 0 0 1px #172f3b;}
 .heat-cell.is-offroad {background:#cbd5e1;}
 .heat-cell.is-unknown {background:#f1f5f9;}

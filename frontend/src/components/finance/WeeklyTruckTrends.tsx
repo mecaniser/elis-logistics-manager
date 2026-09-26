@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { HistoryReport } from './historyTypes'
@@ -16,6 +16,8 @@ export default function WeeklyTruckTrends({history,range}:{history:HistoryReport
   const [average,setAverage]=useState(false)
   const [view,setView]=useState('lines')
   const [week,setWeek]=useState('')
+  const [heatDetail,setHeatDetail]=useState('')
+  useEffect(()=>setHeatDetail(''),[range.start,range.end,mode,truck,compared])
   const identities=vehicleIdentities(history.rows)
   const trucks=[...identities].filter(([id])=>history.rows.some(r=>r.asset_id===id && r.vehicle_type==='truck'))
   const series=trucks.map(([id,identity])=>{const downtime=truckDowntime(history.rows,history.tenant_id,id);return {id,identity,downtime,points:weeklyTruckPoints(history.rows,id,range,downtime)}})
@@ -44,13 +46,22 @@ export default function WeeklyTruckTrends({history,range}:{history:HistoryReport
     <div className="compact-chart-heading"><h3>{title}</h3>{mode==='single'&&<span>Current: {visible[0]?.identity.currentName}</span>}</div>
     {view==='heatmap'?<>
       <p className="finance-help">Each row is a truck; each cell is one week. Darker teal means a higher positive remainder; red means negative. Select a cell to inspect the statements.</p>
-      <div className="truck-heatmap" tabIndex={0} role="region" aria-label="Weekly truck heatmap, scroll horizontally for all dates"><table><thead><tr><th scope="col">Truck / week</th>{points.map(p=><th scope="col" key={p.date}>{shortDate(p.date)}</th>)}</tr></thead><tbody>{visible.map(s=>{const max=Math.max(1,...visible.flatMap(v=>v.points.map(p=>Math.abs(p.value||0))));return <tr key={s.id}><th scope="row">{s.identity.label}</th>{s.points.map(p=>{
-        const state=p.value!==null?'value':p.status==='Review evidence'?'review':p.offRoad?'offroad':'unknown'
-        const darkBand=p.value!==null&&p.value/max>0.66
-        const background=p.value===null?undefined:p.value<0?'#fee2e2':p.value===0?'#f1f5f9':darkBand?'#0f766e':p.value/max>0.33?'#b4d8d0':'#e2f1ed'
-        const label=`${s.identity.label}, ${shortDate(p.date)} through ${shortDate(p.through)}: ${p.value!==null?dollars(p.value):p.status}${p.offRoad?'; owner-reported downtime':''}`
-        return <td key={p.date}><button type="button" className={`heat-cell is-${state}`} style={{background,color:darkBand?'#fff':'#172f3b'}} aria-label={label} title={label} aria-pressed={week===p.date} onClick={()=>setWeek(p.date)}>{p.value!==null?dollars(p.value):state==='offroad'?'Off road':state==='review'?'Review':'No record'}</button></td>
-      })}</tr>})}</tbody></table></div>
+      <div className="truck-heatmap" role="region" aria-label="Weekly truck heatmap, entire selected period">
+        <div className="heat-period"><span>{shortDate(range.start)}</span><span>{shortDate(range.end)}</span></div>
+        <div className="heat-months" style={{gridTemplateColumns:`repeat(${Math.max(1,points.length)},minmax(0,1fr))`}}>{points.reduce<{key:string;label:string;count:number}[]>((groups,p)=>{const key=p.date.slice(0,7);const last=groups[groups.length-1];if(last?.key===key)last.count++;else groups.push({key,label:new Date(`${key}-01T00:00:00Z`).toLocaleDateString('en-US',{month:'short',year:'2-digit',timeZone:'UTC'}),count:1});return groups},[]).map(group=><div className="heat-month" key={group.key} style={{gridColumn:`span ${group.count}`}} title={group.label}><span>{group.label}</span></div>)}</div>
+        {visible.map(s=>{const max=Math.max(1,...visible.flatMap(v=>v.points.map(p=>Math.abs(p.value||0))));return <div className="heat-truck-row" key={s.id}>
+          <div className="heat-truck-label">{s.identity.label}</div>
+          <div className="heat-week-grid" style={{gridTemplateColumns:`repeat(${Math.max(1,points.length)},minmax(0,1fr))`}}>{s.points.map(p=>{
+            const state=p.value!==null?'value':p.status==='Review evidence'?'review':p.offRoad?'offroad':'unknown'
+            const darkBand=p.value!==null&&p.value/max>0.66
+            const background=p.value===null?undefined:p.value<0?'#fee2e2':p.value===0?'#f1f5f9':darkBand?'#0f766e':p.value/max>0.33?'#b4d8d0':'#e2f1ed'
+            const label=`${s.identity.label}, ${shortDate(p.date)} through ${shortDate(p.through)}: ${p.value!==null?dollars(p.value):p.status}${p.offRoad?'; owner-reported downtime':''}`
+            const compact=p.value===null?'':Math.abs(p.value)>=1000?`${p.value<0?'-':''}${(Math.abs(p.value)/1000).toFixed(1)}k`:String(Math.round(p.value))
+            return <div className="heat-week" key={p.date}><button type="button" className={`heat-cell is-${state}`} style={{background,color:darkBand?'#fff':'#172f3b'}} aria-label={label} title={label} aria-pressed={week===p.date} onMouseEnter={()=>setHeatDetail(label)} onFocus={()=>setHeatDetail(label)} onClick={()=>{setHeatDetail(label);setWeek(p.date)}}><span className="heat-value-full">{p.value!==null?dollars(p.value):state==='offroad'?'Off road':state==='review'?'Review':'No record'}</span><span className="heat-value-short" aria-hidden="true">{compact}</span></button><span className="heat-week-date" aria-hidden="true">{new Date(`${p.date}T00:00:00Z`).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}</span></div>
+          })}</div>
+        </div>})}
+        <p className="heat-detail" aria-live="polite">{heatDetail||'Point to a week or select it to see its exact dates, amount and evidence status.'}</p>
+      </div>
       <p className="weekly-key">Teal: positive · Red: negative · Gray: downtime · Amber hatch: review · Pale: no statement. Values share one scale across visible trucks.</p>
     </>:<div role="img" aria-label={`${title}, weekly statement remainder from ${range.start} through ${range.end}`}>
       <ResponsiveContainer width="100%" height={280}><ComposedChart data={points} margin={{top:16,right:12,bottom:0,left:0}}>
@@ -67,7 +78,7 @@ export default function WeeklyTruckTrends({history,range}:{history:HistoryReport
     {view!=='heatmap'&&mode!=='fleet'&&visible.map(s=><div className="compact-status" key={s.id}><span style={{color:color(s.id)}}>{s.identity.label}</span><div className="weekly-status-track" aria-label={`${s.identity.label} operating status`}>{s.points.map(p=><span key={p.date} className={p.offRoad?'is-offroad':p.status==='Review evidence'?'is-review':p.value===null?'is-unknown':'is-recorded'} title={`${p.date}: ${p.status}`}/>)}</div></div>)}
     {mode==='single'&&visible[0]?.downtime.filter(d=>d.end>=range.start&&d.start<=range.end).map(d=><p className="weekly-downtime" key={d.start}><strong>Out of service · {shortDate(d.start)}–{shortDate(d.end)}</strong><span>{d.description}</span></p>)}
     {view!=='heatmap'&&mode!=='fleet'&&<p className="weekly-key">Gray: owner-reported downtime · Amber hatch: evidence review · Pale: no statement</p>}
-    <label className="weekly-inspect">Inspect a week<select aria-label="Inspect chart week" value={selected?week:''} onChange={e=>setWeek(e.target.value)}><option value="">Choose a week…</option>{points.map(p=><option value={p.date} key={p.date}>{shortDate(p.date)}–{shortDate(p.through)}</option>)}</select></label>
+    <label className="weekly-inspect">Inspect a week<select aria-label="Inspect chart week" value={selected?week:''} onChange={e=>{setWeek(e.target.value);setHeatDetail('')}}><option value="">Choose a week…</option>{points.map(p=><option value={p.date} key={p.date}>{shortDate(p.date)}–{shortDate(p.through)}</option>)}</select></label>
     {selected&&<section className="weekly-selected" aria-live="polite"><h3>Statements dated {shortDate(selected.date)}–{shortDate(selected.through)}</h3>{!selectedRows.length&&<p>No statement recorded in this week; this is not a zero-earnings claim.</p>}{selectedRows.map(r=><Link key={r.id} to={`/settlements/reconciliation?asset=${r.asset_id}&id=${r.id}#review-records`}>{identities.get(r.asset_id)?.label} · {r.date} · {r.provider} · {dollars(r.remainder)} — review statement</Link>)}</section>}
     <div className="compact-fleet-table"><table><caption>{mode==='compare'?'Select up to three trucks to compare':'Select a truck to inspect its chart'}</caption><thead><tr><th>Truck</th><th>Plotted remainder</th><th>Per calendar day</th><th>Statement coverage</th></tr></thead><tbody>{series.map(s=>{const period=history.rows.filter(r=>r.asset_id===s.id&&r.date>=range.start&&r.date<=range.end);const verified=period.filter(r=>r.status==='arithmetic_matched').length;const values=s.points.filter(p=>p.value!==null);const total=values.reduce((sum,p)=>sum+Math.round(p.value!*100),0)/100;return <tr key={s.id} className={visible.some(v=>v.id===s.id)&&mode!=='fleet'?'is-selected':''}><th scope="row">{mode==='compare'?<label><input type="checkbox" aria-label={`Compare ${s.identity.label}`} checked={comparison.includes(s.id)} disabled={comparison.includes(s.id)?comparison.length===1:comparison.length>=3} onChange={e=>{const next=e.target.checked?[...comparison,s.id]:comparison.filter(id=>id!==s.id);if(next.length)setCompared(next)}}/>{s.identity.label}</label>:<button type="button" className="compact-truck-button" onClick={()=>{setMode('single');setTruck(s.id);setWeek('')}}>{s.identity.label}</button>}<small className="history-identity-secondary">{s.identity.currentName}</small></th><td>{values.length?dollars(total):'Not established'}</td><td>{values.length?dollars(total/days):'Not established'}</td><td>{verified} / {period.length} verified</td></tr>})}</tbody></table></div>
     <p className="finance-help">Subtotals include only plotted verified weeks. Calendar-day figures include downtime; missing evidence leaves them provisional. Coverage counts saved statements, not expected operating weeks.</p>
