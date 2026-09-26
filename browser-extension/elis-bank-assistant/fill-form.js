@@ -65,7 +65,8 @@ export async function fillForm(draft) {
     set(amount,(draft.amount_cents/100).toFixed(2));
     set(memo,draft.memo);
     await new Promise(r=>setTimeout(r,150));
-    if(amount.value!==(draft.amount_cents/100).toFixed(2)||memo.value!==draft.memo) throw new Error('Bank did not retain the exact amount or memo. Review the form.');
+    if (!/^\$?(?:\d{1,3}(?:,\d{3})*|\d+)\.\d{2}$/.test(amount.value.trim()) || money('$'+amount.value.trim().replace(/^\$/, '')) !== draft.amount_cents) throw new Error('Bank amount differs from the reviewed amount. Inspect the bank form; if you already submitted, check posting in ELIS.');
+    if (memo.value !== draft.memo) throw new Error('Bank memo differs from the ELIS reference. If you submitted with an edited memo, check posting in ELIS and confirm the matching bank entries.');
     memo.focus();
     return {ok:true,status:'prepared_awaiting_submission'};
   } catch(e) { return {ok:false,code:e.code,error:e.message}; }
