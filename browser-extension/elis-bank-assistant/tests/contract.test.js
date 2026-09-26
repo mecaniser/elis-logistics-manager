@@ -85,3 +85,24 @@ test('wrong profile account name stops before account selection or amount entry'
   assert.equal(result.code,'PROFILE_SESSION_REQUIRED');
   assert.equal(chosen,false); assert.equal(amount.value,''); assert.equal(memo.value,'');
 });
+
+test('bank amount formatting is accepted without accepting a different amount', async()=>{
+  const originalTimeout=globalThis.setTimeout;
+  globalThis.setTimeout=fn=>{queueMicrotask(fn);return 1};
+  globalThis.location={origin:'https://www.truliantfcuonline.org',pathname:'/dbank/live/app/home/olb/transfers'};
+  class Input { get value(){return this.text||''} set value(v){this.text=v} dispatchEvent(){} focus(){} }
+  globalThis.HTMLInputElement=Input;
+  const amount=new Input(),memo=new Input();
+  const today=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const option=side=>({getClientRects:()=>[1],querySelector:s=>({textContent:s.startsWith('[id^="accountBalanceLabel')?'Available':`${side==='From'?'2222':'1111'}`}),querySelectorAll:()=>[{id:'accountBalance1',textContent:'$5,000.00'}],click(){}});
+  let side='From';
+  globalThis.document={querySelector:s=>s==='#amountInputField'?amount:s==='#memoInputField'?memo:s==='#frequency'?{checked:false}:null,querySelectorAll:s=>s.includes(' label')?['From','To'].map(label=>({textContent:label,parentElement:{querySelectorAll:()=>[{getClientRects:()=>[1],click(){side=label}}]}})):s.includes(' input')?[{value:today}]:s.includes('menuitem')?[option(side)]:s.includes('accountDescription')?[{getClientRects:()=>[1],textContent:side==='From'?'2222':'1111'}]:[]};
+  try {
+    amount.dispatchEvent=()=>{amount.text='1,200.00'};
+    assert.equal((await fillForm({...draft,amount_cents:120000})).ok,true);
+    amount.text='';memo.text='';amount.dispatchEvent=()=>{amount.text='1,201.00'};
+    assert.match((await fillForm({...draft,amount_cents:120000})).error,/Bank amount differs/);
+    amount.text='';memo.text='';amount.dispatchEvent=()=>{amount.text='1,200.00'};memo.dispatchEvent=()=>{memo.text='Custom memo'};
+    assert.match((await fillForm({...draft,amount_cents:120000})).error,/Bank memo differs/);
+  } finally {globalThis.setTimeout=originalTimeout}
+});
