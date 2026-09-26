@@ -89,3 +89,17 @@ security audit or installed-browser acceptance has been performed.
 
 The tool-driven installation attempt was blocked by browser URL security policy.
 The user must install manually using the steps above; no workaround was attempted.
+
+### Banking profiles (0.1.24)
+
+Preparation approval names the required banking profile and both accounts. Sign
+in to that Truliant login in the Chrome profile where this extension is installed.
+If an account is missing or its bank label differs, the assistant stops before
+entering the amount or memo. Return to ELIS after correcting the bank session and
+resume the draft. The assistant does not log out another profile, store bank
+passwords, or submit transfers.
+
+For an unpacked installation, update the files in the **existing extension
+folder**, then click Reload in Chrome's extension manager. Retaining the folder
+keeps the unpacked extension ID stable. ELIS requires version 0.1.24 for profile
+transfers. Do not remove and reinstall merely to refresh the version.

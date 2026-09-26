@@ -209,7 +209,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     const results=await chrome.scripting.executeScript({target:{tabId:tab.id},func:fillForm,args:[message.draft]});
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
-    if(result.code==='LOGIN_REQUIRED') {
+    if(result.code==='LOGIN_REQUIRED' || result.code==='PROFILE_SESSION_REQUIRED') {
       await chrome.storage.session.remove('activeDraft');
       finishReply({ok:false,code:'PREPARATION_NOT_STARTED',error:result.error});
       return;

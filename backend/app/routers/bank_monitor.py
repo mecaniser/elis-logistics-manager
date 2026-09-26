@@ -6,17 +6,17 @@ from uuid import uuid4
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 from app.auth_utils import SESSION_COOKIE_NAME, verify_session_token
 from app.database import get_db
 from app.models.tenant import Tenant
 from app.models.bank_monitor import (BankMonitorConfig, BankMonitorConnectionCheck, BankMonitorBrowserCheck,
                                      BankMonitorRun, BankMonitorWorkerHeartbeat, BankRepaymentRun,
-                                     BankProviderConnection, BankProviderLinkAttempt)
+                                     BankProviderConnection, BankProviderLinkAttempt, BankProfile, BankProfileRoute, BankProfileDraft)
 from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
                                        MonitorRules, StrictModel,
                                        calculate, calculate_repayment, due_date, next_check)
-from app.services import plaid_bank
+from app.services import plaid_bank, bank_profiles
 from app.services.bank_transfer_review import build_review
 
 router = APIRouter()
@@ -79,6 +79,12 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
                                 'finished_at': r.finished_at, 'status': r.status,
                                 'result': r.result} for r in repayment_runs]}
 
+
+
+def require_legacy_routes(db, tenant_id):
+    db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().first()
+    if db.query(BankProfile).filter_by(tenant_id=tenant_id).count() > 1 or db.query(BankProfileRoute).filter_by(tenant_id=tenant_id).first():
+        raise HTTPException(409, 'Use a configured banking-profile transfer route. Global suffix-based routes are no longer enabled.')
 
 def provider_action(request: Request, action: str):
     if request.headers.get('x-bank-monitor-action') != action:
@@ -364,6 +370,7 @@ def fresh_review_read(db, tenant_id, rules):
 @router.post('/transfer-reviews')
 def create_transfer_review(data: ConnectionCheckInput, request: Request,
                            tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    require_legacy_routes(db, tenant_id)
     provider_action(request, 'review-bank-transfers')
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not config:
@@ -404,6 +411,7 @@ class ReviewedRoutes(StrictModel):
 @router.post('/transfer-reviews/{run_id}/drafts')
 def create_reviewed_drafts(run_id: int, data: ReviewedRoutes, request: Request,
                            tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    require_legacy_routes(db, tenant_id)
     provider_action(request, 'create-reviewed-transfers')
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     run = db.query(BankRepaymentRun).filter_by(id=run_id, tenant_id=tenant_id).with_for_update().one_or_none()
@@ -527,6 +535,9 @@ def draft_json(d):
     result['bank_effective_date'] = d.bank_effective_date.isoformat() if d.bank_effective_date else None
     result['bank_date'] = created.astimezone(EASTERN).date().isoformat()
     result['kind'] = 'repayment' if d.memo.startswith('Rpy ') else 'coverage'
+    db = object_session(d)
+    if db:
+        result['bank_session'] = bank_profiles.draft_session(db, d)
     return result
 
 
@@ -543,7 +554,7 @@ def list_drafts(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get
 @router.post('/drafts/{draft_id}/cancel')
 def cancel_unprepared_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
-    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').filter(BankTransferDraft.charge_reference.like('bank-review-%')).update({'status': 'cancelled'})
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').filter(BankTransferDraft.charge_reference.like('bank-review-%') | BankTransferDraft.charge_reference.like('bank-profile-%')).update({'status': 'cancelled'})
     if not updated:
         db.rollback()
         raise HTTPException(409, 'Only a draft that has not started preparation can be removed.')
@@ -553,6 +564,7 @@ def cancel_unprepared_draft(draft_id: str, request: Request, tenant_id: int = De
 
 @router.post('/drafts')
 def create_draft(data: DraftInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    require_legacy_routes(db, tenant_id)
     draft_action(request)
     config = db.get(BankMonitorConfig, tenant_id)
     if not config:
@@ -576,6 +588,7 @@ def create_draft(data: DraftInput, request: Request, tenant_id: int = Depends(ba
 @router.post('/repayment-runs/{run_id}/drafts')
 def create_repayment_drafts(run_id: int, request: Request,
                             tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    require_legacy_routes(db, tenant_id)
     if request.headers.get('x-bank-monitor-action') != 'create-repayment-drafts':
         raise HTTPException(403, 'Missing repayment draft action header.')
     run = db.query(BankRepaymentRun).filter_by(id=run_id, tenant_id=tenant_id).first()
@@ -629,6 +642,27 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not draft or not config:
         raise HTTPException(409, 'Draft unavailable.')
+    binding = db.get(BankProfileDraft, draft_id)
+    if binding:
+        route = bank_profiles.owned(db, BankProfileRoute, binding.route_id, tenant_id)
+        if draft.status != 'reviewed':
+            raise HTTPException(409, 'Check this transfer status before preparing it again.')
+        profile, _, _ = bank_profiles.route_accounts(db, route)
+        try:
+            bank_profiles.sync_profile(db, profile)
+        except plaid_bank.PlaidBankError as exc:
+            db.commit()
+            raise HTTPException(422, str(exc)) from None
+        limit = bank_profiles.transfer_limit(db, route, exclude_draft=draft.id)
+        if draft.amount_cents > limit['limit_cents']:
+            db.commit()
+            raise HTTPException(409, 'Bank balances or reservations changed. Remove this unprepared draft and review again.')
+        updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').update({'status': 'preparation_requested'})
+        if not updated:
+            db.rollback()
+            raise HTTPException(409, 'Draft is already being prepared.')
+        db.commit()
+        return draft_json(db.get(BankTransferDraft, draft_id))
     rules = MonitorRules.model_validate(config.rules)
     coverage_route = (draft.from_last4 in {a.last4 for a in rules.sources} and
                       draft.to_last4 in {a.last4 for a in rules.checking} and draft.memo.startswith('Cvr '))
@@ -748,7 +782,8 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
     """Offer an exact posted pair for explicit review, then recheck before marking it."""
     provider_action(request, 'verify-plaid-transfer')
     draft = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).first()
-    provider = db.get(BankProviderConnection, tenant_id)
+    binding = db.get(BankProfileDraft, draft_id)
+    provider = bank_profiles.owned(db, BankProfile, binding.profile_id, tenant_id) if binding else db.get(BankProviderConnection, tenant_id)
     if not draft or draft.status not in {'prepared_awaiting_submission', 'preparation_failed'} or not provider:
         raise HTTPException(409, 'A prepared transfer and active bank connection are required.')
     try:
@@ -757,10 +792,16 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
         if bank_item.get('item_id') != provider.item_id or bank_item.get('institution_id') != plaid_bank.TRULIANT_INSTITUTION_ID:
             raise plaid_bank.PlaidBankError('provider_institution_mismatch')
         created = draft.created_at.replace(tzinfo=timezone.utc) if draft.created_at.tzinfo is None else draft.created_at
-        match = plaid_bank.transfer_match(token, provider.account_map,
+        if binding:
+            source_account = bank_profiles.member(db, provider, binding.source_id)
+            destination_account = bank_profiles.member(db, provider, binding.destination_id)
+            mapping = {draft.from_last4: {'account_id': source_account.provider_account_id}, draft.to_last4: {'account_id': destination_account.provider_account_id}}
+        else:
+            mapping = provider.account_map
+        match = plaid_bank.transfer_match(token, mapping,
             from_last4=draft.from_last4, to_last4=draft.to_last4,
             amount_cents=draft.amount_cents, earliest=created.astimezone(EASTERN).date(),
-            memo=draft.memo if draft.charge_reference.startswith('bank-review-') else None)
+            memo=draft.memo if draft.charge_reference.startswith(('bank-review-', 'bank-profile-')) else None)
     except plaid_bank.PlaidBankError as exc:
         raise HTTPException(422, str(exc)) from None
     if match['status'] != 'ready_for_confirmation':
