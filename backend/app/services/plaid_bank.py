@@ -210,7 +210,7 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
 
 
 def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
-                   to_last4: str, amount_cents: int, earliest: date) -> dict:
+                   to_last4: str, amount_cents: int, earliest: date, memo: str | None = None) -> dict:
     """Find one exact posted debit and credit, never infer completion from one side."""
     source = account_map.get(from_last4)
     destination = account_map.get(to_last4)
@@ -253,7 +253,12 @@ def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
     descriptions = f"{debit['description']} {credit['description']}".lower()
     if not re.search(r'\b(transfer|xfer|payment|pymt|payoff)\b', descriptions):
         return {'status': 'needs_bank_review', 'source_posted': 1, 'destination_posted': 1}
-    return {'status': 'ready_for_confirmation', 'source': debit, 'destination': credit}
+    normalize = lambda value: re.sub(r'\s+', ' ', value).strip().casefold()
+    # Amount/date agreement alone is insufficient for unattended reconciliation.
+    # Require the draft's distinct reference on BOTH posted entries.
+    reference_matched = bool(memo and all(re.search(r'(?<![\w-])' + re.escape(normalize(memo)) + r'(?![\w-])', normalize(row['description'])) for row in (debit, credit)))
+    return {'status': 'ready_for_confirmation', 'source': debit, 'destination': credit,
+            'reference_matched': reference_matched}
 
 
 def map_accounts(accounts: list[dict], rules: MonitorRules) -> dict:

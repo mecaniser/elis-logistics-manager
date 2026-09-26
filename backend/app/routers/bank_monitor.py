@@ -1,6 +1,7 @@
 """Strictly authenticated, tenant-scoped settings and read-only run history."""
 import os
 import hashlib
+import json
 from uuid import uuid4
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
@@ -16,6 +17,7 @@ from app.services.bank_monitor import (AccountBalance, BalanceSnapshot, EASTERN,
                                        MonitorRules, StrictModel,
                                        calculate, calculate_repayment, due_date, next_check)
 from app.services import plaid_bank
+from app.services.bank_transfer_review import build_review
 
 router = APIRouter()
 
@@ -339,6 +341,107 @@ from sqlalchemy.exc import IntegrityError
 from app.models.bank_monitor import BankTransferDraft
 
 
+def rules_hash(rules):
+    return hashlib.sha256(json.dumps(rules.model_dump(), sort_keys=True).encode()).hexdigest()
+
+
+def unfinished_drafts(db, tenant_id):
+    return db.query(BankTransferDraft).filter(BankTransferDraft.tenant_id == tenant_id,
+        BankTransferDraft.status.notin_(['bank_history_matched', 'cancelled'])).all()
+
+
+def fresh_review_read(db, tenant_id, rules):
+    from app.bank_monitor_worker import read_provider, provider_visibility
+    try:
+        snapshot = read_provider(db, tenant_id, rules, datetime.now(timezone.utc))
+        visibility = provider_visibility(db, tenant_id)
+    except plaid_bank.PlaidBankError as exc:
+        db.commit()  # Preserve the connection's actionable error state.
+        raise HTTPException(409, f'Bank refresh stopped: {str(exc)}. Renew bank access or try again.') from None
+    return snapshot, visibility
+
+
+@router.post('/transfer-reviews')
+def create_transfer_review(data: ConnectionCheckInput, request: Request,
+                           tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'review-bank-transfers')
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
+    if not config:
+        raise HTTPException(409, 'Configure bank accounts first.')
+    rules = MonitorRules.model_validate(config.rules)
+    snapshot, visibility = fresh_review_read(db, tenant_id, rules)
+    result = build_review(rules, snapshot, visibility, unfinished_drafts(db, tenant_id))
+    if not rules.repayment.priority:
+        result['issues'].append('Choose a credit repayment priority in monitoring settings to include credit repayments.')
+    result.update({'snapshot': snapshot.model_dump(mode='json'), 'visibility': visibility,
+                   'rules_hash': rules_hash(rules), 'item_id': db.get(BankProviderConnection, tenant_id).item_id})
+    now = datetime.now(timezone.utc)
+    run = BankRepaymentRun(tenant_id=tenant_id, started_at=snapshot.observed_at, finished_at=now,
+                           status='review_required', result=result)
+    db.add(run)
+    # Keep the overview on the exact same fresh read as the review.
+    from app.services.bank_cash_plan import calculate_cash_plan
+    db.add(BankMonitorConnectionCheck(tenant_id=tenant_id, requested_at=snapshot.observed_at,
+        started_at=snapshot.observed_at, finished_at=now, status='balance_only', result={
+            'source': 'plaid', 'observed_at': snapshot.observed_at.isoformat(),
+            'accounts': [a.model_dump(mode='json') for a in snapshot.accounts],
+            'transaction_visibility': visibility, 'cash_plan': calculate_cash_plan(rules, snapshot, visibility),
+            'transfers_executed': False}))
+    db.commit()
+    return {'id': run.id, 'result': result, 'expires_at': (snapshot.observed_at + timedelta(minutes=5)).isoformat()}
+
+
+class ReviewedRoute(StrictModel):
+    from_last4: str = Field(pattern=r'^\d{4}$')
+    to_last4: str = Field(pattern=r'^\d{4}$')
+    amount_cents: int = Field(gt=0, le=100000000, strict=True)
+
+
+class ReviewedRoutes(StrictModel):
+    routes: list[ReviewedRoute] = Field(min_length=1, max_length=100)
+
+
+@router.post('/transfer-reviews/{run_id}/drafts')
+def create_reviewed_drafts(run_id: int, data: ReviewedRoutes, request: Request,
+                           tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    provider_action(request, 'create-reviewed-transfers')
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
+    run = db.query(BankRepaymentRun).filter_by(id=run_id, tenant_id=tenant_id).with_for_update().one_or_none()
+    provider = db.get(BankProviderConnection, tenant_id)
+    if not config or not run or not provider or run.result.get('source') != 'plaid_review':
+        raise HTTPException(409, 'Transfer review is unavailable. Refresh bank data.')
+    result = dict(run.result)
+    if result.get('drafts_created'):
+        raise HTTPException(409, 'These transfers are already in the queue.')
+    rules = MonitorRules.model_validate(config.rules)
+    snapshot = BalanceSnapshot.model_validate(result['snapshot'])
+    now = datetime.now(timezone.utc)
+    if not -30 <= (now - snapshot.observed_at).total_seconds() <= 300:
+        raise HTTPException(409, 'This bank read expired. Refresh the review before creating drafts.')
+    if result['rules_hash'] != rules_hash(rules) or result['item_id'] != provider.item_id:
+        raise HTTPException(409, 'Accounts or settings changed. Refresh the review.')
+    current = build_review(rules, snapshot, result['visibility'], unfinished_drafts(db, tenant_id))
+    limits = {(p['from_last4'], p['to_last4']): p for p in current['proposals']}
+    original = {(p['from_last4'], p['to_last4']): p for p in result['proposals']}
+    seen, created = set(), []
+    for index, route in enumerate(data.routes, 1):
+        key = (route.from_last4, route.to_last4)
+        if key in seen or key not in limits or key not in original or route.amount_cents > min(limits[key]['amount_cents'], original[key]['amount_cents']):
+            raise HTTPException(409, 'A route or amount exceeds this review. Refresh to include changes to the queue.')
+        seen.add(key)
+        prefix = 'Rpy' if limits[key]['kind'] == 'repayment' else 'Cvr'
+        draft = BankTransferDraft(id=str(uuid4()), tenant_id=tenant_id,
+            charge_reference=f'bank-review-{run.id}-{index}', **route.model_dump(),
+            memo=f'{prefix} {route.to_last4} {now.astimezone(EASTERN):%m%d} {run.id}-{index}',
+            status='reviewed', created_at=now)
+        db.add(draft)
+        created.append(draft)
+    run.result = {**result, 'drafts_created': True, 'draft_ids': [d.id for d in created],
+                  'proposals': [r.model_dump() for r in data.routes]}
+    db.commit()
+    return {'created': len(created), 'drafts': [draft_json(d) for d in created], 'transfers_executed': False}
+
+
 class RepaymentCheckingEvidence(StrictModel):
     last4: str = Field(pattern=r'^\d{4}$')
     current_cents: int = Field(ge=-100000000, le=100000000, strict=True)
@@ -434,7 +537,18 @@ def draft_action(request):
 
 @router.get('/drafts')
 def list_drafts(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
-    return [draft_json(d) for d in db.query(BankTransferDraft).filter_by(tenant_id=tenant_id).order_by(BankTransferDraft.created_at.desc()).limit(100)]
+    return [draft_json(d) for d in db.query(BankTransferDraft).filter_by(tenant_id=tenant_id).filter(BankTransferDraft.status != 'cancelled').order_by(BankTransferDraft.created_at.desc()).limit(100)]
+
+
+@router.post('/drafts/{draft_id}/cancel')
+def cancel_unprepared_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    draft_action(request)
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').filter(BankTransferDraft.charge_reference.like('bank-review-%')).update({'status': 'cancelled'})
+    if not updated:
+        db.rollback()
+        raise HTTPException(409, 'Only a draft that has not started preparation can be removed.')
+    db.commit()
+    return {'status': 'cancelled', 'transfers_executed': False}
 
 
 @router.post('/drafts')
@@ -469,12 +583,14 @@ def create_repayment_drafts(run_id: int, request: Request,
     if not run or not config or run.status != 'review_required':
         raise HTTPException(409, 'Repayment proposal is unavailable.')
     result = dict(run.result or {})
+    if result.get('source') == 'plaid_review':
+        raise HTTPException(409, 'Open transfer review to create these drafts.')
     if result.get('drafts_created'):
         raise HTTPException(409, 'This repayment proposal is already in the transfer queue.')
     unresolved = db.query(BankTransferDraft).filter(
         BankTransferDraft.tenant_id == tenant_id,
         BankTransferDraft.memo.like('Rpy %'),
-        BankTransferDraft.status != 'bank_history_matched').first()
+        BankTransferDraft.status.notin_(['bank_history_matched', 'cancelled'])).first()
     if unresolved:
         raise HTTPException(409, 'Finish the existing repayment transfer before adding another repayment proposal.')
     rules = MonitorRules.model_validate(config.rules)
@@ -510,7 +626,7 @@ def create_repayment_drafts(run_id: int, request: Request,
 def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
     draft = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).first()
-    config = db.get(BankMonitorConfig, tenant_id)
+    config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not draft or not config:
         raise HTTPException(409, 'Draft unavailable.')
     rules = MonitorRules.model_validate(config.rules)
@@ -518,8 +634,23 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
                       draft.to_last4 in {a.last4 for a in rules.checking} and draft.memo.startswith('Cvr '))
     repayment_route = (draft.from_last4 in {a.last4 for a in rules.checking} and
                        draft.to_last4 in set(rules.repayment.priority) and draft.memo.startswith('Rpy '))
-    if not coverage_route and not repayment_route:
+    checking_route = (draft.charge_reference.startswith('bank-review-') and
+                      draft.from_last4 != draft.to_last4 and draft.memo.startswith('Cvr ') and
+                      {draft.from_last4, draft.to_last4}.issubset({a.last4 for a in rules.checking}))
+    if not coverage_route and not repayment_route and not checking_route:
         raise HTTPException(409, 'Configured accounts changed. Review the draft.')
+    if draft.charge_reference.startswith('bank-review-'):
+        if draft.status != 'reviewed':
+            raise HTTPException(409, 'This draft has already been requested. Check its posting status.')
+        snapshot, visibility = fresh_review_read(db, tenant_id, rules)
+        review = build_review(rules, snapshot, visibility,
+            [d for d in unfinished_drafts(db, tenant_id) if d.id != draft.id])
+        source = next((a for a in review['cash_accounts'] if a['last4'] == draft.from_last4), None)
+        destination = next((a for a in review['credit_accounts' if repayment_route else 'cash_accounts'] if a['last4'] == draft.to_last4), None)
+        cap = destination.get('remaining_cents' if repayment_route else 'shortfall_cents') if destination else None
+        checking_blocked = repayment_route and any(a['shortfall_cents'] is None or a['shortfall_cents'] > 0 for a in review['cash_accounts'])
+        if checking_blocked or source is None or source['limit_cents'] is None or cap is None or draft.amount_cents > min(source['limit_cents'], cap):
+            raise HTTPException(409, 'Bank balances changed and no longer cover this draft. Refresh the transfer review.')
     # Reserve before browser dispatch; timeouts cannot silently reprepare a draft.
     updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').update({'status': 'preparation_requested'})
     if not updated:
@@ -606,6 +737,7 @@ def history_match(draft_id: str, evidence: HistoryEvidence, request: Request, te
 
 class PlaidMatchInput(StrictModel):
     confirm: bool = False
+    automatic: bool = False
     source_evidence: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     destination_evidence: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
 
@@ -627,7 +759,8 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
         created = draft.created_at.replace(tzinfo=timezone.utc) if draft.created_at.tzinfo is None else draft.created_at
         match = plaid_bank.transfer_match(token, provider.account_map,
             from_last4=draft.from_last4, to_last4=draft.to_last4,
-            amount_cents=draft.amount_cents, earliest=created.astimezone(EASTERN).date())
+            amount_cents=draft.amount_cents, earliest=created.astimezone(EASTERN).date(),
+            memo=draft.memo if draft.charge_reference.startswith('bank-review-') else None)
     except plaid_bank.PlaidBankError as exc:
         raise HTTPException(422, str(exc)) from None
     if match['status'] != 'ready_for_confirmation':
@@ -640,8 +773,9 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
     destination_evidence = hashlib.sha256(f"plaid:{provider.item_id}:{destination['transaction_id']}".encode()).hexdigest()
     if source_evidence == destination_evidence:
         raise HTTPException(409, 'Separate bank entries are required.')
-    if data.confirm:
-        if data.source_evidence != source_evidence or data.destination_evidence != destination_evidence:
+    automatic_match = data.automatic and match.get('reference_matched') is True
+    if data.confirm or automatic_match:
+        if not automatic_match and (data.source_evidence != source_evidence or data.destination_evidence != destination_evidence):
             raise HTTPException(409, 'Bank entries changed. Review the transfer again.')
         try:
             updated = db.query(BankTransferDraft).filter(
@@ -656,7 +790,7 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
         except IntegrityError:
             db.rollback()
             raise HTTPException(409, 'Bank entries are already associated with another transfer.') from None
-        return {'status': 'bank_history_matched', 'verification_source': 'plaid_confirmed_by_user'}
+        return {'status': 'bank_history_matched', 'verification_source': 'plaid_reference_match' if automatic_match else 'plaid_confirmed_by_user'}
     return {'status': 'ready_for_confirmation',
             'source': {key: source[key] for key in ('description', 'date', 'amount_cents')},
             'destination': {key: destination[key] for key in ('description', 'date', 'amount_cents')},

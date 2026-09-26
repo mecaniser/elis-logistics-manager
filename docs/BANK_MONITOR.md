@@ -243,3 +243,44 @@ unimplemented are superseded by this section; production acceptance is still ope
 Validation: 42 focused tests pass. The new tests cover pending debit direction,
 explicit empty versus missing sections, malformed/duplicate/truncated rows, and
 keeping credit balance/interest separate from payoff. No banking mutations occurred.
+
+### Bank-reported transfer review
+
+When Plaid is linked, **Review transfers** refreshes balances server-side and
+opens a prefilled drawer. It does not require the user to copy balances, pending
+amounts, or exact payoff figures. The old manual-evidence flow remains available
+only when Plaid is not connected.
+
+The review uses the lowest of current balance, available balance, and current
+balance minus reported pending debits. It then protects the configured reserve
+and all unfinished outgoing drafts. Incoming drafts are never treated as cash.
+Checking shortfalls take precedence: credit repayments wait for checking
+coverage to post. Credit allocations follow configured priority, reduce reported
+outstanding debt by unfinished incoming drafts, and stop at missing debt data.
+These are bank-reported estimates, not a complete pending-debit certification or
+an exact payoff quote. Upcoming obligations absent from the bank data still need
+to be retained by reducing/skipping suggested amounts or increasing the reserve.
+
+Users may reduce or skip routes, then create all selected drafts in one action.
+The server binds drafts to its stored five-minute snapshot, account settings,
+provider connection and current queue. It rejects increased/forged routes,
+expired reviews, changed settings and repeated creation. Preparation refreshes
+bank balances again. Unprepared drafts from this flow can be removed; requested
+or potentially submitted transfers cannot be cancelled through this action.
+No extension update is needed: checking coverage uses the existing Cvr form
+contract, and credit repayment uses Rpy. The user submits in Truliant.
+
+While Bank Monitor is visible, prepared transfers are checked through Plaid at
+most once per minute per transfer, including after returning to the page. Only a
+unique posted debit and credit matching amount and the complete generated draft
+reference can be marked automatically. Amount/date candidates without that
+reference require confirmation; absent, ambiguous or delayed entries remain
+unconfirmed. No additional bank login is needed for these provider reads unless
+Plaid requires renewed consent. This is page-driven reconciliation, not a claim
+that the unattended Friday repayment worker now has complete pending evidence.
+
+Validation: `backend/tests/test_bank_transfer_review.py` covers reserve/pending
+math, shared cash/debt, missing evidence, snapshot expiry, tampering, tenant and
+action checks, duplicate creation, cancellation boundaries, checking preparation,
+balance changes and automatic-reference matching. Browser QA uses isolated local
+test data; production transfer submission is not a QA step.
