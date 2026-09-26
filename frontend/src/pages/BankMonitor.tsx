@@ -503,7 +503,9 @@ export default function BankMonitor() {
               <div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Bank Monitor</p><h2 id="monitoring-settings-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Monitoring settings</h2><p className="mt-1 text-sm text-slate-600">Manage accounts, coverage rules, repayment priority, and schedule.</p></div>
               <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
             </header>
-          <form onSubmit={save} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-5 pt-5 sm:px-6"><details className="rounded-xl border border-slate-200"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-900">Payment accounts</summary><PaymentAccounts key={`payment-accounts-${currentTenantId}`} /></details></div>
+          <form onSubmit={save} className="space-y-6 p-5 sm:p-6">
             <div ref={setBankConnectionsTarget} />
             <section aria-label="Monitoring summary" className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
               <div className="flex items-start justify-between gap-4"><span className="text-slate-600">Schedule</span><span className="text-right font-medium text-slate-950">{!scheduleActive ? 'Paused / setup needed' : 'Daily · 5:30 p.m. Eastern'}</span></div>
@@ -584,6 +586,7 @@ export default function BankMonitor() {
             {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">{settingsError}</div>}
             <button disabled={saving || !settingsDirty} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none">{saving && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent motion-reduce:animate-none" />}{saving ? 'Saving…' : settingsDirty ? 'Save settings' : 'Settings saved'}</button>
           </form>
+          </div>
           </section>
         </>}
 
@@ -641,7 +644,6 @@ export default function BankMonitor() {
       setRepaymentNotice(`${count} reviewed transfer${count === 1 ? '' : 's'} added. Prepare each form in Truliant to continue.`)
       void bankMonitorApi.get(currentTenantId).then(response => { if (tenantRef.current === currentTenantId) setData(response.data) }).catch(() => undefined)
     }} />}
-    <PaymentAccounts key={`payment-accounts-${currentTenantId}`} />
     {currentTenantId && <OwnerReimbursements key={`owner-reimbursements-${currentTenantId}`} />}
   </div>
 }
