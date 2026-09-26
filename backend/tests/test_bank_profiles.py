@@ -219,3 +219,32 @@ def test_credit_line_advance_and_checking_transfer_are_explicit(setup, db):
     member.subtype = 'credit card'; db.commit()
     with pytest.raises(Exception, match='credit line'):
         service.transfer_limit(db, db.get(BankProfileRoute, advance['id']))
+
+
+def test_account_view_and_review_reopen_existing_transfer(setup, db):
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    url = f"/api/bank-monitor/profiles/routes/{route['id']}/review"
+    first = client.post(url, headers=headers()).json()
+    second = client.post(url, headers=headers()).json()
+    created = client.post(f"/api/bank-monitor/profiles/reviews/{first['id']}/draft", headers=headers(), json={'amount_cents': 50000}).json()['draft']
+    existing = client.post(url, headers=headers()).json()['existing_draft']
+    assert existing['id'] == created['id']
+    # A second tab with an earlier review cannot create a duplicate.
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{second['id']}/draft", headers=headers(), json={'amount_cents': 1000})
+    assert response.status_code == 409
+    assert 'already in progress' in response.json()['detail']
+    dashboard = client.get('/api/bank-monitor/profiles', headers=headers()).json()
+    assert dashboard['drafts'][0]['id'] == created['id']
+    assert dashboard['drafts'][0]['source_id'] == route['source_id']
+
+
+def test_full_payoff_requires_verified_quote_not_reported_balance(setup, db):
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000, 'intent': 'full_payoff'})
+    assert response.status_code == 409
+    assert 'payoff quote' in response.json()['detail']
+    assert db.query(BankTransferDraft).count() == 0
+    assert client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000, 'intent': 'payment'}).status_code == 200
