@@ -136,6 +136,7 @@ export default function BankMonitor() {
   const [providerNotice, setProviderNotice] = useState('')
   const [profilesMode, setProfilesMode] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [bankConnectionsTarget, setBankConnectionsTarget] = useState<HTMLDivElement | null>(null)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
   const [transferReviewOpen, setTransferReviewOpen] = useState(false)
   const [repaying, setRepaying] = useState(false)
@@ -455,7 +456,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
-        <BankProfiles key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
+        <BankProfiles settingsTarget={bankConnectionsTarget} openSettings={() => setSettingsOpen(true)} key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
         <BankTransferQueue profilesMode={profilesMode} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
@@ -503,6 +504,7 @@ export default function BankMonitor() {
               <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
             </header>
           <form onSubmit={save} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+            <div ref={setBankConnectionsTarget} />
             <section aria-label="Monitoring summary" className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
               <div className="flex items-start justify-between gap-4"><span className="text-slate-600">Schedule</span><span className="text-right font-medium text-slate-950">{!scheduleActive ? 'Paused / setup needed' : 'Daily · 5:30 p.m. Eastern'}</span></div>
               <div className="flex items-start justify-between gap-4"><span className="text-slate-600">Bank data</span><span className="text-right font-medium text-slate-950">{data.provider_connection.linked ? 'Plaid connected' : data.reader_mode === 'signed_in_chrome' ? 'Chrome bank assistant' : 'Server bank reader'}{!workerOnline && <span className="block text-amber-800">Monitoring worker offline</span>}</span></div>
