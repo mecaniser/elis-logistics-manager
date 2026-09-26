@@ -19,10 +19,15 @@ export function validDraft(d) {
     ((kind === 'coverage' && /^Cvr [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)) ||
      (kind === 'repayment' && /^Rpy [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)));
 }
+function sameBankSession(left, right) {
+  if (!left || !right) return !left && !right;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every(key => left[key] === right[key]);
+}
 export function boundDraft(active, draft, sender) {
   return !!active && active.origin === new URL(sender.url).origin && active.elisTabId === sender.tab?.id &&
     ['id','amount_cents','from_last4','to_last4','memo'].every(k => active.draft?.[k] === draft?.[k]) &&
-    JSON.stringify(active.draft?.bank_session || null) === JSON.stringify(draft?.bank_session || null);
+    sameBankSession(active.draft?.bank_session, draft?.bank_session);
 }
 export function parseAccountSummary(text) {
   const clean=String(text || '').replace(/\s+/g,' ').trim();
