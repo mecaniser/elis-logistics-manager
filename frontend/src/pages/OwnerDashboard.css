@@ -84,3 +84,27 @@
 @media (max-width:700px) {.history-trend-controls label,.history-trend-controls label:last-child {margin-left:0;min-width:min(100%,230px);flex:1 1 180px;}.history-trend-summary {gap:8px 16px;}}
 
 .history-identity-secondary { display: block; margin-top: 4px; color: var(--text-secondary, #526477); font-size: 12px; font-weight: 400; line-height: 1.4; }
+
+.weekly-explainer {display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:16px 0 24px;}
+.weekly-explainer p {margin:0;max-width:65ch;}
+.weekly-explainer label {display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;}
+.weekly-truck {padding:24px 0;border-top:1px solid #dce3e8;}
+.weekly-truck header {display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:12px;}
+.weekly-truck h3 {font-size:17px;margin:0;}
+.weekly-truck header p {margin:6px 0 0;font-size:12px;}
+.weekly-truck header>span {font-size:12px;color:#526477;}
+.weekly-status-track {display:flex;gap:2px;margin:4px 12px 12px 66px;height:9px;}
+.weekly-status-track span {flex:1;min-width:0;background:#e9edf0;}
+.weekly-status-track .is-offroad {background:#9ca7af;}
+.weekly-status-track .is-recorded {background:#a6bcaf;}
+.weekly-status-track .is-review {background:repeating-linear-gradient(135deg,#d4a340 0,#d4a340 3px,#fff1cd 3px,#fff1cd 6px);}
+.weekly-downtime {background:#eef1f3;padding:12px 16px;font-size:12px;line-height:1.5;margin:12px 0 0;}
+.weekly-downtime span {display:block;margin-top:4px;color:#485b68;}
+.weekly-key {display:flex;gap:10px 24px;flex-wrap:wrap;font-size:12px;color:#485b68;}
+.weekly-tooltip {background:#fff;border:1px solid #cbd5df;padding:12px 16px;font-size:12px;max-width:270px;}
+.weekly-selected {padding:16px 0;border-top:1px solid #dce3e8;}
+.weekly-selected a {display:block;padding:8px 0;text-decoration:underline;}
+@media(max-width:600px) {.weekly-truck header {display:block;}.weekly-truck header>span {display:block;margin-top:8px;}.weekly-explainer {gap:12px;}}
+.weekly-inspect {display:flex;gap:12px;align-items:center;font-size:12px;flex-wrap:wrap;margin:12px 0;}
+.weekly-inspect select {max-width:100%;min-height:36px;border:1px solid #cbd5df;border-radius:6px;padding:6px 12px;background:#fff;color:#263b48;}
+.weekly-tooltip {max-width:190px;overflow-wrap:anywhere;}
