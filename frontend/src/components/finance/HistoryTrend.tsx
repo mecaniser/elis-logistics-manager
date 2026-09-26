@@ -15,7 +15,6 @@ const monthLabel = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocale
 export default function HistoryTrend({history}: {history: HistoryReport}) {
   const latestYear = Number(history.period.end?.slice(0, 4) || new Date().getFullYear())
   const firstYear = Number(history.period.start?.slice(0, 4) || latestYear)
-  const [presentation, setPresentation] = useState('weekly')
   const [metric, setMetric] = useState<TrendMetric>('remainder')
   const [period, setPeriod] = useState(String(latestYear))
   const [customStart, setCustomStart] = useState(`${latestYear}-01-01`)
@@ -53,12 +52,12 @@ export default function HistoryTrend({history}: {history: HistoryReport}) {
         {years.map(year=><option key={year} value={year}>{year}</option>)}<option value="all">All recorded dates</option><option value="custom">Custom dates</option>
       </select></label>
       {period==='custom'&&<><label>From<input aria-label="Timeline from" type="date" value={customStart} onChange={event=>setCustomStart(event.target.value)} /></label><label>Through<input aria-label="Timeline through" type="date" value={customEnd} onChange={event=>setCustomEnd(event.target.value)} /></label></>}
-      <label>View<select aria-label="Chart view" value={presentation} onChange={e=>setPresentation(e.target.value)}><option value="weekly">Weekly chart</option><option value="line">Previous line comparison</option></select></label><label>Measure<select aria-label="Measure" value={metric} onChange={event=>setMetric(event.target.value as TrendMetric)}><option value="remainder">Settlement remainder</option><option value="fuel">28-day fuel cost / mile</option><option value="driver">Driver share of freight</option></select></label>
+      <label>Measure<select aria-label="Measure" value={metric} onChange={event=>setMetric(event.target.value as TrendMetric)}><option value="remainder">Settlement remainder</option><option value="fuel">28-day fuel cost / mile</option><option value="driver">Driver share of freight</option></select></label>
     </div>
     {!validRange?<p role="alert" className="finance-error">The start date must be on or before the end date.</p>:<>
-      <p className="finance-help">Trucks are identified by VIN; current names are shown for reference. {presentation==='weekly'&&metric==='remainder'?'Select a truck, compare up to three, or view the fleet total.':'Each point is one source-checked statement, dated when the carrier issued it. A line stops after more than two settlement cycles without a verified point.'} {metric==='fuel'?'Fuel purchases per reported mile measure spending, not consumption.':'Gaps do not mean zero earnings.'}</p>
+      <p className="finance-help">Trucks are identified by VIN; current names are shown for reference. {metric==='remainder'?'Select a truck, compare up to three, or view the fleet total.':'Each point is one source-checked statement, dated when the carrier issued it. A line stops after more than two settlement cycles without a verified point.'} {metric==='fuel'?'Fuel purchases per reported mile measure spending, not consumption.':'Gaps do not mean zero earnings.'}</p>
       <div className="history-trend-summary" aria-live="polite"><span><strong>{statusCount('arithmetic_matched')}</strong> verified statements</span><span><strong>{statusCount('missing_source')}</strong> saved records without originals</span><span><strong>{statusCount('needs_review')}</strong> originals needing review</span></div>
-      {presentation==='weekly'&&metric==='remainder'?<WeeklyTruckTrends history={history} range={range}/>:<>{points.length ? <div className="owner-trend" role="img" aria-label={`${labels[metric]} from ${range.start} through ${range.end}. Verified statements are connected only within each truck's own series; exact dates and values follow below.`}>
+      {metric==='remainder'?<WeeklyTruckTrends history={history} range={range}/>:<>{points.length ? <div className="owner-trend" role="img" aria-label={`${labels[metric]} from ${range.start} through ${range.end}. Verified statements are connected only within each truck's own series; exact dates and values follow below.`}>
         <ResponsiveContainer width="100%" height={290}><LineChart data={points} margin={{top:20,right:18,left:0,bottom:8}}>
           <CartesianGrid vertical={false} stroke="#e2e8f0" />
           <XAxis dataKey="dateValue" type="number" scale="time" domain={[dateNumber(range.start),dateNumber(range.end)]} allowDataOverflow ticks={dates} tickFormatter={value=>monthLabel(new Date(Number(value)).toISOString().slice(0,7))} minTickGap={35} tick={{fontSize:11}} />
