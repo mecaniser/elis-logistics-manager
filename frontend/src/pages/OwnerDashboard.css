@@ -108,3 +108,25 @@
 .weekly-inspect {display:flex;gap:12px;align-items:center;font-size:12px;flex-wrap:wrap;margin:12px 0;}
 .weekly-inspect select {max-width:100%;min-height:36px;border:1px solid #cbd5df;border-radius:6px;padding:6px 12px;background:#fff;color:#263b48;}
 .weekly-tooltip {max-width:190px;overflow-wrap:anywhere;}
+.compact-chart-controls {margin-top:20px;}
+.compact-chart-controls .weekly-average {display:flex;flex-direction:row;align-items:center;gap:8px;padding-bottom:12px;}
+.compact-chart-heading {display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline;margin-top:20px;}
+.compact-chart-heading h3 {margin:0;font-size:17px;}
+.compact-chart-heading>span {font-size:12px;color:#526477;}
+.compact-status {display:flex;align-items:center;gap:12px;margin:8px 12px 8px 56px;font-size:12px;}
+.compact-status>span {min-width:130px;}
+.compact-status .weekly-status-track {flex:1;margin:0;}
+.compact-fleet-table {max-height:290px;overflow:auto;border:1px solid #dce3e8;margin-top:20px;}
+.compact-fleet-table table {width:100%;border-collapse:collapse;font-size:13px;}
+.compact-fleet-table caption {text-align:left;padding:12px;font-weight:600;}
+.compact-fleet-table td,.compact-fleet-table th {padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0;white-space:nowrap;}
+.compact-fleet-table thead th {position:sticky;top:0;background:#eef2f3;z-index:1;}
+.compact-fleet-table .is-selected {background:#eff5ff;}
+.compact-truck-button {padding:6px 10px;border:1px solid #bac9d6;border-radius:6px;background:#fff;color:#172f3b;font-weight:600;cursor:pointer;}
+.compact-truck-button:hover {background:#e4edfa;}
+.compact-fleet-table label {display:flex;align-items:center;gap:8px;}
+@media(max-width:600px){.compact-status{margin-left:0;flex-wrap:wrap;gap:4px;}.compact-status .weekly-status-track{flex-basis:100%;}.compact-chart-heading>span{display:block;}}
+.compact-chart-controls {justify-content:flex-start;}
+.compact-chart-controls>label:last-child {margin-left:0;}
+.compact-status {display:block;}
+.compact-status>span {display:block;margin-bottom:4px;}
