@@ -131,7 +131,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   (async()=>{
     const existing=await chrome.storage.session.get('activeDraft');
     if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
-      if(existing.activeDraft) throw new Error('An active transfer review already exists.');
+      if(existing.activeDraft && !boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) throw new Error('A different transfer review already exists. Finish checking that transfer first.');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
       await approvePreparation(message.draft,'verify');
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
@@ -140,8 +140,10 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     if(message.type==='ELIS_VERIFY') {
       if(!existing.activeDraft) {finishReply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
-      if(!boundDraft(existing.activeDraft,message.draft,sender))
-        throw new Error('No active preparation for this draft.');
+      if(!boundDraft(existing.activeDraft,message.draft,sender)) {
+        if(boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) {finishReply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'Approve read-only verification in this ELIS tab.'});return;}
+        throw new Error('A different transfer is awaiting verification.');
+      }
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
       const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
