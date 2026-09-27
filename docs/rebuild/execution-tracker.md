@@ -330,3 +330,8 @@ Replaced the fixed-width scrolling table with a fluid weekly grid. The entire se
 ### Supporting documents usability — September 26
 
 Collapsed the evidence archive by default in finance workflows and moved its upload form into an optional disclosure. Recognizable labels use linked repair/vendor and settlement metadata, date, amount basis, and VIN where available. Payment confirmations remain distinct from vendor documents. Search, document-type filters, and 20-record pagination replace the unbounded technical list; raw references/extraction are inside File details. Open settlement links to the reconciliation record; Open repair uses a repair query filter with Show all repairs. The archive clearly covers all business dates, independent of reporting dates. No financial data changed. Browser checks confirmed real metadata, filtering, no-results behavior, and 390px layout without horizontal page overflow. Local-only preview.
+
+### 2026-09-26 — Compact supporting-document archive
+- Replaced tall document cards with 65px desktop rows; vendor/date/VIN, amount and controls stay aligned. Removed repeated explanatory copy and moved description/file metadata behind an accessible chevron button.
+- Kept distinct repair cost, settlement remainder and recorded-payment labels. No accounting or source-data changes.
+- Build, lint and diff whitespace checks passed. Local browser verified search, keyboard details, 65px desktop rows and 390px mobile without horizontal overflow. Local only; production unchanged.

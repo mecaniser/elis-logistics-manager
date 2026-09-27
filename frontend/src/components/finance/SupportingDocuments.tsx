@@ -6,6 +6,7 @@ import type { RepairReviewRow } from '../repairs/repairReview'
 
 export default function SupportingDocuments({evidence,asOf,children,legacyRepairs}:{evidence:Evidence[];asOf:string;children:ReactNode;legacyRepairs:Workspace['legacy_repairs']}) {
   const [open,setOpen]=useState(false)
+  const [expanded,setExpanded]=useState<string|null>(null)
   const [search,setSearch]=useState('')
   const [type,setType]=useState('all')
   const [limit,setLimit]=useState(20)
@@ -26,7 +27,7 @@ export default function SupportingDocuments({evidence,asOf,children,legacyRepair
     const repair=related[0]
     const settlement=settlements.find(s=>s.evidence_id===doc.id||(doc.source_key.startsWith('legacy-settlement:')&&s.id===Number(doc.source_key.split(':')[1])))
     const category=confirmation?'confirmation':doc.source_key.startsWith('recovered-repair:')||repair?'repair':settlement||doc.source_key.startsWith('legacy-settlement:')?'settlement':'other'
-    const categoryLabel={confirmation:'Your payment confirmation',repair:'Repair document',settlement:'Settlement PDF',other:'Supporting document'}[category]
+    const categoryLabel={confirmation:'Payment confirmation',repair:'Repair',settlement:'Settlement',other:'Document'}[category]
     const title=(confirmation&&typeof doc.extracted.payee==='string'?doc.extracted.payee:null)||repair?.payee.name||settlement?.provider||({confirmation:'Saved repair payment details',repair:'Repair invoice or receipt',settlement:'Carrier settlement',other:'Supporting document'}[category])
     const date=confirmation&&typeof doc.extracted.paid_date==='string'?doc.extracted.paid_date:repair?.date||settlement?.date
     const amount=confirmation?doc.extracted.paid_amount:repair?.recorded_cost??settlement?.remainder
@@ -37,14 +38,31 @@ export default function SupportingDocuments({evidence,asOf,children,legacyRepair
     return {doc,category,categoryLabel,title,date,amount,equipment,repair,settlement,action,related}
   })
   const filtered=rows.filter(r=>(type==='all'||r.category===type)&&[r.title,r.categoryLabel,r.date,r.amount,r.equipment,r.repair?.description,r.doc.filename,r.doc.source_key].join(' ').toLowerCase().includes(search.toLowerCase()))
-  return <section className="finance-section supporting-documents"><details open={open} onToggle={e=>setOpen(e.currentTarget.open)}><summary><strong>Supporting documents</strong><span>{evidence.length} saved records · Open only when you need a source</span></summary>
-    <p className="finance-help">Invoices, settlement PDFs and your saved payment confirmations. These are supporting records, not a new to-do list. This archive covers all dates for the selected business. A saved file does not confirm payment or reconciliation.</p>
+  const chevron=<svg className="document-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+  return <section className="finance-section supporting-documents"><details open={open} onToggle={e=>setOpen(e.currentTarget.open)}><summary>{chevron}<strong>Supporting documents</strong><span>{evidence.length} records · All dates</span></summary>
     <div className="document-filters"><label>Find a document<input type="search" value={search} placeholder="Vendor, date, amount or truck" onChange={e=>{setSearch(e.target.value);setLimit(20)}}/></label><label>Document type<select value={type} onChange={e=>{setType(e.target.value);setLimit(20)}}><option value="all">All documents</option><option value="repair">Repair documents</option><option value="settlement">Settlements</option><option value="confirmation">Payment confirmations</option><option value="other">Other records</option></select></label></div>
     {status&&<p role="status">{status}{status.includes('could not')&&<button type="button" className="finance-secondary" onClick={()=>setRetry(n=>n+1)}>Try again</button>}</p>}
-    <p className="finance-help">Showing {Math.min(limit,filtered.length)} of {filtered.length} matching records.</p>
-    {!filtered.length&&<p>No matching documents. Try another name or document type.</p>}
-    {filtered.slice(0,limit).map(r=><article key={r.doc.id} className="supporting-record"><div><span className="document-kind">{r.categoryLabel}{r.doc.supersedes_id?' · Updated version':''}</span><h3>{r.title}</h3><p>{r.date||'Date not identified'}{r.amount!=null?` · ${dollars(r.amount)}${r.category==='settlement'?' statement remainder':r.category==='confirmation'?' recorded payment':r.related.length>1?' first linked repair cost':' saved repair cost'}`:''}{r.equipment?` · ${r.equipment}`:''}</p>{r.repair&&<p className="finance-muted">{r.repair.description}</p>}{r.related.length>1&&<p>Supports {r.related.length} repair records.</p>}<p className="finance-help">{r.action|| (r.category==='confirmation'?'Saved record of your answers; not a bank receipt.':'Saved for reference.')}</p></div><div className="document-actions"><button type="button" className="finance-secondary" onClick={()=>void financeApi.download(`/evidence/${r.doc.id}/original`,r.doc.filename).catch(()=>setStatus('Download failed. Please try again.'))}>{r.category==='confirmation'?'Download confirmation':'Download document'}</button>{r.settlement&&<Link className="finance-secondary" to={`/settlements/reconciliation?asset=${r.settlement.asset_id}&id=${r.settlement.id}#review-records`}>Open settlement</Link>}{r.repair&&<Link className="finance-secondary" to={`/repairs?repair=${r.repair.legacy_id}`}>Open repair</Link>}</div><details className="document-technical"><summary>File details</summary><p>{r.doc.filename}</p><p>Internal reference: {r.doc.source_key}</p><pre>{JSON.stringify(r.doc.extracted,null,2)}</pre></details></article>)}
+    <p className="document-count">{Math.min(limit,filtered.length)} of {filtered.length} records</p>
+    {!filtered.length&&<p>No matching documents.</p>}
+    {filtered.slice(0,limit).map(r=>{
+      const amountLabel=r.category==='settlement'?'Remainder':r.category==='confirmation'?'Recorded payment':r.related.length>1?'First repair cost':'Repair cost'
+      const isExpanded=expanded===r.doc.id
+      return <article key={r.doc.id} className="supporting-record">
+        <div className="document-identity"><h3 title={r.title}>{r.title}</h3><p><span className="document-kind">{r.categoryLabel}</span> · {r.date||'Date unknown'}{r.equipment?` · ${r.equipment}`:''}{r.doc.supersedes_id?' · Amended':''}</p></div>
+        <div className="document-amount">{r.amount!=null&&<><strong>{dollars(r.amount)}</strong><small>{amountLabel}</small></>}</div>
+        <div className="document-actions">
+          {r.action&&<span className="document-review" title={r.action}>Review</span>}
+          {(r.settlement||r.repair)&&<Link className="finance-secondary" aria-label={`Open ${r.settlement?'settlement':'repair'}: ${r.title}`} to={r.settlement?`/settlements/reconciliation?asset=${r.settlement.asset_id}&id=${r.settlement.id}#review-records`:`/repairs?repair=${r.repair?.legacy_id}`}>Open</Link>}
+          <button type="button" className="finance-secondary document-icon" aria-label={`Download ${r.categoryLabel.toLowerCase()}: ${r.title}`} title="Download" onClick={()=>void financeApi.download(`/evidence/${r.doc.id}/original`,r.doc.filename).catch(()=>setStatus('Download failed. Please try again.'))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+          <button type="button" className="finance-secondary document-icon" aria-label={`Details: ${r.title}`} aria-expanded={isExpanded} aria-controls={`document-${r.doc.id}`} title="Details" onClick={()=>setExpanded(isExpanded?null:r.doc.id)}>{chevron}</button>
+        </div>
+        {isExpanded&&<div id={`document-${r.doc.id}`} className="document-technical">
+          {r.repair&&<p>{r.repair.description}</p>}{r.related.length>1&&<p>Supports {r.related.length} repairs.</p>}{r.action&&<p>{r.action}</p>}{r.category==='confirmation'&&<p>Your payment confirmation; not a bank receipt.</p>}
+          <p>{r.doc.filename}</p><p>Reference: {r.doc.source_key}</p><details><summary>{chevron}Extracted data</summary><pre>{JSON.stringify(r.doc.extracted,null,2)}</pre></details>
+        </div>}
+      </article>
+    })}
     {filtered.length>limit&&<button type="button" className="finance-secondary" onClick={()=>setLimit(n=>n+20)}>Show 20 more</button>}
-    <details className="document-upload"><summary>Add another supporting document</summary><p className="finance-help">Use Settlements or Repairs for normal uploads. Use this option for additional supporting files or a replacement document.</p>{children}</details>
+    <details className="document-upload"><summary>{chevron}Add supporting document</summary>{children}</details>
   </details></section>
 }
