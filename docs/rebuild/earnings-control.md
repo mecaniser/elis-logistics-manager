@@ -66,3 +66,6 @@ The overview chart now uses the planning report's exact included unposted legacy
 
 ## Interactive freight drilldown
 Other charges expands into individual chart ribbons/waterfall steps and collapses without changing totals. Fuel opens purchases grouped by the exact included settlements. Posted entries retain posted purchase rows; saved entries use the tenant's existing reviewed history by legacy ID. Missing detail/product/location stays explicit, and purchase totals differing from chart charges show a discrepancy. Changing report/business resets drilldowns. Local desktop/mobile and waterfall checks passed; 317 backend and 32 frontend tests, lint/build passed.
+
+## Fuel branch expansion and unit prices
+Fuel expands in the chart by purchase location; the transaction list opens separately through Purchase details. Fuel, other charges and purchase details start closed, independently. Chart branches preserve the original fuel total with an explicit unresolved difference if purchase detail is absent or mismatched. Purchase rows show recorded amount/gallons at three decimal places; missing or nonpositive gallons show unavailable. 35 frontend tests and lint/build pass; no backend changes.

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { type HistoryReport } from './historyTypes'
 import { dollars } from '../../services/finance'
-import { freightFlowModel, type FreightBreakdown } from './freightFlowModel'
+import { freightFlowModel, fuelBranches, pricePerGallon, type FreightBreakdown } from './freightFlowModel'
 import './FreightFlow.css'
 
 const amount = (cents: number) => dollars(cents / 100)
@@ -10,8 +10,11 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
   const [view, setView] = useState<'flow' | 'waterfall'>('flow')
   const [expandedOther,setExpandedOther] = useState(false)
   const [fuelOpen,setFuelOpen] = useState(false)
-  const model = freightFlowModel(data,expandedOther)
-  const color = (key:string) => ['carrier','driver_pay','fuel','remainder'].includes(key)?key:'other'
+  const [purchaseOpen,setPurchaseOpen] = useState(false)
+  const fuelSources = (data.fuel_sources||[]).map(source=>({...source,rows:source.basis==='posted'?source.rows:(history?.rows.find(row=>row.id===source.legacy_id)?.fuel_rows||[])}))
+  const fuelTotal = (data.rows.filter(row=>row.category==='fuel').reduce((sum,row)=>sum+Math.round(Number(row.amount)*100),0)/100).toFixed(2)
+  const model = freightFlowModel(data,expandedOther,fuelOpen?fuelBranches(fuelTotal,fuelSources):undefined)
+  const color = (key:string) => key.startsWith('fuel-')?'fuel':['carrier','driver_pay','fuel','remainder'].includes(key)?key:'other'
   const label = (key:string,text:string) => key==='other'||key==='fuel'?<button type="button" className="freight-drill-button" aria-expanded={key==='other'?expandedOther:fuelOpen} onClick={()=>key==='other'?setExpandedOther(!expandedOther):setFuelOpen(!fuelOpen)}>{text}<span aria-hidden="true">{key==='fuel'&&fuelOpen?'−':'+'}</span></button>:<span>{text}</span>
   const selected = model.canFlow ? view : 'waterfall'
   const share = (value: number) => Number.isSafeInteger(value) && Number.isSafeInteger(model.gross) && model.gross > 0 ? `${(value / model.gross * 100).toFixed(1)}% of freight` : 'Share unavailable'
@@ -41,6 +44,7 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
         <button type="button" className="finance-secondary" aria-pressed={selected === 'waterfall'} onClick={() => setView('waterfall')}>Waterfall</button>
       </div></div>
       {expandedOther&&<button type="button" className="finance-secondary" onClick={()=>setExpandedOther(false)}>Collapse other charges</button>}
+      {fuelOpen&&<div className="freight-expansion-controls"><button type="button" className="finance-secondary" onClick={()=>{setFuelOpen(false);setPurchaseOpen(false)}}>Collapse fuel locations</button><button type="button" className="finance-secondary" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}
       {!model.canFlow && <p className="finance-help">Credits, a negative remainder or nonpositive freight use the signed waterfall so amounts retain their direction.</p>}
       {selected === 'flow' ? <>
         <div className="freight-flow-origin"><span>Freight billed</span><strong>{amount(model.gross)}</strong></div>
@@ -57,7 +61,7 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Statement remainder</span><div><strong>{amount(model.remainder)}</strong><small>{share(model.remainder)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-remainder" style={bar(0, model.remainder)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div></div>
       </div>}
     </> : <p className="finance-error" role="status">The reported allocation does not reconcile to freight. Review the exact statement figures below before interpreting a flow.</p>}
-    {fuelOpen&&<section className="freight-fuel-detail" aria-label="Fuel purchase details"><div className="finance-section-heading"><h3>Fuel purchases by settlement</h3><button type="button" className="finance-secondary" onClick={()=>setFuelOpen(false)}>Close</button></div>
+    {purchaseOpen&&<section className="freight-fuel-detail" aria-label="Fuel purchase details"><div className="finance-section-heading"><h3>Fuel purchases by settlement</h3><button type="button" className="finance-secondary" onClick={()=>setPurchaseOpen(false)}>Close</button></div>
       {!(data.fuel_sources?.length)&&<p>No purchase detail is available for these statements.</p>}
       {data.fuel_sources?.filter(source=>Number(source.amount)!==0||source.rows.length).map(source=>{
         const reviewed = history?.rows.find(row=>row.id===source.legacy_id)
@@ -65,7 +69,7 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
         const total = purchases.reduce((sum,p)=>sum+Math.round(Number(p.amount)*100),0)
         const difference = Math.round(Number(source.amount)*100)-total
         return <article key={source.id}><div className="finance-section-heading"><strong>{reviewed?.vin?`VIN …${reviewed.vin.slice(-6)}`:source.name} · {source.date}</strong><strong>{dollars(source.amount)}</strong></div>
-          {purchases.length?<><div className="freight-purchases">{purchases.map((p,i)=><div key={i}><span>{p.date}</span><span>{p.location||'Location not recorded'}<small>{p.product==='unknown'?'Product not classified':p.product}{p.gallons!==null&&p.gallons!==undefined?` · ${p.gallons} gal`:''}</small></span><strong>{dollars(p.amount)}</strong></div>)}</div>{difference!==0&&<p className="finance-error">Purchase rows total {dollars(total/100)}; difference from statement fuel charge: {dollars(difference/100)}.</p>}</>:<p className="finance-help">{source.basis==='saved'&&!history&&!historyError?'Loading purchase records…':'Purchase details unavailable. The statement fuel total is retained.'}</p>}
+          {purchases.length?<><div className="freight-purchases">{purchases.map((p,i)=><div key={i}><span>{p.date}</span><span>{p.location||'Location not recorded'}<small>{p.product==='unknown'?'Product not classified':p.product}{p.gallons!==null&&p.gallons!==undefined?` · ${p.gallons} gal`:''} · {pricePerGallon(p.amount,p.gallons)!==null?`$${pricePerGallon(p.amount,p.gallons)}/gal`:'Price/gal unavailable'}</small></span><strong>{dollars(p.amount)}</strong></div>)}</div>{difference!==0&&<p className="finance-error">Purchase rows total {dollars(total/100)}; difference from statement fuel charge: {dollars(difference/100)}.</p>}</>:<p className="finance-help">{source.basis==='saved'&&!history&&!historyError?'Loading purchase records…':'Purchase details unavailable. The statement fuel total is retained.'}</p>}
           <Link to={`/settlements/reconciliation?asset=${source.asset_id}#review-records`}>Review settlement sources</Link>
         </article>
       })}

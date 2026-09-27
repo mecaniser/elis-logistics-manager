@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 const source = readFileSync(new URL('../src/components/finance/freightFlowModel.ts', import.meta.url), 'utf8')
 const js = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022}}).outputText
-const {freightFlowModel} = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
+const {freightFlowModel,fuelBranches,pricePerGallon} = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
 const model = (gross, remainder, rows) => freightFlowModel({freight_gross:gross, settlement_remainder:remainder, rows:rows.map(([category,amount])=>({category,amount}))})
 
 test('September 21 preserves the source remainder and groups smaller deductions once',()=>{
@@ -53,4 +53,32 @@ test('expanding other charges preserves cents and waterfall endpoint',()=>{
   assert.equal(expanded.flows.find(r=>r.key==='insurance').cents,1500)
   assert.equal(expanded.flows.reduce((sum,r)=>sum+r.cents,0),10000)
   assert.equal(expanded.steps.at(-1).after,6000)
+})
+
+test('fuel expands into location branches without changing the remainder',()=>{
+ const sources=[{rows:[{location:'Driver [Drv] Fort Mill, SC',amount:'12.00'},{location:'Driver [Drv] Fort Mill, SC',amount:'8.00'},{location:'Diamond, OH',amount:'10.00'}]}]
+ const branches=fuelBranches('30.00',sources)
+ assert.equal(branches.length,2)
+ assert.equal(branches[0].label,'Fuel · Fort Mill, SC')
+ assert.equal(branches[0].cents,2000)
+ const result=freightFlowModel({freight_gross:'100.00',settlement_remainder:'70.00',rows:[{category:'fuel',amount:'30.00'}]},false,branches)
+ assert.equal(result.reconciled,true)
+ assert.equal(result.flows.some(r=>r.key==='fuel'),false)
+ assert.equal(result.steps.at(-1).after,7000)
+})
+test('missing and excess fuel details stay explicit without distorting the total',()=>{
+ assert.equal(fuelBranches('30.00',[])[0].cents,3000)
+ const branches=fuelBranches('30.00',[{rows:[{location:'Stop',amount:'40.00'}]}])
+ assert.equal(branches.at(-1).cents,-1000)
+ const result=freightFlowModel({freight_gross:'100.00',settlement_remainder:'70.00',rows:[{category:'fuel',amount:'30.00'}]},false,branches)
+ assert.equal(result.canFlow,false)
+ assert.equal(result.steps.at(-1).after,7000)
+})
+
+test('purchase price per gallon uses the recorded row amount and positive gallons',()=>{
+ assert.equal(pricePerGallon('100.00','25'),'4.000')
+ assert.equal(pricePerGallon('1136.05','195.35'),'5.815')
+ assert.equal(pricePerGallon('10.00',null),null)
+ assert.equal(pricePerGallon('10.00','0'),null)
+ assert.equal(pricePerGallon('invalid','20'),null)
 })
