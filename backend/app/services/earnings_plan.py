@@ -89,7 +89,7 @@ def planning_freight(report, included_ids):
         for statement in pair['settlements']:
             fuel_sources.append({'id': statement['id'], 'legacy_id': statement.get('legacy_id'), 'asset_id': pair['truck_id'],
                 'name': pair['name'], 'date': statement['date'], 'amount': money(statement['deductions'].get('fuel', 0)),
-                'basis': 'posted', 'rows': statement.get('fuel', [])})
+                'basis': 'posted', 'miles': statement.get('miles'), 'mileage_basis': statement.get('mileage_basis'), 'rows': statement.get('fuel', [])})
     for row in rows:
         fuel_sources.append({'id': f"legacy-{row['legacy_id']}", 'legacy_id': row['legacy_id'], 'asset_id': row.get('asset_id'),
             'name': row.get('name', ''), 'date': row.get('date', ''), 'amount': money(row['deductions'].get('fuel', 0)),
