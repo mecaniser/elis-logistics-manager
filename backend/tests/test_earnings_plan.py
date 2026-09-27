@@ -124,3 +124,17 @@ def test_internal_trailer_split_preserves_combined_total(db, truck):
     r=f.report(db,1,ASOF,date(2026,9,27),date(2026,9,27))['earnings_plan']['pairs'][0]
     assert r['allocation_split']['pair_adjustments']=='-100.00'
     assert r['planning_subtotal']=='1610.66'
+
+
+def test_planning_freight_uses_only_included_sources_and_preserves_category_gap():
+    from app.services.earnings_plan import planning_freight
+    r={'revenue_breakdown':{'freight_gross':'11800.00','settlement_remainder':'3677.34','rows':[{'category':'carrier','amount':'1416.00'},{'category':'driver_pay','amount':'3540.00'},{'category':'fuel','amount':'2811.94'},{'category':'other','amount':'354.72'}]}, 'legacy_comparison':{'rows':[
+        {'legacy_id':1,'freight_gross':'11900.00','settlement_remainder':'2159.58','carrier_retention':'1428.00','operating_deductions':'8312.42','deductions':{'driver_pay':'3570.00','fuel':'4032.89','support':'200.00','loan_interest':'20.00'}},
+        {'legacy_id':2,'freight_gross':'11800.00'}]}}
+    b=planning_freight(r,{1})
+    assert b['freight_gross']=='23700.00'
+    assert b['settlement_remainder']=='5836.92'
+    assert b['saved_unposted_count']==1
+    assert sum(Decimal(x['amount']) for x in b['rows'])+Decimal(b['settlement_remainder'])==Decimal(b['freight_gross'])
+    assert next(x['amount'] for x in b['rows'] if x['category']=='unclassified_statement_adjustment')=='509.53'
+    assert planning_freight(r,set())['freight_gross']=='11800.00'

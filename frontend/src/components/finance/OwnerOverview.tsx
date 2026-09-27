@@ -17,12 +17,14 @@ export default function OwnerOverview({report:r,context,onSaved}: {report:Report
   const pairs = r.owner_insights.pairs
   const retention = r.earnings_plan?.retention || r.retention
   const planning = Boolean(r.earnings_plan?.retention)
-  const gross = Number(r.revenue_breakdown.freight_gross)
+  const freight = r.earnings_plan?.revenue_breakdown || r.revenue_breakdown
+  const savedCount = r.earnings_plan?.revenue_breakdown?.saved_unposted_count || 0
+  const gross = Number(freight.freight_gross)
   const cash = r.owner_cash
   return <div className="owner-dashboard">
     <section className="owner-panel"><div className="finance-section-heading"><h2>Where the freight revenue goes</h2><Link to="/settlements/reconciliation">Review original statements</Link></div>
-    {r.owner_insights.unposted_in_period > 0 && <p className="finance-error">Partial period: {r.owner_insights.unposted_in_period} existing settlements are not yet posted in this view. These figures do not represent the complete period. <Link to="/settlements/reconciliation">Review missing statements</Link></p>}
-    {gross !== 0 || r.revenue_breakdown.rows.length ? <FreightFlow data={r.revenue_breakdown}/> : <p className="finance-empty">No reviewed statements posted for this period. <Link to="/settlements/reconciliation">Explore the historical review</Link>.</p>}
+    {savedCount>0&&<p className="finance-help">Includes {savedCount} saved settlement{savedCount===1?'':'s'} not yet posted to Accounting. <Link to="/settlements/reconciliation">Source status</Link></p>}
+    {gross !== 0 || freight.rows.length ? <FreightFlow data={freight}/> : <p className="finance-empty">No statements for this period. <Link to="/settlements/reconciliation">Explore the historical review</Link>.</p>}
     </section>
     {r.earnings_plan&&<EarningsPlan plan={r.earnings_plan}/>}
     <section className="owner-cash-status" aria-label="Available cash status"><div><strong>Available to owner: {cash.available===null?'not yet verified':dollars(cash.available)}</strong><span>{cash.status==='reconciled'?'Reconciled':'Provisional'} · As of {cash.as_of}{cash.available!==null&&Number(cash.available)<0?' · Funding shortfall':''}</span></div><Link className="finance-secondary" to="/finance/money">{cash.status==='reconciled'?'View cash details':'Verify cash in Money'}</Link></section>
