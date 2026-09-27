@@ -45,9 +45,9 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const account = active?.accounts.find(a => a.id === accountId)
   const mode = data.profiles.length > 1 || data.routes.length > 0
   const update = (value: Data) => { if (alive.current) { setData(value); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
-  const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown) => {
+  const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown, onSuccess?: () => void) => {
     setBusy(true); setError(''); setNotice('')
-    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) { setNotice('Connection name saved.'); setEditingName('') } }
+    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (alive.current) onSuccess?.(); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) { setNotice('Connection name saved.'); setEditingName('') } }
     catch (e) { if (alive.current) { setError(errorText(e)); try { update((await bankProfilesApi.request<Data>(tenantId)).data) } catch { /* Keep the original actionable error. */ } } }
     finally { if (alive.current) setBusy(false) }
   }
@@ -122,7 +122,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
         <div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-9 min-w-0 text-left text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</button><button type="button" disabled={busy} aria-label={`Edit ${active.name} connection name`} title="Edit connection name" onClick={() => setEditingName(active.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="m16 3 5 5M4 20l4-1L21 6a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" /></svg></button></div><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></div><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
         {editingName === active.id && <ConnectionName key={`${active.id}-${active.name}`} profile={active} busy={busy} cancel={() => setEditingName('')} save={name => request(`/${active.id}/name`, 'put', { name })} />}
         {settingsProfile === active.id && <section aria-label={`Settings for ${active.name}`} className="mt-3 space-y-3">
-        {active.accounts.filter(account => account.kind === 'checking' && account.account_id).map(account => <details key={account.id} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-medium">{account.name} · ••{account.last4} · Reserve {money(account.reserve_cents)}</summary><Reserve key={`${account.account_id}-${account.reserve_cents}`} account={account} busy={busy} save={value => request(`/accounts/${account.account_id}/reserve`, 'put', { reserve_cents: value })} /></details>)}
+        {active.accounts.filter(account => account.kind === 'checking' && account.account_id).map(account => <Reserve key={account.id} account={account} busy={busy} save={(value, onSuccess) => request(`/accounts/${account.account_id}/reserve`, 'put', { reserve_cents: value }, onSuccess)} />)}
 
         <ProfilePreferences key={JSON.stringify(active.preferences)} profile={active} routes={data.routes.filter(r => r.profile_id === active.id)} busy={busy} toggle={route => { setReview(null); return request(`/routes/${route.id}`, 'put', { enabled: !route.enabled }) }} save={value => request(`/${active.id}/preferences`, 'put', value)} />
         {active.institution_id === 'ins_109917' && <details className="mt-4 rounded-xl border border-slate-200 p-4"><summary className="cursor-pointer text-sm font-semibold">Add a permitted transfer route</summary><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm text-slate-700">From<BankSelect ariaLabel="Route source" value={source} onChange={v => { setSource(v); setConfirmed(false) }} options={[{ value: '', label: 'Choose source account' }, ...active.accounts.filter(a => a.account_id && (a.kind === 'checking' || ['line of credit', 'home equity'].includes(a.subtype))).map(a => ({ value: a.account_id!, label: `${a.name} · ••${a.last4}` }))]} /></label><label className="text-sm text-slate-700">To<BankSelect ariaLabel="Route destination" value={destination} onChange={v => { setDestination(v); setConfirmed(false) }} options={[{ value: '', label: 'Choose destination account' }, ...active.accounts.filter(a => a.account_id && a.account_id !== source).map(a => ({ value: a.account_id!, label: `${a.name} · ••${a.last4}` }))]} /></label></div><label className="mt-4 flex gap-3 text-sm text-slate-700"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />This route is available in Truliant under the {active.name} login.</label><button type="button" disabled={busy || !source || !destination || source === destination || !confirmed} onClick={() => { void request('/routes', 'post', { profile_id: active.id, source_id: source, destination_id: destination, bank_route_confirmed: confirmed }); setConfirmed(false) }} className={`${primary} mt-4`}>Save transfer route</button></details>}
@@ -209,11 +209,34 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   </section>
 }
 
-function Reserve({ account, busy, save }: { account: Account; busy: boolean; save: (value: number) => Promise<void> }) {
+function Reserve({ account, busy, save }: { account: Account; busy: boolean; save: (value: number, onSuccess: () => void) => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
   const [value, setValue] = useState((account.reserve_cents / 100).toFixed(2))
+  const editor = useRef<HTMLLabelElement>(null)
+  const control = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (editing) { const input = editor.current?.querySelector('input'); input?.focus(); input?.select() }
+  }, [editing])
   let cents = -1
   try { cents = centsFromMoneyInput(value) } catch { /* invalid */ }
-  return <div className="mt-2 space-y-2"><MoneyInput value={value} onChange={setValue} className="block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3" /><button type="button" disabled={busy || cents < 0} onClick={() => void save(cents)} className={button}>Save reserve</button></div>
+  const close = () => { setEditing(false); control.current?.focus() }
+  const submit = () => { if (!busy && cents >= 0) void save(cents, close) }
+  const action = editing ? 'Save' : 'Edit'
+  return <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+    <span className="min-w-0 font-medium">{account.name} · ••{account.last4}</span>
+    <div className="ml-auto flex items-center gap-1">
+      {editing ? <label ref={editor} className="flex items-center gap-2 text-slate-600 [&>span]:mt-0 [&>span]:w-28" onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); submit() }
+        if (event.key === 'Escape' && !busy) { event.preventDefault(); event.stopPropagation(); close() }
+      }}>Reserve<span className="sr-only"> for {account.name} ••{account.last4}</span><MoneyInput value={value} onChange={setValue} invalid={cents < 0} className="min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-slate-900" /></label> : <span className="text-slate-600">Reserve <span className="font-medium tabular-nums text-slate-900">{money(account.reserve_cents)}</span></span>}
+      <button ref={control} type="button" disabled={busy || (editing && cents < 0)} aria-label={`${action} reserve for ${account.name} ••${account.last4}`} title={`${action} reserve`} onClick={() => {
+        if (editing) submit()
+        else { setValue((account.reserve_cents / 100).toFixed(2)); setEditing(true) }
+      }} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-45">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">{editing ? <path d="m5 12 4 4L19 6" /> : <path d="m16 3 5 5M4 20l4-1L21 6a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" />}</svg>
+      </button>
+    </div>
+  </div>
 }
 
 function operationLabel(from?: Account, to?: Account) {
