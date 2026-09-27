@@ -38,7 +38,7 @@ def view(db, tenant_id):
     result = []
     for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).order_by(BankProfile.created_at):
         accounts = []
-        for a in db.query(BankProfileAccount).filter_by(profile_id=p.id, active=True):
+        for a in db.query(BankProfileAccount).filter_by(profile_id=p.id, active=True).order_by(BankProfileAccount.last4, BankProfileAccount.id):
             candidates = db.query(BankAccountIdentity).filter_by(tenant_id=tenant_id,
                 institution_id=p.institution_id, last4=a.last4, kind=a.kind).all() if not a.account_id else []
             canonical = db.get(BankAccountIdentity, a.account_id) if a.account_id else None
