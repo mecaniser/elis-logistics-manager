@@ -153,18 +153,36 @@ export default function BankMonitor() {
 
   useEffect(() => {
     if (!settingsOpen && !repaymentOpen) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const body = document.body
+    const root = document.documentElement
+    const scrollX = window.scrollX
+    const scrollY = window.scrollY
+    const previous = { overflow: body.style.overflow, position: body.style.position, top: body.style.top, left: body.style.left, width: body.style.width, paddingRight: body.style.paddingRight, rootOverflow: root.style.overflow }
+    const scrollbarWidth = window.innerWidth - root.clientWidth
+    if (scrollbarWidth > 0) body.style.paddingRight = `${parseFloat(getComputedStyle(body).paddingRight) + scrollbarWidth}px`
+    root.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.left = `-${scrollX}px`
+    body.style.width = '100%'
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSettingsOpen(false)
         setRepaymentOpen(false)
-        window.setTimeout(() => settingsButtonRef.current?.focus(), 0)
+        window.setTimeout(() => settingsButtonRef.current?.focus({ preventScroll: true }), 0)
       }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => {
-      document.body.style.overflow = previousOverflow
+      body.style.overflow = previous.overflow
+      body.style.position = previous.position
+      body.style.top = previous.top
+      body.style.left = previous.left
+      body.style.width = previous.width
+      body.style.paddingRight = previous.paddingRight
+      root.style.overflow = previous.rootOverflow
+      window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' })
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [settingsOpen, repaymentOpen])
@@ -504,9 +522,9 @@ export default function BankMonitor() {
           <section id="monitoring-settings-drawer" role="dialog" aria-modal="true" aria-labelledby="monitoring-settings-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
               <div><p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Bank Monitor</p><h2 id="monitoring-settings-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Monitoring settings</h2><p className="mt-1 text-sm text-slate-600">Bank connections, transfer preferences, and scheduled checks.</p></div>
-              <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus(), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
+              <button type="button" autoFocus onClick={() => { setSettingsOpen(false); window.setTimeout(() => settingsButtonRef.current?.focus({ preventScroll: true }), 0) }} aria-label="Close monitoring settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Icon name="close" /></button>
             </header>
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-4 p-5 sm:p-6">
             <div ref={setBankConnectionsTarget} />
             <details className="rounded-xl border border-slate-200"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-900">Bank assistant <span className="mt-1 block text-xs font-normal text-slate-500">Connect or troubleshoot Chrome form preparation and history checks.</span></summary><div ref={setAssistantSettingsTarget} className="space-y-3 border-t border-slate-200 p-3" /></details>
@@ -604,7 +622,7 @@ export default function BankMonitor() {
           <button type="button" aria-label="Close manual repayment check" onClick={() => setRepaymentOpen(false)} className="fixed inset-0 z-40 cursor-default bg-slate-950/45 backdrop-blur-[1px]" />
           <section role="dialog" aria-modal="true" aria-labelledby="manual-repayment-title" className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl flex-col bg-white shadow-2xl ring-1 ring-slate-900/10">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6"><div><p className="text-xs font-semibold uppercase tracking-wider text-violet-700">Transfer review</p><h2 id="manual-repayment-title" className="mt-1 text-xl font-semibold text-slate-950">Review credit repayment</h2><p className="mt-1 text-sm leading-6 text-slate-600">Confirm pending debits, usable cash and each full payoff before ELIS creates a transfer proposal. You will submit the prepared form in Truliant.</p></div><button type="button" onClick={() => setRepaymentOpen(false)} aria-label="Close manual repayment check" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"><Icon name="close" /></button></header>
-            <form onSubmit={runRepayment} className="flex-1 space-y-6 overflow-y-auto p-5 sm:p-6">
+            <form onSubmit={runRepayment} className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain p-5 sm:p-6">
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950"><strong>Each checking account funds its own repayments.</strong> ELIS prefills a posted balance when a bank read exists. Plaid pending entries are not complete evidence, so verify pending debits and usable cash, then choose how much current cash to apply to the credit accounts in your repayment priority.</div>
               {savedRules.checking.map(account => {
                 const values = checkingEvidence[account.last4]
