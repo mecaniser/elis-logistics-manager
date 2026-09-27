@@ -77,3 +77,11 @@ Expanded fuel-location branches display recorded cost per gallon instead of frei
 Added an optional Miles vs fuel report within the expanded fuel flow, grouped by stable asset/VIN. Shows reported/independent miles, purchased gallons, expected diesel at the owner's 6–7 MPG reference, and a weighted 28-day statement-date comparison. Posted mileage remains tied to its immutable statement snapshot; saved rows use reviewed source history. Estimated miles, unknown products, missing gallons, credits, unreconciled sources and purchase-total mismatches block MPG conclusions. DEF is excluded from diesel volume. This does not claim measured consumption or establish missing loads.
 
 Local validation: 317 backend tests, 39 frontend tests, lint and production build passed. Selected week: VIN 250024 has 3,665 reported miles / 676.7 all-product gallons; VIN 250022 has 3,114 / 471.1. Products remain unknown, so neither receives an established diesel MPG. No data writes or schema changes.
+
+## Owner earnings bridge — local preview
+
+The dashboard now follows the freight allocation with a compact signed bridge from statement remainder to estimated owner earnings. It reuses the existing pair bridges, includes unassigned company results, shows repair and capital targets, preserves reserve-funded repair offsets, and deducts recorded equipment principal once. Missing principal evidence is labeled Not confirmed. The trailer disclosure splits the internal allocation into protected capital and remaining trailer earnings without treating the whole allocation as a company expense.
+
+Selected-week preview: $5,836.92 minus $600 repair target and $290.77 capital target = $4,946.15 before unverified financing, incomplete capital plans and unrecorded expenses. The $800 trailer allocation contains $290.77 recovery and $509.23 contribution before other costs/financing. This is not verified withdrawal cash. No financial records changed.
+
+43 frontend tests pass, including reserve offsets, principal, company losses and bridge reconciliation. Lint/build and desktop/mobile browser checks pass. Color-coded freight amounts are included in this local change. Deployment remains pending.

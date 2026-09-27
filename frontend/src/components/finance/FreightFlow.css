@@ -58,3 +58,9 @@
 .fuel-mileage-grid .finance-section-heading{flex-wrap:wrap;font-size:13px;gap:6px;}
 .fuel-mileage-grid .finance-waterfall{font-size:13px;}
 @media(max-width:700px){.freight-group-label{align-items:flex-start;}.freight-flow-label>.fuel-group-actions{flex-shrink:1;flex-direction:column;gap:0;align-items:flex-end;}.fuel-group-actions button{min-height:26px;padding:2px;font-size:11px;}}
+
+.freight-amount-carrier{color:var(--flow-carrier);}
+.freight-amount-driver_pay{color:var(--flow-driver);}
+.freight-amount-fuel{color:var(--flow-fuel);}
+.freight-amount-other{color:var(--flow-other);}
+.freight-amount-remainder{color:var(--flow-remainder);}
