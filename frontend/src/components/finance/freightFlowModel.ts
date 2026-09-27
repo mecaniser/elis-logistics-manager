@@ -8,7 +8,7 @@ export interface FreightBreakdown {
   settlement_remainder: string
   rows: {category: string; amount: string}[]
 }
-export interface FlowRow { key: string; label: string; cents: number }
+export interface FlowRow { key: string; label: string; cents: number; unitPrice?: string|null }
 const labels: Record<string, string> = {
   carrier: 'Carrier retention', driver_pay: 'Driver pay', fuel: 'Fuel purchases',
   insurance: 'Insurance', tolls: 'Tolls', support: 'Support', fleet_manager_support: 'Support',
@@ -25,6 +25,7 @@ export function pricePerGallon(amount:string, gallons:string|null):string|null {
 }
 export function fuelBranches(total: string, sources: FuelSource[]): FlowRow[] {
   const locations = new Map<string, number>()
+  const volumes = new Map<string, {gallons:number;complete:boolean}>()
   let detailed = 0
   for (const source of sources) {
     for (const row of source.rows) {
@@ -32,10 +33,18 @@ export function fuelBranches(total: string, sources: FuelSource[]): FlowRow[] {
       if (!Number.isSafeInteger(value)) continue
       const location = row.location.replace(/^.*?\[Drv\]\s*/, '').trim() || 'Location not recorded'
       locations.set(location, (locations.get(location) || 0) + value)
+      const volume = volumes.get(location) || {gallons:0,complete:true}
+      const gallons = Number(row.gallons)
+      volume.complete = volume.complete && row.gallons!==null && Number.isFinite(gallons) && gallons>0
+      volume.gallons += Number.isFinite(gallons)?gallons:0
+      volumes.set(location,volume)
       detailed += value
     }
   }
-  const result = [...locations].map(([location, value], i) => ({key:`fuel-location-${i}`,label:`Fuel · ${location}`,cents:value}))
+  const result:FlowRow[] = [...locations].map(([location, value], i) => {
+    const volume=volumes.get(location)!
+    return {key:`fuel-location-${i}`,label:`Fuel · ${location}`,cents:value,unitPrice:volume.complete&&volume.gallons>0?(value/100/volume.gallons).toFixed(3):null}
+  })
   const difference = cents(total) - detailed
   if (difference) result.push({key:'fuel-unresolved',label:'Fuel · detail unavailable / difference',cents:difference})
   return result

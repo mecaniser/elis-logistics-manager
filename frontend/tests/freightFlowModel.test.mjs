@@ -82,3 +82,12 @@ test('purchase price per gallon uses the recorded row amount and positive gallon
  assert.equal(pricePerGallon('10.00','0'),null)
  assert.equal(pricePerGallon('invalid','20'),null)
 })
+
+test('location price is volume weighted and requires gallons on every purchase',()=>{
+ const rows=[{location:'Stop',amount:'100.00',gallons:'25'},{location:'Stop',amount:'300.00',gallons:'50'}]
+ assert.equal(fuelBranches('400.00',[{rows}])[0].unitPrice,'5.333')
+ rows[1].gallons=null
+ assert.equal(fuelBranches('400.00',[{rows}])[0].unitPrice,null)
+ rows[1].gallons='0'
+ assert.equal(fuelBranches('400.00',[{rows}])[0].unitPrice,null)
+})
