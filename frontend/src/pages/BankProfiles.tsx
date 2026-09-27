@@ -23,6 +23,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
   const [settingsProfile, setSettingsProfile] = useState('')
+  const [editingName, setEditingName] = useState('')
   const [addingBank, setAddingBank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [refreshingProfile, setRefreshingProfile] = useState('')
@@ -45,7 +46,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const update = (value: Data) => { if (alive.current) { setData(value); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
   const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown) => {
     setBusy(true); setError(''); setNotice('')
-    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) setNotice('Connection name saved.') }
+    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) { setNotice('Connection name saved.'); setEditingName('') } }
     catch (e) { if (alive.current) { setError(errorText(e)); try { update((await bankProfilesApi.request<Data>(tenantId)).data) } catch { /* Keep the original actionable error. */ } } }
     finally { if (alive.current) setBusy(false) }
   }
@@ -117,9 +118,9 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       <button type="button" disabled={busy || !name.trim()} onClick={() => void connect()} className={primary}>{busy ? 'Working…' : 'Connect bank'}</button></div>}
 
       {data.profiles.map(active => <div key={active.id} className="border-t border-slate-200 pt-3">
-        <div className="flex items-center justify-between gap-2"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</span><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></button><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
+        <div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-9 min-w-0 text-left text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</button><button type="button" disabled={busy} aria-label={`Edit ${active.name} connection name`} title="Edit connection name" onClick={() => setEditingName(active.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="m16 3 5 5M4 20l4-1L21 6a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" /></svg></button></div><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></div><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
+        {editingName === active.id && <ConnectionName key={`${active.id}-${active.name}`} profile={active} busy={busy} cancel={() => setEditingName('')} save={name => request(`/${active.id}/name`, 'put', { name })} />}
         {settingsProfile === active.id && <section aria-label={`Settings for ${active.name}`} className="mt-3 space-y-3">
-        <ConnectionName key={`${active.id}-${active.name}`} profile={active} busy={busy} save={name => request(`/${active.id}/name`, 'put', { name })} />
         {active.accounts.filter(account => account.kind === 'checking' && account.account_id).map(account => <details key={account.id} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-medium">{account.name} · ••{account.last4} · Reserve {money(account.reserve_cents)}</summary><Reserve key={`${account.account_id}-${account.reserve_cents}`} account={account} busy={busy} save={value => request(`/accounts/${account.account_id}/reserve`, 'put', { reserve_cents: value })} /></details>)}
 
         <ProfilePreferences key={JSON.stringify(active.preferences)} profile={active} routes={data.routes.filter(r => r.profile_id === active.id)} busy={busy} toggle={route => { setReview(null); return request(`/routes/${route.id}`, 'put', { enabled: !route.enabled }) }} save={value => request(`/${active.id}/preferences`, 'put', value)} />
@@ -218,11 +219,9 @@ function operationLabel(from?: Account, to?: Account) {
   return to?.kind === 'credit' ? to.subtype === 'credit card' ? 'Pay credit card from checking' : 'Pay credit line from checking' : from?.kind === 'credit' ? 'Draw to checking' : `Move funds to checking ••${to?.last4 || 'unknown'}`
 }
 
-function ConnectionName({ profile, busy, save }: { profile: Profile; busy: boolean; save: (name: string) => Promise<void> }) {
-  const [editing, setEditing] = useState(false)
+function ConnectionName({ profile, busy, save, cancel }: { profile: Profile; busy: boolean; save: (name: string) => Promise<void>; cancel: () => void }) {
   const [name, setName] = useState(profile.name)
-  if (!editing) return <button type="button" onClick={() => setEditing(true)} className="min-h-9 text-sm font-semibold text-blue-700">Rename connection</button>
-  return <div className="space-y-2"><label className="block text-sm">Connection name<input autoFocus maxLength={80} value={name} disabled={busy} onChange={e => setName(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label><div className="flex gap-2"><button type="button" disabled={busy || !name.trim() || name.trim() === profile.name} className={primary} onClick={() => void save(name.trim())}>Save name</button><button type="button" disabled={busy} className={button} onClick={() => { setName(profile.name); setEditing(false) }}>Cancel</button></div><p className="text-xs text-slate-500">Changes the label in ELIS. Bank access and accounts stay connected.</p></div>
+  return <div className="space-y-2"><label className="block text-sm">Connection name<input autoFocus maxLength={80} value={name} disabled={busy} onChange={e => setName(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label><div className="flex gap-2"><button type="button" disabled={busy || !name.trim() || name.trim() === profile.name} className={primary} onClick={() => void save(name.trim())}>Save name</button><button type="button" disabled={busy} className={button} onClick={cancel}>Cancel</button></div><p className="text-xs text-slate-500">Changes the label in ELIS. Bank access and accounts stay connected.</p></div>
 }
 
 function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: Profile; routes: Route[]; busy: boolean; save: (value: unknown) => Promise<void>; toggle: (route: Route) => Promise<void> }) {
