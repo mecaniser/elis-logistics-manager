@@ -1,3 +1,6 @@
+import OwnerEarningsBridge from './OwnerEarningsBridge'
+import {ownerEarningsModel} from './ownerEarningsModel'
+import type {EarningsPlan} from '../../services/finance'
 import FuelMileageReport from './FuelMileageReport'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -7,7 +10,7 @@ import { freightFlowModel, fuelBranches, pricePerGallon, type FlowRow, type Frei
 import './FreightFlow.css'
 
 const amount = (cents: number) => dollars(cents / 100)
-export default function FreightFlow({data,history,historyError}: {data: FreightBreakdown;history?:HistoryReport|null;historyError?:string}) {
+export default function FreightFlow({data,history,historyError,plan}: {plan?:EarningsPlan;data: FreightBreakdown;history?:HistoryReport|null;historyError?:string}) {
   const [view, setView] = useState<'flow' | 'waterfall'>('flow')
   const [expandedOther,setExpandedOther] = useState(false)
   const [fuelOpen,setFuelOpen] = useState(false)
@@ -44,6 +47,21 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
     return ribbon
   })
   const chartHeight = Math.max(270, target - 20)
+  const owner=plan?ownerEarningsModel(plan):null
+  const linked=Boolean(owner?.reconciled&&owner.start===model.remainder&&owner.end>=0&&owner.rows.every(row=>row.amount<=0)&&model.canFlow)
+  const continuation=linked&&owner?[...owner.rows.filter(row=>row.amount<0).map((row,index)=>({key:`owner-${index}`,label:row.label,cents:-row.amount,tone:row.tone})),{key:'owner-final',label:'Estimated left for you',cents:owner.end,tone:'final'}]:[]
+  let continuationSource=0
+  let continuationTarget=chartHeight+60
+  const remainderRibbon=ribbons.find(row=>row.key==='remainder')
+  const continued=continuation.map(row=>{
+    const height=row.cents*scale
+    const slot=Math.max(height,50)
+    const destination=continuationTarget+(slot-height)/2
+    const result={...row,height,source:(remainderRibbon?.destination||0)+(remainderRibbon?.height||0)-continuationSource-height,destination,labelY:continuationTarget+slot/2}
+    continuationSource+=height;continuationTarget+=slot+20
+    return result
+  })
+  const fullHeight=continued.length?continuationTarget-20:chartHeight
   const sourceTop = (chartHeight - 250) / 2
   const span = model.max - model.min || 1
   const position = (value: number) => (value - model.min) / span * 100
@@ -60,12 +78,13 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
       {!model.canFlow && <p className="finance-help">Credits, a negative remainder or nonpositive freight use the signed waterfall so amounts retain their direction.</p>}
       {selected === 'flow' ? <>
         <div className="freight-flow-origin"><span>Freight billed</span><strong className="freight-amount-carrier">{amount(model.gross)}</strong></div>
-        <div className="freight-flow-diagram" style={{height: chartHeight}}>
-          <svg viewBox={`0 0 100 ${chartHeight}`} preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <div className="freight-flow-diagram" style={{height: fullHeight}}>
+          <svg viewBox={`0 0 100 ${fullHeight}`} preserveAspectRatio="none" aria-hidden="true" focusable="false">
             {ribbons.map(row => {const y = row.source + sourceTop;return <g key={row.key} className={`freight-color-${color(row.key)}`}><path opacity=".25" d={`M 2 ${y} C 52 ${y} 48 ${row.destination} 98 ${row.destination} L 98 ${row.destination + row.height} C 48 ${row.destination + row.height} 52 ${y + row.height} 2 ${y + row.height} Z`} /><rect x="98" y={row.destination} width="2" height={row.height} /></g>})}
+            {continued.map(row=><g key={row.key} className={`owner-flow-${row.tone}`}><path opacity=".25" d={`M 98 ${row.source} C ${(row.source-(remainderRibbon?.destination||0))/250*80} ${row.source} ${(row.source-(remainderRibbon?.destination||0))/250*80} ${row.destination+row.height} 98 ${row.destination+row.height} L 98 ${row.destination} C ${(row.source+row.height-(remainderRibbon?.destination||0))/250*80} ${row.destination} ${(row.source+row.height-(remainderRibbon?.destination||0))/250*80} ${row.source+row.height} 98 ${row.source+row.height} Z`}/><rect x="98" y={row.destination} width="2" height={row.height}/></g>)}
             <rect className="freight-color-carrier" x="0" y={sourceTop} width="2" height="250" />
           </svg>
-          <ul aria-label="Freight allocation amounts and metrics">{headers.map(header=><li key={header.key} className="freight-flow-label freight-group-label" style={{top:header.y}}>{label(header.key,header.label)}{header.key==='fuel'&&<div className="fuel-group-actions"><button type="button" className="freight-drill-button" aria-expanded={mileageOpen} onClick={()=>setMileageOpen(!mileageOpen)}>Miles vs fuel</button><button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}</li>)}{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong className={`freight-amount-${color(row.key)}`}>{amount(row.cents)}</strong><small>{metric(row)}</small></div></li>)}</ul>
+          <ul aria-label="Freight allocation amounts and metrics">{headers.map(header=><li key={header.key} className="freight-flow-label freight-group-label" style={{top:header.y}}>{label(header.key,header.label)}{header.key==='fuel'&&<div className="fuel-group-actions"><button type="button" className="freight-drill-button" aria-expanded={mileageOpen} onClick={()=>setMileageOpen(!mileageOpen)}>Miles vs fuel</button><button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}</li>)}{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong className={`freight-amount-${color(row.key)}`}>{amount(row.cents)}</strong><small>{metric(row)}</small></div></li>)}{continued.map(row=><li key={row.key} className={`freight-flow-label owner-flow-label-${row.tone}`} style={{top:row.labelY}}><span>{row.label}</span><div><strong>{amount(row.cents)}</strong>{row.tone==='final'&&<small>Estimate · before unverified payments</small>}</div></li>)}</ul>
         </div>
       </> : <div className="freight-waterfall" aria-label="Freight less deductions, with credits added">
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Freight billed</span><strong className="freight-amount-carrier">{amount(model.gross)}</strong></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-carrier" style={bar(0, model.gross)} /></div></div>
@@ -74,6 +93,8 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Statement remainder</span><div><strong className="freight-amount-remainder">{amount(model.remainder)}</strong><small>{share(model.remainder)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-remainder" style={bar(0, model.remainder)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div></div>
       </div>}
     </> : <p className="finance-error" role="status">The reported allocation does not reconcile to freight. Review the exact statement figures below before interpreting a flow.</p>}
+    {plan&&selected==='flow'&&linked&&<div className="owner-flow-footnote"><span>Loan principal: not verified · Capital targets may be incomplete.</span><Link to="/finance/money">Trailer allocation & payment details</Link></div>}
+    {plan&&(!linked||selected==='waterfall')&&<OwnerEarningsBridge plan={plan}/>}
     {mileageOpen&&<FuelMileageReport sources={data.fuel_sources||[]} history={history}/>}
     {purchaseOpen&&<section className="freight-fuel-detail" aria-label="Fuel purchase details"><div className="finance-section-heading"><h3>Fuel purchases by settlement</h3><button type="button" className="finance-secondary" onClick={()=>setPurchaseOpen(false)}>Close</button></div>
       {!(data.fuel_sources?.length)&&<p>No purchase detail is available for these statements.</p>}

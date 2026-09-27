@@ -85,3 +85,7 @@ The dashboard now follows the freight allocation with a compact signed bridge fr
 Selected-week preview: $5,836.92 minus $600 repair target and $290.77 capital target = $4,946.15 before unverified financing, incomplete capital plans and unrecorded expenses. The $800 trailer allocation contains $290.77 recovery and $509.23 contribution before other costs/financing. This is not verified withdrawal cash. No financial records changed.
 
 43 frontend tests pass, including reserve offsets, principal, company losses and bridge reconciliation. Lint/build and desktop/mobile browser checks pass. Color-coded freight amounts are included in this local change. Deployment remains pending.
+
+## Continuous owner flow — local preview
+
+The overview's money-flow chart now continues directly from the statement-remainder node into recorded owner costs, repair reserves, capital recovery, recorded principal and the estimated owner remainder. Uses the same monetary scale for both stages. Overview no longer repeats the standalone owner bridge; pair detail stays below. Trailer allocation detail remains on Money. Signed adjustments, losses or a mismatched bridge use the existing signed breakdown rather than a falsely balanced flow. Unknown loan amounts stay outside the sized branches and are explicitly unresolved. No calculation/data changes. 43 frontend tests, lint/build and desktop/mobile expanded-flow checks pass; not deployed.
