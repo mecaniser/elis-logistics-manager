@@ -28,3 +28,13 @@ September 21–27 local snapshot: posted freight $23,700; statement remainder $5
 - Existing freight graph and retention score continue to use their posted/funded bases. They are not yet switched to this provisional planning basis; consolidate only after the difference report and missing financing/recovery treatment are resolved.
 - Reuse known owner statement that trucks are paid off; persisted payoff provenance still needs implementation, not a repeat request for original loan settings.
 - Release step 6 has not started. This is a local calculation preview, not final take-home or a completed six-step rebuild.
+
+## Release and next-step comparison — September 27
+
+PR #97 released provisional planning at 6148181; Railway web bc93df3d-7be0-40aa-9133-ea3402440f5d succeeded, matching tested frontend assets. Health 200 and anonymous accounting 401. Live inspection showed production lacked the local dated trailer assignments: this exposed a missing legacy-pairing bridge, not missing vehicle settings.
+
+Follow-up reuses dated settlement trailer links as explicit planning inference until superseded. Confirmed assignments take precedence; conflicting observations do not allocate targets; no historical assignment is written. Missing capital plans are labeled incomplete/partial instead of showing an unexplained zero.
+
+Read-only `python -m scripts.compare_earnings_periods --tenant 1 --start 2026-01-01 --end 2026-09-27` compares a full period against adjacent monthly reports. Local snapshot passes exact-cent additivity for both trucks after the inferred-pairing bridge. Private detailed output is /tmp/elis-earnings-period-comparison.json. Full financing/recovery completeness and consistency with the existing retention score remain open; do not equate additivity with finalized take-home.
+
+Follow-up checks: 314 backend tests, frontend lint/build pass. Initial release also passed 31 frontend tests. No financial writes or schema changes.

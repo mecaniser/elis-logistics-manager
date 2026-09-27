@@ -53,3 +53,16 @@ def test_unposted_history_included_once_and_other_tenant_excluded(db, truck):
     r['pairs'][0]['settlements'] = [{'legacy_id': p['saved_settlement_ids'][0]}]
     assert earnings_plan(db, 1, r)['pairs'][0]['saved_remainder'] == '0.00'
     assert earnings_plan(db, 2, r)['pairs'] == []
+
+
+def test_planning_pair_inference_is_dated_and_explicit_wins():
+    from app.services.earnings_plan import planning_pair_days
+    first, second = date(2026,9,21), date(2026,9,22)
+    obs = [(1,3,first),(1,5,second)]
+    pairs = planning_pair_days([],obs,first,second)
+    assert pairs[(1,3)]['days'] == {first}
+    assert pairs[(1,5)]['days'] == {second}
+    assert pairs[(1,3)]['inferred']
+    explicit = [{'truck_id':2,'trailer_id':3,'start':str(first),'end':str(second)}]
+    assert (1,3) not in planning_pair_days(explicit,obs,first,second)
+    assert (1,3) not in planning_pair_days([],[(1,3,first),(2,3,first)],first,second)
