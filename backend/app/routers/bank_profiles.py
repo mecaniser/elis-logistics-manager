@@ -38,7 +38,7 @@ def view(db, tenant_id):
     result = []
     for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).order_by(BankProfile.created_at):
         accounts = []
-        for a in db.query(BankProfileAccount).filter_by(profile_id=p.id, active=True):
+        for a in db.query(BankProfileAccount).filter_by(profile_id=p.id, active=True).order_by(BankProfileAccount.last4, BankProfileAccount.id):
             candidates = db.query(BankAccountIdentity).filter_by(tenant_id=tenant_id,
                 institution_id=p.institution_id, last4=a.last4, kind=a.kind).all() if not a.account_id else []
             canonical = db.get(BankAccountIdentity, a.account_id) if a.account_id else None
@@ -313,6 +313,7 @@ class PreferencesInput(StrictModel):
     funding_order: list[str] = Field(default_factory=list, max_length=100)
     repayment_order: list[str] = Field(default_factory=list, max_length=100)
     confirm_migration: bool = False
+    removed_review_items: list[str] = Field(default_factory=list, max_length=100)
 
 
 @router.put('/{profile_id}/preferences')
@@ -324,11 +325,24 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
     profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
     previous = preferences(db, profile)
     if previous['review_required'] and not data.confirm_migration:
-        raise HTTPException(409, 'Review the unmapped old priorities and confirm the replacement routes.')
+        raise HTTPException(409, 'Review the changes shown before saving your transfer plan.')
+    items = previous.get('review_items', [])
+    if not set(data.removed_review_items).issubset({item['id'] for item in items}):
+        raise HTTPException(409, 'Choose what to do with each transfer that needs attention before saving. Reload if you changed its switch.')
+    removed = set(data.removed_review_items)
+    for item in items:
+        if item.get('route_id'):
+            retained = item['route_id'] in getattr(data, f"{item['kind']}_order")
+            if item['id'] in removed and retained:
+                raise HTTPException(422, 'Remove the unavailable transfer from the plan, or turn it back on.')
+            if item['id'] not in removed and not retained:
+                raise HTTPException(409, 'Choose Remove from plan before deleting this saved transfer.')
     for kind, ids in [('funding', data.funding_order), ('repayment', data.repayment_order)]:
         if len(ids) != len(set(ids)):
             raise HTTPException(422, 'Each route can appear only once in a priority list.')
         for route_id in ids:
+            if any(item.get('route_id') == route_id and item['kind'] == kind and item['id'] not in removed for item in items):
+                continue  # Preserve an existing unresolved entry; never grant a new permission.
             route = profiles.owned(db, BankProfileRoute, route_id, tenant_id)
             if route.profile_id != profile.id:
                 raise HTTPException(422, 'Route belongs to another banking profile.')
@@ -336,11 +350,28 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
             if (source.kind, destination.kind) != (('credit', 'checking') if kind == 'funding' else ('checking', 'credit')):
                 raise HTTPException(422, 'Route direction does not match this priority.')
     if data.repayment and not data.repayment_order:
-        raise HTTPException(422, 'Choose a permitted repayment route first.')
+        raise HTTPException(422, 'Choose a payment for Friday checks, or turn Friday payment checks off.')
     row = db.get(BankProfilePreferences, profile.id)
     if not row:
         row = BankProfilePreferences(profile_id=profile.id, tenant_id=tenant_id, last_evaluation={})
         db.add(row)
-    row.settings = {**data.model_dump(exclude={'confirm_migration'}), 'review_required': [], 'confirmed': True}
+    row.settings = {**data.model_dump(exclude={'confirm_migration', 'removed_review_items'}), 'review_required': [], 'pending_review': [item for item in items if not item.get('route_id') and item['id'] not in removed], 'confirmed': True}
+    db.commit()
+    return view(db, tenant_id)
+
+
+class ProfileNameInput(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.put('/{profile_id}/name')
+def rename_profile(profile_id: str, data: ProfileNameInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    lock(db, tenant_id)
+    profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(422, 'Enter a connection name.')
+    profile.name = name
     db.commit()
     return view(db, tenant_id)

@@ -7,35 +7,61 @@ from app.models.bank_monitor import BankProfilePreferences, BankProfileRoute, Ba
 def preferences(db, profile):
     saved = db.get(BankProfilePreferences, profile.id)
     if saved and saved.settings.get('confirmed'):
-        result = {**saved.settings, 'last_evaluation': saved.last_evaluation}
+        result = {**saved.settings, 'funding_order': list(saved.settings['funding_order']), 'repayment_order': list(saved.settings['repayment_order']), 'last_evaluation': saved.last_evaluation}
         enabled = {r.id for r in db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id, enabled=True)}
-        result['review_required'] = [f'A saved {kind} route is unavailable. Review its priority.' for kind in ('funding', 'repayment') if any(r not in enabled for r in result[f'{kind}_order'])]
+        all_routes = {r.id: r for r in db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id)}
+        members = {a.account_id: a for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True) if a.account_id}
+        result['review_items'] = []
+        for kind in ('funding', 'repayment'):
+            for route_id in result[f'{kind}_order']:
+                if route_id in enabled:
+                    continue
+                route = all_routes.get(route_id)
+                source = members.get(route.source_id) if route else None
+                target = members.get(route.destination_id) if route else None
+                label = f'{source.name} ••{source.last4} → {target.name} ••{target.last4}' if source and target else 'An account transfer that is no longer connected'
+                result['review_items'].append({'id': f'{kind}:{route_id}', 'kind': kind, 'route_id': route_id, 'last4': None, 'label': label, 'message': 'This transfer is in your saved plan, but it is turned off or no longer available.'})
+        for item in saved.settings.get('pending_review', []):
+            kind = item['kind']
+            candidates = [a for a in members.values() if a.last4 == item['last4'] and a.kind == 'credit']
+            matches = [r.id for r in all_routes.values() if r.enabled and len(candidates) == 1
+                       and (r.source_id if kind == 'funding' else r.destination_id) == candidates[0].account_id
+                       and members.get(r.destination_id if kind == 'funding' else r.source_id)
+                       and members[r.destination_id if kind == 'funding' else r.source_id].kind == 'checking']
+            if matches:
+                result[f'{kind}_order'].extend(r for r in sorted(matches) if r not in result[f'{kind}_order'])
+            else:
+                result['review_items'].append(item)
+        result['review_required'] = [item['message'] for item in result['review_items']]
+        result['migration_pending'] = False
         return result
     config = db.get(BankMonitorConfig, profile.tenant_id)
     rules = config.rules if config else {}
     routes = db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id, enabled=True).all()
     members = {a.account_id: a for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True) if a.account_id}
-    result = {'monitor': True, 'repayment': bool(rules.get('repayment', {}).get('enabled')), 'funding_order': [], 'repayment_order': [], 'review_required': [], 'last_evaluation': {}}
+    result = {'monitor': True, 'repayment': bool(rules.get('repayment', {}).get('enabled')), 'funding_order': [], 'repayment_order': [], 'review_required': [], 'last_evaluation': {}, 'review_items': [], 'migration_pending': bool(profile.legacy)}
     # Only the original connection inherits old priorities. Other credentials never
     # acquire old transfer permissions through matching suffixes.
     if not profile.legacy:
         result['repayment'] = False
         return result
     if rules.get('buffer_cents') or rules.get('repayment', {}).get('reserve_cents'):
-        result['review_required'].append('Review the account reserves above before replacing the old global buffer and repayment reserve.')
-    result['review_required'].append('Connected accounts will replace the old account list. Scheduled checks report balances and route ceilings; automatic proposals require complete bank evidence.')
+        result['review_required'].append('Saving will use the cash reserves shown beside each checking account instead of the previous shared reserve.')
+    result['review_required'].append('Saving will use the accounts and cash reserves shown above for future checks.')
     for kind, masks in [('funding', [a['last4'] for a in rules.get('sources', [])]), ('repayment', rules.get('repayment', {}).get('priority', []))]:
         for mask in masks:
             candidates = [a for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True, last4=mask)]
             if len(candidates) != 1 or not candidates[0].account_id:
-                result['review_required'].append(f'{kind.capitalize()} priority ••{mask} is ambiguous or not linked.')
+                result['review_items'].append({'id': f'{kind}:{mask}', 'kind': kind, 'route_id': None, 'last4': mask, 'label': f'Account ••{mask}', 'message': 'This account cannot be identified in this connection. Connect or identify it above, or remove it from the plan.'})
+                result['review_required'].append(f'Account ••{mask} needs attention.')
                 continue
             matches = [r for r in routes if r.source_id in members and r.destination_id in members
                        and members[r.source_id if kind == 'funding' else r.destination_id].last4 == mask
                        and members[r.source_id if kind == 'funding' else r.destination_id].kind == 'credit'
                        and members[r.destination_id if kind == 'funding' else r.source_id].kind == 'checking']
             if not matches:
-                result['review_required'].append(f'{kind.capitalize()} priority ••{mask} has no permitted route in this login.')
+                result['review_items'].append({'id': f'{kind}:{mask}', 'kind': kind, 'route_id': None, 'last4': mask, 'label': f'{candidates[0].name} ••{mask}', 'message': 'Previously selected to fund checking, but no transfer into checking is enabled.' if kind == 'funding' else 'Previously selected for payments, but no payment from checking is enabled.'})
+                result['review_required'].append(f'Account ••{mask} needs an enabled transfer or removal from the plan.')
             else:
                 result[f'{kind}_order'].extend(r.id for r in sorted(matches, key=lambda r: r.id))
     return result

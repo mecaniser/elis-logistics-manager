@@ -8,7 +8,8 @@ import MoneyInput from '../components/MoneyInput'
 import { centsFromMoneyInput } from '../components/moneyAmount'
 
 type Account = { id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
-type Preferences = { monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
+type ReviewItem = { id: string; kind: 'funding' | 'repayment'; route_id: string | null; last4: string | null; label: string; message: string }
+type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
 type Profile = { preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string }
@@ -23,6 +24,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
   const [settingsProfile, setSettingsProfile] = useState('')
+  const [editingName, setEditingName] = useState('')
   const [addingBank, setAddingBank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [refreshingProfile, setRefreshingProfile] = useState('')
@@ -45,7 +47,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const update = (value: Data) => { if (alive.current) { setData(value); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
   const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown) => {
     setBusy(true); setError(''); setNotice('')
-    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.') }
+    try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) { setNotice('Connection name saved.'); setEditingName('') } }
     catch (e) { if (alive.current) { setError(errorText(e)); try { update((await bankProfilesApi.request<Data>(tenantId)).data) } catch { /* Keep the original actionable error. */ } } }
     finally { if (alive.current) setBusy(false) }
   }
@@ -117,12 +119,13 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       <button type="button" disabled={busy || !name.trim()} onClick={() => void connect()} className={primary}>{busy ? 'Working…' : 'Connect bank'}</button></div>}
 
       {data.profiles.map(active => <div key={active.id} className="border-t border-slate-200 pt-3">
-        <div className="flex items-center justify-between gap-2"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</span><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></button><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
+        <div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-9 min-w-0 text-left text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</button><button type="button" disabled={busy} aria-label={`Edit ${active.name} connection name`} title="Edit connection name" onClick={() => setEditingName(active.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="m16 3 5 5M4 20l4-1L21 6a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" /></svg></button></div><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></div><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
+        {editingName === active.id && <ConnectionName key={`${active.id}-${active.name}`} profile={active} busy={busy} cancel={() => setEditingName('')} save={name => request(`/${active.id}/name`, 'put', { name })} />}
         {settingsProfile === active.id && <section aria-label={`Settings for ${active.name}`} className="mt-3 space-y-3">
         {active.accounts.filter(account => account.kind === 'checking' && account.account_id).map(account => <details key={account.id} className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-medium">{account.name} · ••{account.last4} · Reserve {money(account.reserve_cents)}</summary><Reserve key={`${account.account_id}-${account.reserve_cents}`} account={account} busy={busy} save={value => request(`/accounts/${account.account_id}/reserve`, 'put', { reserve_cents: value })} /></details>)}
-        {data.routes.filter(route => route.profile_id === active.id).map(route => <div key={route.id} className="flex flex-wrap items-center justify-between gap-3 text-sm"><p>{active.accounts.find(account => account.account_id === route.source_id)?.name || 'Unavailable account'} → {active.accounts.find(account => account.account_id === route.destination_id)?.name || 'Unavailable account'}</p><button type="button" disabled={busy} onClick={() => { setReview(null); void request(`/routes/${route.id}`, 'put', { enabled: !route.enabled }) }} className={button}>{route.enabled ? 'Disable' : 'Enable'}</button></div>)}
+
+        <ProfilePreferences key={JSON.stringify(active.preferences)} profile={active} routes={data.routes.filter(r => r.profile_id === active.id)} busy={busy} toggle={route => { setReview(null); return request(`/routes/${route.id}`, 'put', { enabled: !route.enabled }) }} save={value => request(`/${active.id}/preferences`, 'put', value)} />
         {active.institution_id === 'ins_109917' && <details className="mt-4 rounded-xl border border-slate-200 p-4"><summary className="cursor-pointer text-sm font-semibold">Add a permitted transfer route</summary><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm text-slate-700">From<BankSelect ariaLabel="Route source" value={source} onChange={v => { setSource(v); setConfirmed(false) }} options={[{ value: '', label: 'Choose source account' }, ...active.accounts.filter(a => a.account_id && (a.kind === 'checking' || ['line of credit', 'home equity'].includes(a.subtype))).map(a => ({ value: a.account_id!, label: `${a.name} · ••${a.last4}` }))]} /></label><label className="text-sm text-slate-700">To<BankSelect ariaLabel="Route destination" value={destination} onChange={v => { setDestination(v); setConfirmed(false) }} options={[{ value: '', label: 'Choose destination account' }, ...active.accounts.filter(a => a.account_id && a.account_id !== source).map(a => ({ value: a.account_id!, label: `${a.name} · ••${a.last4}` }))]} /></label></div><label className="mt-4 flex gap-3 text-sm text-slate-700"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />This route is available in Truliant under the {active.name} login.</label><button type="button" disabled={busy || !source || !destination || source === destination || !confirmed} onClick={() => { void request('/routes', 'post', { profile_id: active.id, source_id: source, destination_id: destination, bank_route_confirmed: confirmed }); setConfirmed(false) }} className={`${primary} mt-4`}>Save transfer route</button></details>}
-        <ProfilePreferences key={JSON.stringify(active.preferences)} profile={active} routes={data.routes.filter(r => r.profile_id === active.id && r.enabled)} busy={busy} save={value => request(`/${active.id}/preferences`, 'put', value)} />
       </section>}</div>)}
     </section>, settingsTarget)}
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-900">{error}</p>}
@@ -141,7 +144,6 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           </button>}
         </div>
       })}</div>
-      {refreshingProfile && <p role="status" className="mt-2 text-sm text-blue-200">Refreshing {active?.name}…</p>}
 
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
@@ -173,11 +175,11 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4"><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Bank available cash' : 'Balance owed'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.balance.available_cents : account.balance.current_cents)}</p></div><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Protected reserve' : 'Available credit'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.reserve_cents : account.balance.available_cents)}</p></div></div>
           {!review && <>
             <section className="space-y-3"><h3 className="font-semibold">What would you like to do?</h3>
-              {data.routes.filter(r => r.profile_id === active.id && r.enabled && (r.source_id === account.account_id || (account.kind === 'credit' && r.destination_id === account.account_id))).map(r => {
+              {data.routes.filter(r => r.profile_id === active.id && r.enabled && (r.source_id === account.account_id || r.destination_id === account.account_id)).map(r => {
                 const from = active.accounts.find(a => a.account_id === r.source_id)
                 const to = active.accounts.find(a => a.account_id === r.destination_id)
                 const existing = data.drafts?.find(d => d.source_id === r.source_id && d.destination_id === r.destination_id && d.status !== 'bank_history_matched')
-                const action = to?.kind === 'credit' ? 'Make a payment' : from?.kind === 'credit' ? 'Transfer credit to checking' : 'Transfer to checking'
+                const action = operationLabel(from, to)
                 return <button key={r.id} type="button" disabled={busy} onClick={() => { if (existing) { setAccountId(''); onOpenTransfer(existing.id) } else void startReview(r) }} className="block min-h-16 w-full rounded-xl border border-slate-200 p-4 text-left hover:border-blue-500 hover:bg-blue-50 disabled:opacity-50"><span className="block font-semibold text-blue-800">{existing ? 'Continue existing transfer' : action}</span><span className="mt-1 block text-sm text-slate-600">{from?.name} · ••{from?.last4} → {to?.name} · ••{to?.last4}{existing && ` · ${money(existing.amount_cents)}`}</span></button>
               })}
               <p className="text-xs text-slate-500">Only permitted routes for this bank login appear. <button type="button" onClick={() => { setAccountId(''); openSettings() }} className="font-semibold text-blue-700">Manage routes in settings</button></p>
@@ -214,17 +216,58 @@ function Reserve({ account, busy, save }: { account: Account; busy: boolean; sav
   return <div className="mt-2 space-y-2"><MoneyInput value={value} onChange={setValue} className="block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3" /><button type="button" disabled={busy || cents < 0} onClick={() => void save(cents)} className={button}>Save reserve</button></div>
 }
 
-function ProfilePreferences({ profile, routes, busy, save }: { profile: Profile; routes: Route[]; busy: boolean; save: (value: unknown) => Promise<void> }) {
+function operationLabel(from?: Account, to?: Account) {
+  return to?.kind === 'credit' ? to.subtype === 'credit card' ? 'Pay credit card from checking' : 'Pay credit line from checking' : from?.kind === 'credit' ? 'Draw to checking' : `Move funds to checking ••${to?.last4 || 'unknown'}`
+}
+
+function ConnectionName({ profile, busy, save, cancel }: { profile: Profile; busy: boolean; save: (name: string) => Promise<void>; cancel: () => void }) {
+  const [name, setName] = useState(profile.name)
+  return <div className="space-y-2"><label className="block text-sm">Connection name<input autoFocus maxLength={80} value={name} disabled={busy} onChange={e => setName(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label><div className="flex gap-2"><button type="button" disabled={busy || !name.trim() || name.trim() === profile.name} className={primary} onClick={() => void save(name.trim())}>Save name</button><button type="button" disabled={busy} className={button} onClick={cancel}>Cancel</button></div><p className="text-xs text-slate-500">Changes the label in ELIS. Bank access and accounts stay connected.</p></div>
+}
+
+function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: Profile; routes: Route[]; busy: boolean; save: (value: unknown) => Promise<void>; toggle: (route: Route) => Promise<void> }) {
   const [value, setValue] = useState(profile.preferences)
-  const [confirmed, setConfirmed] = useState(false)
-  const label = (r: Route) => `${profile.accounts.find(a => a.account_id === r.source_id)?.name} → ${profile.accounts.find(a => a.account_id === r.destination_id)?.name}`
-  return <div className="space-y-3 border-t border-slate-200 pt-3 text-sm"><h4 className="font-semibold">Monitoring and transfer priority</h4>
-    <label className="flex gap-2"><input type="checkbox" checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} />Include this login in daily checks</label>
-    {(['funding', 'repayment'] as const).map(kind => { const key = `${kind}_order` as const; const available = routes.filter(r => profile.accounts.find(a => a.account_id === r.source_id)?.kind === (kind === 'funding' ? 'credit' : 'checking') && profile.accounts.find(a => a.account_id === r.destination_id)?.kind === (kind === 'funding' ? 'checking' : 'credit')); return <details key={kind}><summary className="cursor-pointer py-2 font-medium">{kind === 'funding' ? 'Funding priority' : 'Repayment priority'}</summary><div className="space-y-2">{value[key].map((id, index) => <div key={id} className="flex items-center gap-2"><span className="min-w-0 flex-1">{index + 1}. {routes.find(r => r.id === id) ? label(routes.find(r => r.id === id)!) : 'Unavailable route — remove or re-enable'}</span><button type="button" disabled={index === 0} aria-label={`Move ${kind} priority ${index + 1} up`} onClick={() => { const order = [...value[key]]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; setValue({ ...value, [key]: order }) }} className="min-h-9 px-2 disabled:opacity-40">↑</button><button type="button" aria-label={`Remove ${kind} priority ${index + 1}`} onClick={() => setValue({ ...value, [key]: value[key].filter(v => v !== id) })} className="min-h-9 px-2 text-red-700">×</button></div>)}<BankSelect ariaLabel={`Add ${kind} priority for ${profile.name}`} value="" onChange={id => { if(id) setValue({ ...value, [key]: [...value[key], id] }) }} options={[{ value: '', label: 'Add permitted route' }, ...available.filter(r => !value[key].includes(r.id)).map(r => ({ value: r.id, label: label(r) }))]} /></div></details> })}
-    <label className="flex gap-2"><input type="checkbox" checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} />Evaluate Friday repayment routes</label>
-    {!!value.review_required.length && <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-amber-950">{value.review_required.map(issue => <p key={issue}>{issue}</p>)}<label className="flex gap-2"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I reviewed the routes above to replace these old priorities.</label></div>}
-    <p className="text-xs text-slate-500">Checks use this login’s connected accounts and shared reserves. A repayment needs verified income, pending debits and full payoff; a balance read alone cannot authorize it.</p>
+  const [removed, setRemoved] = useState<string[]>([])
+  const issues = value.review_items || []
+  const pairs = new Map<string, Route[]>()
+  for (const route of routes) {
+    const key = [route.source_id, route.destination_id].sort().join(':')
+    pairs.set(key, [...(pairs.get(key) || []), route])
+  }
+  return <div className="space-y-3 border-t border-slate-200 pt-3 text-sm">
+    {[...pairs.entries()].map(([key, pair]) => {
+      const accounts = [pair[0].source_id, pair[0].destination_id].map(id => profile.accounts.find(a => a.account_id === id)).sort((a, b) => (a?.kind === 'checking' ? 0 : 1) - (b?.kind === 'checking' ? 0 : 1) || (a?.last4 || '').localeCompare(b?.last4 || ''))
+      return <section key={key} aria-label={`Transfer relationship ${accounts.map(a => a?.last4 || 'unavailable').join(' and ')}`} className="rounded-xl border border-slate-200 p-3">
+        <h4 className="mb-2 font-semibold text-slate-900">{accounts[0]?.name || 'Unavailable account'} · ••{accounts[0]?.last4}<span className="mx-2 font-normal text-slate-500">and</span>{accounts[1]?.name || 'Unavailable account'} · ••{accounts[1]?.last4}</h4>
+        {pair.sort((a,b) => a.source_id === accounts[0]?.account_id ? -1 : b.source_id === accounts[0]?.account_id ? 1 : a.id.localeCompare(b.id)).map(route => {
+          const from = profile.accounts.find(a => a.account_id === route.source_id)
+          const to = profile.accounts.find(a => a.account_id === route.destination_id)
+          const action = operationLabel(from, to)
+          const kind = from?.kind === 'credit' && to?.kind === 'checking' ? 'funding' : from?.kind === 'checking' && to?.kind === 'credit' ? 'repayment' : null
+          const orderKey = kind === 'funding' ? 'funding_order' : 'repayment_order'
+          const index = value[orderKey].indexOf(route.id)
+          return <div key={route.id} className="border-t border-slate-100 py-2">
+            <div className="flex items-center justify-between gap-3"><span>{action}</span><button type="button" role="switch" aria-checked={route.enabled} aria-label={`${action}: ${from?.last4} to ${to?.last4}`} disabled={busy} onClick={() => void toggle(route)} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 ${route.enabled ? 'bg-blue-600' : 'bg-slate-300'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${route.enabled ? 'left-0.5 translate-x-5' : 'left-0.5'}`} /></button></div>
+            {kind && <details className="mt-1 text-xs text-slate-600"><summary className="cursor-pointer py-1">{kind === 'funding' ? 'Funding' : 'Repayment'} checks{index >= 0 ? ` · Priority ${index + 1}` : ' · Not included'}</summary><div className="flex flex-wrap items-center gap-2 py-2"><label className="flex items-center gap-2"><input type="checkbox" checked={index >= 0} disabled={busy || (!route.enabled && index < 0)} onChange={e => setValue({ ...value, [orderKey]: e.target.checked ? [...value[orderKey], route.id] : value[orderKey].filter(id => id !== route.id) })} />Include this operation</label>{index >= 0 && <button type="button" disabled={busy || index === 0} aria-label={`Move ${action} from ${from?.last4} priority up`} className="min-h-9 px-2 font-semibold text-blue-700 disabled:opacity-40" onClick={() => { const order = [...value[orderKey]]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; setValue({ ...value, [orderKey]: order }) }}>Move up</button>}</div></details>}
+          </div>
+        })}
+      </section>
+    })}
+    <p className="text-xs text-slate-500">Transfer switches save as you change them. Use Save changes for the check settings.</p>
+    <label className="flex gap-2"><input type="checkbox" checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} />Check these accounts daily</label>
+    <label className="flex gap-2"><input type="checkbox" checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} />Check for possible payments on Fridays</label>
+    {!!issues.length && <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-amber-950"><h4 className="font-semibold">Some saved transfer settings need updating</h4>{issues.map(item => {
+      const removedItem = removed.includes(item.id)
+      const possible = routes.filter(route => !route.enabled && (item.route_id ? route.id === item.route_id : profile.accounts.some(a => a.account_id === (item.kind === 'funding' ? route.source_id : route.destination_id) && a.last4 === item.last4)))
+      return <div key={item.id} className="border-t border-amber-200 pt-2"><p className="font-medium">{item.label}</p><p className="mt-1 text-xs">{removedItem ? (item.kind === 'funding' ? 'After saving, ELIS will no longer consider this account as a source of money for checking.' : 'After saving, ELIS will no longer include this transfer in payment checks.') : item.message}</p><div className="mt-1 flex flex-wrap gap-2">{removedItem ? <button type="button" className="min-h-9 font-semibold text-blue-800" onClick={() => { setRemoved(removed.filter(id => id !== item.id)); if (item.route_id) { const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: [...value[key], item.route_id] }) } }}>Undo change</button> : <>
+      {possible.map(route => <button key={route.id} type="button" disabled={busy} className="min-h-9 font-semibold text-blue-800" onClick={() => void toggle(route)}>Enable {item.kind === 'funding' ? 'transfer to checking' : 'payment'} ••{profile.accounts.find(a => a.account_id === route.source_id)?.last4} → ••{profile.accounts.find(a => a.account_id === route.destination_id)?.last4}</button>)}
+      <button type="button" disabled={busy} className="min-h-9 font-semibold text-red-800" onClick={() => { setRemoved([...removed, item.id]); const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: value[key].filter(id => id !== item.route_id) }) }}>{item.kind === 'funding' ? 'Don’t use this account to fund checking' : 'Don’t include this transfer in payment checks'}</button></>}</div>{!removedItem && !possible.length && <p className="mt-1 text-xs">If this bank connection supports the transfer, add it using “Add a permitted transfer route” below.</p>}</div>
+    })}<p className="text-xs">You can save one change at a time. Other flagged transfers stay in your plan for later review. These changes do not disconnect accounts, stop balance monitoring, or change manual transfer permissions.</p></div>}
+    {value.migration_pending && <p className="text-xs text-slate-600">Saving will use the accounts and cash reserves shown above for future checks. Your accounts stay connected.</p>}
+    {!!removed.length && <p className="text-sm text-slate-700">After saving: {issues.filter(item => removed.includes(item.id)).map(item => `${item.label} — ${item.kind === 'funding' ? 'will not be considered for funding checking' : 'will not be included in payment checks'}`).join('; ')}.</p>}
+    {value.repayment && !value.repayment_order.length && <p className="text-sm text-amber-900">Choose a payment above for Friday checks, or turn Friday payment checks off.</p>}
+    <p className="text-xs text-slate-500">ELIS checks balances and money set aside for bills before suggesting a payment. You review and submit transfers in Truliant.</p>
     {value.last_evaluation?.status && <p className="text-xs text-slate-600">Last route check: {value.last_evaluation.status.replace(/_/g, ' ')}</p>}
-    <button type="button" disabled={busy || (!!value.review_required.length && !confirmed)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: confirmed })}>Save profile preferences</button>
+    <button type="button" disabled={busy || (value.repayment && !value.repayment_order.length)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>Save changes</button>
   </div>
 }

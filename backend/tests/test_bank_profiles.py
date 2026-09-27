@@ -262,7 +262,8 @@ def test_preferences_route_scope_and_migration_review(setup, db):
     payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': []}
     url = f'/api/bank-monitor/profiles/{legacy.id}/preferences'
     assert client.put(url, headers=headers(), json=payload).status_code == 409
-    response = client.put(url, headers=headers(), json={**payload, 'confirm_migration': True})
+    issues = next(p for p in client.get('/api/bank-monitor/profiles', headers=headers()).json()['profiles'] if p['id'] == legacy.id)['preferences']['review_items']
+    response = client.put(url, headers=headers(), json={**payload, 'confirm_migration': True, 'removed_review_items': [item['id'] for item in issues]})
     assert response.status_code == 200
     assert response.json()['unified'] is True
 
@@ -308,3 +309,83 @@ def test_route_evaluation_never_creates_drafts(setup, db):
     assert result['routes'][0]['status'] == 'evidence_required'
     assert result['transfers_executed'] is False
     assert db.query(BankTransferDraft).count() == 0
+
+
+def test_account_order_survives_provider_reordering(setup, db, monkeypatch):
+    client, p, _ = setup
+    def account_ids():
+        data = client.get('/api/bank-monitor/profiles', headers=headers()).json()
+        accounts = next(profile for profile in data['profiles'] if profile['id'] == p.id)['accounts']
+        return [(a['last4'], a['id']) for a in accounts]
+    before = account_ids()
+    assert [mask for mask, _ in before] == ['3304', '8264']
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [row('new-credit', '8264', 'credit', 1900), row('new-checking', '3304', amount=1100)])
+    assert client.post(f'/api/bank-monitor/profiles/{p.id}/sync', headers=headers()).status_code == 200
+    assert account_ids() == before
+
+
+def test_rename_connection_preserves_access_accounts_and_routes(setup, db):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    before = (profile.item_id, profile.encrypted_access_token)
+    members = [(a.id, a.account_id) for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id).order_by(BankProfileAccount.id)]
+    url = f'/api/bank-monitor/profiles/{profile.id}/name'
+    assert client.put(url, headers=headers(2), json={'name': 'Other'}).status_code == 404
+    assert client.put(url, headers={'X-Tenant-ID': '1'}, json={'name': 'Other'}).status_code == 403
+    for name in ('', '   ', 'x' * 81):
+        assert client.put(url, headers=headers(), json={'name': name}).status_code == 422
+    response = client.put(url, headers=headers(), json={'name': '  Business banking  '})
+    assert response.status_code == 200
+    assert next(p for p in response.json()['profiles'] if p['id'] == profile.id)['name'] == 'Business banking'
+    db.refresh(profile)
+    assert (profile.item_id, profile.encrypted_access_token) == before
+    assert [(a.id, a.account_id) for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id).order_by(BankProfileAccount.id)] == members
+    assert db.get(BankProfileRoute, route['id']).enabled is True
+
+
+def test_opposite_route_permissions_remain_independent(setup, db):
+    client, profile, _ = setup
+    payment = resolve_and_route(client, db, profile)
+    response = client.post('/api/bank-monitor/profiles/routes', headers=headers(), json={'profile_id': profile.id, 'source_id': payment['destination_id'], 'destination_id': payment['source_id'], 'bank_route_confirmed': True})
+    assert response.status_code == 200
+    draw = next(r for r in response.json()['routes'] if r['id'] != payment['id'])
+    assert client.put(f"/api/bank-monitor/profiles/routes/{payment['id']}", headers=headers(), json={'enabled': False}).status_code == 200
+    assert db.get(BankProfileRoute, payment['id']).enabled is False
+    assert db.get(BankProfileRoute, draw['id']).enabled is True
+
+
+def test_unavailable_payment_requires_specific_removal(setup, db):
+    from app.models.bank_monitor import BankProfilePreferences
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    db.add(BankProfilePreferences(profile_id=profile.id, tenant_id=1, settings={'confirmed': True, 'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']], 'review_required': []}))
+    db.get(BankProfileRoute, route['id']).enabled = False
+    db.commit()
+    payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'confirm_migration': True}
+    url = f'/api/bank-monitor/profiles/{profile.id}/preferences'
+    assert client.put(url, headers=headers(), json=payload).status_code == 409
+    data = client.get('/api/bank-monitor/profiles', headers=headers()).json()
+    issue = next(p for p in data['profiles'] if p['id'] == profile.id)['preferences']['review_items'][0]
+    assert '3304' in issue['label'] and '8264' in issue['label']
+    payload['removed_review_items'] = [issue['id']]
+    assert client.put(url, headers=headers(), json={**payload, 'repayment_order': [route['id']]}).status_code == 422
+    assert client.put(url, headers=headers(), json=payload).status_code == 200
+    assert db.get(BankProfileRoute, route['id']).enabled is False
+
+
+def test_partial_legacy_removal_preserves_other_warnings(setup, db):
+    client, _, legacy = setup
+    config = db.get(BankMonitorConfig, 1)
+    config.rules = {**config.rules, 'sources': [*config.rules['sources'], {'nickname': 'Visa', 'last4': '8539'}]}
+    db.commit()
+    payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'confirm_migration': True, 'removed_review_items': ['funding:8539']}
+    url = f'/api/bank-monitor/profiles/{legacy.id}/preferences'
+    response = client.put(url, headers=headers(), json=payload)
+    assert response.status_code == 200
+    def remaining(data):
+        return next(p for p in data['profiles'] if p['id'] == legacy.id)['preferences']['review_items']
+    assert [i['id'] for i in remaining(response.json())] == ['funding:2829']
+    assert [i['id'] for i in remaining(client.get('/api/bank-monitor/profiles', headers=headers()).json())] == ['funding:2829']
+    payload['removed_review_items'] = ['funding:2829']
+    assert remaining(client.put(url, headers=headers(), json=payload).json()) == []
+    assert db.query(BankProfileRoute).count() == 0
