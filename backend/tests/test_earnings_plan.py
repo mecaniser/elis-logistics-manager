@@ -50,7 +50,7 @@ def test_unposted_history_included_once_and_other_tenant_excluded(db, truck):
     assert p['planning_subtotal'] == '500.00'
     assert len(p['saved_settlement_ids']) == 1
     # Once linked to posted history it must not be added a second time.
-    r['pairs'][0]['settlements'] = [{'legacy_id': p['saved_settlement_ids'][0]}]
+    r['pairs'][0]['settlements'] = [{'id':'posted','date':str(ASOF),'deductions':{},'legacy_id': p['saved_settlement_ids'][0]}]
     assert earnings_plan(db, 1, r)['pairs'][0]['saved_remainder'] == '0.00'
     assert earnings_plan(db, 2, r)['pairs'] == []
 
@@ -97,7 +97,7 @@ def test_planning_score_uses_matching_unposted_freight_and_excludes_linked_dupli
     assert score['freight'] == '1000.00'
     assert score['retained_per_100'] == '50.00'
     assert score['score'] == '166.67'
-    r['pairs'][0]['settlements'] = [{'legacy_id': r['earnings_plan']['pairs'][0]['saved_settlement_ids'][0]}]
+    r['pairs'][0]['settlements'] = [{'id':'posted','date':str(ASOF),'deductions':{},'legacy_id': r['earnings_plan']['pairs'][0]['saved_settlement_ids'][0]}]
     score = earnings_plan(db, 1, r)['retention']['pairs'][0]
     assert score['freight'] == '0.00'
     assert score['score'] is None

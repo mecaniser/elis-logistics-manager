@@ -46,3 +46,11 @@ test('invalid or unsafe amounts do not become a plausible chart',()=>{
   assert.equal(model('100.00','90.00',[['fuel','unknown'],['fuel','10.00']]).reconciled,false)
   assert.equal(model('9999999999999999.00','9999999999999999.00',[]).reconciled,false)
 })
+test('expanding other charges preserves cents and waterfall endpoint',()=>{
+  const data={freight_gross:'100.00',settlement_remainder:'60.00',rows:[{category:'fuel',amount:'20.00'},{category:'insurance',amount:'15.00'},{category:'tolls',amount:'5.00'}]}
+  const expanded=freightFlowModel(data,true)
+  assert.equal(expanded.flows.some(r=>r.key==='other'),false)
+  assert.equal(expanded.flows.find(r=>r.key==='insurance').cents,1500)
+  assert.equal(expanded.flows.reduce((sum,r)=>sum+r.cents,0),10000)
+  assert.equal(expanded.steps.at(-1).after,6000)
+})

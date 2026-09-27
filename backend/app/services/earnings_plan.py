@@ -84,7 +84,17 @@ def planning_freight(report, included_ids):
         difference = D(row['operating_deductions']) - categorized
         if difference:
             amounts['unclassified_statement_adjustment'] = amounts.get('unclassified_statement_adjustment', ZERO) + difference
-    return {'freight_gross': money(gross), 'settlement_remainder': money(remainder),
+    fuel_sources = []
+    for pair in report.get('pairs', []):
+        for statement in pair['settlements']:
+            fuel_sources.append({'id': statement['id'], 'legacy_id': statement.get('legacy_id'), 'asset_id': pair['truck_id'],
+                'name': pair['name'], 'date': statement['date'], 'amount': money(statement['deductions'].get('fuel', 0)),
+                'basis': 'posted', 'rows': statement.get('fuel', [])})
+    for row in rows:
+        fuel_sources.append({'id': f"legacy-{row['legacy_id']}", 'legacy_id': row['legacy_id'], 'asset_id': row.get('asset_id'),
+            'name': row.get('name', ''), 'date': row.get('date', ''), 'amount': money(row['deductions'].get('fuel', 0)),
+            'basis': 'saved', 'rows': []})
+    return {'fuel_sources': fuel_sources, 'freight_gross': money(gross), 'settlement_remainder': money(remainder),
             'saved_unposted_count': len(rows), 'saved_settlement_ids': sorted(included_ids),
             'rows': [{'category': k, 'amount': money(v), 'percent_of_freight': money(v / gross * 100) if gross else None} for k, v in amounts.items()]}
 

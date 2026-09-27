@@ -63,3 +63,6 @@ Owner clarified the saved $400/week trailer allocation represents trailer contri
 
 ## Freight chart population alignment
 The overview chart now uses the planning report's exact included unposted legacy IDs plus the posted breakdown. Accounting revenue stays unchanged. Modeled legacy loan interest stays excluded; category differences are shown as unclassified statement adjustments. Source-posting status is a compact notice, not an exclusion from the management chart. Tested expected combined week 23,700 gross / 5,836.92 remainder, linked-source exclusion and category gaps. 317 backend tests and frontend lint/build pass.
+
+## Interactive freight drilldown
+Other charges expands into individual chart ribbons/waterfall steps and collapses without changing totals. Fuel opens purchases grouped by the exact included settlements. Posted entries retain posted purchase rows; saved entries use the tenant's existing reviewed history by legacy ID. Missing detail/product/location stays explicit, and purchase totals differing from chart charges show a discrepancy. Changing report/business resets drilldowns. Local desktop/mobile and waterfall checks passed; 317 backend and 32 frontend tests, lint/build passed.
