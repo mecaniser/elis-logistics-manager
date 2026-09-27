@@ -103,3 +103,90 @@ class BankTransferDraft(Base):
     bank_effective_date = Column(Date)
     status = Column(String(40), nullable=False, default='reviewed')
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class BankProfile(Base):
+    """An independent consented login, including multiple logins at one institution."""
+    __tablename__ = 'bank_profiles'
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    name = Column(String(80), nullable=False)
+    item_id = Column(String(150), nullable=False, unique=True)
+    institution_id = Column(String(80), nullable=False)
+    encrypted_access_token = Column(String(2048), nullable=False)
+    legacy = Column(Boolean, nullable=False, default=False)
+    status = Column(String(40), nullable=False, default='linked')
+    last_error = Column(String(80))
+    last_checked_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class BankAccountIdentity(Base):
+    __tablename__ = 'bank_account_identities'
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    institution_id = Column(String(80), nullable=False)
+    name = Column(String(80), nullable=False)
+    last4 = Column(String(4), nullable=False)
+    kind = Column(String(20), nullable=False)
+    reserve_cents = Column(Integer, nullable=False, default=0)
+
+
+class BankProfileAccount(Base):
+    __tablename__ = 'bank_profile_accounts'
+    __table_args__ = (UniqueConstraint('profile_id', 'provider_account_id', name='uq_bank_profile_account'),)
+    id = Column(String(36), primary_key=True)
+    profile_id = Column(String(36), nullable=False, index=True)
+    account_id = Column(String(36), index=True)  # Null until an overlapping account is resolved.
+    provider_account_id = Column(String(150), nullable=False)
+    name = Column(String(80), nullable=False)
+    last4 = Column(String(4), nullable=False)
+    kind = Column(String(20), nullable=False)
+    subtype = Column(String(80))
+    active = Column(Boolean, nullable=False, default=True)
+    balance = Column(JSON, nullable=False, default=dict)
+
+
+class BankProfileRoute(Base):
+    __tablename__ = 'bank_profile_routes'
+    __table_args__ = (UniqueConstraint('profile_id', 'source_id', 'destination_id', name='uq_bank_profile_route'),)
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    profile_id = Column(String(36), nullable=False)
+    source_id = Column(String(36), nullable=False)
+    destination_id = Column(String(36), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+
+class BankProfileDraft(Base):
+    """Immutable account/profile binding alongside the existing transfer audit record."""
+    __tablename__ = 'bank_profile_drafts'
+    draft_id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    profile_id = Column(String(36), nullable=False)
+    route_id = Column(String(36), nullable=False)
+    source_id = Column(String(36), nullable=False)
+    destination_id = Column(String(36), nullable=False)
+
+
+class BankProfileLink(Base):
+    __tablename__ = 'bank_profile_links'
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False)
+    name = Column(String(80), nullable=False)
+    profile_id = Column(String(36))
+    token_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True))
+
+
+class BankProfileRun(Base):
+    __tablename__ = 'bank_profile_runs'
+    __table_args__ = (UniqueConstraint('profile_id', 'scheduled_date', name='uq_bank_profile_daily'),)
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False)
+    profile_id = Column(String(36), nullable=False)
+    scheduled_date = Column(Date, nullable=False)
+    status = Column(String(40), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True))

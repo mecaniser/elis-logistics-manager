@@ -257,6 +257,8 @@ def main():
             record_heartbeat(db, now)
             run_connection_checks(db)
             run_due(db, now)
+            from app.services.bank_profiles import run_due_profiles
+            run_due_profiles(db, now)
         stop.wait(30)
 
 

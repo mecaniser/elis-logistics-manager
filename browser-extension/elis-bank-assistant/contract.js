@@ -13,14 +13,21 @@ export function allowedSender(url) {
 export function validDraft(d) {
   const kind = d?.kind || (d?.memo?.startsWith('Cvr ') ? 'coverage' : null);
   return d && /^[a-f0-9-]{36}$/.test(d.id) && Number.isSafeInteger(d.amount_cents) &&
+    (!d.bank_session || (/^[a-f0-9-]{36}$/.test(d.bank_session.profile_id) && typeof d.bank_session.profile_name === 'string' && d.bank_session.profile_name.length <= 80 && d.bank_session.institution_id === 'ins_109917')) &&
     d.amount_cents > 0 && d.amount_cents <= 100000000 &&
     /^\d{4}$/.test(d.from_last4) && /^\d{4}$/.test(d.to_last4) && d.from_last4 !== d.to_last4 &&
     ((kind === 'coverage' && /^Cvr [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)) ||
      (kind === 'repayment' && /^Rpy [A-Za-z0-9 ._-]{1,30}$/.test(d.memo)));
 }
+function sameBankSession(left, right) {
+  if (!left || !right) return !left && !right;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every(key => left[key] === right[key]);
+}
 export function boundDraft(active, draft, sender) {
   return !!active && active.origin === new URL(sender.url).origin && active.elisTabId === sender.tab?.id &&
-    ['id','amount_cents','from_last4','to_last4','memo'].every(k => active.draft?.[k] === draft?.[k]);
+    ['id','amount_cents','from_last4','to_last4','memo'].every(k => active.draft?.[k] === draft?.[k]) &&
+    sameBankSession(active.draft?.bank_session, draft?.bank_session);
 }
 export function parseAccountSummary(text) {
   const clean=String(text || '').replace(/\s+/g,' ').trim();

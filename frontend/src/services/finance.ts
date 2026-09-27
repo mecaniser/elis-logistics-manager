@@ -36,6 +36,7 @@ export const financeApi = {
   confirmUnreimbursed: (items: RecordData[]) => client.post('/repair-owner-postings/confirm-unreimbursed', {items}).then(r => r.data),
   postOwnerRepairs: () => client.post('/repair-owner-postings').then(r => r.data),
   paymentAccounts: () => client.get<{items: PaymentAccount[]}>('/payment-accounts').then(r => r.data.items),
+  removePaymentAccount: (id: string) => client.delete(`/payment-accounts/${id}`).then(r => r.data),
   addPaymentAccount: (payload: Omit<PaymentAccount, 'id'>) => client.post<PaymentAccount>('/payment-accounts', payload).then(r => r.data),
   confirmRepairs: (payload: RecordData) => client.post('/repair-confirmations', payload).then(r => r.data),
   repairHistory: (as_of: string) => client.get<RepairReviewReport>('/repair-history', {params: {as_of}}).then(r => r.data),

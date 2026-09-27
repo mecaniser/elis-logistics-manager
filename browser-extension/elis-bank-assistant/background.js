@@ -1,4 +1,5 @@
 import {allowedSender, validDraft, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
+import {openVerificationSession} from './verification-session.js';
 import {fillForm} from './fill-form.js';
 import {startScheduledChromeRead} from './scheduled-check.js';
 let busy = false;
@@ -130,7 +131,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   (async()=>{
     const existing=await chrome.storage.session.get('activeDraft');
     if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
-      if(existing.activeDraft) throw new Error('An active transfer review already exists.');
+      if(existing.activeDraft && !boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) throw new Error('A different transfer review already exists. Finish checking that transfer first.');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
       await approvePreparation(message.draft,'verify');
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
@@ -139,11 +140,14 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     if(message.type==='ELIS_VERIFY') {
       if(!existing.activeDraft) {finishReply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'No active preparation for this draft.'});return;}
-      if(!boundDraft(existing.activeDraft,message.draft,sender))
-        throw new Error('No active preparation for this draft.');
+      if(!boundDraft(existing.activeDraft,message.draft,sender)) {
+        if(boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) {finishReply({ok:false,code:'VERIFICATION_REAUTH_REQUIRED',error:'Approve read-only verification in this ELIS tab.'});return;}
+        throw new Error('A different transfer is awaiting verification.');
+      }
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
       const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
+      if(message.interactive === true) await openVerificationSession(chrome, message.draft, progress);
       async function inspect(suffix,source) {
         await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
         const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
@@ -209,7 +213,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     }
     const results=await chrome.scripting.executeScript({target:{tabId:tab.id},func:fillForm,args:[message.draft]});
     const result=results[0]?.result || {ok:false,error:'No preparation result. Inspect the bank tab.'};
-    if(result.code==='LOGIN_REQUIRED') {
+    if(result.code==='LOGIN_REQUIRED' || result.code==='PROFILE_SESSION_REQUIRED') {
       await chrome.storage.session.remove('activeDraft');
       finishReply({ok:false,code:'PREPARATION_NOT_STARTED',error:result.error});
       return;
