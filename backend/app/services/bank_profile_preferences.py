@@ -7,7 +7,7 @@ from app.models.bank_monitor import BankProfilePreferences, BankProfileRoute, Ba
 def preferences(db, profile):
     saved = db.get(BankProfilePreferences, profile.id)
     if saved and saved.settings.get('confirmed'):
-        result = {**saved.settings, 'last_evaluation': saved.last_evaluation}
+        result = {**saved.settings, 'funding_order': list(saved.settings['funding_order']), 'repayment_order': list(saved.settings['repayment_order']), 'last_evaluation': saved.last_evaluation}
         enabled = {r.id for r in db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id, enabled=True)}
         all_routes = {r.id: r for r in db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id)}
         members = {a.account_id: a for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True) if a.account_id}
@@ -21,6 +21,17 @@ def preferences(db, profile):
                 target = members.get(route.destination_id) if route else None
                 label = f'{source.name} ••{source.last4} → {target.name} ••{target.last4}' if source and target else 'An account transfer that is no longer connected'
                 result['review_items'].append({'id': f'{kind}:{route_id}', 'kind': kind, 'route_id': route_id, 'last4': None, 'label': label, 'message': 'This transfer is in your saved plan, but it is turned off or no longer available.'})
+        for item in saved.settings.get('pending_review', []):
+            kind = item['kind']
+            candidates = [a for a in members.values() if a.last4 == item['last4'] and a.kind == 'credit']
+            matches = [r.id for r in all_routes.values() if r.enabled and len(candidates) == 1
+                       and (r.source_id if kind == 'funding' else r.destination_id) == candidates[0].account_id
+                       and members.get(r.destination_id if kind == 'funding' else r.source_id)
+                       and members[r.destination_id if kind == 'funding' else r.source_id].kind == 'checking']
+            if matches:
+                result[f'{kind}_order'].extend(r for r in sorted(matches) if r not in result[f'{kind}_order'])
+            else:
+                result['review_items'].append(item)
         result['review_required'] = [item['message'] for item in result['review_items']]
         result['migration_pending'] = False
         return result

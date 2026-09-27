@@ -256,7 +256,7 @@ def test_preferences_route_scope_and_migration_review(setup, db):
     payload = {'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']]}
     url = f'/api/bank-monitor/profiles/{p.id}/preferences'
     assert client.put(url, headers=headers(2), json=payload).status_code == 404
-    assert client.put(f'/api/bank-monitor/profiles/{legacy.id}/preferences', headers=headers(), json={**payload, 'confirm_migration': True}).status_code == 409
+    assert client.put(f'/api/bank-monitor/profiles/{legacy.id}/preferences', headers=headers(), json={**payload, 'confirm_migration': True}).status_code == 422
     assert client.put(url, headers=headers(), json={**payload, 'funding_order': [route['id']]}).status_code == 422
     assert client.put(url, headers=headers(), json=payload).status_code == 200
     payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': []}
@@ -371,3 +371,21 @@ def test_unavailable_payment_requires_specific_removal(setup, db):
     assert client.put(url, headers=headers(), json={**payload, 'repayment_order': [route['id']]}).status_code == 422
     assert client.put(url, headers=headers(), json=payload).status_code == 200
     assert db.get(BankProfileRoute, route['id']).enabled is False
+
+
+def test_partial_legacy_removal_preserves_other_warnings(setup, db):
+    client, _, legacy = setup
+    config = db.get(BankMonitorConfig, 1)
+    config.rules = {**config.rules, 'sources': [*config.rules['sources'], {'nickname': 'Visa', 'last4': '8539'}]}
+    db.commit()
+    payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'confirm_migration': True, 'removed_review_items': ['funding:8539']}
+    url = f'/api/bank-monitor/profiles/{legacy.id}/preferences'
+    response = client.put(url, headers=headers(), json=payload)
+    assert response.status_code == 200
+    def remaining(data):
+        return next(p for p in data['profiles'] if p['id'] == legacy.id)['preferences']['review_items']
+    assert [i['id'] for i in remaining(response.json())] == ['funding:2829']
+    assert [i['id'] for i in remaining(client.get('/api/bank-monitor/profiles', headers=headers()).json())] == ['funding:2829']
+    payload['removed_review_items'] = ['funding:2829']
+    assert remaining(client.put(url, headers=headers(), json=payload).json()) == []
+    assert db.query(BankProfileRoute).count() == 0
