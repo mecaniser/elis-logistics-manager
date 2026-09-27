@@ -1,3 +1,4 @@
+import EarningsPlan from './EarningsPlan'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Context, Report, dollars, financeApi, financeError } from '../../services/finance'
@@ -21,6 +22,7 @@ export default function OwnerOverview({report:r,context,onSaved}: {report:Report
     {r.owner_insights.unposted_in_period > 0 && <p className="finance-error">Partial period: {r.owner_insights.unposted_in_period} existing settlements are not yet posted in this view. These figures do not represent the complete period. <Link to="/settlements/reconciliation">Review missing statements</Link></p>}
     {gross !== 0 || r.revenue_breakdown.rows.length ? <FreightFlow data={r.revenue_breakdown}/> : <p className="finance-empty">No reviewed statements posted for this period. <Link to="/settlements/reconciliation">Explore the historical review</Link>.</p>}
     </section>
+    {r.earnings_plan&&<EarningsPlan plan={r.earnings_plan}/>}
     <section className="owner-cash-status" aria-label="Available cash status"><div><strong>Available to owner: {cash.available===null?'not yet verified':dollars(cash.available)}</strong><span>{cash.status==='reconciled'?'Reconciled':'Provisional'} · As of {cash.as_of}{cash.available!==null&&Number(cash.available)<0?' · Funding shortfall':''}</span></div><Link className="finance-secondary" to="/finance/money">{cash.status==='reconciled'?'View cash details':'Verify cash in Money'}</Link></section>
     <section className="owner-panel"><div className="finance-section-heading"><h2>Truck + trailer performance</h2><Link to="/finance/assets">Equipment and capital</Link></div>
       <p className="finance-help">Target: retain {dollars(r.retention.targets.target_percent)} per $100 of freight. Acceptable: {dollars(r.retention.targets.acceptable_percent)}. Scores include recorded costs and funded protection; incomplete records remain provisional.</p>

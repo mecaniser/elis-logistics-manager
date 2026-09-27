@@ -166,3 +166,9 @@
 .owner-cash-status strong {display:block;font-size:14px;}
 .owner-cash-status span {display:block;font-size:12px;color:#526477;margin-top:4px;}
 @media(max-width:600px) {.finance-home-period>span {order:3;flex-basis:100%;}.finance-home-dates {flex-wrap:wrap;}.owner-cash-status {flex-wrap:wrap;}.finance-home .finance-header {align-items:flex-start;}}
+.earnings-plan-pair {padding:12px 0;border-top:1px solid #d5dfe5;}
+.earnings-plan-pair>button {display:flex;align-items:center;gap:12px;width:100%;min-height:44px;text-align:left;font-size:14px;}
+.earnings-plan-pair>button strong {margin-left:auto;font-size:20px;font-variant-numeric:tabular-nums;}
+.earnings-plan-pair>button:focus-visible {outline:2px solid #2146d9;outline-offset:3px;}
+.earnings-plan-targets {display:flex;flex-wrap:wrap;gap:8px 24px;font-size:12px;color:#526477;}
+.earnings-plan-pair ul,.earnings-plan-settings {font-size:12px;margin-top:12px;line-height:1.6;}
