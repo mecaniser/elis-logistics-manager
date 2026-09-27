@@ -91,6 +91,7 @@ def earnings_plan(db, tenant, report):
             issues.append('Weekly repair target is not saved on this vehicle.')
         repair_target = period_target(repair_weekly, start, end) if repair_weekly is not None and end >= start else ZERO
         capital_target = ZERO
+        trailer_capital_target = ZERO
         for aid in plan_assets:
             plan = saved.get(aid)
             if not plan:
@@ -112,7 +113,9 @@ def earnings_plan(db, tenant, report):
                     covered_days = {day for day in mapping['days'] if active_start <= day <= active_end}
                     if mapping['inferred']:
                         issues.append(f"{plan['name']}: planning pairing inferred from saved settlement links; no historical assignment has been written.")
-                    capital_target += sum((period_target(plan['_weekly'], day, day) for day in covered_days), ZERO)
+                    trailer_target = sum((period_target(plan['_weekly'], day, day) for day in covered_days), ZERO)
+                    capital_target += trailer_target
+                    trailer_capital_target += trailer_target
                     if len(covered_days) < max((active_end - active_start).days + 1, 0):
                         capital_complete = False
                         issues.append(f"{plan['name']}: saved recovery plan exists; dated assignment is needed for period allocation.")
@@ -149,7 +152,21 @@ def earnings_plan(db, tenant, report):
                 'Outside costs, financing and capital recovery remain provisional; this is not withdrawal cash.',
                 *(['Unassigned asset costs or income are excluded from pair scores.'] if D(report['retention']['unassigned_asset_result']) else []),
             ]))})
-        pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': plan_assets, 'capital_complete': capital_complete,
+        # Internal trailer allocation is a split of the same earnings, not another cost.
+        period_rows = [r for r in report['legacy_comparison']['rows'] if r['asset_id'] == i and r['date'] <= end.isoformat()]
+        linked_ids = {r['legacy_id'] for r in period_rows}
+        split_known = bool(period_rows) and all(r.get('trailer_allocation') is not None for r in period_rows) and all(s.get('legacy_id') in linked_ids for s in pair['settlements'])
+        remainder = sum((D(r['amount']) for r in score['bridge'] if r['label'] == 'Statement remainder'), ZERO) + saved_remainder
+        split = None
+        if split_known:
+            allocation = sum((D(r['trailer_allocation']) for r in period_rows), ZERO)
+            truck_remainder = remainder - allocation - repair_target
+            trailer_contribution = allocation - trailer_capital_target
+            split = {'statement_remainder': money(remainder), 'trailer_allocation': money(allocation),
+                     'truck_remainder': money(truck_remainder), 'trailer_capital_target': money(trailer_capital_target),
+                     'trailer_contribution': money(trailer_contribution),
+                     'pair_adjustments': money(subtotal - truck_remainder - trailer_contribution)}
+        pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': plan_assets, 'capital_complete': capital_complete, 'allocation_split': split,
                          'recorded_retained': score['retained'], 'saved_remainder': money(saved_remainder), 'saved_settlement_ids': [r['legacy_id'] for r in saved_rows], 'repair_target': money(repair_target),
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),

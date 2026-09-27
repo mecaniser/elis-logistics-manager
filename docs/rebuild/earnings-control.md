@@ -50,3 +50,13 @@ Next: complete the old/new difference report and align retention score with the 
 Planning scores now use the exact planning subtotal and matching posted plus unposted freight population, with linked legacy settlements excluded once. The recorded accounting retention report remains separately available. Target settings remain effective-dated; zero/nonpositive freight gives no score, losses remain negative, and incomplete plans retain provisional status. No new financial writes.
 
 Verified 315 backend tests, including planning-score bridge equality, funded target offsets, personal repair payment and matching legacy freight. Frontend lint/build pass. January–September local period additivity still passes. Score alignment is local only pending release; remaining inputs are truck resale/sale plans and actual trailer financing evidence.
+
+## Retention release — September 27
+
+PR #100 merged current main including PR #99 Bank Monitor updates. Production commit `082e4e79e91da127eefc07c906f3f6d31076f274`, Railway deployment `2c0ccdf4-c786-4a3a-9f3c-5c9f40127110` SUCCESS; tested/merged tree `1d937a2577b9aa53c75ea6c5fbc6b56b8b34ec10`. 315 backend tests, 31 frontend tests, lint/build pass. Live score subtotals match planning; health 200 and anonymous accounting 401; no browser errors.
+
+Read-only selected-week and January–September saved-settlement-net comparison accounts for all arithmetic differences with zero unexplained residual. Local snapshot only; not a complete production history or evidence audit. Detailed private report: `.gstack/deploy-reports/2026-09-27-earnings-comparison.md`. Missing truck recovery plans, actual financing evidence and historical assignment coverage remain.
+
+## Preserve trailer contribution — September 27
+
+Owner clarified the saved $400/week trailer allocation represents trailer contribution, not solely capital protection. Display its full source-record allocation, split out the saved recovery target, and combine the remaining trailer contribution with truck remainder. Show other recorded costs/payments/protection adjustments once at pair level. Do not infer missing allocation amounts or label the combined estimate final profit. Source posting status stays in a secondary disclosure.
