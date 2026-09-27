@@ -248,3 +248,63 @@ def test_full_payoff_requires_verified_quote_not_reported_balance(setup, db):
     assert 'payoff quote' in response.json()['detail']
     assert db.query(BankTransferDraft).count() == 0
     assert client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000, 'intent': 'payment'}).status_code == 200
+
+
+def test_preferences_route_scope_and_migration_review(setup, db):
+    client, p, legacy = setup
+    route = resolve_and_route(client, db, p)
+    payload = {'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']]}
+    url = f'/api/bank-monitor/profiles/{p.id}/preferences'
+    assert client.put(url, headers=headers(2), json=payload).status_code == 404
+    assert client.put(f'/api/bank-monitor/profiles/{legacy.id}/preferences', headers=headers(), json={**payload, 'confirm_migration': True}).status_code == 422
+    assert client.put(url, headers=headers(), json={**payload, 'funding_order': [route['id']]}).status_code == 422
+    assert client.put(url, headers=headers(), json=payload).status_code == 200
+    payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': []}
+    url = f'/api/bank-monitor/profiles/{legacy.id}/preferences'
+    assert client.put(url, headers=headers(), json=payload).status_code == 409
+    response = client.put(url, headers=headers(), json={**payload, 'confirm_migration': True})
+    assert response.status_code == 200
+    assert response.json()['unified'] is True
+
+
+def test_background_checks_do_not_confirm_migration(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankProfilePreferences
+    from app.services.bank_profile_preferences import unified
+    client, p, legacy = setup
+    db.add(BankProfilePreferences(profile_id=p.id, tenant_id=1, settings={'confirmed': True, 'monitor': False, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'review_required': []}))
+    db.commit()
+    monkeypatch.setattr(service, 'sync_profile', lambda db, profile: None)
+    service.run_due_profiles(db, datetime(2026, 9, 28, 22, tzinfo=timezone.utc))
+    assert db.query(BankProfileRun).filter_by(profile_id=p.id).count() == 0
+    assert db.query(BankProfileRun).filter_by(profile_id=legacy.id).count() == 1
+    assert unified(db, 1) is False
+
+
+def test_profile_schedule_preserves_archived_rules_and_reserves(setup, db):
+    from app.models.bank_monitor import BankProfilePreferences
+    client, p, legacy = setup
+    old = dict(db.get(BankMonitorConfig, 1).rules)
+    for profile in (p, legacy):
+        db.add(BankProfilePreferences(profile_id=profile.id, tenant_id=1, settings={'confirmed': True, 'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'review_required': []}))
+    account = db.query(BankAccountIdentity).filter_by(last4='3304').one()
+    account.reserve_cents = 12345
+    db.commit()
+    response = client.put('/api/bank-monitor/profile-schedule', headers={'X-Tenant-ID': '1', 'X-Bank-Monitor-Action': 'save-settings'}, json={'enabled': False})
+    assert response.status_code == 200
+    assert db.get(BankMonitorConfig, 1).enabled is False
+    assert db.get(BankMonitorConfig, 1).rules == old
+    assert db.get(BankAccountIdentity, account.id).reserve_cents == 12345
+
+
+def test_route_evaluation_never_creates_drafts(setup, db):
+    from app.models.bank_monitor import BankProfilePreferences
+    from app.services.bank_profile_preferences import evaluate
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    db.add(BankProfilePreferences(profile_id=p.id, tenant_id=1, settings={'confirmed': True, 'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']], 'review_required': []}))
+    db.commit()
+    result = evaluate(db, p, datetime(2026, 10, 2, 22, tzinfo=timezone.utc))
+    assert result['routes'][0]['route_id'] == route['id']
+    assert result['routes'][0]['status'] == 'evidence_required'
+    assert result['transfers_executed'] is False
+    assert db.query(BankTransferDraft).count() == 0

@@ -57,6 +57,7 @@ def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_d
     provider = db.get(BankProviderConnection, tenant_id)
     reader_mode = os.getenv('BANK_MONITOR_READER_MODE', 'private_worker')
     return {'rules': config.rules if config else MonitorRules().model_dump(),
+            'schedule_enabled': bool(config and config.enabled),
             'reader_mode': reader_mode if reader_mode in {'signed_in_chrome', 'plaid'} else 'private_worker',
             'provider_connection': {
                 'configured': plaid_bank.configured(), 'linked': bool(provider),
@@ -297,7 +298,8 @@ def record_browser_check(data: BrowserCheckInput, request: Request,
     scheduled_run = None
     local = now.astimezone(EASTERN)
     # A browser read is a scheduled run only when captured near the actual slot.
-    if rules.enabled and due_date(now) == local.date() and local.hour == 17 and local.minute < 45:
+    from app.services.bank_profile_preferences import unified
+    if not unified(db, tenant_id) and rules.enabled and due_date(now) == local.date() and local.hour == 17 and local.minute < 45:
         existing = db.query(BankMonitorRun).filter_by(tenant_id=tenant_id, scheduled_date=local.date()).with_for_update().first()
         if existing and (existing.status in {'bank_read_failed', 'bank_security_challenge', 'chrome_check_missed'}
                          or existing.result.get('source') == 'plaid_background'
@@ -836,3 +838,25 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
             'source': {key: source[key] for key in ('description', 'date', 'amount_cents')},
             'destination': {key: destination[key] for key in ('description', 'date', 'amount_cents')},
             'source_evidence': source_evidence, 'destination_evidence': destination_evidence}
+
+
+class ProfileScheduleInput(StrictModel):
+    enabled: bool
+
+
+@router.put('/profile-schedule')
+def save_profile_schedule(data: ProfileScheduleInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    from app.services.bank_profile_preferences import unified
+    if request.headers.get('x-bank-monitor-action') != 'save-settings':
+        raise HTTPException(403, 'Missing settings action header.')
+    if not unified(db, tenant_id):
+        raise HTTPException(409, 'Save each banking profile before changing its schedule here.')
+    config = db.get(BankMonitorConfig, tenant_id)
+    if not config:
+        config = BankMonitorConfig(tenant_id=tenant_id, rules=MonitorRules().model_dump())
+        db.add(config)
+    config.enabled = data.enabled
+    # Preserve valid legacy rules as an archive; the profile scheduler uses enabled.
+    config.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {'saved': True, 'enabled': config.enabled}

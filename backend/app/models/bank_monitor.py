@@ -190,3 +190,12 @@ class BankProfileRun(Base):
     status = Column(String(40), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=False)
     finished_at = Column(DateTime(timezone=True))
+
+
+class BankProfilePreferences(Base):
+    """Profile policy; canonical accounts continue to own shared reserves."""
+    __tablename__ = 'bank_profile_preferences'
+    profile_id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    settings = Column(JSON, nullable=False, default=dict)
+    last_evaluation = Column(JSON, nullable=False, default=dict)

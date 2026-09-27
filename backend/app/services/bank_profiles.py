@@ -192,6 +192,11 @@ def run_due_profiles(db, now):
         return
     rows = db.query(BankProfile).join(BankMonitorConfig, BankMonitorConfig.tenant_id == BankProfile.tenant_id).join(Tenant, Tenant.id == BankProfile.tenant_id).filter(BankProfile.tenant_id.in_(allowed), BankMonitorConfig.enabled.is_(True), Tenant.is_active.is_(True)).all()
     for profile in rows:
+        from app.services.bank_profile_preferences import preferences, evaluate
+        from app.models.bank_monitor import BankProfilePreferences
+        policy = preferences(db, profile)
+        if not policy['monitor']:
+            continue
         if db.query(BankProfileRun).filter_by(profile_id=profile.id, scheduled_date=local.date()).first():
             continue
         run = BankProfileRun(id=str(uuid4()), tenant_id=profile.tenant_id, profile_id=profile.id,
@@ -206,6 +211,11 @@ def run_due_profiles(db, now):
         try:
             sync_profile(db, profile)
             run.status = 'synced'
+            policy_row = db.get(BankProfilePreferences, profile.id)
+            if not policy_row:
+                policy_row = BankProfilePreferences(profile_id=profile.id, tenant_id=profile.tenant_id, settings={k: v for k, v in policy.items() if k != 'last_evaluation'})
+                db.add(policy_row)
+            policy_row.last_evaluation = evaluate(db, profile, now)
         except plaid_bank.PlaidBankError as exc:
             run.status = str(exc)
         except Exception:
