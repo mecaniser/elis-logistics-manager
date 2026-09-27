@@ -8,7 +8,8 @@ import MoneyInput from '../components/MoneyInput'
 import { centsFromMoneyInput } from '../components/moneyAmount'
 
 type Account = { id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
-type Preferences = { monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
+type ReviewItem = { id: string; kind: 'funding' | 'repayment'; route_id: string | null; last4: string | null; label: string; message: string }
+type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
 type Profile = { preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string }
@@ -226,7 +227,9 @@ function ConnectionName({ profile, busy, save, cancel }: { profile: Profile; bus
 
 function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: Profile; routes: Route[]; busy: boolean; save: (value: unknown) => Promise<void>; toggle: (route: Route) => Promise<void> }) {
   const [value, setValue] = useState(profile.preferences)
-  const [confirmed, setConfirmed] = useState(false)
+  const [removed, setRemoved] = useState<string[]>([])
+  const issues = value.review_items || []
+  const unresolved = issues.filter(item => !removed.includes(item.id))
   const pairs = new Map<string, Route[]>()
   for (const route of routes) {
     const key = [route.source_id, route.destination_id].sort().join(':')
@@ -251,12 +254,21 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
         })}
       </section>
     })}
-    <p className="text-xs text-slate-500">Operation switches save immediately. Monitoring preferences below save with the button.</p>
-    <label className="flex gap-2"><input type="checkbox" checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} />Include this login in daily checks</label>
-    <label className="flex gap-2"><input type="checkbox" checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} />Evaluate Friday repayment routes</label>
-    {!!value.review_required.length && <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-amber-950">{value.review_required.map(issue => <p key={issue}>{issue}</p>)}<label className="flex gap-2"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I reviewed the operations above to replace these old priorities.</label></div>}
-    <p className="text-xs text-slate-500">Checks use this login’s connected accounts and shared reserves. A repayment needs verified income, pending debits and full payoff; a balance read alone cannot authorize it.</p>
+    <p className="text-xs text-slate-500">Transfer switches save as you change them. Use Save changes for the check settings.</p>
+    <label className="flex gap-2"><input type="checkbox" checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} />Check these accounts daily</label>
+    <label className="flex gap-2"><input type="checkbox" checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} />Check for possible payments on Fridays</label>
+    {!!issues.length && <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-amber-950"><h4 className="font-semibold">Some saved transfer settings need updating</h4>{issues.map(item => {
+      const removedItem = removed.includes(item.id)
+      const possible = routes.filter(route => !route.enabled && (item.route_id ? route.id === item.route_id : profile.accounts.some(a => a.account_id === (item.kind === 'funding' ? route.source_id : route.destination_id) && a.last4 === item.last4)))
+      return <div key={item.id} className="border-t border-amber-200 pt-2"><p className="font-medium">{item.label}</p><p className="mt-1 text-xs">{removedItem ? `Will be removed from your ${item.kind === 'funding' ? 'funding' : 'payment'} plan.` : item.message}</p><div className="mt-1 flex flex-wrap gap-2">{removedItem ? <button type="button" className="min-h-9 font-semibold text-blue-800" onClick={() => { setRemoved(removed.filter(id => id !== item.id)); if (item.route_id) { const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: [...value[key], item.route_id] }) } }}>Undo removal</button> : <>
+      {possible.map(route => <button key={route.id} type="button" disabled={busy} className="min-h-9 font-semibold text-blue-800" onClick={() => void toggle(route)}>Enable {item.kind === 'funding' ? 'transfer to checking' : 'payment'} ••{profile.accounts.find(a => a.account_id === route.source_id)?.last4} → ••{profile.accounts.find(a => a.account_id === route.destination_id)?.last4}</button>)}
+      <button type="button" disabled={busy} className="min-h-9 font-semibold text-red-800" onClick={() => { setRemoved([...removed, item.id]); const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: value[key].filter(id => id !== item.route_id) }) }}>Remove from {item.kind === 'funding' ? 'funding' : 'payment'} plan</button></>}</div>{!removedItem && !possible.length && <p className="mt-1 text-xs">If this bank connection supports the transfer, add it using “Add a permitted transfer route” below.</p>}</div>
+    })}<p className="text-xs">Removing an item here changes the plan only. It does not disconnect the account or move money.</p></div>}
+    {value.migration_pending && <p className="text-xs text-slate-600">Saving will use the accounts and cash reserves shown above for future checks. Your accounts stay connected.</p>}
+    {!!removed.length && <p className="text-sm text-slate-700">Saving will remove: {issues.filter(item => removed.includes(item.id)).map(item => item.label).join('; ')}.</p>}
+    {value.repayment && !value.repayment_order.length && <p className="text-sm text-amber-900">Choose a payment above for Friday checks, or turn Friday payment checks off.</p>}
+    <p className="text-xs text-slate-500">ELIS checks balances and money set aside for bills before suggesting a payment. You review and submit transfers in Truliant.</p>
     {value.last_evaluation?.status && <p className="text-xs text-slate-600">Last route check: {value.last_evaluation.status.replace(/_/g, ' ')}</p>}
-    <button type="button" disabled={busy || (!!value.review_required.length && !confirmed)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: confirmed })}>Save profile preferences</button>
+    <button type="button" disabled={busy || unresolved.length > 0 || (value.repayment && !value.repayment_order.length)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>Save changes</button>
   </div>
 }
