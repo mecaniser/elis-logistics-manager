@@ -256,13 +256,14 @@ def test_preferences_route_scope_and_migration_review(setup, db):
     payload = {'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']]}
     url = f'/api/bank-monitor/profiles/{p.id}/preferences'
     assert client.put(url, headers=headers(2), json=payload).status_code == 404
-    assert client.put(f'/api/bank-monitor/profiles/{legacy.id}/preferences', headers=headers(), json={**payload, 'confirm_migration': True}).status_code == 422
+    assert client.put(f'/api/bank-monitor/profiles/{legacy.id}/preferences', headers=headers(), json={**payload, 'confirm_migration': True}).status_code == 409
     assert client.put(url, headers=headers(), json={**payload, 'funding_order': [route['id']]}).status_code == 422
     assert client.put(url, headers=headers(), json=payload).status_code == 200
     payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': []}
     url = f'/api/bank-monitor/profiles/{legacy.id}/preferences'
     assert client.put(url, headers=headers(), json=payload).status_code == 409
-    response = client.put(url, headers=headers(), json={**payload, 'confirm_migration': True})
+    issues = next(p for p in client.get('/api/bank-monitor/profiles', headers=headers()).json()['profiles'] if p['id'] == legacy.id)['preferences']['review_items']
+    response = client.put(url, headers=headers(), json={**payload, 'confirm_migration': True, 'removed_review_items': [item['id'] for item in issues]})
     assert response.status_code == 200
     assert response.json()['unified'] is True
 
@@ -351,3 +352,22 @@ def test_opposite_route_permissions_remain_independent(setup, db):
     assert client.put(f"/api/bank-monitor/profiles/routes/{payment['id']}", headers=headers(), json={'enabled': False}).status_code == 200
     assert db.get(BankProfileRoute, payment['id']).enabled is False
     assert db.get(BankProfileRoute, draw['id']).enabled is True
+
+
+def test_unavailable_payment_requires_specific_removal(setup, db):
+    from app.models.bank_monitor import BankProfilePreferences
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    db.add(BankProfilePreferences(profile_id=profile.id, tenant_id=1, settings={'confirmed': True, 'monitor': True, 'repayment': True, 'funding_order': [], 'repayment_order': [route['id']], 'review_required': []}))
+    db.get(BankProfileRoute, route['id']).enabled = False
+    db.commit()
+    payload = {'monitor': True, 'repayment': False, 'funding_order': [], 'repayment_order': [], 'confirm_migration': True}
+    url = f'/api/bank-monitor/profiles/{profile.id}/preferences'
+    assert client.put(url, headers=headers(), json=payload).status_code == 409
+    data = client.get('/api/bank-monitor/profiles', headers=headers()).json()
+    issue = next(p for p in data['profiles'] if p['id'] == profile.id)['preferences']['review_items'][0]
+    assert '3304' in issue['label'] and '8264' in issue['label']
+    payload['removed_review_items'] = [issue['id']]
+    assert client.put(url, headers=headers(), json={**payload, 'repayment_order': [route['id']]}).status_code == 422
+    assert client.put(url, headers=headers(), json=payload).status_code == 200
+    assert db.get(BankProfileRoute, route['id']).enabled is False

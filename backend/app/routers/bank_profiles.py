@@ -313,6 +313,7 @@ class PreferencesInput(StrictModel):
     funding_order: list[str] = Field(default_factory=list, max_length=100)
     repayment_order: list[str] = Field(default_factory=list, max_length=100)
     confirm_migration: bool = False
+    removed_review_items: list[str] = Field(default_factory=list, max_length=100)
 
 
 @router.put('/{profile_id}/preferences')
@@ -324,7 +325,13 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
     profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
     previous = preferences(db, profile)
     if previous['review_required'] and not data.confirm_migration:
-        raise HTTPException(409, 'Review the unmapped old priorities and confirm the replacement routes.')
+        raise HTTPException(409, 'Review the changes shown before saving your transfer plan.')
+    items = previous.get('review_items', [])
+    if set(data.removed_review_items) != {item['id'] for item in items}:
+        raise HTTPException(409, 'Choose what to do with each transfer that needs attention before saving. Reload if you changed its switch.')
+    for item in items:
+        if item.get('route_id') and item['route_id'] in getattr(data, f"{item['kind']}_order"):
+            raise HTTPException(422, 'Remove the unavailable transfer from the plan, or turn it back on.')
     for kind, ids in [('funding', data.funding_order), ('repayment', data.repayment_order)]:
         if len(ids) != len(set(ids)):
             raise HTTPException(422, 'Each route can appear only once in a priority list.')
@@ -336,12 +343,12 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
             if (source.kind, destination.kind) != (('credit', 'checking') if kind == 'funding' else ('checking', 'credit')):
                 raise HTTPException(422, 'Route direction does not match this priority.')
     if data.repayment and not data.repayment_order:
-        raise HTTPException(422, 'Choose a permitted repayment route first.')
+        raise HTTPException(422, 'Choose a payment for Friday checks, or turn Friday payment checks off.')
     row = db.get(BankProfilePreferences, profile.id)
     if not row:
         row = BankProfilePreferences(profile_id=profile.id, tenant_id=tenant_id, last_evaluation={})
         db.add(row)
-    row.settings = {**data.model_dump(exclude={'confirm_migration'}), 'review_required': [], 'confirmed': True}
+    row.settings = {**data.model_dump(exclude={'confirm_migration', 'removed_review_items'}), 'review_required': [], 'confirmed': True}
     db.commit()
     return view(db, tenant_id)
 
