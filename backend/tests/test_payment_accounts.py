@@ -57,3 +57,30 @@ def test_account_validation_and_routes(db, client, monkeypatch):
     assert client.get('/api/v1/accounting/payment-accounts', headers={'X-Tenant-ID':'2'}).status_code == 404
     for change in ({'last4':'1234567890123456'}, {'name':'  '}, {'ownership':'mixed'}):
         with pytest.raises(ValidationError): PaymentAccountInput(**{**data, **change})
+
+
+def test_remove_preserves_history_and_readding_restores_identity(db, truck):
+    from app.services.payment_accounts import remove_account
+    repair(db, truck)
+    account = card(db)
+    request = payload(db).model_copy(update={'method': 'credit_card', 'source': 'personal', 'payment_account_id': account['id']})
+    save_confirmation(db, 1, request); db.commit()
+    db.add(Tenant(id=2, name='Other', business_type='logistics')); db.commit()
+    with pytest.raises(HTTPException): remove_account(db, 2, account['id'])
+    assert len(list_accounts(db, 1)) == 1
+    remove_account(db, 1, account['id']); db.commit()
+    assert list_accounts(db, 1) == []
+    assert repair_history(db, 1, date.today())['rows'][0]['confirmation']['payment_account_id'] == account['id']
+    assert remove_account(db, 1, account['id'])['removed']
+    assert card(db)['id'] == account['id']
+    assert len(list_accounts(db, 1)) == 1
+
+
+def test_remove_account_route(db, client, monkeypatch):
+    monkeypatch.setenv('ELIS_FINANCE_LOCAL_TENANTS', '1')
+    monkeypatch.setenv('APP_AUTH_TENANT_IDS', '1')
+    account = card(db); db.commit()
+    headers = {'X-Tenant-ID': '1'}
+    response = client.delete(f"/api/v1/accounting/payment-accounts/{account['id']}", headers=headers)
+    assert response.status_code == 200
+    assert client.get('/api/v1/accounting/payment-accounts', headers=headers).json()['items'] == []

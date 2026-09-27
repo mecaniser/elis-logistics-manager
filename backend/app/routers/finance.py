@@ -300,6 +300,18 @@ def payment_accounts(db: Session = Depends(get_db), tenant: int = Depends(accoun
     return {'tenant_id': tenant, 'items': list_accounts(db, tenant), 'basis': 'owner_identified', 'balances_connected': False}
 
 
+@router.delete('/payment-accounts/{account_id}')
+def remove_payment_account(account_id: str, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.payment_accounts import remove_account
+    try:
+        result = remove_account(db, tenant, account_id)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.post('/payment-accounts')
 def add_payment_account(request: PaymentAccountInput, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     from app.services.payment_accounts import add_account
