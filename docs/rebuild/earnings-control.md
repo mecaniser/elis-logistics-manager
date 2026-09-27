@@ -60,3 +60,6 @@ Read-only selected-week and January–September saved-settlement-net comparison 
 ## Preserve trailer contribution — September 27
 
 Owner clarified the saved $400/week trailer allocation represents trailer contribution, not solely capital protection. Display its full source-record allocation, split out the saved recovery target, and combine the remaining trailer contribution with truck remainder. Show other recorded costs/payments/protection adjustments once at pair level. Do not infer missing allocation amounts or label the combined estimate final profit. Source posting status stays in a secondary disclosure.
+
+## Freight chart population alignment
+The overview chart now uses the planning report's exact included unposted legacy IDs plus the posted breakdown. Accounting revenue stays unchanged. Modeled legacy loan interest stays excluded; category differences are shown as unclassified statement adjustments. Source-posting status is a compact notice, not an exclusion from the management chart. Tested expected combined week 23,700 gross / 5,836.92 remainder, linked-source exclusion and category gaps. 317 backend tests and frontend lint/build pass.

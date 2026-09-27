@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from app.models.truck import Truck
 from app.models.settlement import Settlement
-from app.services.finance import D, ZERO, money, state
+from app.services.finance import D, ZERO, money, state, EXPENSE_MAP
 from app.services.retention import score as retention_score
 
 
@@ -60,6 +60,33 @@ def planning_pair_days(assignments, observations, start, end):
                 entry['inferred'] |= trailer not in explicit
         day += timedelta(days=1)
     return result
+
+
+def planning_freight(report, included_ids):
+    """Read-only chart with the same legacy population as planning; never post it."""
+    base = report['revenue_breakdown']
+    amounts = {}
+    for row in base['rows']:
+        amounts[row['category']] = amounts.get(row['category'], ZERO) + D(row['amount'])
+    gross, remainder = D(base['freight_gross']), D(base['settlement_remainder'])
+    rows = [r for r in report['legacy_comparison']['rows'] if r['legacy_id'] in included_ids]
+    for row in rows:
+        gross += D(row['freight_gross'])
+        remainder += D(row['settlement_remainder'])
+        amounts['carrier'] = amounts.get('carrier', ZERO) + D(row['carrier_retention'])
+        categorized = ZERO
+        for key, value in row['deductions'].items():
+            if key == 'loan_interest':
+                continue  # Modeled legacy interest is excluded by the planning bridge.
+            category = EXPENSE_MAP.get(key, key)
+            amounts[category] = amounts.get(category, ZERO) + D(value)
+            categorized += D(value)
+        difference = D(row['operating_deductions']) - categorized
+        if difference:
+            amounts['unclassified_statement_adjustment'] = amounts.get('unclassified_statement_adjustment', ZERO) + difference
+    return {'freight_gross': money(gross), 'settlement_remainder': money(remainder),
+            'saved_unposted_count': len(rows), 'saved_settlement_ids': sorted(included_ids),
+            'rows': [{'category': k, 'amount': money(v), 'percent_of_freight': money(v / gross * 100) if gross else None} for k, v in amounts.items()]}
 
 
 def earnings_plan(db, tenant, report):
@@ -171,7 +198,7 @@ def earnings_plan(db, tenant, report):
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),
                          'issues': issues, 'bridge': score['bridge'] + [{'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)}]})
-    return {'version': 2, 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
+    return {'version': 3, 'revenue_breakdown': planning_freight(report, {sid for p in pair_rows for sid in p['saved_settlement_ids']}), 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
             'period': report['period'], 'as_of': report['as_of'], 'status': 'provisional',
             'settings': [{k: v for k, v in p.items() if not k.startswith('_')} for p in saved.values()],
             'pairs': pair_rows, 'planning_subtotal': money(sum((D(p['planning_subtotal']) for p in pair_rows), ZERO)),
