@@ -46,13 +46,29 @@ export default function PaymentAccounts() {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [connected, setConnected] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [removeBusy, setRemoveBusy] = useState(false)
+  const tenantRef = useRef(currentTenant?.id)
+  tenantRef.current = currentTenant?.id
   const addRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     let active = true
-    setAccounts([]); setLoadedTenant(undefined); setError(''); setAdding(false); setConnected(null)
+    setAccounts([]); setLoadedTenant(undefined); setError(''); setAdding(false); setConnected(null); setRemoving(null)
     if (currentTenant?.id) financeApi.paymentAccounts().then(items => { if (active) { setAccounts(items); setLoadedTenant(currentTenant.id) } }).catch(e => { if (active) setError(financeError(e)) })
     return () => { active = false }
   }, [currentTenant?.id])
+  async function removeAccount(account: PaymentAccount) {
+    const tenant = currentTenant?.id
+    setRemoveBusy(true); setError('')
+    try {
+      await financeApi.removePaymentAccount(account.id)
+      if (tenantRef.current !== tenant) return
+      setAccounts(items => items.filter(item => item.id !== account.id)); setRemoving(null)
+      setConnected(value => value === account.id ? null : value)
+      requestAnimationFrame(() => addRef.current?.focus())
+    } catch (e) { if (tenantRef.current === tenant) setError(financeError(e)) }
+    finally { setRemoveBusy(false) }
+  }
   function closeEditor() { setAdding(false); requestAnimationFrame(() => addRef.current?.focus()) }
   return <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><h2 className="text-xl font-semibold text-slate-950">Payment accounts</h2><p className="mt-1 text-sm leading-6 text-slate-600">Choose the card, bank account or cash source used for each repair. Keep personal funding separate from business cash.</p></div>
@@ -61,7 +77,7 @@ export default function PaymentAccounts() {
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loadedTenant === currentTenant?.id && currentTenant && <>
       {!adding && !accounts.length && <div className="flex items-center gap-4 border-t border-slate-200 py-5 text-slate-600"><AccountIcon type="card"/><div><p className="font-medium text-slate-900">Add your first payment account</p><p className="mt-1 text-sm">Save it once, then select it on any repair payment.</p></div></div>}
-      {accounts.length > 0 && <ul className="divide-y divide-slate-200">{accounts.map(a => <li key={a.id} className="py-4"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><AccountIcon type={a.account_type}/><div><p className="font-semibold text-slate-950">{a.name}{a.last4 && <span className="ml-2 font-normal text-slate-600">••{a.last4}</span>}</p><p className="text-sm text-slate-600">{a.ownership === 'personal' ? 'Personal' : 'Business'} · {types.find(t => t.value === a.account_type)?.label}</p></div></div><button type="button" className={secondary} aria-expanded={connected === a.id} onClick={() => setConnected(connected === a.id ? null : a.id)}>{connected === a.id ? 'Hide balance details' : 'Balance & connection'}</button></div>{connected === a.id && <PaymentAccountBalance account={a}/>}</li>)}</ul>}
+      {accounts.length > 0 && <ul className="divide-y divide-slate-200">{accounts.map(a => <li key={a.id} className="py-4"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><AccountIcon type={a.account_type}/><div><p className="font-semibold text-slate-950">{a.name}{a.last4 && <span className="ml-2 font-normal text-slate-600">••{a.last4}</span>}</p><p className="text-sm text-slate-600">{a.ownership === 'personal' ? 'Personal' : 'Business'} · {types.find(t => t.value === a.account_type)?.label}</p></div></div><div className="flex flex-wrap gap-2"><button type="button" className={secondary} aria-expanded={connected === a.id} onClick={() => setConnected(connected === a.id ? null : a.id)}>{connected === a.id ? 'Hide balance details' : 'Balance & connection'}</button><button type="button" disabled={removeBusy} aria-label={`Remove ${a.name}`} onClick={() => setRemoving(a.id)} className="min-h-11 rounded-lg px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-45">Remove</button></div></div>{removing === a.id && <div className="mt-3 space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm"><p className="font-semibold text-slate-950">Remove {a.name}{a.last4 ? ` · ••${a.last4}` : ''}?</p><p className="text-slate-700">This removes it from payment choices. Existing expense history is kept. You can add the same account again to restore it. Bank connections are managed separately.</p><div className="flex flex-wrap gap-2"><button type="button" disabled={removeBusy} onClick={() => void removeAccount(a)} className="min-h-11 rounded-lg bg-red-700 px-4 font-semibold text-white disabled:opacity-45">{removeBusy ? 'Removing…' : 'Remove account'}</button><button type="button" disabled={removeBusy} className={secondary} onClick={() => setRemoving(null)}>Cancel</button></div></div>}{connected === a.id && <PaymentAccountBalance account={a}/>}</li>)}</ul>}
       {adding && <PaymentAccountEditor key={currentTenant.id} onCancel={closeEditor} onAdded={a => { setAccounts(items => [...items.filter(i => i.id !== a.id), a]); closeEditor(); setConnected(a.id) }} />}
     </>}
     {!error && loadedTenant !== currentTenant?.id && <p role="status" className="text-sm text-slate-600">Loading payment accounts…</p>}
