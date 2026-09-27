@@ -220,7 +220,11 @@ function Reserve({ account, busy, save }: { account: Account; busy: boolean; sav
   let cents = -1
   try { cents = centsFromMoneyInput(value) } catch { /* invalid */ }
   const close = () => { setEditing(false); control.current?.focus() }
-  const submit = () => { if (!busy && cents >= 0) void save(cents, close) }
+  const submit = () => {
+    if (busy || cents < 0) return
+    if (cents === account.reserve_cents) { close(); return }
+    void save(cents, close)
+  }
   const action = editing ? 'Save' : 'Edit'
   return <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-slate-200 px-3 py-2 text-sm">
     <span className="min-w-0 font-medium">{account.name} · ••{account.last4}</span>
