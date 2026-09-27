@@ -321,3 +321,33 @@ def test_account_order_survives_provider_reordering(setup, db, monkeypatch):
     monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [row('new-credit', '8264', 'credit', 1900), row('new-checking', '3304', amount=1100)])
     assert client.post(f'/api/bank-monitor/profiles/{p.id}/sync', headers=headers()).status_code == 200
     assert account_ids() == before
+
+
+def test_rename_connection_preserves_access_accounts_and_routes(setup, db):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    before = (profile.item_id, profile.encrypted_access_token)
+    members = [(a.id, a.account_id) for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id).order_by(BankProfileAccount.id)]
+    url = f'/api/bank-monitor/profiles/{profile.id}/name'
+    assert client.put(url, headers=headers(2), json={'name': 'Other'}).status_code == 404
+    assert client.put(url, headers={'X-Tenant-ID': '1'}, json={'name': 'Other'}).status_code == 403
+    for name in ('', '   ', 'x' * 81):
+        assert client.put(url, headers=headers(), json={'name': name}).status_code == 422
+    response = client.put(url, headers=headers(), json={'name': '  Business banking  '})
+    assert response.status_code == 200
+    assert next(p for p in response.json()['profiles'] if p['id'] == profile.id)['name'] == 'Business banking'
+    db.refresh(profile)
+    assert (profile.item_id, profile.encrypted_access_token) == before
+    assert [(a.id, a.account_id) for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id).order_by(BankProfileAccount.id)] == members
+    assert db.get(BankProfileRoute, route['id']).enabled is True
+
+
+def test_opposite_route_permissions_remain_independent(setup, db):
+    client, profile, _ = setup
+    payment = resolve_and_route(client, db, profile)
+    response = client.post('/api/bank-monitor/profiles/routes', headers=headers(), json={'profile_id': profile.id, 'source_id': payment['destination_id'], 'destination_id': payment['source_id'], 'bank_route_confirmed': True})
+    assert response.status_code == 200
+    draw = next(r for r in response.json()['routes'] if r['id'] != payment['id'])
+    assert client.put(f"/api/bank-monitor/profiles/routes/{payment['id']}", headers=headers(), json={'enabled': False}).status_code == 200
+    assert db.get(BankProfileRoute, payment['id']).enabled is False
+    assert db.get(BankProfileRoute, draw['id']).enabled is True
