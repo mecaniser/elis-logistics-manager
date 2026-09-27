@@ -1,4 +1,9 @@
+export interface FuelSource {
+  id:string; legacy_id:number|null; asset_id:number; name:string; date:string; amount:string; basis:string;
+  rows:{date:string;location:string;amount:string;gallons:string|null;product:string}[];
+}
 export interface FreightBreakdown {
+  fuel_sources?: FuelSource[]
   freight_gross: string
   settlement_remainder: string
   rows: {category: string; amount: string}[]
@@ -14,7 +19,7 @@ function cents(value: string): number {
   const result = Number(value.replace('.', ''))
   return Number.isSafeInteger(result) ? result : NaN
 }
-export function freightFlowModel(data: FreightBreakdown) {
+export function freightFlowModel(data: FreightBreakdown, expandOther = false) {
   const gross = cents(data.freight_gross)
   const remainder = cents(data.settlement_remainder)
   const amounts = new Map<string, number>()
@@ -24,7 +29,8 @@ export function freightFlowModel(data: FreightBreakdown) {
   const others = details.filter(row => !primary.includes(row.key))
   const otherTotal = others.reduce((sum, row) => sum + row.cents, 0)
   const deductions: FlowRow[] = primary.filter(key => amounts.has(key)).map(key => ({key, label: flowLabel(key), cents: amounts.get(key)!}))
-  if (others.length) deductions.push({key: 'other', label: others.some(row => row.cents < 0) ? 'Other charges / credits' : 'Other charges', cents: otherTotal})
+  if (expandOther) deductions.push(...others)
+  else if (others.length) deductions.push({key: 'other', label: others.some(row => row.cents < 0) ? 'Other charges / credits' : 'Other charges', cents: otherTotal})
   const valid = [gross, remainder, ...details.map(row => row.cents), otherTotal].every(Number.isSafeInteger)
   const total = details.reduce((sum, row) => sum + row.cents, 0) + remainder
   const reconciled = valid && Number.isSafeInteger(total) && total === gross
