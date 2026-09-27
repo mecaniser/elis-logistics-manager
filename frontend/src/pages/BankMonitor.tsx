@@ -1,3 +1,4 @@
+import { lockPageScroll } from '../components/lockPageScroll'
 import { useEffect, useRef, useState } from 'react'
 import { loadPlaidLink } from '../services/plaidLink'
 import BankProfiles from './BankProfiles'
@@ -153,19 +154,7 @@ export default function BankMonitor() {
 
   useEffect(() => {
     if (!settingsOpen && !repaymentOpen) return
-    const body = document.body
-    const root = document.documentElement
-    const scrollX = window.scrollX
-    const scrollY = window.scrollY
-    const previous = { overflow: body.style.overflow, position: body.style.position, top: body.style.top, left: body.style.left, width: body.style.width, paddingRight: body.style.paddingRight, rootOverflow: root.style.overflow }
-    const scrollbarWidth = window.innerWidth - root.clientWidth
-    if (scrollbarWidth > 0) body.style.paddingRight = `${parseFloat(getComputedStyle(body).paddingRight) + scrollbarWidth}px`
-    root.style.overflow = 'hidden'
-    body.style.overflow = 'hidden'
-    body.style.position = 'fixed'
-    body.style.top = `-${scrollY}px`
-    body.style.left = `-${scrollX}px`
-    body.style.width = '100%'
+    const unlockScroll = lockPageScroll()
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSettingsOpen(false)
@@ -175,14 +164,7 @@ export default function BankMonitor() {
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => {
-      body.style.overflow = previous.overflow
-      body.style.position = previous.position
-      body.style.top = previous.top
-      body.style.left = previous.left
-      body.style.width = previous.width
-      body.style.paddingRight = previous.paddingRight
-      root.style.overflow = previous.rootOverflow
-      window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' })
+      unlockScroll()
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [settingsOpen, repaymentOpen])
