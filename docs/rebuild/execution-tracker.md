@@ -339,3 +339,8 @@ Collapsed the evidence archive by default in finance workflows and moved its upl
 ### 2026-09-27 — Searchable accounting document picker
 - Replaced internal source-key dropdowns in shared accounting forms with a bounded searchable picker, document-type filter, recognizable vendor/date/VIN labels and explicitly labeled amounts. Payment confirmations remain distinct from vendor documents. Shared metadata mapping with the supporting archive.
 - Required document validation retained; selecting a document does not post anything. Keyboard selection, empty results, selected value and 390px viewport verified locally. Build/lint and whitespace checks passed. Local only; not deployed.
+
+### 2026-09-27 — Freight-first overview
+- Moved freight revenue allocation ahead of available cash. Replaced oversized cash panel with a compact dated status and Money link; full reconciliation remains in Money.
+- Condensed overview period presets into one selector and date-range label; custom date inputs appear on demand. Removed redundant overview subtitle and accounting report banner; partial-period warnings and provisional cash status remain visible.
+- Build/lint/diff checks passed. Local browser verified graph-first order, custom dates and 390px layout without horizontal overflow. No calculation changes; local only.
