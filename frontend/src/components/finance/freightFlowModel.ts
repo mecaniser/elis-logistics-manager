@@ -19,7 +19,28 @@ function cents(value: string): number {
   const result = Number(value.replace('.', ''))
   return Number.isSafeInteger(result) ? result : NaN
 }
-export function freightFlowModel(data: FreightBreakdown, expandOther = false) {
+export function pricePerGallon(amount:string, gallons:string|null):string|null {
+  const charge=cents(amount), volume=Number(gallons)
+  return Number.isSafeInteger(charge)&&Number.isFinite(volume)&&volume>0?(charge/100/volume).toFixed(3):null
+}
+export function fuelBranches(total: string, sources: FuelSource[]): FlowRow[] {
+  const locations = new Map<string, number>()
+  let detailed = 0
+  for (const source of sources) {
+    for (const row of source.rows) {
+      const value = cents(row.amount)
+      if (!Number.isSafeInteger(value)) continue
+      const location = row.location.replace(/^.*?\[Drv\]\s*/, '').trim() || 'Location not recorded'
+      locations.set(location, (locations.get(location) || 0) + value)
+      detailed += value
+    }
+  }
+  const result = [...locations].map(([location, value], i) => ({key:`fuel-location-${i}`,label:`Fuel · ${location}`,cents:value}))
+  const difference = cents(total) - detailed
+  if (difference) result.push({key:'fuel-unresolved',label:'Fuel · detail unavailable / difference',cents:difference})
+  return result
+}
+export function freightFlowModel(data: FreightBreakdown, expandOther = false, fuelDetails?: FlowRow[]) {
   const gross = cents(data.freight_gross)
   const remainder = cents(data.settlement_remainder)
   const amounts = new Map<string, number>()
@@ -28,13 +49,13 @@ export function freightFlowModel(data: FreightBreakdown, expandOther = false) {
   const primary = ['carrier', 'driver_pay', 'fuel']
   const others = details.filter(row => !primary.includes(row.key))
   const otherTotal = others.reduce((sum, row) => sum + row.cents, 0)
-  const deductions: FlowRow[] = primary.filter(key => amounts.has(key)).map(key => ({key, label: flowLabel(key), cents: amounts.get(key)!}))
+  const deductions: FlowRow[] = primary.filter(key => amounts.has(key)).flatMap(key => key==='fuel'&&fuelDetails?fuelDetails:[{key, label: flowLabel(key), cents: amounts.get(key)!}])
   if (expandOther) deductions.push(...others)
   else if (others.length) deductions.push({key: 'other', label: others.some(row => row.cents < 0) ? 'Other charges / credits' : 'Other charges', cents: otherTotal})
-  const valid = [gross, remainder, ...details.map(row => row.cents), otherTotal].every(Number.isSafeInteger)
+  const valid = [gross, remainder, ...details.map(row => row.cents), otherTotal, ...deductions.map(row=>row.cents)].every(Number.isSafeInteger)
   const total = details.reduce((sum, row) => sum + row.cents, 0) + remainder
-  const reconciled = valid && Number.isSafeInteger(total) && total === gross
-  const canFlow = reconciled && gross > 0 && remainder >= 0 && details.every(row => row.cents >= 0)
+  const reconciled = valid && Number.isSafeInteger(total) && total === gross && deductions.reduce((sum,row)=>sum+row.cents,0)+remainder===gross
+  const canFlow = reconciled && gross > 0 && remainder >= 0 && details.every(row => row.cents >= 0) && deductions.every(row => row.cents >= 0)
   const flows = [...deductions, {key: 'remainder', label: 'Statement remainder', cents: remainder}].filter(row => row.cents > 0 || row.key === 'remainder')
   let running = gross
   const steps = deductions.map(row => {
