@@ -15,13 +15,22 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
   const fuelTotal = (data.rows.filter(row=>row.category==='fuel').reduce((sum,row)=>sum+Math.round(Number(row.amount)*100),0)/100).toFixed(2)
   const model = freightFlowModel(data,expandedOther,fuelOpen?fuelBranches(fuelTotal,fuelSources):undefined)
   const color = (key:string) => key.startsWith('fuel-')?'fuel':['carrier','driver_pay','fuel','remainder'].includes(key)?key:'other'
-  const label = (key:string,text:string) => key==='other'||key==='fuel'?<button type="button" className="freight-drill-button" aria-expanded={key==='other'?expandedOther:fuelOpen} onClick={()=>key==='other'?setExpandedOther(!expandedOther):setFuelOpen(!fuelOpen)}>{text}<span aria-hidden="true">{key==='fuel'&&fuelOpen?'−':'+'}</span></button>:<span>{text}</span>
+  const label = (key:string,text:string) => key==='other'||key==='fuel'?<button type="button" className="freight-drill-button" aria-expanded={key==='other'?expandedOther:fuelOpen} onClick={()=>{if(key==='other')setExpandedOther(!expandedOther);else{setFuelOpen(!fuelOpen);setPurchaseOpen(false)}}}>{text}<span aria-hidden="true">{(key==='fuel'?fuelOpen:expandedOther)?'−':'+'}</span></button>:<span>{text}</span>
   const selected = model.canFlow ? view : 'waterfall'
   const share = (value: number) => Number.isSafeInteger(value) && Number.isSafeInteger(model.gross) && model.gross > 0 ? `${(value / model.gross * 100).toFixed(1)}% of freight` : 'Share unavailable'
   const scale = model.canFlow ? 250 / model.gross : 0
+  const otherKeys = new Set(model.others.map(row=>row.key))
+  const headers: {key:string;label:string;y:number}[] = []
+  const seenGroups = new Set<string>()
+  const groupFor = (key:string) => fuelOpen&&key.startsWith('fuel-')?'fuel':expandedOther&&otherKeys.has(key)?'other':null
   let source = 0
   let target = 0
   const ribbons = model.flows.map(row => {
+    const group = groupFor(row.key)
+    if(group&&!seenGroups.has(group)){
+      headers.push({key:group,label:group==='fuel'?'Fuel purchases':'Other charges',y:target+22})
+      seenGroups.add(group);target+=54
+    }
     const height = row.cents * scale
     // Keep enough space for two-line labels even for a zero-adjacent deduction.
     const slot = Math.max(height, 50)
@@ -43,8 +52,8 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
         <button type="button" className="finance-secondary" aria-pressed={selected === 'flow'} disabled={!model.canFlow} onClick={() => setView('flow')}>Money flow</button>
         <button type="button" className="finance-secondary" aria-pressed={selected === 'waterfall'} onClick={() => setView('waterfall')}>Waterfall</button>
       </div></div>
-      {expandedOther&&<button type="button" className="finance-secondary" onClick={()=>setExpandedOther(false)}>Collapse other charges</button>}
-      {fuelOpen&&<div className="freight-expansion-controls"><button type="button" className="finance-secondary" onClick={()=>{setFuelOpen(false);setPurchaseOpen(false)}}>Collapse fuel locations</button><button type="button" className="finance-secondary" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}
+
+
       {!model.canFlow && <p className="finance-help">Credits, a negative remainder or nonpositive freight use the signed waterfall so amounts retain their direction.</p>}
       {selected === 'flow' ? <>
         <div className="freight-flow-origin"><span>Freight billed</span><strong>{amount(model.gross)}</strong></div>
@@ -53,11 +62,12 @@ export default function FreightFlow({data,history,historyError}: {data: FreightB
             {ribbons.map(row => {const y = row.source + sourceTop;return <g key={row.key} className={`freight-color-${color(row.key)}`}><path opacity=".25" d={`M 2 ${y} C 52 ${y} 48 ${row.destination} 98 ${row.destination} L 98 ${row.destination + row.height} C 48 ${row.destination + row.height} 52 ${y + row.height} 2 ${y + row.height} Z`} /><rect x="98" y={row.destination} width="2" height={row.height} /></g>})}
             <rect className="freight-color-carrier" x="0" y={sourceTop} width="2" height="250" />
           </svg>
-          <ul aria-label="Freight allocation amounts and percentages">{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong>{amount(row.cents)}</strong><small>{share(row.cents)}</small></div></li>)}</ul>
+          <ul aria-label="Freight allocation amounts and percentages">{headers.map(header=><li key={header.key} className="freight-flow-label freight-group-label" style={{top:header.y}}>{label(header.key,header.label)}{header.key==='fuel'&&<button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button>}</li>)}{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong>{amount(row.cents)}</strong><small>{share(row.cents)}</small></div></li>)}</ul>
         </div>
       </> : <div className="freight-waterfall" aria-label="Freight less deductions, with credits added">
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Freight billed</span><strong>{amount(model.gross)}</strong></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-carrier" style={bar(0, model.gross)} /></div></div>
-        {model.steps.map(row => <div className="freight-waterfall-row" key={row.key}><div className="freight-waterfall-label">{label(row.key,row.label)}<div><strong>{row.cents > 0 ? '−' : row.cents < 0 ? '+' : ''}{amount(Math.abs(row.cents))}</strong><small>{share(row.cents)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className={`freight-color-${color(row.key)}`} style={bar(row.before, row.after)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div><div className="freight-waterfall-after">{amount(row.after)} remaining</div></div>)}
+        {model.steps.map((row,index) => <div className="freight-waterfall-row" key={row.key}>
+          {groupFor(row.key)&& (index===0||groupFor(model.steps[index-1].key)!==groupFor(row.key))&&<div className="freight-group-label">{label(groupFor(row.key)!,groupFor(row.key)==='fuel'?'Fuel purchases':'Other charges')}{groupFor(row.key)==='fuel'&&<button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button>}</div>}<div className="freight-waterfall-label">{label(row.key,row.label)}<div><strong>{row.cents > 0 ? '−' : row.cents < 0 ? '+' : ''}{amount(Math.abs(row.cents))}</strong><small>{share(row.cents)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className={`freight-color-${color(row.key)}`} style={bar(row.before, row.after)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div><div className="freight-waterfall-after">{amount(row.after)} remaining</div></div>)}
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Statement remainder</span><div><strong>{amount(model.remainder)}</strong><small>{share(model.remainder)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-remainder" style={bar(0, model.remainder)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div></div>
       </div>}
     </> : <p className="finance-error" role="status">The reported allocation does not reconcile to freight. Review the exact statement figures below before interpreting a flow.</p>}

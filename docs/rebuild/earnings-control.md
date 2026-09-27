@@ -69,3 +69,4 @@ Other charges expands into individual chart ribbons/waterfall steps and collapse
 
 ## Fuel branch expansion and unit prices
 Fuel expands in the chart by purchase location; the transaction list opens separately through Purchase details. Fuel, other charges and purchase details start closed, independently. Chart branches preserve the original fuel total with an explicit unresolved difference if purchase detail is absent or mismatched. Purchase rows show recorded amount/gallons at three decimal places; missing or nonpositive gallons show unavailable. 35 frontend tests and lint/build pass; no backend changes.
+The category label remains visible as the expand/collapse toggle inside its chart group. Removed displaced collapse controls. Separate-tab browser QA verified Fuel and Other expand/collapse independently using the same label, both default closed; purchase details remain opt-in.
