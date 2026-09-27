@@ -141,7 +141,6 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           </button>}
         </div>
       })}</div>
-      {refreshingProfile && <p role="status" className="mt-2 text-sm text-blue-200">Refreshing {active?.name}…</p>}
 
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
