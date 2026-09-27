@@ -131,3 +131,38 @@
   .document-amount {align-self:start;}
   .document-actions {grid-column:1/-1;justify-content:flex-end;}
 }
+
+.document-picker {min-width:0;}
+.document-picker-trigger {display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;margin-top:6px;padding:10px 12px;border:1px solid #bac9d6;border-radius:6px;background:#fff;text-align:left;font:inherit;font-size:14px;}
+.document-picker-trigger span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.document-picker-trigger svg {flex-shrink:0;}
+.document-picker-dialog {width:min(720px,calc(100vw - 24px));max-height:85dvh;padding:20px;border:1px solid #d5dfe5;border-radius:12px;color:#172f3b;box-shadow:0 16px 48px #172f3b30;}
+.document-picker-dialog::backdrop {background:#10233166;}
+.document-picker-dialog header {display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.document-picker-dialog header h2 {margin:0;font-size:18px;}
+.document-picker-status {display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#526477;margin:8px 0;}
+.document-picker-results {overflow:auto;max-height:48dvh;}
+.document-picker-option {display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:10px 8px;border-top:1px solid #d5dfe5;background:#fff;text-align:left;}
+.document-picker-option>span {min-width:0;}
+.document-picker-option strong {display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere;}
+.document-picker-option small {display:block;font-size:12px;color:#526477;margin-top:3px;overflow-wrap:anywhere;}
+.document-picker-value {flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums;}
+.document-picker-option:hover,.document-picker-option[aria-pressed=true] {background:#edf5f2;}
+.document-picker button:focus-visible,.document-picker input:focus-visible,.document-picker select:focus-visible {outline:2px solid #2146d9;outline-offset:-2px;}
+@media(max-width:600px) {.document-picker-dialog {padding:14px;}.document-picker-option {gap:8px;}.document-picker-value {max-width:100px;}}
+.document-picker-dialog[open] {display:flex;flex-direction:column;overflow:hidden;}
+.document-picker-dialog header,.document-picker-dialog .document-filters,.document-picker-status {flex-shrink:0;}
+.document-picker-results {min-height:0;}
+
+.finance-home .finance-header {margin-bottom:16px;align-items:center;}
+.finance-home-period {display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;}
+.finance-home-period>label {display:flex;align-items:center;gap:8px;}
+.finance-home-period select,.finance-home-dates input {padding:8px 10px;border:1px solid #bac9d6;border-radius:6px;background:white;color:#172f3b;font:inherit;}
+.finance-home-period>span {font-size:12px;color:#526477;}
+.finance-home-period>button {margin-left:auto;}
+.finance-home-dates {flex-basis:100%;display:flex;gap:12px;}
+.finance-home-dates label {display:flex;align-items:center;gap:8px;}
+.owner-cash-status {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border:1px solid #d5dfe5;border-radius:8px;background:#f1f5f8;}
+.owner-cash-status strong {display:block;font-size:14px;}
+.owner-cash-status span {display:block;font-size:12px;color:#526477;margin-top:4px;}
+@media(max-width:600px) {.finance-home-period>span {order:3;flex-basis:100%;}.finance-home-dates {flex-wrap:wrap;}.owner-cash-status {flex-wrap:wrap;}.finance-home .finance-header {align-items:flex-start;}}

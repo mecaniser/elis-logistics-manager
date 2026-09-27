@@ -1,3 +1,4 @@
+import DocumentPicker from './DocumentPicker'
 import { FormEvent, useRef, useState } from 'react'
 import { Action, Field } from './commandFields'
 import { Context, Evidence, Event, RecordData, Value, Workspace, dollars, financeApi, financeError } from '../../services/finance'
@@ -19,11 +20,6 @@ export default function CommandForm({reportId, action, context, workspace, evide
   })
   function choices(field: Field): {value: string; label: string}[] {
     if (field.options) return field.options.map(x => ({value: x, label: x.replace(/_/g, ' ')}))
-    if (field.source === 'evidence') return evidence.map((e, index) => {
-      const ids = Array.isArray(e.extracted.legacy_repair_ids) ? e.extracted.legacy_repair_ids : []
-      const repair = workspace.legacy_repairs?.find(r => ids.includes(r.id))
-      return {value: e.id, label: repair ? `${repair.date || 'Undated'} · ${repair.description.slice(0, 70)} · document ${index + 1}` : `${e.source_key} · ${e.filename}`}
-    })
     if (['assets', 'trucks', 'trailers'].includes(field.source || '')) return context.assets.filter(a => field.source === 'assets' || a.type === (field.source === 'trucks' ? 'truck' : 'trailer')).map(a => ({value: String(a.id), label: a.name}))
     if (field.source === 'ledger_accounts') return Object.keys(context.accounts).map(x => ({value: x, label: x.replace(/_/g, ' ')}))
     if (field.source === 'receivables') return events.filter(e => ['settlement', 'disposal'].includes(e.kind)).map(e => ({value: e.id, label: String(e.payload.source_ref || `Equipment sale · ${context.assets.find(a => a.id === e.payload.asset_id)?.name || e.payload.asset_id} · ${e.effective_date}`)}))
@@ -34,6 +30,7 @@ export default function CommandForm({reportId, action, context, workspace, evide
     return events.filter(e => e.kind === field.source).map(e => ({value: e.id, label: String(e.payload.name || e.payload.source_ref || e.payload.description || `${e.kind} ${e.effective_date}`)}))
   }
   function control(field: Field, value: Value | undefined, update: (v: Value) => void, id: string) {
+    if (field.source === 'evidence') return <DocumentPicker id={id} label={field.label} value={String(value ?? '')} onChange={update} evidence={evidence} workspace={workspace} optional={field.optional}/>
     if (field.type === 'check') return <label className="finance-check" htmlFor={id}><input id={id} type="checkbox" checked={Boolean(value)} onChange={e => update(e.target.checked)} />{field.label}</label>
     return <label htmlFor={id}>{field.label}{field.optional && <span className="finance-muted"> (optional)</span>}
       {field.type === 'select' ? <select id={id} required={!field.optional} value={String(value ?? '')} onChange={e => update(e.target.value)}><option value="">Choose…</option>{choices(field).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : <input id={id} type={field.type === 'date' ? 'date' : 'text'} inputMode={['money', 'quantity', 'number'].includes(field.type || '') ? 'decimal' : undefined} required={!field.optional} value={String(value ?? '')} onChange={e => update(e.target.value)} placeholder={field.type === 'money' ? '0.00' : undefined} />}
@@ -65,6 +62,7 @@ export default function CommandForm({reportId, action, context, workspace, evide
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(''); setSaved(''); setBusy(true)
     try {
+      for (const field of fields) if (field.source === 'evidence' && !field.optional && !values[field.name]) throw new Error(`${field.label}: select a document.`)
       const payload: RecordData = {kind: action.kind}
       for (const f of fields) { const v = normalize(f, values[f.name]); if (v !== undefined) payload[f.name] = v }
       if (action.kind === 'policy') { payload.evidence_ids = payload.policy_evidence ? [payload.policy_evidence] : []; delete payload.policy_evidence }
@@ -78,7 +76,7 @@ export default function CommandForm({reportId, action, context, workspace, evide
   }
   return <form className="finance-form" onSubmit={submit}>
     <h2>{action.label}</h2><p className="finance-help">{action.help}</p>
-    {action.kind === 'settlement' && <div className="finance-proposal"><label>Start from a preserved settlement PDF<select value={String(values.evidence_id || '')} onChange={e => setValues(v => ({...v, evidence_id: e.target.value}))}><option value="">Choose source…</option>{evidence.filter(d => d.extracted.proposal).map(d => <option key={d.id} value={d.id}>{d.source_key} · {d.filename}</option>)}</select></label><button type="button" className="finance-secondary" disabled={!evidence.some(d => d.id === values.evidence_id && d.extracted.proposal)} onClick={fillProposal}>Fill extracted fields for review</button></div>}
+    {action.kind === 'settlement' && <div className="finance-proposal"><DocumentPicker id="settlement-proposal" label="Start from a preserved settlement PDF" value={String(values.evidence_id || '')} onChange={value=>setValues(v=>({...v,evidence_id:value}))} evidence={evidence.filter(d=>d.extracted.proposal)} workspace={workspace}/><button type="button" className="finance-secondary" disabled={!evidence.some(d => d.id === values.evidence_id && d.extracted.proposal)} onClick={fillProposal}>Fill extracted fields for review</button></div>}
     <div className="finance-fields">
       {action.kind !== 'statement' && <label htmlFor="effective-date">Effective / incurred date<input id="effective-date" type="date" value={when} required onChange={e => setWhen(e.target.value)} /></label>}
       {fields.filter(f => f.type !== 'table').map(field => <div key={field.name}>{control(field, values[field.name], v => setValues(old => ({...old, [field.name]: v})), `field-${field.name}`)}</div>)}
