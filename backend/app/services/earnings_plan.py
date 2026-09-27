@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from app.models.truck import Truck
+from app.models.settlement import Settlement
 from app.services.finance import D, ZERO, money, state
 
 
@@ -31,11 +32,42 @@ def saved_plan(vehicle):
             'source': f'/vehicles/{vehicle.id}', '_weekly': weekly, '_start': vehicle.purchase_date, '_end': (vehicle.purchase_date + timedelta(weeks=weeks) - timedelta(days=1)) if vehicle.purchase_date and weeks else None}
 
 
+def planning_pair_days(assignments, observations, start, end):
+    """Explicit assignments win; fallback is labeled planning inference, never posted."""
+    result = {}
+    day = start
+    while day <= end:
+        explicit = {}
+        for a in assignments:
+            if a['start'] <= day.isoformat() <= (a.get('end') or '9999-12-31'):
+                explicit.setdefault(a['trailer_id'], set()).add(a['truck_id'])
+        latest = {}
+        for truck, trailer, observed in sorted(observations, key=lambda x: x[2]):
+            if observed <= day:
+                latest[truck] = trailer
+        inferred = {}
+        for truck, trailer in latest.items():
+            # Do not infer a second trailer for a truck explicitly assigned today.
+            if not any(truck in owners for owners in explicit.values()):
+                inferred.setdefault(trailer, set()).add(truck)
+        for trailer in set(explicit) | set(inferred):
+            owners = explicit.get(trailer, inferred.get(trailer, set()))
+            if len(owners) == 1:
+                truck = next(iter(owners))
+                entry = result.setdefault((truck, trailer), {'days': set(), 'inferred': False})
+                entry['days'].add(day)
+                entry['inferred'] |= trailer not in explicit
+        day += timedelta(days=1)
+    return result
+
+
 def earnings_plan(db, tenant, report):
     start = date.fromisoformat(report['period']['start'])
     end = min(date.fromisoformat(report['period']['end']), date.fromisoformat(report['as_of']))
     closing = state(db, tenant, end)
     assets = {v.id: v for v in db.query(Truck).filter_by(tenant_id=tenant).all()}
+    observations = [(r.truck_id, r.trailer_income_split_trailer_id, r.settlement_date) for r in db.query(Settlement).join(Truck, Settlement.truck_id == Truck.id).filter(Truck.tenant_id == tenant, Settlement.source_settlement_id.is_(None), Settlement.trailer_income_split_trailer_id.isnot(None), Settlement.settlement_date <= end).all() if r.trailer_income_split_trailer_id in assets]
+    pair_days = planning_pair_days(closing['assignments'], observations, start, end)
     saved = {i: saved_plan(v) for i, v in assets.items()}
     for aid, plan in closing['plans'].items():
         if aid in saved:
@@ -49,18 +81,21 @@ def earnings_plan(db, tenant, report):
         if i not in assets or i not in scores:
             continue
         score = scores[i]
+        plan_assets = sorted(set(pair['asset_ids']) | {trailer for (truck, trailer) in pair_days if truck == i})
+        capital_complete = True
         issues = []
         repair_weekly = assets[i].default_repair_reserve_amount
         if repair_weekly is None:
             issues.append('Weekly repair target is not saved on this vehicle.')
         repair_target = period_target(repair_weekly, start, end) if repair_weekly is not None and end >= start else ZERO
         capital_target = ZERO
-        for aid in pair['asset_ids']:
+        for aid in plan_assets:
             plan = saved.get(aid)
             if not plan:
                 continue
             if plan['_weekly'] is None:
                 if D(plan['cost']) > 0 or D(plan['cash_investment']) > 0:
+                    capital_complete = False
                     issues.append(f"{plan['name']}: acquisition information exists; resale or recovery duration is missing.")
             elif end >= start:
                 active_start = max(start, plan['_start'] or start)
@@ -71,14 +106,13 @@ def earnings_plan(db, tenant, report):
                 if aid == i:
                     capital_target += period_target(plan['_weekly'], active_start, active_end) if active_end >= active_start else ZERO
                 else:
-                    intervals = [(max(active_start, date.fromisoformat(a['start'])), min(active_end, date.fromisoformat(a.get('end') or end.isoformat()))) for a in closing['assignments'] if a['truck_id'] == i and a['trailer_id'] == aid]
-                    covered_days = set()
-                    for first, last in intervals:
-                        while first <= last:
-                            covered_days.add(first)
-                            first += timedelta(days=1)
+                    mapping = pair_days.get((i, aid), {'days': set(), 'inferred': False})
+                    covered_days = {day for day in mapping['days'] if active_start <= day <= active_end}
+                    if mapping['inferred']:
+                        issues.append(f"{plan['name']}: planning pairing inferred from saved settlement links; no historical assignment has been written.")
                     capital_target += sum((period_target(plan['_weekly'], day, day) for day in covered_days), ZERO)
-                    if len(covered_days) < (end - start).days + 1:
+                    if len(covered_days) < max((active_end - active_start).days + 1, 0):
+                        capital_complete = False
                         issues.append(f"{plan['name']}: saved recovery plan exists; dated assignment is needed for period allocation.")
         # The retention bridge already deducts actual funding, equipment payments,
         # and outside expenses, and adds documented reserve coverage once.
@@ -94,13 +128,14 @@ def earnings_plan(db, tenant, report):
         saved_rows = [r for r in report['legacy_comparison']['rows'] if r['asset_id'] == i and r['legacy_id'] not in posted_legacy and r['date'] <= end.isoformat()]
         saved_remainder = sum((D(r['settlement_remainder']) for r in saved_rows), ZERO)
         subtotal = D(score['retained']) + saved_remainder - additional
-        if any(D(saved[a]['original_loan']) > 0 for a in pair['asset_ids'] if a in saved):
+        if any(D(saved[a]['original_loan']) > 0 for a in plan_assets if a in saved):
             issues.append('Saved loan terms are available. Earnings-based payoff forecasts do not establish actual period payments.')
-        if not pair['trailer_ids'] and assets[i].default_trailer_id:
+        if len(plan_assets) == 1 and assets[i].default_trailer_id:
+            capital_complete = False
             issues.append('A default trailer is saved, but this period needs a dated assignment before combining its targets.')
         if report['owner_insights']['unposted_in_period']:
             issues.append('Unposted saved settlement amounts are included as unverified management history, not posted accounting revenue.')
-        pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': pair['asset_ids'],
+        pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': plan_assets, 'capital_complete': capital_complete,
                          'recorded_retained': score['retained'], 'saved_remainder': money(saved_remainder), 'saved_settlement_ids': [r['legacy_id'] for r in saved_rows], 'repair_target': money(repair_target),
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),
