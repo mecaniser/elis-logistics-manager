@@ -344,3 +344,6 @@ Collapsed the evidence archive by default in finance workflows and moved its upl
 - Moved freight revenue allocation ahead of available cash. Replaced oversized cash panel with a compact dated status and Money link; full reconciliation remains in Money.
 - Condensed overview period presets into one selector and date-range label; custom date inputs appear on demand. Removed redundant overview subtitle and accounting report banner; partial-period warnings and provisional cash status remain visible.
 - Build/lint/diff checks passed. Local browser verified graph-first order, custom dates and 390px layout without horizontal overflow. No calculation changes; local only.
+
+### 2026-09-27 — Earnings control integration in progress
+See `earnings-control.md` for the six-step checklist, definitions, local worked example and outstanding evidence gates. Saved vehicle targets now feed a read-only planning bridge on Overview/Money. Unposted history is included once as unverified management history. 49 focused financial tests and frontend build/lint pass. Local preview only; final historical comparison, missing plan/financing facts, consistent score/graph basis and release remain open. Do not label this as completed take-home accounting.

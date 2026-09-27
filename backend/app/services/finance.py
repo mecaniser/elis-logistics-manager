@@ -687,6 +687,8 @@ def report(db, tenant, start, end, as_of):
     result['owner_insights'] = owner_insights(result)
     from app.services.retention import retention_report
     result['retention'] = retention_report(db, tenant, result)
+    from app.services.earnings_plan import earnings_plan
+    result['earnings_plan'] = earnings_plan(db, tenant, result)
     return result
 
 
