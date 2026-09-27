@@ -308,3 +308,16 @@ def test_route_evaluation_never_creates_drafts(setup, db):
     assert result['routes'][0]['status'] == 'evidence_required'
     assert result['transfers_executed'] is False
     assert db.query(BankTransferDraft).count() == 0
+
+
+def test_account_order_survives_provider_reordering(setup, db, monkeypatch):
+    client, p, _ = setup
+    def account_ids():
+        data = client.get('/api/bank-monitor/profiles', headers=headers()).json()
+        accounts = next(profile for profile in data['profiles'] if profile['id'] == p.id)['accounts']
+        return [(a['last4'], a['id']) for a in accounts]
+    before = account_ids()
+    assert [mask for mask, _ in before] == ['3304', '8264']
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [row('new-credit', '8264', 'credit', 1900), row('new-checking', '3304', amount=1100)])
+    assert client.post(f'/api/bank-monitor/profiles/{p.id}/sync', headers=headers()).status_code == 200
+    assert account_ids() == before
