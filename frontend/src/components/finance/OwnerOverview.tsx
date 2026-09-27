@@ -15,6 +15,8 @@ export default function OwnerOverview({report:r,context,onSaved}: {report:Report
   const [retry,setRetry] = useState(0)
   useEffect(()=>{let active=true;setHistory(null);setError('');financeApi.history().then(h=>{if(active)setHistory(h)}).catch(e=>{if(active)setError(financeError(e))});return()=>{active=false}},[context.tenant_id,retry])
   const pairs = r.owner_insights.pairs
+  const retention = r.earnings_plan?.retention || r.retention
+  const planning = Boolean(r.earnings_plan?.retention)
   const gross = Number(r.revenue_breakdown.freight_gross)
   const cash = r.owner_cash
   return <div className="owner-dashboard">
@@ -25,9 +27,9 @@ export default function OwnerOverview({report:r,context,onSaved}: {report:Report
     {r.earnings_plan&&<EarningsPlan plan={r.earnings_plan}/>}
     <section className="owner-cash-status" aria-label="Available cash status"><div><strong>Available to owner: {cash.available===null?'not yet verified':dollars(cash.available)}</strong><span>{cash.status==='reconciled'?'Reconciled':'Provisional'} · As of {cash.as_of}{cash.available!==null&&Number(cash.available)<0?' · Funding shortfall':''}</span></div><Link className="finance-secondary" to="/finance/money">{cash.status==='reconciled'?'View cash details':'Verify cash in Money'}</Link></section>
     <section className="owner-panel"><div className="finance-section-heading"><h2>Truck + trailer performance</h2><Link to="/finance/assets">Equipment and capital</Link></div>
-      <p className="finance-help">Target: retain {dollars(r.retention.targets.target_percent)} per $100 of freight. Acceptable: {dollars(r.retention.targets.acceptable_percent)}. Scores include recorded costs and funded protection; incomplete records remain provisional.</p>
-      <RetentionTargets data={r.retention} onSaved={onSaved}/>
-      <div className="owner-pairs">{pairs.map(p=><article key={p.asset_id}><h3>{p.name}</h3><p className="finance-help">{p.trailer_ids.map(id=>context.assets.find(a=>a.id===id)?.name).join(' · ')||'Trailer assignment not established'}</p>{r.retention.pairs.find(score=>score.asset_id===p.asset_id)&&<RetentionScore pair={r.retention.pairs.find(score=>score.asset_id===p.asset_id)!} data={r.retention}/>}
+      <p className="finance-help">Target: retain {dollars(retention.targets.target_percent)} per $100 of freight. Acceptable: {dollars(retention.targets.acceptable_percent)}. {planning?'Scores use the same subtotal as After planned protection.':'Scores include recorded costs and funded protection.'} Incomplete records remain provisional.</p>
+      <RetentionTargets data={retention} onSaved={onSaved}/>
+      <div className="owner-pairs">{pairs.map(p=><article key={p.asset_id}><h3>{p.name}</h3><p className="finance-help">{p.trailer_ids.map(id=>context.assets.find(a=>a.id===id)?.name).join(' · ')||'Trailer assignment not established'}</p>{retention.pairs.find(score=>score.asset_id===p.asset_id)&&<RetentionScore planning={planning} pair={retention.pairs.find(score=>score.asset_id===p.asset_id)!} data={retention}/>}
         <div className="owner-metrics"><span>Statement remainder / calendar day<strong>{dollars(p.remainder_per_calendar_day)}</strong></span><span>Fuel cost / reported mile<strong>{p.fuel_per_mile?`$${p.fuel_per_mile}`:'Not established'}</strong></span><span>Remainder / reported mile<strong>{p.remainder_per_mile?`$${p.remainder_per_mile}`:'Not established'}</strong></span><span>Empty miles<strong>{p.empty_mile_percent?`${p.empty_mile_percent}%`:'Not established'}</strong></span></div>
         <details className="owner-details"><summary>Costs, pair split and sources</summary><dl className="finance-waterfall">{Object.entries(p.categories).map(([k,v])=><div key={k}><dt>{name(k)}</dt><dd>{dollars(v)} · {p.shares[k]}%</dd></div>)}<div><dt>Reported distance</dt><dd>{p.miles||'Not established'} mi</dd></div><div><dt>Recorded costs outside statements</dt><dd>{dollars(-Number(p.outside_statement_effect))}</dd></div></dl><p className="finance-help">Truck–trailer allocations do not change combined earnings. The original allocation split is available in each settlement review. Daily values use all {r.period.calendar_days} calendar days selected, including downtime.</p><Link to={`/settlements/reconciliation?asset=${p.asset_id}`}>Open source history</Link></details>
       </article>)}</div>

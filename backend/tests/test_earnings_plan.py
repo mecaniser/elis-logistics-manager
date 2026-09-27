@@ -66,3 +66,39 @@ def test_planning_pair_inference_is_dated_and_explicit_wins():
     explicit = [{'truck_id':2,'trailer_id':3,'start':str(first),'end':str(second)}]
     assert (1,3) not in planning_pair_days(explicit,obs,first,second)
     assert (1,3) not in planning_pair_days([],[(1,3,first),(2,3,first)],first,second)
+
+
+def test_planning_score_matches_bridge_and_preserves_recorded_score(db, truck):
+    from tests.test_finance import bank, bill
+    truck.default_repair_reserve_amount = Decimal('300')
+    db.commit()
+    d = policy_setup(db); bank(db); settlement(db, d, truck)
+    cmd(db, 'reserve', pair_id=truck.id, purpose='repair', amount='100.00', note='Funded', evidence_id=d)
+    b = bill(db, d, truck)
+    cmd(db, 'payment', claim_id=b.id, amount='500.00', payer='owner', evidence_id=d)
+    r = f.report(db, 1, ASOF, date(2026,9,27), date(2026,9,27))
+    p = r['earnings_plan']['pairs'][0]
+    score = r['earnings_plan']['retention']['pairs'][0]
+    assert p['additional_protection'] == '200.00'
+    assert score['retained'] == p['planning_subtotal'] == '2200.00'
+    assert sum(Decimal(row['amount']) for row in score['bridge']) == Decimal('2200')
+    assert score['retained_per_100'] == '22.00'
+    assert score['score'] == '73.33'
+    assert r['retention']['pairs'][0]['retained'] == '2400.00'
+
+
+def test_planning_score_uses_matching_unposted_freight_and_excludes_linked_duplicates(db, truck):
+    from app.models.settlement import Settlement
+    truck.default_repair_reserve_amount = Decimal('300')
+    db.add(Settlement(truck_id=truck.id, settlement_date=ASOF, gross_revenue=Decimal('1000'), expenses=Decimal('200'), net_profit=Decimal('800')))
+    db.commit()
+    r = f.report(db, 1, ASOF, date(2026,9,27), date(2026,9,27))
+    score = r['earnings_plan']['retention']['pairs'][0]
+    assert score['freight'] == '1000.00'
+    assert score['retained_per_100'] == '50.00'
+    assert score['score'] == '166.67'
+    r['pairs'][0]['settlements'] = [{'legacy_id': r['earnings_plan']['pairs'][0]['saved_settlement_ids'][0]}]
+    score = earnings_plan(db, 1, r)['retention']['pairs'][0]
+    assert score['freight'] == '0.00'
+    assert score['score'] is None
+    assert score['retained'] == '-300.00'
