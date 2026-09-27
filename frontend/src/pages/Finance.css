@@ -162,7 +162,7 @@
 .finance-home-period>button {margin-left:auto;}
 .finance-home-dates {flex-basis:100%;display:flex;gap:12px;}
 .finance-home-dates label {display:flex;align-items:center;gap:8px;}
-.owner-cash-status {display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border:1px solid #d5dfe5;border-radius:8px;background:#f1f5f8;}
+.owner-cash-status {margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border:1px solid #d5dfe5;border-radius:8px;background:#f1f5f8;}
 .owner-cash-status strong {display:block;font-size:14px;}
 .owner-cash-status span {display:block;font-size:12px;color:#526477;margin-top:4px;}
 @media(max-width:600px) {.finance-home-period>span {order:3;flex-basis:100%;}.finance-home-dates {flex-wrap:wrap;}.owner-cash-status {flex-wrap:wrap;}.finance-home .finance-header {align-items:flex-start;}}
