@@ -65,6 +65,7 @@ def test_remove_preserves_history_and_readding_restores_identity(db, truck):
     account = card(db)
     request = payload(db).model_copy(update={'method': 'credit_card', 'source': 'personal', 'payment_account_id': account['id']})
     save_confirmation(db, 1, request); db.commit()
+    db.add(Tenant(id=2, name='Other', business_type='logistics')); db.commit()
     with pytest.raises(HTTPException): remove_account(db, 2, account['id'])
     assert len(list_accounts(db, 1)) == 1
     remove_account(db, 1, account['id']); db.commit()
