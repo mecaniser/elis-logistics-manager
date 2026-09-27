@@ -5,7 +5,7 @@
 3. [x] Reuse saved vehicle settings with source links; identify missing information instead of resetting existing values.
 4. [x] Show period planning bridge and old/new differences separately from reconciled bank cash.
 5. [ ] Financial regression tests and real-data comparison; desktop/mobile acceptance.
-6. [ ] Main integration, release checks, deployment and live acceptance.
+6. [x] Provisional preview: main integration, release checks, deployment and live acceptance. Final financial cutover remains gated by step 5 and missing inputs.
 
 ## Known calculation differences requiring visible treatment
 - $141.86 displayed trailer weekly target is rounded from $22,129.69 / 156. Thirteen earning weeks produce $1,844.14 using the unrounded rate. Neither figure proves that money remains in a bank account.
@@ -27,7 +27,7 @@ September 21–27 local snapshot: posted freight $23,700; statement remainder $5
 - Cash-purchased trailer 003130 lacks acquisition date. Historical trailer assignments are incomplete before September 21: show gaps; do not retroactively apply today's pairing.
 - Existing freight graph and retention score continue to use their posted/funded bases. They are not yet switched to this provisional planning basis; consolidate only after the difference report and missing financing/recovery treatment are resolved.
 - Reuse known owner statement that trucks are paid off; persisted payoff provenance still needs implementation, not a repeat request for original loan settings.
-- Release step 6 has not started. This is a local calculation preview, not final take-home or a completed six-step rebuild.
+- Provisional preview is deployed (see release evidence below); final take-home and the complete six-step rebuild remain open.
 
 ## Release and next-step comparison — September 27
 
@@ -38,3 +38,15 @@ Follow-up reuses dated settlement trailer links as explicit planning inference u
 Read-only `python -m scripts.compare_earnings_periods --tenant 1 --start 2026-01-01 --end 2026-09-27` compares a full period against adjacent monthly reports. Local snapshot passes exact-cent additivity for both trucks after the inferred-pairing bridge. Private detailed output is /tmp/elis-earnings-period-comparison.json. Full financing/recovery completeness and consistency with the existing retention score remain open; do not equate additivity with finalized take-home.
 
 Follow-up checks: 314 backend tests, frontend lint/build pass. Initial release also passed 31 frontend tests. No financial writes or schema changes.
+
+## Live acceptance — PR #98
+
+Merged/deployed commit `69d833c5ad28b2aa57dd05454a3f20f7dce2e688`; Railway web deployment `67460070-2f95-4c1c-805a-382f80b83f59` SUCCESS. Merge tree matches tested tree `0c17c0bb1de4478d974270a3a9848540d2adbf65`. Production serves `index-C1WSgSq4.js` and `index--zATyXC-.css`; health 200, anonymous accounting 401. Authenticated Money page shows saved trailer targets and partial capital labels; source disclosure identifies inferred pairing and unposted legacy history. No browser error logs observed.
+
+Next: complete the old/new difference report and align retention score with the planning bridge while keeping incomplete recovery/financing visibly provisional. Preserve the existing paid-off-truck owner confirmation; do not ask the user to reenter saved vehicle targets.
+
+## Retention alignment — local implementation
+
+Planning scores now use the exact planning subtotal and matching posted plus unposted freight population, with linked legacy settlements excluded once. The recorded accounting retention report remains separately available. Target settings remain effective-dated; zero/nonpositive freight gives no score, losses remain negative, and incomplete plans retain provisional status. No new financial writes.
+
+Verified 315 backend tests, including planning-score bridge equality, funded target offsets, personal repair payment and matching legacy freight. Frontend lint/build pass. January–September local period additivity still passes. Score alignment is local only pending release; remaining inputs are truck resale/sale plans and actual trailer financing evidence.

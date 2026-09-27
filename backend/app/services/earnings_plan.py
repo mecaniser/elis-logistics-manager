@@ -4,6 +4,7 @@ from decimal import Decimal
 from app.models.truck import Truck
 from app.models.settlement import Settlement
 from app.services.finance import D, ZERO, money, state
+from app.services.retention import score as retention_score
 
 
 def period_target(weekly, start, end):
@@ -76,6 +77,7 @@ def earnings_plan(db, tenant, report):
             saved[aid].update(capital_target=money(target), capital_weekly=money(target * 7 / days) if days > 0 else None, _weekly=target * 7 / days if days > 0 else None, source='/finance/assets', _start=date.fromisoformat(plan['acquired']), _end=date.fromisoformat(plan['planned_sale']) - timedelta(days=1))
     scores = {p['asset_id']: p for p in report['retention']['pairs']}
     pair_rows = []
+    planning_scores = []
     for pair in report['pairs']:
         i = pair['truck_id']
         if i not in assets or i not in scores:
@@ -135,12 +137,24 @@ def earnings_plan(db, tenant, report):
             issues.append('A default trailer is saved, but this period needs a dated assignment before combining its targets.')
         if report['owner_insights']['unposted_in_period']:
             issues.append('Unposted saved settlement amounts are included as unverified management history, not posted accounting revenue.')
+        # Use exactly the same source population for revenue and retained value.
+        freight = D(score['freight']) + sum((D(r['freight_gross']) for r in saved_rows), ZERO)
+        bridge = score['bridge'] + [
+            {'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)},
+            {'label': 'Additional planned protection', 'amount': money(-additional)},
+        ]
+        planning_scores.append({**score, 'retained': money(subtotal), 'freight': money(freight),
+            **retention_score(subtotal, freight, D(report['retention']['targets']['target_percent']), D(report['retention']['targets']['acceptable_percent'])),
+            'bridge': bridge, 'issues': list(dict.fromkeys(issues + [
+                'Outside costs, financing and capital recovery remain provisional; this is not withdrawal cash.',
+                *(['Unassigned asset costs or income are excluded from pair scores.'] if D(report['retention']['unassigned_asset_result']) else []),
+            ]))})
         pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': plan_assets, 'capital_complete': capital_complete,
                          'recorded_retained': score['retained'], 'saved_remainder': money(saved_remainder), 'saved_settlement_ids': [r['legacy_id'] for r in saved_rows], 'repair_target': money(repair_target),
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),
                          'issues': issues, 'bridge': score['bridge'] + [{'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)}]})
-    return {'version': 1, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
+    return {'version': 2, 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
             'period': report['period'], 'as_of': report['as_of'], 'status': 'provisional',
             'settings': [{k: v for k, v in p.items() if not k.startswith('_')} for p in saved.values()],
             'pairs': pair_rows, 'planning_subtotal': money(sum((D(p['planning_subtotal']) for p in pair_rows), ZERO)),
