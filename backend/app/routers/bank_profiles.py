@@ -344,3 +344,20 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
     row.settings = {**data.model_dump(exclude={'confirm_migration'}), 'review_required': [], 'confirmed': True}
     db.commit()
     return view(db, tenant_id)
+
+
+class ProfileNameInput(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.put('/{profile_id}/name')
+def rename_profile(profile_id: str, data: ProfileNameInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    lock(db, tenant_id)
+    profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(422, 'Enter a connection name.')
+    profile.name = name
+    db.commit()
+    return view(db, tenant_id)
