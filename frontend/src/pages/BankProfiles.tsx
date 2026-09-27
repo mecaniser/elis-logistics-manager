@@ -229,7 +229,6 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
   const [value, setValue] = useState(profile.preferences)
   const [removed, setRemoved] = useState<string[]>([])
   const issues = value.review_items || []
-  const unresolved = issues.filter(item => !removed.includes(item.id))
   const pairs = new Map<string, Route[]>()
   for (const route of routes) {
     const key = [route.source_id, route.destination_id].sort().join(':')
@@ -239,7 +238,7 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
     {[...pairs.entries()].map(([key, pair]) => {
       const accounts = [pair[0].source_id, pair[0].destination_id].map(id => profile.accounts.find(a => a.account_id === id)).sort((a, b) => (a?.kind === 'checking' ? 0 : 1) - (b?.kind === 'checking' ? 0 : 1) || (a?.last4 || '').localeCompare(b?.last4 || ''))
       return <section key={key} aria-label={`Transfer relationship ${accounts.map(a => a?.last4 || 'unavailable').join(' and ')}`} className="rounded-xl border border-slate-200 p-3">
-        <h4 className="mb-2 font-semibold text-slate-900">{accounts[0]?.name || 'Unavailable account'} · ••{accounts[0]?.last4}<span className="mx-2 text-slate-400">↔</span>{accounts[1]?.name || 'Unavailable account'} · ••{accounts[1]?.last4}</h4>
+        <h4 className="mb-2 font-semibold text-slate-900">{accounts[0]?.name || 'Unavailable account'} · ••{accounts[0]?.last4}<span className="mx-2 font-normal text-slate-500">and</span>{accounts[1]?.name || 'Unavailable account'} · ••{accounts[1]?.last4}</h4>
         {pair.sort((a,b) => a.source_id === accounts[0]?.account_id ? -1 : b.source_id === accounts[0]?.account_id ? 1 : a.id.localeCompare(b.id)).map(route => {
           const from = profile.accounts.find(a => a.account_id === route.source_id)
           const to = profile.accounts.find(a => a.account_id === route.destination_id)
@@ -263,12 +262,12 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
       return <div key={item.id} className="border-t border-amber-200 pt-2"><p className="font-medium">{item.label}</p><p className="mt-1 text-xs">{removedItem ? `Will be removed from your ${item.kind === 'funding' ? 'funding' : 'payment'} plan.` : item.message}</p><div className="mt-1 flex flex-wrap gap-2">{removedItem ? <button type="button" className="min-h-9 font-semibold text-blue-800" onClick={() => { setRemoved(removed.filter(id => id !== item.id)); if (item.route_id) { const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: [...value[key], item.route_id] }) } }}>Undo removal</button> : <>
       {possible.map(route => <button key={route.id} type="button" disabled={busy} className="min-h-9 font-semibold text-blue-800" onClick={() => void toggle(route)}>Enable {item.kind === 'funding' ? 'transfer to checking' : 'payment'} ••{profile.accounts.find(a => a.account_id === route.source_id)?.last4} → ••{profile.accounts.find(a => a.account_id === route.destination_id)?.last4}</button>)}
       <button type="button" disabled={busy} className="min-h-9 font-semibold text-red-800" onClick={() => { setRemoved([...removed, item.id]); const key = item.kind === 'funding' ? 'funding_order' : 'repayment_order'; setValue({ ...value, [key]: value[key].filter(id => id !== item.route_id) }) }}>Remove from {item.kind === 'funding' ? 'funding' : 'payment'} plan</button></>}</div>{!removedItem && !possible.length && <p className="mt-1 text-xs">If this bank connection supports the transfer, add it using “Add a permitted transfer route” below.</p>}</div>
-    })}<p className="text-xs">Removing an item here changes the plan only. It does not disconnect the account or move money.</p></div>}
+    })}<p className="text-xs">You can save one change at a time. Other flagged transfers stay in your plan for later review. Removing an item does not disconnect the account or move money.</p></div>}
     {value.migration_pending && <p className="text-xs text-slate-600">Saving will use the accounts and cash reserves shown above for future checks. Your accounts stay connected.</p>}
     {!!removed.length && <p className="text-sm text-slate-700">Saving will remove: {issues.filter(item => removed.includes(item.id)).map(item => item.label).join('; ')}.</p>}
     {value.repayment && !value.repayment_order.length && <p className="text-sm text-amber-900">Choose a payment above for Friday checks, or turn Friday payment checks off.</p>}
     <p className="text-xs text-slate-500">ELIS checks balances and money set aside for bills before suggesting a payment. You review and submit transfers in Truliant.</p>
     {value.last_evaluation?.status && <p className="text-xs text-slate-600">Last route check: {value.last_evaluation.status.replace(/_/g, ' ')}</p>}
-    <button type="button" disabled={busy || unresolved.length > 0 || (value.repayment && !value.repayment_order.length)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>Save changes</button>
+    <button type="button" disabled={busy || (value.repayment && !value.repayment_order.length)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>Save changes</button>
   </div>
 }

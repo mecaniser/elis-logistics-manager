@@ -327,15 +327,22 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
     if previous['review_required'] and not data.confirm_migration:
         raise HTTPException(409, 'Review the changes shown before saving your transfer plan.')
     items = previous.get('review_items', [])
-    if set(data.removed_review_items) != {item['id'] for item in items}:
+    if not set(data.removed_review_items).issubset({item['id'] for item in items}):
         raise HTTPException(409, 'Choose what to do with each transfer that needs attention before saving. Reload if you changed its switch.')
+    removed = set(data.removed_review_items)
     for item in items:
-        if item.get('route_id') and item['route_id'] in getattr(data, f"{item['kind']}_order"):
-            raise HTTPException(422, 'Remove the unavailable transfer from the plan, or turn it back on.')
+        if item.get('route_id'):
+            retained = item['route_id'] in getattr(data, f"{item['kind']}_order")
+            if item['id'] in removed and retained:
+                raise HTTPException(422, 'Remove the unavailable transfer from the plan, or turn it back on.')
+            if item['id'] not in removed and not retained:
+                raise HTTPException(409, 'Choose Remove from plan before deleting this saved transfer.')
     for kind, ids in [('funding', data.funding_order), ('repayment', data.repayment_order)]:
         if len(ids) != len(set(ids)):
             raise HTTPException(422, 'Each route can appear only once in a priority list.')
         for route_id in ids:
+            if any(item.get('route_id') == route_id and item['kind'] == kind and item['id'] not in removed for item in items):
+                continue  # Preserve an existing unresolved entry; never grant a new permission.
             route = profiles.owned(db, BankProfileRoute, route_id, tenant_id)
             if route.profile_id != profile.id:
                 raise HTTPException(422, 'Route belongs to another banking profile.')
@@ -348,7 +355,7 @@ def save_preferences(profile_id: str, data: PreferencesInput, request: Request, 
     if not row:
         row = BankProfilePreferences(profile_id=profile.id, tenant_id=tenant_id, last_evaluation={})
         db.add(row)
-    row.settings = {**data.model_dump(exclude={'confirm_migration', 'removed_review_items'}), 'review_required': [], 'confirmed': True}
+    row.settings = {**data.model_dump(exclude={'confirm_migration', 'removed_review_items'}), 'review_required': [], 'pending_review': [item for item in items if not item.get('route_id') and item['id'] not in removed], 'confirmed': True}
     db.commit()
     return view(db, tenant_id)
 
