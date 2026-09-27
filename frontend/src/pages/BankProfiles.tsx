@@ -260,8 +260,9 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
   return <div className="space-y-3 border-t border-slate-200 pt-3 text-sm">
     {[...pairs.entries()].map(([key, pair]) => {
       const accounts = [pair[0].source_id, pair[0].destination_id].map(id => profile.accounts.find(a => a.account_id === id)).sort((a, b) => (a?.kind === 'checking' ? 0 : 1) - (b?.kind === 'checking' ? 0 : 1) || (a?.last4 || '').localeCompare(b?.last4 || ''))
+      const twoWay = pair.some(route => route.enabled && route.source_id === accounts[0]?.account_id && route.destination_id === accounts[1]?.account_id) && pair.some(route => route.enabled && route.source_id === accounts[1]?.account_id && route.destination_id === accounts[0]?.account_id)
       return <section key={key} aria-label={`Transfer relationship ${accounts.map(a => a?.last4 || 'unavailable').join(' and ')}`} className="rounded-xl border border-slate-200 p-3">
-        <h4 className="mb-2 font-semibold text-slate-900">{accounts[0]?.name || 'Unavailable account'} · ••{accounts[0]?.last4}<span className="mx-2 font-normal text-slate-500">and</span>{accounts[1]?.name || 'Unavailable account'} · ••{accounts[1]?.last4}</h4>
+        <h4 className="mb-2 font-semibold text-slate-900">{accounts[0]?.name || 'Unavailable account'} · ••{accounts[0]?.last4}<span className="mx-2 font-normal text-slate-500" title={twoWay ? 'Transfers enabled in both directions' : undefined}>{twoWay ? <><span aria-hidden="true">↔</span><span className="sr-only">two-way transfers with</span></> : 'and'}</span>{accounts[1]?.name || 'Unavailable account'} · ••{accounts[1]?.last4}</h4>
         {pair.sort((a,b) => a.source_id === accounts[0]?.account_id ? -1 : b.source_id === accounts[0]?.account_id ? 1 : a.id.localeCompare(b.id)).map(route => {
           const from = profile.accounts.find(a => a.account_id === route.source_id)
           const to = profile.accounts.find(a => a.account_id === route.destination_id)
