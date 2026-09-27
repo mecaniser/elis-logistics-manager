@@ -102,3 +102,25 @@ def test_planning_score_uses_matching_unposted_freight_and_excludes_linked_dupli
     assert score['freight'] == '0.00'
     assert score['score'] is None
     assert score['retained'] == '-300.00'
+
+
+def test_internal_trailer_split_preserves_combined_total(db, truck):
+    from app.models.settlement import Settlement
+    from app.models.truck import Truck
+    truck.default_repair_reserve_amount = Decimal('300')
+    trailer = Truck(name='Trailer',tenant_id=1,vehicle_type='trailer',total_cost=Decimal('73231.09'),expected_resale_value=Decimal('50000'),planned_service_weeks=156)
+    db.add(trailer); db.flush()
+    db.add(Settlement(truck_id=truck.id,settlement_date=ASOF,gross_revenue=Decimal('1459.58'),expenses=Decimal('0'),net_profit=Decimal('1459.58'),repair_reserve_amount=Decimal('300'),trailer_income_split_trailer_id=trailer.id,trailer_income_split_amount=Decimal('400')))
+    db.commit()
+    r=f.report(db,1,ASOF,date(2026,9,27),date(2026,9,27))['earnings_plan']['pairs'][0]
+    split=r['allocation_split']
+    assert split['trailer_allocation']=='400.00'
+    assert split['trailer_capital_target']=='148.92'
+    assert split['trailer_contribution']=='251.08'
+    assert split['truck_remainder']=='1459.58'
+    assert Decimal(split['truck_remainder'])+Decimal(split['trailer_contribution'])+Decimal(split['pair_adjustments'])==Decimal(r['planning_subtotal'])
+    from app.models.repair import Repair
+    db.add(Repair(truck_id=truck.id,repair_date=ASOF,cost=Decimal('100'),paid_from_reserve=False)); db.commit()
+    r=f.report(db,1,ASOF,date(2026,9,27),date(2026,9,27))['earnings_plan']['pairs'][0]
+    assert r['allocation_split']['pair_adjustments']=='-100.00'
+    assert r['planning_subtotal']=='1610.66'
