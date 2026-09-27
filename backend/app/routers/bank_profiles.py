@@ -12,6 +12,7 @@ from app.models.bank_monitor import (BankProfile, BankProfileAccount, BankAccoun
 from app.routers.bank_monitor import bank_tenant, provider_action, draft_json
 from app.services.bank_monitor import StrictModel
 from app.services import bank_profiles as profiles, plaid_bank
+from app.services.bank_profile_preferences import preferences, unified
 
 router = APIRouter()
 
@@ -47,7 +48,7 @@ def view(db, tenant_id):
                 'overlap_candidates': [{'id': c.id, 'name': c.name, 'last4': c.last4, 'profiles': [p.name for p in db.query(BankProfile).join(BankProfileAccount, BankProfileAccount.profile_id == BankProfile.id).filter(BankProfileAccount.account_id == c.id, BankProfile.tenant_id == tenant_id)]} for c in candidates]})
         result.append({'id': p.id, 'name': p.name, 'institution_id': p.institution_id,
             'legacy': p.legacy, 'status': p.status, 'last_error': p.last_error,
-            'last_checked_at': p.last_checked_at, 'accounts': accounts})
+            'last_checked_at': p.last_checked_at, 'accounts': accounts, 'preferences': preferences(db, p)})
     routes = [{'id': r.id, 'profile_id': r.profile_id, 'source_id': r.source_id,
                'destination_id': r.destination_id, 'enabled': r.enabled}
               for r in db.query(BankProfileRoute).filter_by(tenant_id=tenant_id)]
@@ -60,7 +61,7 @@ def view(db, tenant_id):
             BankTransferDraft.status != 'cancelled'):
         drafts.append({**draft_json(d), 'source_id': binding.source_id,
                        'destination_id': binding.destination_id, 'profile_id': binding.profile_id})
-    return {'profiles': result, 'routes': routes, 'runs': runs, 'drafts': drafts}
+    return {'profiles': result, 'routes': routes, 'runs': runs, 'drafts': drafts, 'unified': unified(db, tenant_id)}
 
 
 @router.get('')
@@ -304,3 +305,42 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     run.result = {**run.result, 'drafts_created': True, 'draft_ids': [draft_id]}
     db.commit()
     return {'draft': draft_json(draft), 'transfers_executed': False}
+
+
+class PreferencesInput(StrictModel):
+    monitor: bool
+    repayment: bool
+    funding_order: list[str] = Field(default_factory=list, max_length=100)
+    repayment_order: list[str] = Field(default_factory=list, max_length=100)
+    confirm_migration: bool = False
+
+
+@router.put('/{profile_id}/preferences')
+def save_preferences(profile_id: str, data: PreferencesInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    from app.models.bank_monitor import BankProfilePreferences
+    from app.services.bank_profile_preferences import preferences
+    action(request)
+    lock(db, tenant_id)
+    profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
+    previous = preferences(db, profile)
+    if previous['review_required'] and not data.confirm_migration:
+        raise HTTPException(409, 'Review the unmapped old priorities and confirm the replacement routes.')
+    for kind, ids in [('funding', data.funding_order), ('repayment', data.repayment_order)]:
+        if len(ids) != len(set(ids)):
+            raise HTTPException(422, 'Each route can appear only once in a priority list.')
+        for route_id in ids:
+            route = profiles.owned(db, BankProfileRoute, route_id, tenant_id)
+            if route.profile_id != profile.id:
+                raise HTTPException(422, 'Route belongs to another banking profile.')
+            _, source, destination = profiles.route_accounts(db, route)
+            if (source.kind, destination.kind) != (('credit', 'checking') if kind == 'funding' else ('checking', 'credit')):
+                raise HTTPException(422, 'Route direction does not match this priority.')
+    if data.repayment and not data.repayment_order:
+        raise HTTPException(422, 'Choose a permitted repayment route first.')
+    row = db.get(BankProfilePreferences, profile.id)
+    if not row:
+        row = BankProfilePreferences(profile_id=profile.id, tenant_id=tenant_id, last_evaluation={})
+        db.add(row)
+    row.settings = {**data.model_dump(exclude={'confirm_migration'}), 'review_required': [], 'confirmed': True}
+    db.commit()
+    return view(db, tenant_id)
