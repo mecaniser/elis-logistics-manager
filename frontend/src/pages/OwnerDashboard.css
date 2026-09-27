@@ -84,3 +84,73 @@
 @media (max-width:700px) {.history-trend-controls label,.history-trend-controls label:last-child {margin-left:0;min-width:min(100%,230px);flex:1 1 180px;}.history-trend-summary {gap:8px 16px;}}
 
 .history-identity-secondary { display: block; margin-top: 4px; color: var(--text-secondary, #526477); font-size: 12px; font-weight: 400; line-height: 1.4; }
+
+.weekly-explainer {display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:16px 0 24px;}
+.weekly-explainer p {margin:0;max-width:65ch;}
+.weekly-explainer label {display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;}
+.weekly-truck {padding:24px 0;border-top:1px solid #dce3e8;}
+.weekly-truck header {display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:12px;}
+.weekly-truck h3 {font-size:17px;margin:0;}
+.weekly-truck header p {margin:6px 0 0;font-size:12px;}
+.weekly-truck header>span {font-size:12px;color:#526477;}
+.weekly-status-track {display:flex;gap:2px;margin:4px 12px 12px 66px;height:9px;}
+.weekly-status-track span {flex:1;min-width:0;background:#e9edf0;}
+.weekly-status-track .is-offroad {background:#9ca7af;}
+.weekly-status-track .is-recorded {background:#a6bcaf;}
+.weekly-status-track .is-review {background:repeating-linear-gradient(135deg,#d4a340 0,#d4a340 3px,#fff1cd 3px,#fff1cd 6px);}
+.weekly-downtime {background:#eef1f3;padding:12px 16px;font-size:12px;line-height:1.5;margin:12px 0 0;}
+.weekly-downtime span {display:block;margin-top:4px;color:#485b68;}
+.weekly-key {display:flex;gap:10px 24px;flex-wrap:wrap;font-size:12px;color:#485b68;}
+.weekly-tooltip {background:#fff;border:1px solid #cbd5df;padding:12px 16px;font-size:12px;max-width:270px;}
+.weekly-selected {padding:16px 0;border-top:1px solid #dce3e8;}
+.weekly-selected a {display:block;padding:8px 0;text-decoration:underline;}
+@media(max-width:600px) {.weekly-truck header {display:block;}.weekly-truck header>span {display:block;margin-top:8px;}.weekly-explainer {gap:12px;}}
+.weekly-inspect {display:flex;gap:12px;align-items:center;font-size:12px;flex-wrap:wrap;margin:12px 0;}
+.weekly-inspect select {max-width:100%;min-height:36px;border:1px solid #cbd5df;border-radius:6px;padding:6px 12px;background:#fff;color:#263b48;}
+.weekly-tooltip {max-width:190px;overflow-wrap:anywhere;}
+.compact-chart-controls {margin-top:20px;}
+.compact-chart-controls .weekly-average {display:flex;flex-direction:row;align-items:center;gap:8px;padding-bottom:12px;}
+.compact-chart-heading {display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline;margin-top:20px;}
+.compact-chart-heading h3 {margin:0;font-size:17px;}
+.compact-chart-heading>span {font-size:12px;color:#526477;}
+.compact-status {display:flex;align-items:center;gap:12px;margin:8px 12px 8px 56px;font-size:12px;}
+.compact-status>span {min-width:130px;}
+.compact-status .weekly-status-track {flex:1;margin:0;}
+.compact-fleet-table {max-height:290px;overflow:auto;border:1px solid #dce3e8;margin-top:20px;}
+.compact-fleet-table table {width:100%;border-collapse:collapse;font-size:13px;}
+.compact-fleet-table caption {text-align:left;padding:12px;font-weight:600;}
+.compact-fleet-table td,.compact-fleet-table th {padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0;white-space:nowrap;}
+.compact-fleet-table thead th {position:sticky;top:0;background:#eef2f3;z-index:1;}
+.compact-fleet-table .is-selected {background:#eff5ff;}
+.compact-truck-button {padding:6px 10px;border:1px solid #bac9d6;border-radius:6px;background:#fff;color:#172f3b;font-weight:600;cursor:pointer;}
+.compact-truck-button:hover {background:#e4edfa;}
+.compact-fleet-table label {display:flex;align-items:center;gap:8px;}
+@media(max-width:600px){.compact-status{margin-left:0;flex-wrap:wrap;gap:4px;}.compact-status .weekly-status-track{flex-basis:100%;}.compact-chart-heading>span{display:block;}}
+.compact-chart-controls {justify-content:flex-start;}
+.compact-chart-controls>label:last-child {margin-left:0;}
+.compact-status {display:block;}
+.compact-status>span {display:block;margin-bottom:4px;}
+
+.chart-view-switch {display:flex;gap:4px;width:fit-content;padding:4px;background:#eef2f6;border:1px solid #cbd5e1;border-radius:8px;margin-top:20px;}
+.chart-view-switch button {border:0;border-radius:5px;background:transparent;color:#334155;padding:10px 18px;font:inherit;font-weight:600;min-height:44px;cursor:pointer;}
+.chart-view-switch button[aria-pressed="true"] {background:#2146d9;color:white;}
+.chart-view-switch button:hover {background:#dbe4f4;color:#172f3b;}
+.chart-view-switch button:focus-visible,.heat-cell:focus-visible,.truck-heatmap:focus-visible {outline:2px solid #2146d9;outline-offset:3px;}
+.truck-heatmap {width:100%;min-width:0;margin-top:16px;font-variant-numeric:tabular-nums;}
+.heat-period {display:flex;justify-content:space-between;gap:12px;color:#526477;font-size:12px;margin-bottom:8px;}
+.heat-months,.heat-week-grid {display:grid;gap:2px;min-width:0;}
+.heat-month {container-type:inline-size;container-name:heat-month;min-width:0;border-bottom:1px solid #cbd5e1;padding-bottom:5px;}
+.heat-month span {display:block;font-size:11px;white-space:nowrap;overflow:hidden;color:#526477;}
+.heat-truck-row {margin-top:14px;}
+.heat-truck-label {font-size:12px;font-weight:600;color:#334155;margin-bottom:6px;}
+.heat-week {container-type:inline-size;container-name:heat-week;min-width:0;}
+.heat-cell {display:block;width:100%;min-width:0;min-height:36px;padding:0;border:1px solid transparent;border-radius:2px;font:inherit;font-size:11px;cursor:pointer;}
+.heat-value-full,.heat-value-short,.heat-week-date {display:none;}
+.heat-detail {min-height:40px;font-size:12px;line-height:1.6;color:#334155;margin:12px 0 0;overflow-wrap:anywhere;}
+@container heat-week (min-width:32px) {.heat-value-short {display:block;}}
+@container heat-week (min-width:76px) {.heat-value-short {display:none;}.heat-value-full {display:block;}.heat-cell {min-height:48px;border-radius:5px;}.heat-week-date {display:block;text-align:center;font-size:11px;color:#526477;margin-top:5px;}}
+@container heat-month (max-width:34px) {.heat-month span {font-size:9px;}}
+.heat-cell[aria-pressed="true"] {border-color:#172f3b;box-shadow:inset 0 0 0 1px #172f3b;}
+.heat-cell.is-offroad {background:#cbd5e1;}
+.heat-cell.is-unknown {background:#f1f5f9;}
+.heat-cell.is-review {background:repeating-linear-gradient(135deg,#fff1cd 0,#fff1cd 4px,#f3ddb0 4px,#f3ddb0 8px);}

@@ -304,3 +304,34 @@ Next engineering work: support reviewed 277 mappings/unique references, source-d
 Settlement reconciliation now leads with each equipment record's saved VIN ending in chart legends/tooltips, monthly coverage, filters and record headings. The full VIN is shown inside a record; VIN and current name are searchable. Current unit/carrier/driver names remain secondary and explicitly current, not historical assignments. Chart colors follow the permanent equipment ID instead of name sorting. Reporting continues to use the existing tenant-scoped equipment ID; matching VINs never automatically merge financial records. Missing VINs have an explicit fallback and suffix collisions show full VINs. The local source-backed browser verifies VINs ending 250024 and 250022; no migration or financial backfill is required.
 
 Validation: frontend lint/build, 12 backend history tests, 3 chart/identity tests and local browser VIN search/layout checks. Dated driver/unit aliases and adoption in remaining legacy screens are separate follow-up work; this change does not establish the cause of the March history gap.
+
+## Weekly chart review preview — September 25
+
+Owner approved trying aligned weekly truck columns before deciding to keep the design. Local-only preview on `codex/weekly-truck-preview`: common dollar scale, optional four-consecutive-verified-week average, signed columns, per-truck gray downtime, evidence status strips and statement drilldown. The previous line comparison remains selectable. Weekly buckets use statement dates, can include multiple statements and exclude outside repair costs; the label remains settlement remainder. Missing/incomplete evidence and downtime do not manufacture zero earnings.
+
+For VIN 4V4WC9EG2LN250024, the owner confirmed the March 2026 carrier transition included maintenance and waiting for a driver. The last 277 statement is March 7 and first 77 Cargo statement April 6. March 8–April 5 is an estimated visual interval bounded by those statements, not confirmed service dates or upload dates. The existing May/June downtime annotation belongs only to VIN 250022. Operating-event persistence and effective-dated carrier/driver records remain follow-up work; this preview does not write financial or operational data.
+
+Validation: frontend build/lint, weekly model tests (signed aggregation, missing evidence, average completeness and transition boundaries), desktop/mobile local inspection. Awaiting owner visual decision; production keeps the previously released presentation.
+
+## Compact fleet chart revision — local review
+
+Owner rejected stacked truck charts because their height grows with fleet size. The local preview now defaults to one truck in one fixed-height chart. Scope controls switch to fleet subtotal or comparison of up to three trucks; a bounded scrollable table lists the entire fleet and selects a truck. Table values show plotted statement remainder, remainder per selected calendar day and saved-statement coverage. Fleet weeks sum available verified amounts and are explicitly provisional when any selected truck lacks a verified weekly value. Single-truck downtime stays in that truck's chart; comparisons use compact status strips. The previous line view remains available. Build/lint, six chart/model tests and local browser scope/table/mobile checks passed. This revision remains local for the owner's visual decision.
+
+## Three chart representations — September 26, local preview
+
+Owner chose to trial all three representations. Performance over time now has Lines (default), Columns, and Heatmap buttons for settlement remainder. They share weekly aggregation, dates, scope, and selected-week drilldown; the average starts hidden. Heatmap uses VIN rows, one shared positive-value color scale, signed dollar labels, separate downtime/review/no-record cells, and bounded horizontal scrolling. All trucks shows individual heatmap rows; Fleet total sums verified amounts in line/column views. Fuel and driver-share measures retain their existing source-based charts. The redundant previous-line selector was removed.
+
+Validation: frontend lint/build, three weekly aggregation tests, empty mechanical design scan, local browser switching and heatmap statement drilldown, 390px mobile overflow check. These are local application changes only; no ledger, settlement, bank or production data changed. Remaining program work continues to include missing-original recovery, operational event persistence, and independent fuel/distance evidence.
+
+### Heatmap fit-to-period refinement
+
+Replaced the fixed-width scrolling table with a fluid weekly grid. The entire selected period fits the panel; VIN labels sit above each row, and month/year context appears above the grid. Cell labels adapt to actual available width: full dollars on roomy cells, abbreviated amounts on medium cells, color on dense cells. Hover, keyboard focus, selection, and the existing week picker expose exact values and evidence status. Desktop year-to-date (39 cells) and mobile full-year (53 cells) checks confirmed content width equals container width. Build/lint and mechanical design scan passed. Local preview only.
+
+### Supporting documents usability — September 26
+
+Collapsed the evidence archive by default in finance workflows and moved its upload form into an optional disclosure. Recognizable labels use linked repair/vendor and settlement metadata, date, amount basis, and VIN where available. Payment confirmations remain distinct from vendor documents. Search, document-type filters, and 20-record pagination replace the unbounded technical list; raw references/extraction are inside File details. Open settlement links to the reconciliation record; Open repair uses a repair query filter with Show all repairs. The archive clearly covers all business dates, independent of reporting dates. No financial data changed. Browser checks confirmed real metadata, filtering, no-results behavior, and 390px layout without horizontal page overflow. Local-only preview.
+
+### 2026-09-26 — Compact supporting-document archive
+- Replaced tall document cards with 65px desktop rows; vendor/date/VIN, amount and controls stay aligned. Removed repeated explanatory copy and moved description/file metadata behind an accessible chevron button.
+- Kept distinct repair cost, settlement remainder and recorded-payment labels. No accounting or source-data changes.
+- Build, lint and diff whitespace checks passed. Local browser verified search, keyboard details, 65px desktop rows and 390px mobile without horizontal overflow. Local only; production unchanged.

@@ -20,6 +20,7 @@ export default function SettlementHistory() {
   const [retry,setRetry] = useState(0)
   const [attaching,setAttaching] = useState<number|null>(null)
   const [attachmentNotice,setAttachmentNotice] = useState('')
+  useEffect(()=>{if(params.get('id')) {setQuery(params.get('id')!);setAsset(params.get('asset')||'all');setStatus('all')}},[params])
   useEffect(()=>{if(params.get('status')==='missing_source')setStatus('missing_source')},[params])
   useEffect(()=>{let active=true;setReport(null);setError('');financeApi.history().then(r=>{if(active)setReport(r)}).catch(e=>{if(active)setError(financeError(e))});return()=>{active=false}},[currentTenant,retry])
   const identities = vehicleIdentities(report?.rows || [])
