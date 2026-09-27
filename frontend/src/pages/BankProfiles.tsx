@@ -25,6 +25,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [settingsProfile, setSettingsProfile] = useState('')
   const [addingBank, setAddingBank] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [refreshingProfile, setRefreshingProfile] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -127,10 +128,23 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-900">{error}</p>}
     {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>}
     {loading ? <div role="status" className="mt-5 rounded-2xl border border-slate-700 bg-slate-900 p-6 text-slate-300">Loading your accounts…<div aria-hidden="true" className="mt-4 grid gap-4 md:grid-cols-2"><div className="h-56 rounded-xl bg-slate-800" /><div className="h-56 rounded-xl bg-slate-800" /></div></div> : !data.profiles.length ? <div><button type="button" onClick={openSettings} className={`${primary} mt-4`}>Set up in Monitoring settings</button></div> : <>
-      <div className="mt-5 flex flex-wrap gap-2" aria-label="Choose banking profile">{data.profiles.map(p => <button key={p.id} type="button" aria-pressed={active?.id === p.id} disabled={busy} onClick={() => { setSelected(p.id); setSource(''); setDestination(''); setConfirmed(false); setReview(null) }} className={`min-h-11 rounded-xl border px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-45 ${active?.id === p.id ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800'}`}>{p.name}</button>)}</div>
+      <div className="mt-5 flex flex-wrap gap-2" aria-label="Choose banking profile">{data.profiles.map(p => {
+        const isActive = active?.id === p.id
+        const refreshing = refreshingProfile === p.id
+        return <div key={p.id} className={`inline-flex max-w-full items-stretch overflow-hidden rounded-xl border text-sm font-semibold ${isActive ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-600 bg-slate-900 text-slate-200'}`}>
+          <button type="button" aria-pressed={isActive} disabled={busy} onClick={() => { setSelected(p.id); setSource(''); setDestination(''); setConfirmed(false); setReview(null) }} className="min-h-11 min-w-0 px-4 text-left hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 disabled:opacity-45">{p.name}</button>
+          {isActive && <button type="button" aria-label={`Refresh ${p.name}`} title={`Refresh ${p.name}`} aria-busy={refreshing} disabled={busy} onClick={() => {
+            setReview(null); setRefreshingProfile(p.id)
+            void request(`/${p.id}/sync`).finally(() => { if (alive.current) setRefreshingProfile('') })
+          }} className="grid min-h-11 w-11 shrink-0 place-items-center border-l border-blue-400/60 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300 disabled:opacity-45">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 ${refreshing ? 'animate-spin motion-reduce:animate-none' : ''}`}><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" /></svg>
+          </button>}
+        </div>
+      })}</div>
+      {refreshingProfile && <p role="status" className="mt-2 text-sm text-blue-200">Refreshing {active?.name}…</p>}
 
       {active && <>
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p><div className="flex gap-2"><button disabled={busy} onClick={() => { setReview(null); void request(`/${active.id}/sync`) }} className={primary}>{busy ? 'Working…' : 'Refresh profile'}</button></div></div>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-200">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
         {[{ key: 'checking', label: 'Checking accounts', description: 'Cash available at the bank' }, { key: 'line', label: 'Credit lines', description: 'Available borrowing and balances owed' }, { key: 'card', label: 'Credit cards', description: 'Available credit and card balances' }].map(group => {
           const accounts = active.accounts.filter(a => (a.kind === 'checking' ? 'checking' : a.subtype === 'credit card' ? 'card' : 'line') === group.key)
