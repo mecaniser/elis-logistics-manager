@@ -90,3 +90,19 @@
 @media (max-width: 700px) { .finance-proposal { flex-direction: column; align-items: stretch; } }
 
 .finance-app .finance-secondary, .finance-app .finance-primary, .finance-app input:not([type=checkbox]), .finance-app select {min-height:44px;}
+
+.supporting-documents>details>summary {cursor:pointer;padding:12px 0;min-height:44px;}
+.supporting-documents>details>summary span {display:block;margin:6px 0 0 18px;font-size:13px;color:#526477;}
+.document-filters {display:flex;flex-wrap:wrap;gap:16px;margin:20px 0;}
+.document-filters label {display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px;}
+.document-filters input,.document-filters select {padding:10px 12px;min-height:44px;border:1px solid #bac9d6;border-radius:6px;background:white;color:#172f3b;font:inherit;width:100%;}
+.supporting-record {padding:20px 0;border-top:1px solid #d5dfe5;overflow-wrap:anywhere;}
+.supporting-record h3 {font-size:16px;margin:8px 0;}
+.supporting-record p {font-size:13px;margin:6px 0;}
+.document-kind {font-size:12px;color:#526477;}
+.document-actions {display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;}
+.document-actions a {text-decoration:none;display:inline-flex;align-items:center;}
+.document-technical summary,.document-upload summary {padding:12px 0;cursor:pointer;min-height:44px;}
+.document-technical pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;}
+.document-upload {border-top:1px solid #d5dfe5;margin-top:20px;}
+.supporting-documents summary:focus-visible,.document-filters input:focus-visible,.document-filters select:focus-visible {outline:2px solid #2146d9;outline-offset:3px;}

@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { apiError } from '../utils/apiError'
 import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
@@ -12,6 +13,8 @@ import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/tenantState'
 
 export default function Repairs() {
+  const [documentParams,setDocumentParams]=useSearchParams()
+  const documentRepair=documentParams.get('repair')
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [repairs, setRepairs] = useState<Repair[]>([])
@@ -386,6 +389,7 @@ export default function Repairs() {
 
   // Filter repairs based on search term
   const filteredRepairs = repairs.filter(repair => {
+    if(documentRepair && repair.id!==Number(documentRepair)) return false
     const row = reviewRows.get(repair.id)
     if (payeeFilter !== 'all' && (row?.payee?.name || 'unknown') !== payeeFilter) return false
     if (methodFilter !== 'all' && repairMethod(row) !== methodFilter) return false
@@ -819,8 +823,9 @@ export default function Repairs() {
         </>}
       </section>
 
-      {(searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all') && (
+      {(documentRepair || searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all') && (
         <div className="mb-4 text-sm text-gray-600">
+          {documentRepair&&<button type="button" className="mr-3 px-3 py-2 border rounded-md" onClick={()=>setDocumentParams({})}>Show all repairs</button>}
           Showing {filteredRepairs.length} of {repairs.length} repair{repairs.length !== 1 ? 's' : ''}
         </div>
       )}
@@ -828,7 +833,7 @@ export default function Repairs() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {filteredRepairs.length === 0 ? (
           <div className="px-6 py-4 text-gray-500 text-center">
-            {searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs, All payees and All methods.' : 'No repairs found.'}
+            {documentRepair || searchFilter || reviewFilter !== 'all' || payeeFilter !== 'all' || methodFilter !== 'all' ? 'No repairs match these filters. Clear the search or choose All repairs, All payees and All methods.' : 'No repairs found.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
