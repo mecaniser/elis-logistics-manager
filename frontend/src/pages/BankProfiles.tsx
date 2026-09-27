@@ -226,13 +226,13 @@ function Reserve({ account, busy, save }: { account: Account; busy: boolean; sav
     void save(cents, close)
   }
   const action = editing ? 'Save' : 'Edit'
-  return <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-    <span className="min-w-0 font-medium">{account.name} · ••{account.last4}</span>
-    <div className="ml-auto flex items-center gap-1">
-      {editing ? <label ref={editor} className="flex items-center gap-2 text-slate-600 [&>span]:mt-0 [&>span]:w-28" onKeyDown={event => {
+  return <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+    <span className="flex min-w-0 flex-1 items-center gap-1 font-medium" title={`${account.name} · ••${account.last4}`}><span className="truncate">{account.name}</span><span className="shrink-0">· ••{account.last4}</span></span>
+    <div className="flex shrink-0 items-center gap-1">
+      {editing ? <label ref={editor} className="flex items-center gap-2 whitespace-nowrap text-slate-600 [&>span.relative]:mt-0 [&>span.relative]:w-20" onKeyDown={event => {
         if (event.key === 'Enter') { event.preventDefault(); submit() }
         if (event.key === 'Escape' && !busy) { event.preventDefault(); event.stopPropagation(); close() }
-      }}>Reserve<span className="sr-only"> for {account.name} ••{account.last4}</span><MoneyInput value={value} onChange={setValue} invalid={cents < 0} className="min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-slate-900" /></label> : <span className="text-slate-600">Reserve <span className="font-medium tabular-nums text-slate-900">{money(account.reserve_cents)}</span></span>}
+      }}>Reserve<span className="sr-only"> for {account.name} ••{account.last4}</span><MoneyInput value={value} onChange={setValue} invalid={cents < 0} className="min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-slate-900" /></label> : <span className="flex items-center gap-2 whitespace-nowrap text-slate-600">Reserve <span className="inline-flex min-h-9 w-20 items-center justify-end px-2 font-medium tabular-nums text-slate-900">{money(account.reserve_cents)}</span></span>}
       <button ref={control} type="button" disabled={busy || (editing && cents < 0)} aria-label={`${action} reserve for ${account.name} ••${account.last4}`} title={`${action} reserve`} onClick={() => {
         if (editing) submit()
         else { setValue((account.reserve_cents / 100).toFixed(2)); setEditing(true) }
