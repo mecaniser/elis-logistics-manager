@@ -93,6 +93,9 @@ def run_due(db, now, reader=read_balances):
             continue
         if not db.query(Tenant).filter(Tenant.id == config.tenant_id, Tenant.is_active.is_(True)).first():
             continue
+        from app.services.bank_profile_preferences import unified
+        if unified(db, config.tenant_id):
+            continue
         provider_linked = bool(db.get(BankProviderConnection, config.tenant_id))
         if chrome_reader and not provider_linked and (local.hour, local.minute) < (17, 45):
             continue
