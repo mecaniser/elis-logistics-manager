@@ -1,4 +1,5 @@
 export interface FuelSource {
+  miles?:string|null; mileage_basis?:string|null;
   id:string; legacy_id:number|null; asset_id:number; name:string; date:string; amount:string; basis:string;
   rows:{date:string;location:string;amount:string;gallons:string|null;product:string}[];
 }

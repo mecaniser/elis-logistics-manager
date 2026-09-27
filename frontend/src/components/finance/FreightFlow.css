@@ -50,3 +50,11 @@
 .freight-expansion-controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 18px;}
 .freight-group-label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;border-bottom:1px solid var(--finance-border);}
 .freight-group-label>.freight-drill-button{font-size:13px;}
+.fuel-group-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.fuel-window-row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--finance-border);font-size:13px;}
+@media(max-width:600px){.fuel-group-actions{gap:4px;}.fuel-group-actions button{font-size:11px;padding:2px;min-height:36px;}}
+
+.fuel-mileage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;}
+.fuel-mileage-grid .finance-section-heading{flex-wrap:wrap;font-size:13px;gap:6px;}
+.fuel-mileage-grid .finance-waterfall{font-size:13px;}
+@media(max-width:700px){.freight-group-label{align-items:flex-start;}.freight-flow-label>.fuel-group-actions{flex-shrink:1;flex-direction:column;gap:0;align-items:flex-end;}.fuel-group-actions button{min-height:26px;padding:2px;font-size:11px;}}
