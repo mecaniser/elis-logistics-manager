@@ -37,7 +37,7 @@ def ingest(db, profile, member, entries):
         if charge is None:
             # Do not backfill old posted expenses when transaction tracking is first enabled.
             historical = not entry.get('pending') and (initial or day < (feed.initialized_at.replace(tzinfo=timezone.utc) if feed.initialized_at.tzinfo is None else feed.initialized_at).astimezone(ZoneInfo('America/New_York')).date())
-            duplicate = any(c.origin == 'manual' and c.amount_cents == entry['amount_cents'] and c.charge_date == day for c in charges)
+            duplicate = any(c.origin == 'manual' and c.amount_cents == entry['amount_cents'] and abs((c.charge_date - day).days) <= 7 for c in charges)
             charge = BankFundingCharge(id=str(uuid4()), tenant_id=profile.tenant_id, account_id=member.account_id,
                 reference=f'plaid:{txid}', provider_ids=list(ids), description=entry['description'],
                 amount_cents=entry['amount_cents'], charge_date=day, pending=entry.get('pending', False), origin='plaid',
