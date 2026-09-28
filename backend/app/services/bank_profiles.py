@@ -209,13 +209,14 @@ def run_due_profiles(db, now):
             db.rollback()
             continue
         try:
+            db.query(BankMonitorConfig).filter_by(tenant_id=profile.tenant_id).with_for_update().one()
             sync_profile(db, profile)
             run.status = 'synced'
             policy_row = db.get(BankProfilePreferences, profile.id)
             if not policy_row:
                 policy_row = BankProfilePreferences(profile_id=profile.id, tenant_id=profile.tenant_id, settings={k: v for k, v in policy.items() if k != 'last_evaluation'})
                 db.add(policy_row)
-            policy_row.last_evaluation = evaluate(db, profile, now)
+            policy_row.last_evaluation = evaluate(db, profile, now, create_drafts=True)
         except plaid_bank.PlaidBankError as exc:
             run.status = str(exc)
         except Exception:

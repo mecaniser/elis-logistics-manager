@@ -12,7 +12,7 @@ import { centsFromMoneyInput } from '../components/moneyAmount'
 
 type Account = { id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
 type ReviewItem = { id: string; kind: 'funding' | 'repayment'; route_id: string | null; last4: string | null; label: string; message: string }
-type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
+type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string; summary?: string; observed_at?: string } }
 type Coverage = { account_id: string; name: string; last4: string; status: string; minimum_cents?: number; possible_cents?: number; pending_debit_cents?: number | null; pending_review_required?: boolean; observed_at?: string; uncovered_cents?: number; routes: { route_id: string; source_name: string; source_last4: string; amount_cents: number; limit_cents: number }[] }
 type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
@@ -257,7 +257,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
             <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
           </section>}
         </BankDialog>}
-        {!!data.runs.length && <details className="mt-5 text-sm"><summary className="cursor-pointer font-semibold">Profile check history</summary>{data.runs.filter(r => r.profile_id === active.id).map(r => <p key={r.date} className="mt-2 text-slate-600">{r.date} · {r.status.replace(/_/g, ' ')}</p>)}</details>}
+        {!!data.runs.length && <details className="mt-5 text-sm"><summary className="cursor-pointer font-semibold">Profile check history</summary>{active.preferences.last_evaluation?.summary && <p className="mt-2 text-slate-300">{active.preferences.last_evaluation.observed_at && `${new Date(active.preferences.last_evaluation.observed_at).toLocaleString()} · `}{active.preferences.last_evaluation.summary}</p>}{data.runs.filter(r => r.profile_id === active.id).map(r => <p key={r.date} className="mt-2 text-slate-600">{r.date} · {r.status.replace(/_/g, ' ')}</p>)}</details>}
       </>}
     </>}
   </section>

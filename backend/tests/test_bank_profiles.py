@@ -536,7 +536,7 @@ def test_coverage_pending_already_in_available_not_added_twice(setup, db, monkey
     assert value['pending_review_required'] is False
 
 
-def test_daily_run_saves_coverage_proposal_without_creating_transfer(setup, db, monkeypatch):
+def test_daily_run_creates_unapproved_coverage_draft(setup, db, monkeypatch):
     from app.models.bank_monitor import BankProfilePreferences
     _, profile, _ = coverage_setup(setup, db, monkeypatch, pending=0)
     now = datetime.now(timezone.utc).replace(hour=22, minute=0)
@@ -545,6 +545,72 @@ def test_daily_run_saves_coverage_proposal_without_creating_transfer(setup, db, 
     assert result['status'] == 'coverage_review_required'
     assert result['coverage'][0]['minimum_cents'] == 35000
     assert result['transfers_executed'] is False
-    assert db.query(BankTransferDraft).count() == 0
+    assert db.query(BankTransferDraft).one().status == 'review_required'
     service.run_due_profiles(db, now)
     assert db.query(BankProfileRun).filter_by(profile_id=profile.id).count() == 1
+
+
+def test_scheduled_coverage_review_gate_and_idempotency(setup, db, monkeypatch):
+    from app.services.bank_coverage import scheduled_drafts
+    client, profile, route = coverage_setup(setup, db, monkeypatch)
+    _, ids = scheduled_drafts(db, profile)
+    db.commit()
+    draft = db.get(BankTransferDraft, ids[0])
+    assert draft.status == 'amount_review_required'
+    assert draft.amount_cents == 98686
+    assert scheduled_drafts(db, profile)[1] == []
+    prepare = client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare', headers={**headers(), 'X-Bank-Monitor-Action': 'reviewed-transfer'})
+    assert prepare.status_code == 409
+    response = client.post(f'/api/bank-monitor/profiles/drafts/{draft.id}/review', headers=headers())
+    assert response.status_code == 200, response.text
+    review = response.json()
+    assert review['coverage']['possible_cents'] == 98686
+    path = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
+    assert client.post(path, headers=headers(), json={'amount_cents': 35000}).status_code == 409
+    assert client.post(path, headers=headers(), json={'amount_cents': 98687, 'coverage_confirmed': True}).status_code == 409
+    accepted = client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()['draft']['id'] == draft.id
+    assert accepted.json()['draft']['status'] == 'reviewed'
+    assert db.query(BankTransferDraft).count() == 1
+    assert client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True}).status_code == 409
+
+
+def test_scheduled_draft_cancel_and_changed_balance(setup, db, monkeypatch):
+    from app.services.bank_coverage import scheduled_drafts
+    client, profile, _ = coverage_setup(setup, db, monkeypatch, pending=0)
+    _, ids = scheduled_drafts(db, profile)
+    db.commit()
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [row('new-checking', '3304', amount=1000), row('new-credit', '8264', 'credit', 2000)])
+    response = client.post(f'/api/bank-monitor/profiles/drafts/{ids[0]}/review', headers=headers())
+    assert response.status_code == 409
+    response = client.post(f'/api/bank-monitor/drafts/{ids[0]}/cancel', headers={**headers(), 'X-Bank-Monitor-Action': 'reviewed-transfer'})
+    assert response.status_code == 200, response.text
+
+
+def test_scheduled_drafts_respect_capacity_and_shared_profiles(setup, db, monkeypatch):
+    from app.services.bank_coverage import scheduled_drafts
+    from app.models.bank_monitor import BankProfilePreferences
+    _, profile, route = coverage_setup(setup, db, monkeypatch)
+    source = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.source_id).one()
+    source.balance = {**source.balance, 'available_cents': 12000}
+    db.commit()
+    coverage, ids = scheduled_drafts(db, profile)
+    db.commit()
+    assert db.get(BankTransferDraft, ids[0]).amount_cents == 12000
+    assert coverage[0]['uncovered_cents'] == 86686
+    assert scheduled_drafts(db, profile)[1] == []
+    # A second login with the same canonical accounts cannot allocate them again.
+    other = BankProfile(id=str(uuid4()), tenant_id=1, name='Shared', item_id='shared', institution_id=profile.institution_id,
+        encrypted_access_token='shared', status='synced', legacy=False, created_at=datetime.now(timezone.utc), last_checked_at=profile.last_checked_at)
+    db.add(other)
+    for member in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True).all():
+        db.add(BankProfileAccount(id=str(uuid4()), profile_id=other.id, account_id=member.account_id,
+            provider_account_id='shared-' + member.provider_account_id, last4=member.last4, kind=member.kind,
+            subtype=member.subtype, name=member.name, balance=member.balance, active=True))
+    other_route = BankProfileRoute(id=str(uuid4()), tenant_id=1, profile_id=other.id, source_id=route.source_id, destination_id=route.destination_id, enabled=True)
+    db.add(other_route)
+    db.add(BankProfilePreferences(profile_id=other.id, tenant_id=1, settings={'confirmed':True, 'monitor':True, 'repayment':False, 'funding_order':[other_route.id], 'repayment_order':[], 'review_required':[]}))
+    db.commit()
+    assert scheduled_drafts(db, other)[1] == []
+    assert db.query(BankTransferDraft).count() == 1
