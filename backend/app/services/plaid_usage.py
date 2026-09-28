@@ -1,4 +1,5 @@
 """Credential-free telemetry for this ELIS integration, not a Plaid invoice."""
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -46,7 +47,13 @@ def summary(db, now=None):
         pass
     # Free sandbox traffic must not be priced using production contract rates.
     estimate = Decimal(0) if environment == 'sandbox' else balance * rate if environment == 'production' and rate is not None else None
-    return {'scope': 'elis_integration', 'tracking_enabled': os.getenv('PLAID_USAGE_TRACKING_ENABLED') == 'true', 'environment': environment, 'period_start': month,
+    snapshot = None
+    if environment == 'production':
+        try:
+            snapshot = json.loads(os.getenv('PLAID_ALLOWANCE_SNAPSHOT', 'null'))
+        except (ValueError, TypeError):
+            pass
+    return {'allowance_snapshot': snapshot, 'scope': 'elis_integration', 'tracking_enabled': os.getenv('PLAID_USAGE_TRACKING_ENABLED') == 'true', 'environment': environment, 'period_start': month,
             'as_of': now, 'first_recorded_at': first, 'last_recorded_at': last,
             'calls': sum(r['calls'] for r in counts.values()),
             'successful_balance_reads': balance,
