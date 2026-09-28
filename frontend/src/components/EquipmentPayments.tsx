@@ -5,21 +5,21 @@ import MoneyInput from './MoneyInput'
 import EquipmentStatementImport from './EquipmentStatementImport'
 export type EquipmentPayment={id:string;date:string;principal:string;interest:string;evidence_id:string;allocation_note:string;facility:string;transaction?:{external_id:string;description:string;amount:string;account_id:string}}
 export type PaymentSummary={principal_paid:string;interest_paid:string;payments_total:string;payment_count:number;remaining_from_records:string;payments:EquipmentPayment[];due:{due:string;amount:string;facility:string;evidence_id:string}|null}
-type Asset=PaymentSummary&{id:number;name:string;vin:string;borrowed:string;facility:string;monthly_payment:string}
-type Data={assets:Asset[];transactions:{id:string;date:string;amount:string;description:string;account_name:string;external_id:string}[]}
+export type PaymentAsset=PaymentSummary&{id:number;name:string;vin:string;borrowed:string;facility:string;monthly_payment:string;bank_account_id:string|null;funding:string}
+type Data={assets:PaymentAsset[];transactions:{id:string;date:string;amount:string;description:string;account_name:string;external_id:string}[]}
 const input='block w-full rounded-md border border-slate-300 bg-white px-3 py-2 min-h-11'
 const today=()=>new Date().toLocaleDateString('en-CA')
 function Chevron({open}:{open:boolean}){return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className={open?'rotate-90':''}><path d="m9 18 6-6-6-6"/></svg>}
-export default function EquipmentPayments(){
- const target=new URLSearchParams(window.location.search).get('equipment')
- const [open,setOpen]=useState(!!target),[data,setData]=useState<Data|null>(null),[assetId,setAssetId]=useState(target||''),[version,setVersion]=useState(0)
+export default function EquipmentPayments({selectedAsset,onSaved}: {selectedAsset?: number;onSaved?:()=>void}){
+ const target=selectedAsset?String(selectedAsset):new URLSearchParams(window.location.search).get('equipment')
+ const [open,setOpen]=useState(!selectedAsset&&!!target),[data,setData]=useState<Data|null>(null),[assetId,setAssetId]=useState(target||''),[version,setVersion]=useState(0)
  const [mode,setMode]=useState<'payment'|'due'|null>(null),[importOpen,setImportOpen]=useState(false),[history,setHistory]=useState(false)
  const [txid,setTxid]=useState(''),[search,setSearch]=useState(''),[principal,setPrincipal]=useState(''),[interest,setInterest]=useState(''),[note,setNote]=useState(''),[facility,setFacility]=useState(''),[due,setDue]=useState(''),[amount,setAmount]=useState('')
  const [file,setFile]=useState<File|null>(null),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('')
  const [voidId,setVoidId]=useState(''),[reason,setReason]=useState('')
  useEffect(()=>{if(!open)return;let active=true;void financeApi.equipmentPayments(today()).then(r=>{if(active){setData(r);setAssetId(v=>v||String(r.assets[0]?.id||''))}}).catch(e=>{if(active)setMessage(financeError(e))});return()=>{active=false}},[open,version])
  const asset=data?.assets.find(a=>String(a.id)===assetId),tx=data?.transactions.find(t=>t.id===txid)
- const refresh=()=>setVersion(v=>v+1)
+ const refresh=()=>{setVersion(v=>v+1);onSaved?.()}
  const start=(next:'payment'|'due')=>{setMode(mode===next?null:next);setMessage('');setFile(null);setConfirmed(false);setFacility(asset?.facility||'');setDue(asset?.due?.due||'');setAmount(asset?.due?.amount||asset?.monthly_payment||'');setTxid('');setPrincipal('');setInterest('');setNote('')}
  const cents=(s:string)=>Math.round(Number(s.replace(/[$,]/g,''))*100)
  async function save(e:React.FormEvent){e.preventDefault();if(!asset||!file||!mode)return;setBusy(true);setMessage('');try{
@@ -30,10 +30,10 @@ export default function EquipmentPayments(){
  }catch(error){setMessage(financeError(error))}finally{setBusy(false)}}
  async function remove(){setBusy(true);try{await financeApi.command(today(),{kind:'equipment_payment_void',payment_id:voidId,reason},crypto.randomUUID());setVoidId('');setReason('');refresh();setMessage('Payment record removed. Its original record and correction remain in the audit history.')}catch(e){setMessage(financeError(e))}finally{setBusy(false)}}
  return <section id="equipment-payments" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
- <button type="button" className="w-full flex justify-between items-center min-h-11 text-left font-semibold text-slate-900" aria-expanded={open} onClick={()=>setOpen(!open)}>Trailer payments<Chevron open={open}/></button>
+ <button type="button" className="w-full flex justify-between items-center min-h-11 text-left font-semibold text-slate-900" aria-expanded={open} onClick={()=>setOpen(!open)}>{selectedAsset?'Due date & payment records':'Trailer payments'}<Chevron open={open}/></button>
  {open&&<div className="space-y-4 mt-3"><p className="text-sm text-slate-600">Plan the payment here, pay at your bank, then match the posted debit. A dedicated payment identifies the trailer’s share in ELIS; the HELOC lender still holds one account balance.</p>
  {!data?<p role="status">Loading payment records…</p>:!data.assets.length?<p>No financed trailer plans yet. <Link className="text-blue-700 underline" to="/trucks">Set up a trailer</Link></p>:<>
- <label className="block text-sm">Trailer<select className={input} value={assetId} onChange={e=>{setAssetId(e.target.value);setMode(null);setVoidId('');setMessage('')}}>{data.assets.map(a=><option key={a.id} value={a.id}>{a.name} · …{a.vin?.slice(-6)}</option>)}</select></label>
+ {!selectedAsset&&<label className="block text-sm">Trailer<select className={input} value={assetId} onChange={e=>{setAssetId(e.target.value);setMode(null);setVoidId('');setMessage('')}}>{data.assets.map(a=><option key={a.id} value={a.id}>{a.name} · …{a.vin?.slice(-6)}</option>)}</select></label>}
  {asset&&<><div className="grid sm:grid-cols-3 gap-3"><div className="rounded-lg bg-blue-50 p-3"><span className="text-sm text-slate-600">Monthly plan</span><strong className="block text-xl">{dollars(asset.monthly_payment)}</strong></div><div className="rounded-lg bg-slate-50 p-3"><span className="text-sm text-slate-600">Statement due date</span><strong className="block text-xl">{asset.due?.due||'Add from statement'}</strong>{asset.due&&<span className="text-sm">Planned payment {dollars(asset.due.amount)}</span>}</div><div className="rounded-lg bg-green-50 p-3"><span className="text-sm text-slate-600">Principal paid · recorded</span><strong className="block text-xl">{asset.payment_count?dollars(asset.principal_paid):'No payments matched'}</strong></div></div>
  <div className="flex flex-wrap gap-2"><button type="button" className="rounded-md border px-3 py-2 min-h-11" aria-expanded={mode==='due'} onClick={()=>start('due')}>Set next due date</button><button type="button" className="rounded-md bg-blue-700 text-white px-3 py-2 min-h-11" aria-expanded={mode==='payment'} onClick={()=>start('payment')}>Match a payment</button><Link className="text-blue-700 px-3 py-2 min-h-11" to={`/vehicles/${asset.id}`}>View trailer</Link></div>
  <button type="button" className="flex items-center gap-2 text-blue-700 min-h-11" aria-expanded={importOpen} onClick={()=>setImportOpen(!importOpen)}>Import bank statement<Chevron open={importOpen}/></button>

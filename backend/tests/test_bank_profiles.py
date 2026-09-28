@@ -389,3 +389,83 @@ def test_partial_legacy_removal_preserves_other_warnings(setup, db):
     payload['removed_review_items'] = ['funding:2829']
     assert remaining(client.put(url, headers=headers(), json=payload).json()) == []
     assert db.query(BankProfileRoute).count() == 0
+
+
+@pytest.fixture
+def financed_equipment(db):
+    from app.models.truck import Truck
+    from tests.test_investment_progress import asset
+    trailer = Truck(tenant_id=1, name='HELOC Trailer', vin='VIN3142', vehicle_type='trailer', investment_plans=asset().investment_plans)
+    db.add(trailer); db.commit()
+    return trailer
+
+
+def test_equipment_link_and_dedicated_draft_keep_payment_unconfirmed(setup, db, financed_equipment):
+    from app.models.bank_monitor import BankEquipmentDraft
+    from app.services.equipment_payments import summary
+    from datetime import date
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    asset = financed_equipment
+    link = client.put(f'/api/bank-monitor/profiles/equipment/{asset.id}/account', headers=headers(), json={'account_id': route['destination_id']})
+    assert link.status_code == 200, link.text
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 76646, 'equipment_asset_id': asset.id})
+    assert response.status_code == 200, response.text
+    draft = response.json()['draft']
+    assert draft['equipment']['asset_id'] == asset.id
+    assert draft['equipment']['name'] == asset.name
+    assert draft['memo'].startswith('Rpy Trailer ')
+    assert len(draft['memo']) <= 34
+    assert db.query(BankEquipmentDraft).count() == 1
+    assert summary(db, 1, asset, date.today())['payment_count'] == 0
+    assert client.get('/api/bank-monitor/drafts', headers=headers()).json()[0]['equipment']['asset_id'] == asset.id
+    repeated = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    assert repeated['existing_draft']['id'] == draft['id']
+
+
+def test_equipment_link_rejects_checking_and_foreign_assets(setup, db, financed_equipment):
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    asset = financed_equipment
+    url = f'/api/bank-monitor/profiles/equipment/{asset.id}/account'
+    assert client.put(url, headers=headers(), json={'account_id':route['source_id']}).status_code == 422
+    asset.tenant_id = 2; db.commit()
+    assert client.put(url, headers=headers(), json={'account_id':route['destination_id']}).status_code == 404
+
+
+def test_equipment_draft_requires_link_and_preserves_cash_limit(setup, db, financed_equipment):
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    asset = financed_equipment
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    url = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
+    assert client.post(url, headers=headers(), json={'amount_cents':76646, 'equipment_asset_id':asset.id}).status_code == 409
+    client.put(f'/api/bank-monitor/profiles/equipment/{asset.id}/account', headers=headers(), json={'account_id':route['destination_id']})
+    assert client.post(url, headers=headers(), json={'amount_cents':90001, 'equipment_asset_id':asset.id}).status_code == 409
+    assert db.query(BankTransferDraft).count() == 0
+
+
+def test_equipment_cannot_pay_wrong_line_or_duplicate_from_another_checking(setup, db, financed_equipment):
+    from app.models.bank_monitor import BankEquipmentAccount, BankEquipmentDraft, BankRepaymentRun
+    client, p, _ = setup
+    route = resolve_and_route(client, db, p)
+    asset = financed_equipment
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    db.add(BankEquipmentAccount(asset_id=asset.id,tenant_id=1,account_id='different-credit',updated_at=datetime.now(timezone.utc)))
+    db.commit()
+    url=f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
+    response=client.post(url,headers=headers(),json={'amount_cents':10000,'equipment_asset_id':asset.id})
+    assert response.status_code==409
+    link=db.get(BankEquipmentAccount,asset.id);link.account_id=route['destination_id']
+    # An unfinished trailer payment from another checking blocks a second draft.
+    other=BankTransferDraft(id='other-source-draft',tenant_id=1,charge_reference='other-source',amount_cents=10000,
+        from_last4='9551',to_last4='8264',memo='Rpy Trailer',status='reviewed',created_at=datetime.now(timezone.utc))
+    db.add(other)
+    db.add(BankEquipmentDraft(draft_id=other.id,tenant_id=1,asset_id=asset.id,asset_name=asset.name,vin=asset.vin,account_id=route['destination_id']))
+    db.commit()
+    response=client.post(url,headers=headers(),json={'amount_cents':10000,'equipment_asset_id':asset.id})
+    assert response.status_code==409
+    assert 'already in progress' in response.json()['detail']
+    assert db.query(BankTransferDraft).count()==1
+    assert not db.get(BankRepaymentRun,review['id']).result.get('drafts_created')

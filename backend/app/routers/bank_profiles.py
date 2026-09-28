@@ -1,6 +1,6 @@
 """Multiple independent bank logins and explicitly reviewed transfer routes."""
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.bank_monitor import (BankProfile, BankProfileAccount, BankAccountIdentity, BankProfileRoute,
-    BankProfileDraft, BankProfileLink, BankProfileRun, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
+    BankEquipmentAccount, BankEquipmentDraft, BankProfileDraft, BankProfileLink, BankProfileRun, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
 from app.routers.bank_monitor import bank_tenant, provider_action, draft_json
 from app.services.bank_monitor import StrictModel
 from app.services import bank_profiles as profiles, plaid_bank
@@ -271,9 +271,52 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
     return {'id': run.id, **result}
 
 
+def financed_trailer(db, tenant_id, asset_id):
+    from app.models.truck import Truck
+    from app.services.trailer_investment import plan_for_day
+    from decimal import Decimal
+    asset = profiles.owned(db, Truck, asset_id, tenant_id)
+    plan = plan_for_day(asset, date.today())
+    if asset.vehicle_type != 'trailer' or not plan or Decimal(plan['financed']) <= 0:
+        raise HTTPException(422, 'Save a financed trailer plan first.')
+    return asset
+
+
+class EquipmentAccountInput(StrictModel):
+    account_id: str = Field(min_length=1, max_length=36)
+
+
+@router.put('/equipment/{asset_id}/account')
+def equipment_account(asset_id: int, data: EquipmentAccountInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    lock(db, tenant_id)
+    financed_trailer(db, tenant_id, asset_id)
+    account = profiles.owned(db, BankAccountIdentity, data.account_id, tenant_id)
+    members = db.query(BankProfileAccount).join(BankProfile, BankProfile.id == BankProfileAccount.profile_id).filter(
+        BankProfile.tenant_id == tenant_id, BankProfileAccount.account_id == account.id,
+        BankProfileAccount.active.is_(True), BankProfileAccount.subtype.in_(['home equity', 'line of credit'])).all()
+    if account.kind != 'credit' or not members:
+        raise HTTPException(422, 'Choose a connected credit line for this trailer.')
+    link = db.query(BankEquipmentAccount).filter_by(asset_id=asset_id, tenant_id=tenant_id).first()
+    if link and link.account_id != account.id:
+        pending = db.query(BankEquipmentDraft).join(BankTransferDraft, BankTransferDraft.id == BankEquipmentDraft.draft_id).filter(
+            BankEquipmentDraft.tenant_id == tenant_id, BankEquipmentDraft.asset_id == asset_id,
+            BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched'])).first()
+        if pending:
+            raise HTTPException(409, 'Finish or cancel this trailer’s existing transfer before changing its credit line.')
+    if not link:
+        link = BankEquipmentAccount(asset_id=asset_id, tenant_id=tenant_id)
+        db.add(link)
+    link.account_id = account.id
+    link.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {'asset_id': asset_id, 'account_id': account.id, 'transfers_executed': False}
+
+
 class AmountInput(StrictModel):
     intent: str = Field(default='payment', pattern=r'^(payment|full_payoff)$')
     amount_cents: int = Field(gt=0, le=100000000, strict=True)
+    equipment_asset_id: int | None = Field(default=None, gt=0, strict=True)
 
 
 @router.post('/reviews/{review_id}/draft')
@@ -294,11 +337,27 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     result = profiles.transfer_limit(db, row)
     if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')
+    asset = None
+    if data.equipment_asset_id is not None:
+        asset = financed_trailer(db, tenant_id, data.equipment_asset_id)
+        link = db.query(BankEquipmentAccount).filter_by(asset_id=asset.id, tenant_id=tenant_id).first()
+        if result['kind'] != 'repayment' or not link or link.account_id != row.destination_id:
+            raise HTTPException(409, 'This trailer must be linked to the receiving credit line.')
+        pending = db.query(BankEquipmentDraft).join(BankTransferDraft, BankTransferDraft.id == BankEquipmentDraft.draft_id).filter(
+            BankEquipmentDraft.tenant_id == tenant_id, BankEquipmentDraft.asset_id == asset.id,
+            BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched'])).first()
+        if pending:
+            raise HTTPException(409, 'A payment for this trailer is already in progress. Finish or cancel it first.')
     draft_id = str(uuid4())
     prefix = 'Rpy' if result['kind'] == 'repayment' else 'Cvr'
     draft = BankTransferDraft(id=draft_id, tenant_id=tenant_id, charge_reference=f'bank-profile-{draft_id}',
         amount_cents=data.amount_cents, from_last4=result['from_last4'], to_last4=result['to_last4'],
         memo=f'{prefix} ELIS {draft_id[:13]}', status='reviewed', created_at=now)
+    if asset:
+        label = ''.join(c for c in (asset.vin or str(asset.id))[-6:] if c.isascii() and c.isalnum()) or str(asset.id)
+        draft.memo = f'Rpy Trailer {label} {draft_id[:8]}'
+        db.add(BankEquipmentDraft(draft_id=draft_id, tenant_id=tenant_id, asset_id=asset.id,
+            asset_name=asset.name, vin=asset.vin or '', account_id=row.destination_id))
     db.add(draft)
     db.add(BankProfileDraft(draft_id=draft_id, tenant_id=tenant_id, profile_id=row.profile_id,
         route_id=row.id, source_id=row.source_id, destination_id=row.destination_id))
