@@ -172,3 +172,5 @@
 .earnings-plan-pair>button:focus-visible {outline:2px solid #2146d9;outline-offset:3px;}
 .earnings-plan-targets {display:flex;flex-wrap:wrap;gap:8px 24px;font-size:12px;color:#526477;}
 .earnings-plan-pair ul,.earnings-plan-settings {font-size:12px;margin-top:12px;line-height:1.6;}
+
+.finance-title-row{display:flex;align-items:center;gap:10px}.finance-refresh-icon{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:0;border-radius:6px;background:transparent;color:#526477;cursor:pointer}.finance-refresh-icon:hover{background:#e8eef3;color:#172f3b}.finance-refresh-icon:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.finance-refresh-icon:disabled{opacity:.45;cursor:wait}
