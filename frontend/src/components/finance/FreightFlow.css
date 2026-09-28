@@ -73,3 +73,6 @@
 .investment-detail-panel { position: absolute; top: calc(100% + 8px); left: 0; width: 300px; max-width: 65vw; z-index: 50; text-align: left; }
 .freight-flow-label:has(.investment-detail-panel) { z-index: 50; }
 .investment-detail-panel .finance-waterfall { margin: 0; }
+
+.owner-contribution-details{max-height:65vh;overflow:auto;width:min(480px,calc(100vw - 48px))}.owner-contribution-details section{margin-top:12px}.owner-contribution-details .finance-waterfall div{gap:16px}.owner-contribution-details dd{white-space:nowrap}
+.owner-contribution-details strong{font-size:14px!important}.owner-contribution-details .finance-waterfall dd{font-size:13px}.owner-contribution-details section>strong{color:var(--finance-ink)}
