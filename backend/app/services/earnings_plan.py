@@ -138,6 +138,7 @@ def earnings_plan(db, tenant, report):
         capital_target = ZERO
         trailer_capital_target = ZERO
         financing_targets = {}
+        asset_targets = {}
         for aid in plan_assets:
             plan = saved.get(aid)
             if not plan:
@@ -153,7 +154,9 @@ def earnings_plan(db, tenant, report):
                     issues.append(f"{plan['name']}: saved target is reused; acquisition date is needed to establish its recovery horizon.")
                 # A reassigned trailer contributes only on its documented days.
                 if aid == i:
-                    capital_target += period_target(plan['_weekly'], active_start, active_end) if active_end >= active_start else ZERO
+                    own_target = period_target(plan['_weekly'], active_start, active_end) if active_end >= active_start else ZERO
+                    capital_target += own_target
+                    asset_targets[aid] = own_target
                 else:
                     mapping = pair_days.get((i, aid), {'days': set(), 'inferred': False})
                     covered_days = {day for day in mapping['days'] if active_start <= day <= active_end}
@@ -170,6 +173,7 @@ def earnings_plan(db, tenant, report):
                             financing_targets[aid] = financing_targets.get(aid, ZERO) + payment
                         elif active_start <= day <= active_end and plan['_weekly'] is not None:
                             trailer_target += period_target(plan['_weekly'], day, day)
+                    asset_targets[aid] = trailer_target
                     capital_target += trailer_target
                     trailer_capital_target += trailer_target
                     if len(covered_days) < max((active_end - active_start).days + 1, 0):
@@ -189,6 +193,7 @@ def earnings_plan(db, tenant, report):
         saved_rows = [r for r in report['legacy_comparison']['rows'] if r['asset_id'] == i and r['legacy_id'] not in posted_legacy and r['date'] <= end.isoformat()]
         saved_remainder = sum((D(r['settlement_remainder']) for r in saved_rows), ZERO)
         financing_gap = ZERO
+        loan_details = {}
         for aid, target in financing_targets.items():
             # Offset only actual deductions already present in this pair's bridge.
             recorded = sum((D(line['debit']) - D(line['credit']) for line in report['ledger']['general_ledger']
@@ -199,7 +204,9 @@ def earnings_plan(db, tenant, report):
                 claim = closing['claims'].get(event.payload['claim_id'], {})
                 if event.effective_date in pair_days.get((i, aid), {'days': set()})['days'] and claim.get('asset_id') == aid and claim.get('category') == 'equipment' and event.payload['payer'] == 'business':
                     recorded += D(event.payload['amount'])
-            financing_gap += max(target - max(recorded, ZERO), ZERO)
+            gap = max(target - max(recorded, ZERO), ZERO)
+            financing_gap += gap
+            loan_details[aid] = {'loan_target': money(target), 'recorded_loan_deductions': money(max(recorded, ZERO)), 'additional_loan': money(gap)}
         financing_row = {'label': 'Additional planned loan payments', 'amount': money(-financing_gap)}
         subtotal = D(score['retained']) + saved_remainder - additional - financing_gap
         if any(D(saved[a]['original_loan']) > 0 for a in plan_assets if a in saved):
@@ -238,9 +245,12 @@ def earnings_plan(db, tenant, report):
             trailer_contribution = allocation - trailer_capital_target
             split = {'statement_remainder': money(remainder), 'trailer_allocation': money(allocation),
                      'truck_remainder': money(truck_remainder), 'trailer_capital_target': money(trailer_capital_target),
-                     'trailer_contribution': money(trailer_contribution),
-                     'pair_adjustments': money(subtotal - truck_remainder - trailer_contribution)}
+                     'trailer_loan_target': money(sum(financing_targets.values(), ZERO)),
+                     'trailer_contribution': money(trailer_contribution - sum(financing_targets.values(), ZERO)),
+                     'pair_adjustments': money(subtotal - truck_remainder - trailer_contribution + sum(financing_targets.values(), ZERO))}
         pair_rows.append({'asset_id': i, 'name': pair['name'], 'asset_ids': plan_assets, 'capital_complete': capital_complete, 'allocation_split': split,
+                         'asset_deductions': [{'asset_id': aid, 'capital_target': money(target), **loan_details.get(aid, {'loan_target': '0.00', 'recorded_loan_deductions': '0.00', 'additional_loan': '0.00'})} for aid, target in asset_targets.items()],
+                         'capital_funding_credit': money(min(capital_target, funding['capital'])),
                          'recorded_retained': score['retained'], 'saved_remainder': money(saved_remainder), 'saved_settlement_ids': [r['legacy_id'] for r in saved_rows], 'repair_target': money(repair_target),
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),

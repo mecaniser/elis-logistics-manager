@@ -158,6 +158,7 @@ def test_funded_trailer_plan_uses_payment_not_duplicate_capital(db, truck):
     pair = r['earnings_plan']['pairs'][0]
     assert pair['capital_target'] == '0.00'
     assert pair['planning_subtotal'] == '2098.52'
+    assert pair['asset_deductions'][0]['additional_loan'] == '901.48'
     assert next(x['amount'] for x in pair['bridge'] if x['label']=='Additional planned loan payments') == '-901.48'
     # Interest already deducted from the ledger reduces only the remaining plan gap.
     d = policy_setup(db)
@@ -165,4 +166,8 @@ def test_funded_trailer_plan_uses_payment_not_duplicate_capital(db, truck):
         amount='100.00', source_ref='interest-1', description='Trailer financing interest', evidence_id=d)
     after = f.report(db, 1, date(2026,9,1), date(2026,9,30), date(2026,9,30))['earnings_plan']['pairs'][0]
     assert after['planning_subtotal'] == '2098.52'
+    detail = after['asset_deductions'][0]
+    assert detail['loan_target'] == '901.48'
+    assert detail['recorded_loan_deductions'] == '100.00'
+    assert detail['additional_loan'] == '801.48'
     assert next(x['amount'] for x in after['bridge'] if x['label']=='Additional planned loan payments') == '-801.48'

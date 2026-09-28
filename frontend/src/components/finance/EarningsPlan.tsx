@@ -17,7 +17,8 @@ export default function EarningsPlan({plan,detailsOnly=false}:{plan:Plan;details
         <div><dt><strong>Truck remainder before other costs</strong></dt><dd><strong>{dollars(pair.allocation_split.truck_remainder)}</strong></dd></div>
         <div><dt>Trailer allocation</dt><dd>{dollars(pair.allocation_split.trailer_allocation)}</dd></div>
         <div><dt>Trailer capital recovery target</dt><dd>−{dollars(pair.allocation_split.trailer_capital_target)}</dd></div>
-        <div><dt><strong>Trailer contribution after recovery</strong></dt><dd><strong>{dollars(pair.allocation_split.trailer_contribution)}</strong></dd></div>
+        {Number(pair.allocation_split.trailer_loan_target||0)!==0&&<div><dt>Trailer loan payment target</dt><dd>−{dollars(pair.allocation_split.trailer_loan_target!)}</dd></div>}
+        <div><dt><strong>Trailer contribution after recovery & financing</strong></dt><dd><strong>{dollars(pair.allocation_split.trailer_contribution)}</strong></dd></div>
         {Number(pair.allocation_split.pair_adjustments)!==0&&<div><dt>Other recorded costs, payments and protection adjustments</dt><dd>{dollars(pair.allocation_split.pair_adjustments)}</dd></div>}
         <div><dt><strong>Combined planning subtotal</strong></dt><dd><strong>{dollars(pair.planning_subtotal)}</strong></dd></div>
       </dl>}
