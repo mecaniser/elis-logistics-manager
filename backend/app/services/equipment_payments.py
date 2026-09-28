@@ -83,12 +83,15 @@ def summary(db, tenant, asset, as_of, s=None):
 def workspace(db, tenant, as_of):
     s = state(db, tenant, as_of)
     all_state = state(db, tenant, date.max)
+    from app.models.bank_monitor import BankEquipmentAccount
+    links = {r.asset_id: r.account_id for r in db.query(BankEquipmentAccount).filter_by(tenant_id=tenant)}
     assets = []
     for a in db.query(Truck).filter_by(tenant_id=tenant, vehicle_type='trailer').all():
         plan = plan_for_day(a, as_of)
         if not plan or D(plan['financed']) <= 0:
             continue
         assets.append({'id': a.id, 'name': a.name, 'vin': a.vin,
+                       'bank_account_id': links.get(a.id), 'funding': plan['funding'],
                        'borrowed': plan['financed'], 'facility': plan.get('lender') or plan['funding'].upper(),
                        'monthly_payment': InvestmentPlan.model_validate(plan).projection()['monthly_payment'],
                        **summary(db, tenant, a, as_of, s)})

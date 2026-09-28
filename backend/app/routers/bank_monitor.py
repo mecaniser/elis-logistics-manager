@@ -553,6 +553,10 @@ def draft_json(d):
     db = object_session(d)
     if db:
         result['bank_session'] = bank_profiles.draft_session(db, d)
+        from app.models.bank_monitor import BankEquipmentDraft
+        tag = db.query(BankEquipmentDraft).filter_by(draft_id=d.id, tenant_id=d.tenant_id).first()
+        if tag:
+            result['equipment'] = {'asset_id': tag.asset_id, 'name': tag.asset_name, 'vin': tag.vin, 'account_id': tag.account_id}
     return result
 
 

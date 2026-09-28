@@ -209,3 +209,23 @@ class PlaidApiCall(Base):
     environment = Column(String(20), nullable=False, index=True)
     endpoint = Column(String(100), nullable=False)
     outcome = Column(String(12), nullable=False)
+
+
+class BankEquipmentAccount(Base):
+    """Explicit trailer-to-credit-account association; shared across bank logins."""
+    __tablename__ = 'bank_equipment_accounts'
+    asset_id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    account_id = Column(String(36), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class BankEquipmentDraft(Base):
+    """Immutable purpose of a dedicated transfer, not evidence of loan principal paid."""
+    __tablename__ = 'bank_equipment_drafts'
+    draft_id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    asset_id = Column(Integer, nullable=False, index=True)
+    asset_name = Column(String(250), nullable=False)
+    vin = Column(String(50), nullable=False)
+    account_id = Column(String(36), nullable=False)

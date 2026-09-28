@@ -1,3 +1,6 @@
+import AccountTrailerPayment, {type TrailerPaymentIntent} from '../components/AccountTrailerPayment'
+import EquipmentPayments from '../components/EquipmentPayments'
+import {financeApi} from '../services/finance'
 import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { bankProfilesApi } from '../services/api'
@@ -13,7 +16,7 @@ type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; m
 type Coverage = { account_id: string; name: string; last4: string; status: string; minimum_cents?: number; possible_cents?: number; pending_debit_cents?: number | null; pending_review_required?: boolean; observed_at?: string; uncovered_cents?: number; routes: { route_id: string; source_name: string; source_last4: string; amount_cents: number; limit_cents: number }[] }
 type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
-type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string }
+type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string; equipment?: {asset_id:number;name:string} }
 type Data = { unified?: boolean; drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
 type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -41,6 +44,11 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [accountId, setAccountId] = useState('')
   const [intent, setIntent] = useState<'payment' | 'full_payoff'>('payment')
   const [amount, setAmount] = useState('')
+  const [trailerOpen, setTrailerOpen] = useState(false)
+  const [trailerIntent, setTrailerIntent] = useState<TrailerPaymentIntent | null>(null)
+  const equipmentTarget = new URLSearchParams(window.location.search).get('equipment')
+  const equipmentOpened = useRef(false)
+  const [equipmentRecords, setEquipmentRecords] = useState<number | null>(null)
   const alive = useRef(true)
   const resumed = useRef(false)
   const active = data.profiles.find(p => p.id === selected) || data.profiles[0]
@@ -84,6 +92,19 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     // A tenant switch remounts this component and discards all profile state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId])
+  useEffect(() => {
+    if (!equipmentTarget || loading || equipmentOpened.current) return
+    equipmentOpened.current = true
+    void financeApi.equipmentPayments(new Date().toLocaleDateString('en-CA')).then(result => {
+      if (!alive.current) return
+      const asset = result.assets.find((a: {id:number}) => String(a.id) === equipmentTarget)
+      if (!asset) return
+      const choices = data.profiles.flatMap(p => p.accounts.filter(a => asset.bank_account_id ? a.account_id === asset.bank_account_id : asset.funding === 'heloc' && a.subtype === 'home equity' && a.account_id).map(a => ({p,a})))
+      if (new Set(choices.map(c => c.a.account_id)).size === 1) {
+        setSelected(choices[0].p.id); setAccountId(choices[0].a.id); setTrailerOpen(true)
+      } else {setEquipmentRecords(asset.id); setNotice('To prepare a trailer transfer, open its connected credit line and choose Pay trailer installment.')}
+    }).catch(e => { if (alive.current) setError(errorText(e)) })
+  }, [data.profiles, equipmentTarget, loading])
   const connect = async (profile?: Profile) => {
     setBusy(true); setError('')
     try {
@@ -92,14 +113,14 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       sessionStorage.setItem('elis-bank-profile-link', JSON.stringify(saved)); await launch(saved)
     } catch (e) { setError(errorText(e)); setBusy(false) }
   }
-  const startReview = async (route: Route, coverageOnly = false) => {
-    setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false)
+  const startReview = async (route: Route, coverageOnly = false, payment: TrailerPaymentIntent | null = null) => {
+    setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setTrailerIntent(payment)
     try {
       const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
       if (alive.current && response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
       update((await bankProfilesApi.request<Data>(tenantId)).data)
       if (coverageOnly && !response.data.coverage) { if (alive.current) { setAccountId(''); setError('The refreshed account no longer has a funding proposal. Review its updated balance.'); } return }
-      if (alive.current) { setReview(response.data); setAmount(response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2)) }
+      if (alive.current) { setReview(response.data); setAmount(payment?.amount || (response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2))) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
   }
@@ -109,13 +130,14 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     if (!review) return
     setBusy(true); setError('')
     try {
-      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, coverage_confirmed: coverageConfirmed })
+      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, coverage_confirmed: coverageConfirmed, equipment_asset_id: trailerIntent?.asset_id ?? null })
       if (alive.current) { setReview(null); setAccountId(''); setNotice('Transfer saved. Continue below to prepare the bank form.'); onDraft(); onOpenTransfer(response.data.draft.id) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
   }
   return <section aria-label="Banking profiles" className="rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-white">{loading || mode ? 'Your accounts' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-300">Choose a profile to view its accounts. Select an account to make a payment, move funds, or view its transfers.</p></div></header>
+    {equipmentRecords !== null && <BankDialog title="Trailer payment records" onClose={() => setEquipmentRecords(null)}><p className="text-sm text-slate-600">No single connected credit line is selected for this trailer. You can still record a payment made directly at your lender.</p><EquipmentPayments key={equipmentRecords} selectedAsset={equipmentRecords}/></BankDialog>}
     {settingsTarget && createPortal(<section aria-label="Manage bank connections" className="bank-profile-settings space-y-4 rounded-xl border border-slate-200 p-4">
       {error && <p role="alert" className="text-sm text-red-800">{error}</p>}{notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}<div className="flex items-center justify-between"><h3 className="font-semibold text-slate-950">Bank connections</h3><button type="button" aria-label="Add bank connection" aria-expanded={addingBank} onClick={() => setAddingBank(v => !v)} className="grid h-9 w-9 place-items-center rounded-lg text-2xl text-blue-700 hover:bg-blue-50">{addingBank ? '−' : '+'}</button></div>
       {!data.profiles.length && <button type="button" disabled={busy} onClick={() => void request('/initialize')} className={button}>Use existing bank connection</button>}
@@ -167,7 +189,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           const shared = data.profiles.filter(p => p.accounts.some(other => other.account_id === a.account_id)).length > 1
           return <article key={a.id} className={`relative flex min-w-0 flex-col rounded-2xl border p-4 ${checking ? 'border-emerald-700/70 bg-gradient-to-br from-emerald-950 to-slate-900' : 'border-blue-700/70 bg-gradient-to-br from-blue-950 to-slate-900'}`}>
             <div className="flex items-center justify-between gap-3"><span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${checking ? 'bg-emerald-400/15 text-emerald-200' : 'bg-blue-400/15 text-blue-200'}`}>{checking ? 'Checking' : a.subtype === 'credit card' ? 'Credit card' : 'Credit line'}</span><span className="font-mono text-sm tracking-widest text-slate-300">•• {a.last4}</span></div>
-            <h3 className="mt-3 text-base font-semibold text-white">{a.account_id ? <button type="button" aria-label={`Manage ${a.name} ending ${a.last4}`} onClick={() => { setAccountId(a.id); setReview(null); setError(''); void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e))) }} className="text-left after:absolute after:inset-0 after:rounded-2xl hover:text-blue-200 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-blue-300">{a.name}</button> : a.name}</h3>
+            <h3 className="mt-3 text-base font-semibold text-white">{a.account_id ? <button type="button" aria-label={`Manage ${a.name} ending ${a.last4}`} onClick={() => { setAccountId(a.id); setReview(null); setTrailerOpen(false); setTrailerIntent(null); setError(''); void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e))) }} className="text-left after:absolute after:inset-0 after:rounded-2xl hover:text-blue-200 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-blue-300">{a.name}</button> : a.name}</h3>
             {a.account_id ? <>
               <div className="my-4 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-4">
                 <div><p className="text-xs text-slate-300">{checking ? 'Bank available cash' : 'Available credit'}</p><p className="mt-1 break-words text-2xl font-semibold tabular-nums tracking-tight text-white">{money(a.balance.available_cents)}</p></div>
@@ -184,7 +206,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           <p className="text-sm text-slate-600">Bank login: {active.name}</p>
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">{error}</p>}
           <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4"><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Bank available cash' : 'Balance owed'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.balance.available_cents : account.balance.current_cents)}</p></div><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Protected reserve' : 'Available credit'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.reserve_cents : account.balance.available_cents)}</p></div></div>
-          {!review && <>
+          {!review && !trailerOpen && <>
             <section className="space-y-3"><h3 className="font-semibold">What would you like to do?</h3>
               {data.routes.filter(r => r.profile_id === active.id && r.enabled && (r.source_id === account.account_id || r.destination_id === account.account_id)).map(r => {
                 const from = active.accounts.find(a => a.account_id === r.source_id)
@@ -193,24 +215,31 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
                 const action = operationLabel(from, to)
                 return <button key={r.id} type="button" disabled={busy} onClick={() => { if (existing) { setAccountId(''); onOpenTransfer(existing.id) } else void startReview(r) }} className="block min-h-16 w-full rounded-xl border border-slate-200 p-4 text-left hover:border-blue-500 hover:bg-blue-50 disabled:opacity-50"><span className="block font-semibold text-blue-800">{existing ? 'Continue existing transfer' : action}</span><span className="mt-1 block text-sm text-slate-600">{from?.name} · ••{from?.last4} → {to?.name} · ••{to?.last4}{existing && ` · ${money(existing.amount_cents)}`}</span></button>
               })}
+              {['home equity', 'line of credit'].includes(account.subtype) && <button type="button" onClick={() => {setTrailerOpen(true); setError('')}} className="block min-h-16 w-full rounded-xl border border-slate-200 p-4 text-left hover:border-blue-500 hover:bg-blue-50"><span className="block font-semibold text-blue-800">Pay trailer installment</span><span className="mt-1 block text-sm text-slate-600">Choose the trailer and checking account · planned amount, due date & payment records</span></button>}
               <p className="text-xs text-slate-500">Only permitted routes for this bank login appear. <button type="button" onClick={() => { setAccountId(''); openSettings() }} className="font-semibold text-blue-700">Manage routes in settings</button></p>
             </section>
             <section className="space-y-3 border-t border-slate-200 pt-4"><h3 className="font-semibold">Transfers involving this account</h3>
               {!data.drafts?.some(d => d.source_id === account.account_id || d.destination_id === account.account_id) && <p className="text-sm text-slate-600">No transfers yet.</p>}
-              {data.drafts?.filter(d => d.source_id === account.account_id || d.destination_id === account.account_id).map(d => <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{money(d.amount_cents)} · ••{d.from_last4} → ••{d.to_last4}</p><p className="text-sm text-slate-600">{d.status === 'bank_history_matched' ? d.kind === 'repayment' ? 'Payment posted · full payoff not verified' : 'Transfer completed' : d.status === 'reviewed' ? 'Ready to prepare' : 'Needs verification'}</p></div>{d.status !== 'bank_history_matched' && <button type="button" className={button} onClick={() => { setAccountId(''); onOpenTransfer(d.id) }}>Continue transfer</button>}</div>)}
+              {data.drafts?.filter(d => d.source_id === account.account_id || d.destination_id === account.account_id).map(d => <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{money(d.amount_cents)} · ••{d.from_last4} → ••{d.to_last4}</p>{d.equipment && <p className="text-sm text-blue-800">{d.equipment.name} · dedicated payment</p>}<p className="text-sm text-slate-600">{d.status === 'bank_history_matched' ? d.kind === 'repayment' ? 'Payment posted · full payoff not verified' : 'Transfer completed' : d.status === 'reviewed' ? 'Ready to prepare' : 'Needs verification'}</p></div>{d.status !== 'bank_history_matched' && <button type="button" className={button} onClick={() => { setAccountId(''); onOpenTransfer(d.id) }}>Continue transfer</button>}</div>)}
             </section>
           </>}
+          {!review && trailerOpen && account.account_id && <>
+            <button type="button" onClick={() => setTrailerOpen(false)} className="min-h-11 text-left text-sm font-semibold text-blue-700">← Account actions</button>
+            <AccountTrailerPayment key={account.account_id} tenantId={tenantId} accountId={account.account_id} accountName={`${account.name} · ••${account.last4}`} profileId={active.id} profileName={active.name} checking={active.accounts.filter(a => a.kind === 'checking')} routes={data.routes.filter(r => r.profile_id === active.id)} target={trailerIntent ? String(trailerIntent.asset_id) : equipmentTarget || undefined} busy={busy} onStart={(id,payment) => {const route=data.routes.find(r => r.id===id); if(route) void startReview(route,false,payment)}} onRoutesChanged={() => {void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e)))}} />
+          </>}
           {review && <section aria-label="Review account transfer" className="space-y-4">
-            <button type="button" onClick={() => setReview(null)} className="min-h-11 text-sm font-semibold text-blue-700">← Account actions</button>
+            <button type="button" onClick={() => setReview(null)} className="min-h-11 text-sm font-semibold text-blue-700">{trailerIntent ? '← Trailer payment' : '← Account actions'}</button>
             <h3 className="font-semibold">{review.source_name} · ••{review.from_last4} → {review.destination_name} · ••{review.to_last4}</h3>
             <p className="text-sm text-slate-600">1. Set amount → 2. Prepare in Truliant → 3. You approve in the bank</p>
-            {review.kind === 'repayment' && <fieldset><legend className="mb-2 font-semibold">Payment goal</legend><div className="flex flex-wrap gap-3">{(['payment', 'full_payoff'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 p-3"><input type="radio" name="payment-goal" checked={intent === value} onChange={() => setIntent(value)} />{value === 'payment' ? 'Make a payment' : 'Pay off in full'}</label>)}</div></fieldset>}
+            {trailerIntent && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Dedicated payment for <strong>{trailerIntent.name}</strong>. This label stays in the transfer history.</p>}
+            {review.kind === 'repayment' && !trailerIntent && <fieldset><legend className="mb-2 font-semibold">Payment goal</legend><div className="flex flex-wrap gap-3">{(['payment', 'full_payoff'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 p-3"><input type="radio" name="payment-goal" checked={intent === value} onChange={() => setIntent(value)} />{value === 'payment' ? 'Make a payment' : 'Pay off in full'}</label>)}</div></fieldset>}
             {intent === 'full_payoff' ? <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h4 className="font-semibold">Full payoff is not verified</h4><p className="mt-2 text-sm">This connection reports the balance owed, but does not supply a current payoff quote including accrued interest. ELIS cannot prepare a full payoff from that balance. Check the payoff amount in Truliant, or choose Make a payment for a partial payment.</p></div> : <>
               {review.coverage && <div className="space-y-3 rounded-xl bg-blue-50 p-3 text-sm"><dl className="grid grid-cols-2 gap-2"><dt>Balance shortfall + reserve</dt><dd className="text-right font-semibold">{money(review.coverage.minimum_cents)}</dd><dt>If reported pending debits are additional</dt><dd className="text-right font-semibold">{money(review.coverage.possible_cents)}</dd></dl><p>{review.coverage.pending_review_required ? `The ${money(review.coverage.pending_debit_cents)} pending total may already affect the balance. Check Truliant before choosing the amount.` : 'Coverage includes your reserve and unfinished incoming transfers.'}</p></div>}
               <label className="block text-sm font-medium">{review.kind === 'repayment' ? 'Payment amount' : 'Transfer amount'}<MoneyInput value={amount} onChange={value => { setAmount(value); setCoverageConfirmed(false) }} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /></label>
               <p className="text-sm text-slate-600">{review.coverage ? `Available funding ${money(review.limit_cents)} · Coverage ceiling ${money(review.coverage.possible_cents)}` : `Planning limit ${money(review.limit_cents)} after reserve ${money(review.reserve_cents)}, reported pending debits ${money(review.pending_debit_cents)}, and unfinished transfers ${money(review.reserved_draft_cents)}.`}</p>
               {review.coverage && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={coverageConfirmed} onChange={e => setCoverageConfirmed(e.target.checked)} className="mt-1" />I checked the bank balance and pending debits and approve this coverage amount.</label>}
               {!review.coverage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>}
+              {review.kind === 'repayment' && cents > review.limit_cents && <p role="status" className="text-sm font-semibold text-red-800">The selected checking account does not have enough available cash for this amount. Go back to choose another checking account or change the amount.</p>}
               <button disabled={busy || cents <= 0 || cents > Math.min(review.limit_cents, review.coverage?.possible_cents ?? review.limit_cents) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Saving…' : 'Continue to preparation'}</button>
             </>}
             <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
