@@ -13,11 +13,12 @@ import { centsFromMoneyInput } from '../components/moneyAmount'
 type Account = { id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
 type ReviewItem = { id: string; kind: 'funding' | 'repayment'; route_id: string | null; last4: string | null; label: string; message: string }
 type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string } }
-type Profile = { preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
+type Coverage = { account_id: string; name: string; last4: string; status: string; minimum_cents?: number; possible_cents?: number; pending_debit_cents?: number | null; pending_review_required?: boolean; observed_at?: string; uncovered_cents?: number; routes: { route_id: string; source_name: string; source_last4: string; amount_cents: number; limit_cents: number }[] }
+type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string; equipment?: {asset_id:number;name:string} }
 type Data = { unified?: boolean; drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
-type Review = { kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
+type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
@@ -38,6 +39,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [source, setSource] = useState('')
   const [destination, setDestination] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  const [coverageConfirmed, setCoverageConfirmed] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
   const [accountId, setAccountId] = useState('')
   const [intent, setIntent] = useState<'payment' | 'full_payoff'>('payment')
@@ -85,7 +87,8 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
         void launch(saved, window.location.href).catch(e => { if (alive.current) { setError(errorText(e)); setBusy(false) } })
       } catch (e) { setError(errorText(e)); finishLink() }
     }
-    return () => { alive.current = false }
+    const timer = window.setInterval(() => { if (!document.hidden) void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(() => {}) }, 60000)
+    return () => { alive.current = false; window.clearInterval(timer) }
     // A tenant switch remounts this component and discards all profile state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId])
@@ -111,11 +114,12 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     } catch (e) { setError(errorText(e)); setBusy(false) }
   }
   const startReview = async (route: Route, payment: TrailerPaymentIntent | null = null) => {
-    setBusy(true); setError(''); setReview(null); setIntent('payment'); setTrailerIntent(payment)
+    setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setTrailerIntent(payment)
     try {
       const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
       if (alive.current && response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
-      if (alive.current) { setReview(response.data); setAmount(payment?.amount || (response.data.limit_cents / 100).toFixed(2)) }
+      update((await bankProfilesApi.request<Data>(tenantId)).data)
+      if (alive.current) { setReview(response.data); setAmount(payment?.amount || (response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2))) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
   }
@@ -125,7 +129,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     if (!review) return
     setBusy(true); setError('')
     try {
-      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, equipment_asset_id: trailerIntent?.asset_id ?? null })
+      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, coverage_confirmed: coverageConfirmed, equipment_asset_id: trailerIntent?.asset_id ?? null })
       if (alive.current) { setReview(null); setAccountId(''); setNotice('Transfer saved. Continue below to prepare the bank form.'); onDraft(); onOpenTransfer(response.data.draft.id) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
@@ -170,6 +174,12 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-200">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
+        {!!active.coverage?.length && <section aria-label="Coverage proposals" className="mt-5 border-t border-slate-700 pt-4"><h3 className="font-semibold text-amber-200">Checking needs attention</h3>{active.coverage.map(c => <div key={c.account_id} className="mt-3 space-y-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2"><strong>{c.name} · ••{c.last4}</strong><span className="font-semibold tabular-nums">{c.minimum_cents == null ? 'Balance unavailable' : c.pending_review_required ? `${money(c.minimum_cents)}–${money(c.possible_cents)} to review` : `${money(c.minimum_cents)} to cover`}</span></div>
+          <p className="text-xs text-slate-300">{c.pending_review_required ? 'Pending debits may already affect the balance. Confirm the amount before creating a draft.' : 'Includes your protected reserve and accounts for unfinished incoming transfers.'}{c.observed_at && ` Based on ${new Date(c.observed_at).toLocaleString()}.`}</p>
+          <div className="flex flex-wrap gap-2">{c.routes.map(option => { const route = data.routes.find(r => r.id === option.route_id); return route && <button key={option.route_id} disabled={busy} className={button} onClick={() => { const target = active.accounts.find(a => a.account_id === c.account_id); setAccountId(target?.id || ''); void startReview(route) }}>Review funding from ••{option.source_last4}</button> })}{!c.routes.length && <button type="button" className={button} onClick={openSettings}>Review funding settings</button>}</div>
+          {!!c.uncovered_cents && <p className="text-xs text-amber-200">Enabled funding can leave up to {money(c.uncovered_cents)} uncovered.</p>}
+        </div>)}</section>}
         {[{ key: 'checking', label: 'Checking accounts', description: 'Cash available at the bank' }, { key: 'line', label: 'Credit lines', description: 'Available borrowing and balances owed' }, { key: 'card', label: 'Credit cards', description: 'Available credit and card balances' }].map(group => {
           const accounts = active.accounts.filter(a => (a.kind === 'checking' ? 'checking' : a.subtype === 'credit card' ? 'card' : 'line') === group.key)
           if (!accounts.length) return null
@@ -223,11 +233,13 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
             {trailerIntent && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Dedicated payment for <strong>{trailerIntent.name}</strong>. This label stays in the transfer history.</p>}
             {review.kind === 'repayment' && !trailerIntent && <fieldset><legend className="mb-2 font-semibold">Payment goal</legend><div className="flex flex-wrap gap-3">{(['payment', 'full_payoff'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 p-3"><input type="radio" name="payment-goal" checked={intent === value} onChange={() => setIntent(value)} />{value === 'payment' ? 'Make a payment' : 'Pay off in full'}</label>)}</div></fieldset>}
             {intent === 'full_payoff' ? <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h4 className="font-semibold">Full payoff is not verified</h4><p className="mt-2 text-sm">This connection reports the balance owed, but does not supply a current payoff quote including accrued interest. ELIS cannot prepare a full payoff from that balance. Check the payoff amount in Truliant, or choose Make a payment for a partial payment.</p></div> : <>
-              <label className="block text-sm font-medium">{review.kind === 'repayment' ? 'Payment amount' : 'Transfer amount'}<MoneyInput value={amount} onChange={setAmount} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /></label>
-              <p className="text-sm text-slate-600">Planning limit {money(review.limit_cents)} after reserve {money(review.reserve_cents)}, reported pending debits {money(review.pending_debit_cents)}, and unfinished transfers {money(review.reserved_draft_cents)}.</p>
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>
-              {cents > review.limit_cents && <p role="status" className="text-sm font-semibold text-red-800">The selected checking account does not have enough available cash for this amount. Go back to choose another checking account or change the amount.</p>}
-              <button disabled={busy || cents <= 0 || cents > review.limit_cents} onClick={() => void create()} className={primary}>{busy ? 'Saving…' : 'Continue to preparation'}</button>
+              {review.coverage && <div className="space-y-3 rounded-xl bg-blue-50 p-3 text-sm"><dl className="grid grid-cols-2 gap-2"><dt>Balance shortfall + reserve</dt><dd className="text-right font-semibold">{money(review.coverage.minimum_cents)}</dd><dt>If reported pending debits are additional</dt><dd className="text-right font-semibold">{money(review.coverage.possible_cents)}</dd></dl><p>{review.coverage.pending_review_required ? `The ${money(review.coverage.pending_debit_cents)} pending total may already affect the balance. Check Truliant before choosing the amount.` : 'Coverage includes your reserve and unfinished incoming transfers.'}</p></div>}
+              <label className="block text-sm font-medium">{review.kind === 'repayment' ? 'Payment amount' : 'Transfer amount'}<MoneyInput value={amount} onChange={value => { setAmount(value); setCoverageConfirmed(false) }} className="mt-1 block min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /></label>
+              <p className="text-sm text-slate-600">{review.coverage ? `Available funding ${money(review.limit_cents)} · Coverage ceiling ${money(review.coverage.possible_cents)}` : `Planning limit ${money(review.limit_cents)} after reserve ${money(review.reserve_cents)}, reported pending debits ${money(review.pending_debit_cents)}, and unfinished transfers ${money(review.reserved_draft_cents)}.`}</p>
+              {review.coverage && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={coverageConfirmed} onChange={e => setCoverageConfirmed(e.target.checked)} className="mt-1" />I checked the bank balance and pending debits and approve this coverage amount.</label>}
+              {!review.coverage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>}
+              {review.kind === 'repayment' && cents > review.limit_cents && <p role="status" className="text-sm font-semibold text-red-800">The selected checking account does not have enough available cash for this amount. Go back to choose another checking account or change the amount.</p>}
+              <button disabled={busy || cents <= 0 || cents > Math.min(review.limit_cents, review.coverage?.possible_cents ?? review.limit_cents) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Saving…' : 'Continue to preparation'}</button>
             </>}
             <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
           </section>}
