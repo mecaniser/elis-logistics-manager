@@ -576,7 +576,7 @@ def test_manual_charge_duplicate_and_profile_binding(setup,db,monkeypatch):
     assert r.json()['draft']['charge']['description']=='Repair expense'
     assert db.get(BankProfileDraft,r.json()['draft']['id']).profile_id==profile.id
     assert client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload).status_code==409
-    entries.append({**entries[0],'transaction_id':'manual-later','amount_cents':50000})
+    entries.append({**entries[0],'transaction_id':'manual-later','amount_cents':50000,'date':(datetime.now(timezone.utc).date()+timedelta(days=2)).isoformat()})
     service.sync_profile(db,profile);db.commit()
     assert db.query(BankFundingCharge).filter_by(reference='plaid:manual-later').one().status=='duplicate_review'
 

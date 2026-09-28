@@ -53,6 +53,7 @@ export default function ProfileChargeEntry({tenantId,onClose,onCreated}:{tenantI
     {error&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-900">{error}</p>}
     <label className="block text-sm font-medium">Bank connection and transfer route<BankSelect ariaLabel="Charge funding route" value={routeId} options={[{value:'',label:'Choose credit line → checking'},...options]} onChange={v=>{setRoute(v);setCharge('');setConfirmed(false)}} /></label>
     {route&&<>
+      {charges.filter(c=>c.account_id===route.destination_id && c.status==='duplicate_review').map(c=><p key={c.id} className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Possible match to a manual charge: {c.description} · {c.date} · {money(c.amount_cents)}. Automatic funding is on hold to avoid paying twice.</p>)}
       <button type="button" disabled={busy} onClick={()=>void loadCharges()} className="min-h-11 text-sm font-semibold text-blue-700">{busy?'Checking…':'Refresh bank charges'}</button>
       <label className="block text-sm font-medium">Charge<BankSelect ariaLabel="Charge to fund" value={chargeId} options={[{value:'',label:'Enter a charge not listed below'},...charges.filter(c=>c.account_id===route.destination_id && ((!c.draft_id && ['eligible','historical'].includes(c.status)) || c.status === 'dismissed')).map(c=>({value:c.id,label:`${c.date} · ${c.description} · ${money(c.amount_cents)}`}))]} onChange={v=>{setCharge(v);setConfirmed(false)}} /></label>
       {!chargeId&&<div className="grid gap-3 sm:grid-cols-2">
