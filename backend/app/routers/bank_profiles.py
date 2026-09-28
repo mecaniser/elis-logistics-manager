@@ -447,6 +447,8 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')
     if scheduled_id:
+        from app.services.bank_charge_funding import refresh_unprepared_memo
+        refresh_unprepared_memo(db, existing)
         existing.amount_cents = data.amount_cents
         existing.status = 'reviewed'
         run.result = {**run.result, 'coverage_confirmed': True, 'approved_amount_cents': data.amount_cents, 'drafts_created': True, 'draft_ids': [existing.id]}

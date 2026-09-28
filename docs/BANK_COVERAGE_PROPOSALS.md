@@ -11,3 +11,5 @@ Manual entry selects a banking profile's permitted credit-line-to-checking route
 An older aggregate coverage draft has no charge attribution, so new automatic charge funding for that checking account waits for it to be resolved. No historical scheduler run is replayed on deployment. The queue polls stored drafts without a Plaid call. Schema changes add two tables through the existing application startup table creation; deploy Web successfully before the worker.
 
 Validation includes the $286.86 and $350 example, skipping a $11.64 HELOC, repeated runs, source reservations, shared logins, pending-to-posted identity, amount changes, removed debits, manual duplicates, cancellation and mandatory review. No real bank transfer is used for QA.
+
+Coverage memos use `Cvr <charge name> <MM-DD> <short draft reference>` within the bank assistant’s 34-character ASCII limit. Long names are shortened; the full charge description remains in ELIS. Legacy memos are upgraded during unapproved draft review or after an explicit `preparation_not_started` outcome. In-flight, failed, posted, and completed memos remain unchanged so original bank entries can still be matched.

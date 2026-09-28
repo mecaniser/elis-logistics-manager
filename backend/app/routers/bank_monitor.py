@@ -763,6 +763,9 @@ def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id
     if not updated:
         db.rollback()
         raise HTTPException(409, 'Draft state changed; refresh the queue.')
+    if data.status == 'preparation_not_started':
+        from app.services.bank_charge_funding import refresh_unprepared_memo
+        refresh_unprepared_memo(db, db.get(BankTransferDraft, draft_id), preparation_not_started=True)
     db.commit()
     return {'status': outcome, 'transfers_executed': False}
 
