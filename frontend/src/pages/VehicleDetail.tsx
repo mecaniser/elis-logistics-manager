@@ -1,3 +1,4 @@
+import TrailerInvestmentForm from '../components/TrailerInvestmentForm'
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
 import { useEffect, useState } from 'react'
@@ -173,7 +174,7 @@ export default function VehicleDetail() {
     return normalizedRate
   })()
   const displayLoanAmount = vehicle.loan_amount ?? roiData.loan_amount ?? 0
-  const showTrailerReserveLayer = vehicle.vehicle_type === 'trailer' && (
+  const showTrailerReserveLayer = vehicle.vehicle_type === 'trailer' && !vehicle.investment_plans?.length && (
     (roiData.trailer_depreciation_reserve_amount || 0) > 0 ||
     (roiData.trailer_depreciation_reserve_total || 0) > 0 ||
     roiData.trailer_free_profit !== null
@@ -262,6 +263,7 @@ export default function VehicleDetail() {
         </div>
       )}
 
+      {vehicle.vehicle_type === 'trailer' && <TrailerInvestmentForm key={vehicle.id} vehicle={vehicle} compact />}
       {/* ROI Metrics - Only for trucks and trailers (revenue-generating vehicles) */}
       {vehicle.vehicle_type !== 'suv' && ((roiData.cash_investment && roiData.cash_investment > 0) || (roiData.loan_amount && roiData.loan_amount > 0)) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
@@ -499,7 +501,7 @@ export default function VehicleDetail() {
           )}
 
           {/* Investment Recovery */}
-          <div className="mb-6">
+          {!vehicle.investment_plans?.length && <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-600">Investment Recovery</span>
               <span className={`text-2xl font-bold ${
@@ -523,10 +525,10 @@ export default function VehicleDetail() {
                 <span>Recovered ${safeToLocaleString(cashRecoveryAmount)} of ${safeToLocaleString(roiData.cash_investment)}</span>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* Remaining to Cash Recovery */}
-          {!isCashRecovered && roiData.cash_investment && roiData.cash_investment > 0 && (
+          {!vehicle.investment_plans?.length && !isCashRecovered && roiData.cash_investment && roiData.cash_investment > 0 && (
             <div className="mb-4">
               <span className="text-sm font-medium text-gray-600">Remaining to Cash Recovery</span>
               <p className="text-xl font-semibold text-orange-600 mt-1">
@@ -536,7 +538,7 @@ export default function VehicleDetail() {
           )}
 
           {/* Forecast balance from earnings */}
-          {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
+          {!vehicle.investment_plans?.length && (vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && roiData.loan_amount && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
             <div className={`mt-4 p-4 rounded-lg ${
               roiData.current_loan_balance === 0 ? 'bg-green-50 border-2 border-green-200' :
               roiData.current_loan_balance < roiData.loan_amount ? 'bg-orange-50 border-2 border-orange-200' :
@@ -940,7 +942,7 @@ export default function VehicleDetail() {
                     )}
                   </div>
                   
-                  {roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
+                  {!vehicle.investment_plans?.length && roiData.current_loan_balance !== null && roiData.current_loan_balance !== undefined && (
                     <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                       <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Forecast balance</span>
                       <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold ${
@@ -980,7 +982,7 @@ export default function VehicleDetail() {
                 </>
               )}
 
-              {vehicle.vehicle_type === 'trailer' && (
+              {vehicle.vehicle_type === 'trailer' && !vehicle.investment_plans?.length && (
                 <div className={`flex flex-col ${isMobile ? 'bg-gray-50 rounded-lg p-3' : ''}`}>
                   <span className="text-xs sm:text-sm font-medium text-gray-600 mb-1">Reserve / Week</span>
                   <p className={`${isMobile ? 'text-base' : 'text-xl'} font-semibold text-gray-900`}>

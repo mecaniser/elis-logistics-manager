@@ -70,6 +70,7 @@ class TruckUpdate(BaseModel):
     additional_expenses: Optional[List[Dict[str, Any]]] = None
 
 class TruckResponse(TruckBase):
+    investment_plans: Optional[List[Dict[str, Any]]] = None
     id: int
     created_at: datetime
     vehicle_documents: Optional[List[VehicleDocumentResponse]] = None

@@ -138,3 +138,31 @@ def test_planning_freight_uses_only_included_sources_and_preserves_category_gap(
     assert sum(Decimal(x['amount']) for x in b['rows'])+Decimal(b['settlement_remainder'])==Decimal(b['freight_gross'])
     assert next(x['amount'] for x in b['rows'] if x['category']=='unclassified_statement_adjustment')=='509.53'
     assert planning_freight(r,set())['freight_gross']=='11800.00'
+
+
+def test_funded_trailer_plan_uses_payment_not_duplicate_capital(db, truck):
+    from app.models.truck import Truck
+    from app.models.settlement import Settlement
+    trailer = Truck(tenant_id=1, name='HELOC trailer plan', vehicle_type='trailer',
+                    total_cost=Decimal('75000'), cash_investment=0, loan_amount=Decimal('75000'),
+                    trailer_depreciation_reserve_amount=Decimal('160'),
+                    investment_plans=[dict(funding='heloc', start='2026-05-15', effective='2026-09-01', months=60,
+                        acquisition_cost='75000', initial_cash='0', financed='75000', annual_rate='.065',
+                        net_resale='40000', monthly_allocation='1600', balance_at_sale='40000')])
+    db.add(trailer);db.flush()
+    truck.default_repair_reserve_amount = 0
+    db.add(Settlement(truck_id=truck.id, settlement_date=date(2026,9,1), gross_revenue=Decimal('3000'),
+                      expenses=0,net_profit=Decimal('3000'),trailer_income_split_trailer_id=trailer.id))
+    db.commit()
+    r = f.report(db, 1, date(2026,9,1), date(2026,9,30), date(2026,9,30))
+    pair = r['earnings_plan']['pairs'][0]
+    assert pair['capital_target'] == '0.00'
+    assert pair['planning_subtotal'] == '2098.52'
+    assert next(x['amount'] for x in pair['bridge'] if x['label']=='Additional planned loan payments') == '-901.48'
+    # Interest already deducted from the ledger reduces only the remaining plan gap.
+    d = policy_setup(db)
+    cmd(db, 'bill', category='interest', asset_id=trailer.id, pair_id=truck.id,
+        amount='100.00', source_ref='interest-1', description='Trailer financing interest', evidence_id=d)
+    after = f.report(db, 1, date(2026,9,1), date(2026,9,30), date(2026,9,30))['earnings_plan']['pairs'][0]
+    assert after['planning_subtotal'] == '2098.52'
+    assert next(x['amount'] for x in after['bridge'] if x['label']=='Additional planned loan payments') == '-801.48'

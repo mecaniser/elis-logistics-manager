@@ -77,3 +77,96 @@ Expanded fuel-location branches display recorded cost per gallon instead of frei
 Added an optional Miles vs fuel report within the expanded fuel flow, grouped by stable asset/VIN. Shows reported/independent miles, purchased gallons, expected diesel at the owner's 6–7 MPG reference, and a weighted 28-day statement-date comparison. Posted mileage remains tied to its immutable statement snapshot; saved rows use reviewed source history. Estimated miles, unknown products, missing gallons, credits, unreconciled sources and purchase-total mismatches block MPG conclusions. DEF is excluded from diesel volume. This does not claim measured consumption or establish missing loads.
 
 Local validation: 317 backend tests, 39 frontend tests, lint and production build passed. Selected week: VIN 250024 has 3,665 reported miles / 676.7 all-product gallons; VIN 250022 has 3,114 / 471.1. Products remain unknown, so neither receives an established diesel MPG. No data writes or schema changes.
+
+## Owner earnings bridge — local preview
+
+The dashboard now follows the freight allocation with a compact signed bridge from statement remainder to estimated owner earnings. It reuses the existing pair bridges, includes unassigned company results, shows repair and capital targets, preserves reserve-funded repair offsets, and deducts recorded equipment principal once. Missing principal evidence is labeled Not confirmed. The trailer disclosure splits the internal allocation into protected capital and remaining trailer earnings without treating the whole allocation as a company expense.
+
+Selected-week preview: $5,836.92 minus $600 repair target and $290.77 capital target = $4,946.15 before unverified financing, incomplete capital plans and unrecorded expenses. The $800 trailer allocation contains $290.77 recovery and $509.23 contribution before other costs/financing. This is not verified withdrawal cash. No financial records changed.
+
+43 frontend tests pass, including reserve offsets, principal, company losses and bridge reconciliation. Lint/build and desktop/mobile browser checks pass. Color-coded freight amounts are included in this local change. Deployment remains pending.
+
+## Continuous owner flow — local preview
+
+The overview's money-flow chart now continues directly from the statement-remainder node into recorded owner costs, repair reserves, capital recovery, recorded principal and the estimated owner remainder. Uses the same monetary scale for both stages. Overview no longer repeats the standalone owner bridge; pair detail stays below. Trailer allocation detail remains on Money. Signed adjustments, losses or a mismatched bridge use the existing signed breakdown rather than a falsely balanced flow. Unknown loan amounts stay outside the sized branches and are explicitly unresolved. No calculation/data changes. 43 frontend tests, lint/build and desktop/mobile expanded-flow checks pass; not deployed.
+
+## Three funding models — September 28, local calculation foundation
+
+Owner confirmed two owned Conestogas (2025 cash, 2026 HELOC) and a proposed
+2027 dealer-financed purchase. Use $1,600 per calendar month as internal trailer
+allocation, not new company revenue or $400 per calendar week. Working horizon
+is 60 months and net resale is $40,000. Owner explicitly selected $40,000 of
+HELOC principal remaining at sale, cleared using the sale proceeds; exclude the
+other $25,000 borrowed for unrelated business costs.
+
+`app/services/trailer_investment.py` provides a pure Decimal forecast for:
+
+| Model | Initial cash | Monthly debt service | Monthly cash recovery | Monthly left | Five-year projected profit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cash, $75,000 | $75,000 | $0 | $583.33 | $1,016.67 | $61,000 |
+| HELOC, $75,000 at 6.5% | $0 | $901.48 | $0 | $698.52 | $41,911.09 |
+| Dealer quote, $73,099 plus $500 financed fee | $14,619.80 | $1,295 | $0 | $305 | $43,680.20 |
+
+All results precede additional ownership costs and tax; monthly values display
+rounded cents, while lifetime projections use full precision. The HELOC model
+assumes a constant rate and level future payments; it does not assert actual
+payments. No percentage ROI is shown when initial cash is zero. Cash recovery
+is protected owner's cash, not an expense. Principal is covered by debt service
+and must not also be deducted as capital protection. Sale equity recovers the
+dealer down payment, so that same down payment is not reserved again monthly.
+
+The dealer quote is explicitly a quote-based cash-flow projection: $1,295 x 60
+with no final balance assumed. At 11.25% and $58,979.20 financed, rate-based
+payment is $1,289.72; expose this $5.28 difference rather than creating a false
+amortization/payment record. Final lender schedule remains to be reconciled.
+
+Validation: 10 focused tests pass, covering all three scenarios, underwater
+sale, zero rate, input validation, loss preservation and duplicate-recovery
+avoidance. No schema, financial records, UI totals or production state changed.
+
+Remaining integration (not complete): confirm cash VIN ...003130 and HELOC VIN
+...003142 and whether five years starts at purchase or now. Then attach
+versioned/effective-dated plans, preserve historical assumptions, keep proposed
+2027 out of owned-fleet earnings, connect planned debt service to the existing
+bridge with per-asset offsets for actual principal/interest already deducted,
+and verify period additivity and desktop/mobile presentation. Plans must never
+create bank payments, funded reserves, or verified principal automatically.
+
+## Reusable investment plans — local implementation, September 28
+
+Replaced the initial fixed examples with a reusable validated plan and tenant-scoped
+preview/save endpoints. Plans store funding type (cash/HELOC/dealer/other), lender
+nickname, fixed/variable rate assumption, start/effective dates, ownership months,
+actual acquisition total and funding amounts, net resale, monthly allocation,
+planned sale debt and optional lender payment quote. Effective-dated revisions are
+preserved in an additive JSON column; forecasts never create payments or reserves.
+
+The existing trailer edit form now offers Calculate / Save recovery plan. New
+vehicle entries can preview before purchase without saving a fleet record. Trailer
+details show a compact summary with Edit plan. Legacy reserve inputs and modeled
+payoff claims are hidden where the new plan applies. Finance uses the shared model,
+calendar-month proration and a distinct additional-loan-payment deduction; existing
+asset-specific interest and business-paid equipment obligations offset that gap.
+The $1,600 allocation is an internal earnings split, not extra company income.
+
+Local carryover confirmed with owner:
+- VIN ...003130: September 15, 2025; saved total $73,231.09, all cash; 60 months,
+  $40,000 net resale. Preserved six $1,600 rental entries and a further $800 entry;
+  no rental income was created.
+- VIN ...003142: May 15, 2026; saved total $72,129.69; HELOC $68,099 at 6.5%; cash
+  plus registration/setup $4,030.69; 60 months, $40,000 net resale clears $40,000 debt.
+- Original purchase/loan/additional expense amounts preserved. Corrected purchase
+  dates only as authorized. Local SQLite backup: /tmp/elis-investment-before-20260928.db.
+
+September 21–27 local combined planning subtotal: $4,913.17. No production data
+changed. Lender identities are currently nicknames, not automatic bank transaction
+links. Forecast loan balances are assumptions, not verified lender balances. A
+proposed purchase can be previewed but is not stored as an owned trailer automatically.
+
+Acceptance: 331 backend tests and 44 frontend tests pass; frontend lint/build pass.
+Browser verified HELOC five-year summary, saving a revision, changing to a 36-month
+preview without saving it, and responsive layout at 390px with no horizontal
+page overflow. Restored saved 60-month plan after preview. Screenshot:
+/tmp/elis-investment-summary.png. Automatic Bank Monitor account/payment linking
+and persistence of unpurchased comparison scenarios remain separate follow-ups;
+this release uses lender nicknames and transient previews. Not deployed.

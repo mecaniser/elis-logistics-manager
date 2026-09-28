@@ -116,7 +116,14 @@ def _add_auth_recovery_email(engine: Engine) -> None:
 
 # Keep this ordered. New migrations must be additive/idempotent and be added
 # here in the same change that introduces their schema or data dependency.
+def _add_investment_plans(engine: Engine) -> None:
+    if 'investment_plans' not in {c['name'] for c in inspect(engine).get_columns('trucks')}:
+        with engine.begin() as connection:
+            connection.execute(text('ALTER TABLE trucks ADD COLUMN investment_plans JSON'))
+
+
 MIGRATIONS: List[Migration] = [
+    ('2026_09_28_investment_plans', _add_investment_plans),
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),
     ("2026_07_30_trailer_resale_plan", _add_trailer_resale_plan),
     ("2026_09_15_bank_draft_transaction_details", _add_bank_draft_transaction_details),

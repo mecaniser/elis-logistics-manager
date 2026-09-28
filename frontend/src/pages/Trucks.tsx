@@ -1,3 +1,4 @@
+import TrailerInvestmentForm from '../components/TrailerInvestmentForm'
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
 import { useEffect, useState, useMemo, useRef } from 'react'
@@ -1310,6 +1311,7 @@ export default function Trucks() {
               {expandedFormSections.has('investment') && (
                 <div className="p-4">
               <div className="space-y-3">
+                {formData.vehicle_type === 'trailer' && <TrailerInvestmentForm key={`${editingTruck?.id || 0}-${calculatedTotalCost}`} vehicle={editingTruck || {id:0, total_cost:Number(calculatedTotalCost), loan_amount:Number(formData.loan_amount), interest_rate:Number(formData.interest_rate)/100, purchase_date:formData.purchase_date}} />}
                 {/* All investment fields in one flexible row */}
                 <div className="flex flex-wrap items-start gap-2">
                   <div className="flex items-center relative">
@@ -1494,79 +1496,7 @@ export default function Trucks() {
                       )}
                   </>
                 )}
-                  {formData.vehicle_type === 'trailer' && (
-                    <>
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
-                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reserve fallback ($/wk)</label>
-                      </div>
-                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={focusedFields.has('trailer_depreciation_reserve_amount') ? formData.trailer_depreciation_reserve_amount : formatCurrencyDisplay(formData.trailer_depreciation_reserve_amount)}
-                        onChange={(e) => {
-                          const inputValue = e.target.value
-                          if (isValidNumericInput(inputValue)) {
-                            const newValue = parseCurrency(inputValue)
-                            if (newValue === '' || parseFloat(newValue) >= 0 || isNaN(parseFloat(newValue))) {
-                              setFormData(prev => ({ ...prev, trailer_depreciation_reserve_amount: newValue }))
-                            }
-                          }
-                        }}
-                        onFocus={() => setFocusedFields(prev => new Set(prev).add('trailer_depreciation_reserve_amount'))}
-                        onBlur={(e) => {
-                          const value = parseCurrency(e.target.value)
-                          if (value && !isNaN(parseFloat(value))) {
-                            setFormData(prev => ({ ...prev, trailer_depreciation_reserve_amount: parseFloat(value).toFixed(2) }))
-                          }
-                          setFocusedFields(prev => {
-                            const next = new Set(prev)
-                            next.delete('trailer_depreciation_reserve_amount')
-                            return next
-                          })
-                        }}
-                        placeholder="160.00"
-                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[92px]"
-                      />
-                    </div>
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
-                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Expected Sale ($)</label>
-                      </div>
-                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.expected_resale_value}
-                        onChange={(e) => setFormData(prev => ({ ...prev, expected_resale_value: e.target.value }))}
-                        placeholder="50,000"
-                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[100px]"
-                      />
-                    </div>
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
-                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Service (wk)</label>
-                      </div>
-                      <div className="flex-shrink-0 w-0.5 h-[38px] bg-red-600"></div>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={formData.planned_service_weeks}
-                        onChange={(e) => setFormData(prev => ({ ...prev, planned_service_weeks: e.target.value }))}
-                        placeholder="156"
-                        className="px-2 py-2 border border-gray-300 rounded-r-md rounded-l-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right border-l-0 w-[72px]"
-                      />
-                    </div>
-                    {Number(calculatedTotalCost || 0) > Number(formData.expected_resale_value || 0) && Number(formData.planned_service_weeks || 0) > 0 && (
-                      <div className="w-full text-xs text-emerald-700">
-                        Automatic reserve: ${((Number(calculatedTotalCost) - Number(formData.expected_resale_value || 0)) / Number(formData.planned_service_weeks)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/week from this resale plan. The fallback is used only when no plan is entered.
-                      </div>
-                    )}
-                    </>
-                  )}
+
                   <div className="flex items-center">
                     <div className="flex-shrink-0 flex items-center h-[38px] px-2 py-2 border border-gray-300 rounded-l-md border-r-0">
                       <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Reg. Fee ($)</label>

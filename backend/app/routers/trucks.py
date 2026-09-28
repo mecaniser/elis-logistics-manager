@@ -23,6 +23,8 @@ from app.schemas.vehicle_document import VehicleDocumentResponse
 from app.utils.cloudinary import delete_uploaded_file, upload_image, upload_pdf
 from app.utils.reserve_regime import RESERVE_REGIME_START_DATE
 
+from app.schemas.investment import InvestmentPlan
+
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
@@ -636,3 +638,35 @@ def delete_truck(truck_id: int, db: Session = Depends(get_db), tenant_id: int = 
         cleanup_vehicle_document_file(file_path)
 
     return {"message": "Vehicle deleted successfully"}
+
+
+@router.post('/{truck_id}/investment-plan/preview')
+def preview_investment_plan(truck_id: int, plan: InvestmentPlan, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
+    get_tenant_truck_or_404(db, truck_id, tenant_id)
+    return plan.projection()
+
+
+@router.post('/{truck_id}/investment-plan')
+def save_investment_plan(truck_id: int, plan: InvestmentPlan, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
+    from decimal import Decimal
+    truck = db.query(Truck).filter_by(id=truck_id, tenant_id=tenant_id).with_for_update().first()
+    if not truck:
+        raise HTTPException(404, 'Truck not found')
+    if truck.vehicle_type != 'trailer':
+        raise HTTPException(400, 'Investment plans currently apply to trailers.')
+    if truck.total_cost is None or abs(Decimal(str(truck.total_cost)) - plan.acquisition_cost) > Decimal('.01'):
+        raise HTTPException(409, 'Save the purchase and additional expenses first; the investment plan must match total cost.')
+    history = truck.investment_plans or []
+    body = plan.model_dump(mode='json')
+    if history and history[-1] == body:
+        return {'plan': body, 'projection': plan.projection()}
+    if history and plan.effective.isoformat() < history[-1]['effective']:
+        raise HTTPException(409, 'A revision cannot precede the latest plan effective date.')
+    truck.investment_plans = [*history, body]
+    db.commit()
+    return {'plan': body, 'projection': plan.projection()}
+
+
+@router.post('/investment-preview')
+def preview_unpurchased_investment(plan: InvestmentPlan, tenant_id: int = Depends(get_tenant_id)):
+    return plan.projection()

@@ -58,3 +58,13 @@
 .fuel-mileage-grid .finance-section-heading{flex-wrap:wrap;font-size:13px;gap:6px;}
 .fuel-mileage-grid .finance-waterfall{font-size:13px;}
 @media(max-width:700px){.freight-group-label{align-items:flex-start;}.freight-flow-label>.fuel-group-actions{flex-shrink:1;flex-direction:column;gap:0;align-items:flex-end;}.fuel-group-actions button{min-height:26px;padding:2px;font-size:11px;}}
+
+.freight-amount-carrier{color:var(--flow-carrier);}
+.freight-amount-driver_pay{color:var(--flow-driver);}
+.freight-amount-fuel{color:var(--flow-fuel);}
+.freight-amount-other{color:var(--flow-other);}
+.freight-amount-remainder{color:var(--flow-remainder);}
+
+.owner-flow-repair{fill:#b45309;}.owner-flow-capital{fill:#7c3aed;}.owner-flow-loan{fill:#0369a1;}.owner-flow-cost{fill:#64748b;}.owner-flow-final{fill:#166449;}
+.owner-flow-label-repair strong{color:#b45309;}.owner-flow-label-capital strong{color:#7c3aed;}.owner-flow-label-loan strong{color:#0369a1;}.owner-flow-label-cost strong{color:#64748b;}.owner-flow-label-final strong{color:#166449;}
+.owner-flow-footnote{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--finance-muted);margin:12px 0;}
