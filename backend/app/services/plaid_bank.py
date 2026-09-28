@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 import httpx
+from app.services import plaid_usage
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.services.bank_monitor import AccountBalance, BalanceSnapshot, MonitorRules
@@ -53,13 +54,18 @@ def request(endpoint: str, payload: dict) -> dict:
         raise PlaidBankError('provider_not_configured')
     body = {**payload, 'client_id': os.environ['PLAID_CLIENT_ID'],
             'secret': os.environ['PLAID_SECRET']}
+    outcome = 'unknown'
+    env = environment()
     try:
-        response = httpx.post(HOSTS[environment()] + endpoint, json=body,
+        response = httpx.post(HOSTS[env] + endpoint, json=body,
                               headers={'Plaid-Version': '2020-09-14'}, timeout=35,
                               follow_redirects=False)
+        outcome = 'failed' if response.is_error else 'successful'
         data = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise PlaidBankError('provider_unavailable') from exc
+    finally:
+        plaid_usage.record(endpoint, env, outcome)
     if response.is_error:
         code = data.get('error_code') if isinstance(data, dict) else None
         if code in {'ITEM_LOGIN_REQUIRED', 'INVALID_CREDENTIALS', 'ITEM_NOT_SUPPORTED'}:
