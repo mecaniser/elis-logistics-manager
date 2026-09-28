@@ -493,7 +493,7 @@ def charge_setup(setup, db, monkeypatch):
     client, profile, route = coverage_setup(setup, db, monkeypatch)
     entries = [dict(transaction_id=f'charge-{i}', pending_transaction_id=None, amount_cents=amount,
         description=f'Expense {i}', date=datetime.now(timezone.utc).date().isoformat(), pending=True,
-        currency='USD', category='GENERAL_MERCHANDISE') for i, amount in enumerate([28686, 35000])]
+        currency='USD', category='LOAN_PAYMENTS' if i==0 else 'TRANSFER_OUT') for i, amount in enumerate([28686, 35000])]
     monkeypatch.setattr(plaid_bank, 'transaction_visibility', lambda token, mapping: {
         'pending_debit_cents': {k:63686 if v['kind']=='checking' else 0 for k,v in mapping.items()},
         'pending_entries': {k:2 if v['kind']=='checking' else 0 for k,v in mapping.items()},
@@ -581,13 +581,15 @@ def test_manual_charge_duplicate_and_profile_binding(setup,db,monkeypatch):
     assert db.query(BankFundingCharge).filter_by(reference='plaid:manual-later').one().status=='duplicate_review'
 
 
-def test_no_historical_backfill_or_internal_transfer_funding(setup,db,monkeypatch):
+def test_no_historical_backfill_or_tracked_transfer_funding(setup,db,monkeypatch):
     from app.services.bank_charge_funding import ingest,proposals
     from app.models.bank_monitor import BankFundingCharge
     _,profile,route=coverage_setup(setup,db,monkeypatch)
     target=db.query(BankProfileAccount).filter_by(profile_id=profile.id,account_id=route.destination_id).one()
     e={'transaction_id':'old','amount_cents':1000,'description':'Old expense','date':'2026-01-01','pending':False,'currency':'USD','category':'GENERAL_MERCHANDISE'}
-    ingest(db,profile,target,[e,{**e,'transaction_id':'internal','category':'TRANSFER_OUT'}]);db.commit()
+    own=BankTransferDraft(id=str(uuid4()),tenant_id=1,charge_reference='own-outgoing',amount_cents=1000,from_last4='3304',to_last4='8264',memo='Rpy ELIS own-transfer',status='bank_history_matched',created_at=datetime.now(timezone.utc))
+    db.add(own);db.add(BankProfileDraft(draft_id=own.id,tenant_id=1,profile_id=profile.id,route_id=route.id,source_id=route.destination_id,destination_id=route.source_id));db.flush()
+    ingest(db,profile,target,[e,{**e,'transaction_id':'internal','category':'TRANSFER_OUT','bank_description':'Regular Payment Rpy ELIS own-transfer'}]);db.commit()
     assert db.query(BankFundingCharge).one().status=='historical'
     assert proposals(db,profile)==[]
 

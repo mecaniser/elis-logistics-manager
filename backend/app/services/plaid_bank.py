@@ -201,6 +201,7 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
                 'description': str(row.get('merchant_name') or row.get('name') or 'Bank debit')[:120],
                 'date': row.get('date'), 'currency': row.get('iso_currency_code'),
                 'category': (row.get('personal_finance_category') or {}).get('primary'),
+                'bank_description': str(row.get('name') or '')[:240],
             })
         if row.get('pending') is True:
             amount = cents(row.get('amount'))

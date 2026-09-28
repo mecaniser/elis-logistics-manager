@@ -62,7 +62,7 @@ export default function ProfileChargeEntry({tenantId,onClose,onCreated}:{tenantI
         <label className="text-sm">Charge date<input type="date" value={date} onChange={e=>{setDate(e.target.value);setConfirmed(false)}} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label>
         <label className="text-sm">Full amount<MoneyInput value={amount} onChange={v=>{setAmount(v);setConfirmed(false)}} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3" /></label>
       </div>}
-      <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} className="mt-1" />This is an expense charged to checking, not a transfer, and has not already been funded.</label>
+      <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} className="mt-1" />This debit needs coverage in checking and has not already been funded.</label>
       <button type="button" disabled={busy||!confirmed} onClick={()=>void save()} className="min-h-11 rounded-xl bg-blue-700 px-4 font-semibold text-white disabled:opacity-45">{busy?'Checking…':'Add funding draft'}</button>
       <p className="text-xs text-slate-500">One draft covers the full charge. You review it before bank preparation.</p>
     </>}
