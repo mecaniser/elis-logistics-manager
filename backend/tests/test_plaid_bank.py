@@ -385,3 +385,13 @@ def test_expired_provider_access_requires_reauthorization(db, monkeypatch, provi
     provider = db.get(BankProviderConnection, 1)
     assert provider.status == 'reauthorization_required'
     assert provider.last_error == 'provider_reauthorization_required'
+
+
+def test_posted_link_replaces_pending_without_amount_guess(monkeypatch):
+    from app.services import plaid_bank
+    monkeypatch.setattr(plaid_bank, 'request', lambda *args: {'added': [
+        {'transaction_id': 'pending', 'account_id': 'a', 'pending': True, 'amount': 636.86},
+        {'transaction_id': 'posted', 'account_id': 'a', 'pending': False, 'pending_transaction_id': 'pending', 'amount': 636.86},
+        {'transaction_id': 'different', 'account_id': 'a', 'pending': True, 'amount': 636.86}], 'next_cursor': 'done', 'has_more': False})
+    active, _ = plaid_bank.synced_transactions('token', {'3304': {'account_id': 'a'}})
+    assert set(active) == {'posted', 'different'}

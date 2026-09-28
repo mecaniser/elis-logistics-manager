@@ -85,9 +85,11 @@ def evaluate(db, profile, now):
                 items.append({'route_id': route_id, 'kind': kind, 'status': 'evidence_required', 'limit_cents': limit['limit_cents']})
             except HTTPException:
                 items.append({'route_id': route_id, 'kind': kind, 'status': 'review_required'})
+    from app.services.bank_coverage import proposals
+    coverage = proposals(db, profile)
     # Plaid's pending feed cannot prove completeness or a full payoff. A ceiling
     # is never promoted into a scheduled draft or an instruction to move money.
-    return {'observed_at': now.isoformat(), 'status': 'settings_review_required' if prefs['review_required'] else 'evidence_required' if items else 'balances_checked', 'routes': items, 'transfers_executed': False}
+    return {'coverage': coverage, 'observed_at': now.isoformat(), 'status': 'coverage_review_required' if coverage else 'settings_review_required' if prefs['review_required'] else 'evidence_required' if items else 'balances_checked', 'routes': items, 'transfers_executed': False}
 
 
 def unified(db, tenant_id):

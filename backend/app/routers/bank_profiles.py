@@ -35,6 +35,7 @@ def sync(db, profile):
 
 
 def view(db, tenant_id):
+    from app.services.bank_coverage import proposals
     result = []
     for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).order_by(BankProfile.created_at):
         accounts = []
@@ -47,7 +48,7 @@ def view(db, tenant_id):
                 'reserve_cents': canonical.reserve_cents if canonical else 0,
                 'overlap_candidates': [{'id': c.id, 'name': c.name, 'last4': c.last4, 'profiles': [p.name for p in db.query(BankProfile).join(BankProfileAccount, BankProfileAccount.profile_id == BankProfile.id).filter(BankProfileAccount.account_id == c.id, BankProfile.tenant_id == tenant_id)]} for c in candidates]})
         result.append({'id': p.id, 'name': p.name, 'institution_id': p.institution_id,
-            'legacy': p.legacy, 'status': p.status, 'last_error': p.last_error,
+            'coverage': proposals(db, p, allow_stale=True), 'legacy': p.legacy, 'status': p.status, 'last_error': p.last_error,
             'last_checked_at': p.last_checked_at, 'accounts': accounts, 'preferences': preferences(db, p)})
     routes = [{'id': r.id, 'profile_id': r.profile_id, 'source_id': r.source_id,
                'destination_id': r.destination_id, 'enabled': r.enabled}
@@ -263,6 +264,9 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
         return {'existing_draft': draft_json(existing)}
     sync(db, profile)
     result = profiles.transfer_limit(db, row)
+    from app.services.bank_coverage import proposals
+    coverage = next((c for c in proposals(db, profile) if any(r['route_id'] == row.id for r in c['routes'])), None)
+    result['coverage'] = coverage
     result.update({'source': 'profile_route', 'route_id': row.id, 'item_id': profile.item_id})
     now = datetime.now(timezone.utc)
     run = BankRepaymentRun(tenant_id=tenant_id, started_at=now, finished_at=now, status='review_required', result=result)
@@ -272,6 +276,7 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
 
 
 class AmountInput(StrictModel):
+    coverage_confirmed: bool = False
     intent: str = Field(default='payment', pattern=r'^(payment|full_payoff)$')
     amount_cents: int = Field(gt=0, le=100000000, strict=True)
 
@@ -291,6 +296,13 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
         raise HTTPException(409, 'A transfer between these accounts is already in progress. Continue that transfer.')
     if data.intent == 'full_payoff':
         raise HTTPException(409, 'Full payoff is unverified. A current bank payoff quote including accrued interest is required; the reported balance is not a payoff quote.')
+    if run.result.get('coverage') and not data.coverage_confirmed:
+        raise HTTPException(409, 'Confirm the coverage amount and pending debits before creating a draft.')
+    if run.result.get('coverage'):
+        from app.services.bank_coverage import proposals
+        coverage = next((c for c in proposals(db, profiles.owned(db, BankProfile, row.profile_id, tenant_id)) if c['account_id'] == row.destination_id), None)
+        if not coverage or data.amount_cents > min(coverage.get('possible_cents', 0), run.result['coverage'].get('possible_cents', 0)):
+            raise HTTPException(409, 'Coverage need changed. Refresh the review before creating a draft.')
     result = profiles.transfer_limit(db, row)
     if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')
@@ -302,7 +314,7 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     db.add(draft)
     db.add(BankProfileDraft(draft_id=draft_id, tenant_id=tenant_id, profile_id=row.profile_id,
         route_id=row.id, source_id=row.source_id, destination_id=row.destination_id))
-    run.result = {**run.result, 'drafts_created': True, 'draft_ids': [draft_id]}
+    run.result = {**run.result, 'coverage_confirmed': data.coverage_confirmed, 'approved_amount_cents': data.amount_cents, 'drafts_created': True, 'draft_ids': [draft_id]}
     db.commit()
     return {'draft': draft_json(draft), 'transfers_executed': False}
 
