@@ -173,6 +173,33 @@ class Financing(Strict):
     use_description: str = Field(min_length=1, max_length=500)
 
 
+class EquipmentPayment(Strict):
+    kind: Literal['equipment_payment']
+    asset_id: int
+    transaction_id: str
+    facility: str = Field(min_length=1, max_length=100)
+    principal: PositiveMoney
+    interest: PositiveMoney
+    evidence_id: str
+    allocation_note: str = Field(min_length=1, max_length=500)
+    split_confirmed: Literal[True]
+
+
+class EquipmentPaymentVoid(Strict):
+    kind: Literal['equipment_payment_void']
+    payment_id: str
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class EquipmentPaymentDue(Strict):
+    kind: Literal['equipment_payment_due']
+    asset_id: int
+    due: date
+    amount: PositiveMoney
+    facility: str = Field(min_length=1, max_length=100)
+    evidence_id: str
+
+
 class FuelRow(Strict):
     date: date
     gallons: Quantity | None = None
@@ -270,7 +297,7 @@ class Period(Strict):
     reason: str = Field(min_length=1, max_length=500)
 
 
-Payload = Annotated[Union[Policy, RetentionTargets, Account, CSVMapping, Statement, Claim, Payment, CreditNote, BankMatch, Reserve, Assignment, AssetPlan, Disposal, Financing, SettlementInput, Travel, CompletedLoad, Journal, Reversal, Period, Activation], Field(discriminator='kind')]
+Payload = Annotated[Union[Policy, RetentionTargets, Account, CSVMapping, Statement, Claim, Payment, CreditNote, BankMatch, Reserve, Assignment, AssetPlan, Disposal, Financing, EquipmentPayment, EquipmentPaymentVoid, EquipmentPaymentDue, SettlementInput, Travel, CompletedLoad, Journal, Reversal, Period, Activation], Field(discriminator='kind')]
 
 
 class Command(Strict):

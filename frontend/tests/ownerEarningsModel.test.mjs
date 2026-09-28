@@ -20,3 +20,6 @@ test('unexpected bridge entries remain visible and reconciliation rejects mismat
 test('planned loan gap is a distinct deduction and reconciles exactly',()=>{
  const p=plan();p.pairs[0].bridge.push({label:'Additional planned loan payments',amount:'-120.00'});p.planning_subtotal='4826.15';const r=ownerEarningsModel(p);assert.equal(r.reconciled,true);assert.equal(r.rows.find(x=>x.label==='Additional planned loan payments').tone,'loan')
 })
+test('bank matched payment replaces the loan budget and stays visible in the money flow',()=>{
+ const p=plan();p.pairs[0].bridge.push({label:'Additional planned loan payments',amount:'-20.00'},{label:'Bank-matched trailer payments',amount:'-100.00'});p.planning_subtotal='4826.15';const r=ownerEarningsModel(p);assert.equal(r.reconciled,true);assert.equal(r.rows.find(x=>x.label==='Bank-matched trailer payments').amount,-10000);assert.equal(r.rows.find(x=>x.label==='Bank-matched trailer payments').tone,'loan')
+})

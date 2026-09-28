@@ -18,6 +18,7 @@ export function ownerEarningsModel(plan:EarningsPlan){
   {label:'Equipment capital recovery',amount:-capital,tone:'capital',always:true},
   {label:'Reserve funding adjustments',amount:adjustments,tone:'capital'},
   {label:'Additional planned loan payments',amount:take('Additional planned loan payments'),tone:'loan'},
+  {label:'Bank-matched trailer payments',amount:take('Bank-matched trailer payments'),tone:'loan'},
   {label:'Recorded equipment principal payments',amount:take('Business-paid equipment obligations'),tone:'loan',always:true},
   ...[...totals].map(([label,amount])=>({label,amount,tone:'cost'})),
   {label:'Unassigned costs & income',amount:cents(plan.unassigned_result),tone:'cost'},

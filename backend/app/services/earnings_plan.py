@@ -123,6 +123,7 @@ def earnings_plan(db, tenant, report):
     scores = {p['asset_id']: p for p in report['retention']['pairs']}
     pair_rows = []
     planning_scores = []
+    matched_payment_ids = set()
     for pair in report['pairs']:
         i = pair['truck_id']
         if i not in assets or i not in scores:
@@ -193,6 +194,7 @@ def earnings_plan(db, tenant, report):
         saved_rows = [r for r in report['legacy_comparison']['rows'] if r['asset_id'] == i and r['legacy_id'] not in posted_legacy and r['date'] <= end.isoformat()]
         saved_remainder = sum((D(r['settlement_remainder']) for r in saved_rows), ZERO)
         financing_gap = ZERO
+        confirmed_payments = ZERO
         loan_details = {}
         for aid, target in financing_targets.items():
             # Offset only actual deductions already present in this pair's bridge.
@@ -204,11 +206,17 @@ def earnings_plan(db, tenant, report):
                 claim = closing['claims'].get(event.payload['claim_id'], {})
                 if event.effective_date in pair_days.get((i, aid), {'days': set()})['days'] and claim.get('asset_id') == aid and claim.get('category') == 'equipment' and event.payload['payer'] == 'business':
                     recorded += D(event.payload['amount'])
+            from app.services.equipment_payments import payment_events
+            matched = [e for e in payment_events(closing, aid) if e.effective_date in pair_days.get((i, aid), {'days': set()})['days']]
+            matched_payment_ids.update(e.id for e in matched)
+            confirmed = sum((D(e.payload['principal']) + D(e.payload['interest']) for e in matched), ZERO)
+            confirmed_payments += confirmed
+            recorded += confirmed
             gap = max(target - max(recorded, ZERO), ZERO)
             financing_gap += gap
-            loan_details[aid] = {'loan_target': money(target), 'recorded_loan_deductions': money(max(recorded, ZERO)), 'additional_loan': money(gap)}
+            loan_details[aid] = {'loan_target': money(target), 'recorded_loan_deductions': money(max(recorded, ZERO)), 'additional_loan': money(gap), 'confirmed_payments': money(confirmed)}
         financing_row = {'label': 'Additional planned loan payments', 'amount': money(-financing_gap)}
-        subtotal = D(score['retained']) + saved_remainder - additional - financing_gap
+        subtotal = D(score['retained']) + saved_remainder - additional - financing_gap - confirmed_payments
         if any(D(saved[a]['original_loan']) > 0 for a in plan_assets if a in saved):
             issues.append('Saved loan terms are available. Earnings-based payoff forecasts do not establish actual period payments.')
         if len(plan_assets) == 1 and assets[i].default_trailer_id:
@@ -218,7 +226,8 @@ def earnings_plan(db, tenant, report):
             issues.append('Unposted saved settlement amounts are included as unverified management history, not posted accounting revenue.')
         # Use exactly the same source population for revenue and retained value.
         freight = D(score['freight']) + sum((D(r['freight_gross']) for r in saved_rows), ZERO)
-        bridge = score['bridge'] + [financing_row,
+        payment_row = {'label': 'Bank-matched trailer payments', 'amount': money(-confirmed_payments)}
+        bridge = score['bridge'] + [financing_row, payment_row,
             {'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)},
             {'label': 'Additional planned protection', 'amount': money(-additional)},
         ]
@@ -254,10 +263,14 @@ def earnings_plan(db, tenant, report):
                          'recorded_retained': score['retained'], 'saved_remainder': money(saved_remainder), 'saved_settlement_ids': [r['legacy_id'] for r in saved_rows], 'repair_target': money(repair_target),
                          'capital_target': money(capital_target), 'already_funded': money(funded),
                          'additional_protection': money(additional), 'planning_subtotal': money(subtotal),
-                         'issues': issues, 'bridge': score['bridge'] + [financing_row, {'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)}]})
+                         'confirmed_payments': money(confirmed_payments),
+                         'issues': issues, 'bridge': score['bridge'] + [financing_row, payment_row, {'label': 'Saved settlements not yet posted (unverified)', 'amount': money(saved_remainder)}]})
+    from app.services.equipment_payments import payment_events
+    unassigned_payments = sum((D(e.payload['principal']) + D(e.payload['interest']) for e in payment_events(closing)
+                               if start <= e.effective_date <= end and e.id not in matched_payment_ids), ZERO)
     return {'version': 3, 'revenue_breakdown': planning_freight(report, {sid for p in pair_rows for sid in p['saved_settlement_ids']}), 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
             'period': report['period'], 'as_of': report['as_of'], 'status': 'provisional',
             'settings': [{k: v for k, v in p.items() if not k.startswith('_')} for p in saved.values()],
             'pairs': pair_rows, 'planning_subtotal': money(sum((D(p['planning_subtotal']) for p in pair_rows), ZERO)),
-            'unassigned_result': report['retention']['unassigned_asset_result'],
+            'unassigned_result': money(D(report['retention']['unassigned_asset_result']) - unassigned_payments),
             'note': 'Planning estimate using current vehicle settings, not a historical funded balance. Recorded expenses, payments and funding are included once. Missing costs, financing and capital plans remain unresolved; this is not verified take-home or cash available to withdraw.'}

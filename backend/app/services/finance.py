@@ -93,6 +93,9 @@ def state(db, tenant, as_of):
     es = events(db, tenant, as_of)
     result = {'events': es, 'accounts': {}, 'statements': {}, 'transactions': {}, 'matches': {}, 'allocated': {}, 'claims': {}, 'reserves': {}, 'plans': {}, 'policy': None, 'commitments': [], 'assignments': [], 'settlements': [], 'disposals': {}}
     reversed_events = {p.event_id for p in db.query(FinancePosting).filter(FinancePosting.tenant_id == tenant, FinancePosting.id.in_([e.payload['posting_id'] for e in es if e.kind == 'reversal'])).all()}
+    # Corrections restate the original match across historical views. Otherwise a
+    # corrected, re-entered payment would be counted twice before the void date.
+    reversed_events |= {e.payload['payment_id'] for e in db.query(FinanceEvent).filter_by(tenant_id=tenant, kind='equipment_payment_void')}
     for e in es:
         if e.id in reversed_events:
             continue
@@ -128,6 +131,8 @@ def state(db, tenant, as_of):
                 if p.get('transaction_id'): result['matches'][p['transaction_id']] = e.id
                 else: claim['remaining'] -= D(p['amount'])
                 claim['credited'] = D(claim.get('credited', 0)) + D(p['amount'])
+        elif k == 'equipment_payment':
+            result['matches'][p['transaction_id']] = e.id
         elif k == 'bank_match':
             result['matches'][p['transaction_id']] = e.id
             if p.get('counterpart_transaction_id'): result['matches'][p['counterpart_transaction_id']] = e.id
@@ -423,6 +428,9 @@ def append_command(db, tenant, command, key):
         # Proceeds are receivable until matched; debt payoff is a separate financing payment.
         net = D(p['gross_sale']) - D(p['selling_costs'])
         lines = [line('receivable', net, p['asset_id']), line('accumulated_depreciation', depreciation, p['asset_id']), line('equipment', -cost, p['asset_id']), line('disposal_gain', -(net - cost + depreciation), p['asset_id'])]
+    elif k in ('equipment_payment', 'equipment_payment_void', 'equipment_payment_due'):
+        from app.services.equipment_payments import validate_command
+        validate_command(db, tenant, p, when, s, bank_state)
     elif k == 'financing':
         if D(p['business_amount']) > D(p['amount']): fail('Business portion exceeds the total.')
         if D(p['annual_rate']) > 100: fail('Annual rate is a percentage between 0 and 100.')
@@ -554,6 +562,8 @@ def readiness(db, tenant, as_of):
     checks = []
     for key, title in [('approved', 'Accounting policy'), ('opening_confirmed', 'Opening balances'), ('account_coverage_confirmed', 'Account coverage'), ('history_confirmed', 'Historical source coverage'), ('carrier_presentation_confirmed', 'Carrier gross/net policy'), ('owner_treatment_confirmed', 'Owner and mixed-use financing policy'), ('depreciation_confirmed', 'Book depreciation'), ('tax_basis_confirmed', 'Prior tax basis and elections')]:
         checks.append({'code': key, 'label': title, 'status': 'pass' if policy.get(key) else 'unknown'})
+    if any(e.kind == 'equipment_payment' and e.id in s['active_event_ids'] for e in s['events']):
+        checks.append({'code': 'equipment_payment_books', 'label': 'Trailer payment register needs review against formal loan journals', 'status': 'unknown'})
     cash = cash_position(db, tenant, as_of)
     checks.append({'code': 'cash_reconciliation', 'label': 'Cash and card statement coverage', 'status': 'pass' if cash['status'] == 'reconciled' else 'unknown'})
     unmatched = [t for t in s['transactions'] if t not in s['matches']]

@@ -11,6 +11,7 @@ function AmountInput({value, onChange}: {value: unknown; onChange:(value:string)
 }
 
 export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle:Partial<Truck> & {id:number}; compact?:boolean}) {
+  const [forecastOpen,setForecastOpen] = useState(false)
   const [savedRevision,setSavedRevision] = useState(0)
   const [editing, setEditing] = useState(!compact)
   const saved = vehicle.investment_plans?.[vehicle.investment_plans.length - 1]
@@ -33,7 +34,7 @@ export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle
   const field = (key:string,label:string,type='number') => <label className="text-sm text-slate-700" key={key}>{label}{['net_resale','monthly_allocation','financed','initial_cash','balance_at_sale','quoted_monthly_payment'].includes(key) ? <AmountInput value={plan[key]} onChange={value=>change(key,value || (key==='quoted_monthly_payment'?null:''))}/> : <input className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 min-h-11" type={type} min={type==='number'?0:undefined} step={type==='number'?'any':undefined} value={plan[key] ?? ''} onChange={e=>change(key,e.target.value || (key==='quoted_monthly_payment'?null:''))}/>}</label>
   async function calculate(save:boolean) {
     const version=revision.current
-    setBusy(true);setMessage('')
+    setBusy(true);setMessage('');setForecastOpen(true)
     try {
       if(save){ const response=await trucksApi.saveInvestment(vehicle.id,investmentPayload(plan));if(version===revision.current){setResult(response.data.projection);setMessage('Recovery plan saved. No payment or reserve was recorded.');setSavedRevision(r=>r+1)} }
       else {const response=await trucksApi.previewInvestment(vehicle.id,investmentPayload(plan));if(version===revision.current)setResult(response.data)}
@@ -41,7 +42,7 @@ export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle
     finally {setBusy(false)}
   }
   return <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 mb-4" aria-label="Trailer recovery plan">
-    <div className="flex items-center justify-between gap-3 mb-3"><h3 className="font-semibold text-slate-900">Investment recovery plan</h3><span className="text-xs text-slate-500">Forecast · saved purchase {money(total)}</span>{compact&&<button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-sm min-h-11" aria-expanded={editing} onClick={()=>setEditing(!editing)}>{editing?'Close settings':'Edit plan'}</button>}</div>
+    <div className="flex items-center justify-between gap-3 mb-3"><h3 className="font-semibold text-slate-900">Trailer investment</h3>{compact&&<button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-sm min-h-11" aria-expanded={editing} onClick={()=>setEditing(!editing)}>{editing?'Close settings':'Edit plan'}</button>}</div>
     {editing&&<><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       <label className="text-sm text-slate-700">Funding<select className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 min-h-11" value={String(plan.funding)} onChange={e=>change('funding',e.target.value)}><option value="cash">Cash purchase</option><option value="heloc">HELOC</option><option value="dealer">Dealer financing</option><option value="other">Other loan</option></select></label>
       {field('start','Purchase date','date')}{field('effective','Effective from','date')}
@@ -55,13 +56,15 @@ export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle
     </div>
     <p className="text-xs text-slate-500 mt-3">Effective from controls when Finance uses this plan. Leave the payment override blank to calculate from the loan terms.</p>
     <div className="flex flex-wrap gap-2 mt-4"><button type="button" disabled={busy} onClick={()=>void calculate(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 min-h-11 font-medium text-slate-800 disabled:opacity-50">Calculate</button><button type="button" disabled={busy||!result||!vehicle.id} onClick={()=>void calculate(true)} className="rounded-md bg-blue-600 px-4 py-2 min-h-11 font-medium text-white disabled:opacity-50">Save recovery plan</button></div></>}
-    {result&&<>
+    {vehicle.id>0&&<TrailerInvestmentProgress id={vehicle.id} revision={savedRevision}/>}
+    {result&&<button type="button" className="flex w-full justify-between items-center min-h-11 mt-3 border-t pt-3 text-sm font-semibold" aria-expanded={forecastOpen} onClick={()=>setForecastOpen(!forecastOpen)}>Monthly plan &amp; expected result at sale<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2" aria-hidden="true" style={{transform:forecastOpen?'rotate(90deg)':undefined}}><path d="m9 18 6-6-6-6"/></svg></button>}
+    {result&&(forecastOpen)&&<>
     <div className="grid sm:grid-cols-2 gap-3 mt-4"><section className="rounded-lg bg-white border border-slate-200 p-3"><h4 className="text-sm font-semibold mb-2">Monthly trailer plan</h4><dl className="text-sm space-y-2">{[['monthly_allocation','Budget from trailer earnings'],['monthly_payment','Planned loan payment · includes interest'],['monthly_cash_recovery','Set aside to recover your cash'],['monthly_left','Estimated cash left each month']].map(([key,label])=><div className="flex justify-between gap-3" key={key}><dt>{label}</dt><dd className={`font-semibold ${key==='monthly_left'?'text-green-700':''}`}>{money(result[key])}</dd></div>)}</dl></section>
     <section className="rounded-lg bg-green-50 border border-green-200 p-3"><h4 className="text-sm font-semibold mb-2">After {String(result.months)} months + sale</h4><dl className="text-sm space-y-2">{[['net_resale','Expected sale proceeds'],['balance_at_sale','Loan to pay off when sold'],['sale_equity','Sale proceeds left after debt'],['projected_profit','Total estimated profit over ownership']].map(([key,label])=><div className="flex justify-between gap-3" key={key}><dt>{label}</dt><dd className={`font-semibold ${key==='projected_profit'?'text-green-700':''}`}>{money(result[key])}</dd></div>)}</dl></section></div>
     <p className="text-xs text-slate-500 mt-2">Trailer only · based on the monthly allocation for the full ownership period. Before additional trailer costs and tax. Combined truck + trailer earnings are shown in Finance.</p>
     {Number(result.quote_payment_difference)!==0&&<p className="text-xs text-amber-800 mt-2">Quote differs from rate-based payment ({money(result.rate_based_monthly_payment)}). Confirm final lender schedule.</p>}
     </>}
-    {vehicle.id>0&&<TrailerInvestmentProgress id={vehicle.id} revision={savedRevision}/>}
+
     {!vehicle.id&&<p className="text-xs text-slate-500 mt-2">Preview only. Save the vehicle purchase before attaching a recovery plan.</p>}
     {message&&<p role="status" className="text-sm mt-3">{message}</p>}
   </section>
