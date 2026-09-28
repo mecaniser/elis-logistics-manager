@@ -67,7 +67,7 @@ def preferences(db, profile):
     return result
 
 
-def evaluate(db, profile, now):
+def evaluate(db, profile, now, *, create_drafts=False):
     from app.services.bank_profiles import transfer_limit
     prefs = preferences(db, profile)
     routes = {r.id: r for r in db.query(BankProfileRoute).filter_by(profile_id=profile.id, tenant_id=profile.tenant_id, enabled=True)}
@@ -87,9 +87,14 @@ def evaluate(db, profile, now):
                 items.append({'route_id': route_id, 'kind': kind, 'status': 'review_required'})
     from app.services.bank_coverage import proposals
     coverage = proposals(db, profile)
-    # Plaid's pending feed cannot prove completeness or a full payoff. A ceiling
-    # is never promoted into a scheduled draft or an instruction to move money.
-    return {'coverage': coverage, 'observed_at': now.isoformat(), 'status': 'coverage_review_required' if coverage else 'settings_review_required' if prefs['review_required'] else 'evidence_required' if items else 'balances_checked', 'routes': items, 'transfers_executed': False}
+    draft_ids = []
+    if create_drafts:
+        from app.services.bank_coverage import scheduled_drafts
+        coverage, draft_ids = scheduled_drafts(db, profile)
+    summary = (f'{len(draft_ids)} coverage draft(s) created for your review.' if draft_ids else
+        'No new draft: review account data, funding routes, or existing drafts.' if coverage else
+        'No additional coverage needed after reserves and existing drafts.')
+    return {'summary': summary, 'draft_ids': draft_ids, 'coverage': coverage, 'observed_at': now.isoformat(), 'status': 'coverage_review_required' if coverage else 'settings_review_required' if prefs['review_required'] else 'evidence_required' if items else 'balances_checked', 'routes': items, 'transfers_executed': False}
 
 
 def unified(db, tenant_id):

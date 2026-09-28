@@ -275,6 +275,32 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
     return {'id': run.id, **result}
 
 
+@router.post('/drafts/{draft_id}/review')
+def review_scheduled(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    lock(db, tenant_id)
+    draft = profiles.owned(db, BankTransferDraft, draft_id, tenant_id)
+    if draft.status not in {'review_required', 'amount_review_required'}:
+        raise HTTPException(409, 'This draft is no longer awaiting review.')
+    binding = db.query(BankProfileDraft).filter_by(draft_id=draft_id, tenant_id=tenant_id).first()
+    if not binding:
+        raise HTTPException(404, 'Draft route unavailable.')
+    route = profiles.owned(db, BankProfileRoute, binding.route_id, tenant_id)
+    profile, _, _ = profiles.route_accounts(db, route)
+    sync(db, profile)
+    from app.services.bank_coverage import proposals
+    coverage = next((c for c in proposals(db, profile, exclude_draft=draft.id) if c['account_id'] == route.destination_id), None)
+    if not coverage or not coverage.get('possible_cents'):
+        raise HTTPException(409, 'Coverage is no longer needed. Remove this draft.')
+    result = profiles.transfer_limit(db, route, exclude_draft=draft.id)
+    result.update({'coverage': coverage, 'scheduled_draft_id': draft.id, 'source': 'profile_route', 'route_id': route.id})
+    now = datetime.now(timezone.utc)
+    run = BankRepaymentRun(tenant_id=tenant_id, started_at=now, finished_at=now, status='review_required', result=result)
+    db.add(run)
+    db.commit()
+    return {'id': run.id, **result}
+
+
 def financed_trailer(db, tenant_id, asset_id):
     from app.models.truck import Truck
     from app.services.trailer_investment import plan_for_day
@@ -335,7 +361,10 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     row = profiles.owned(db, BankProfileRoute, run.result['route_id'], tenant_id)
     profiles.route_accounts(db, row)
     existing = existing_transfer(db, row)
-    if existing:
+    scheduled_id = run.result.get('scheduled_draft_id')
+    if scheduled_id and (not existing or existing.id != scheduled_id or existing.status not in {'review_required', 'amount_review_required'}):
+        raise HTTPException(409, 'This draft has changed. Open it again.')
+    if existing and not scheduled_id:
         raise HTTPException(409, 'A transfer between these accounts is already in progress. Continue that transfer.')
     if data.intent == 'full_payoff':
         raise HTTPException(409, 'Full payoff is unverified. A current bank payoff quote including accrued interest is required; the reported balance is not a payoff quote.')
@@ -343,12 +372,18 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
         raise HTTPException(409, 'Confirm the coverage amount and pending debits before creating a draft.')
     if run.result.get('coverage'):
         from app.services.bank_coverage import proposals
-        coverage = next((c for c in proposals(db, profiles.owned(db, BankProfile, row.profile_id, tenant_id)) if c['account_id'] == row.destination_id), None)
+        coverage = next((c for c in proposals(db, profiles.owned(db, BankProfile, row.profile_id, tenant_id), exclude_draft=scheduled_id) if c['account_id'] == row.destination_id), None)
         if not coverage or data.amount_cents > min(coverage.get('possible_cents', 0), run.result['coverage'].get('possible_cents', 0)):
             raise HTTPException(409, 'Coverage need changed. Refresh the review before creating a draft.')
-    result = profiles.transfer_limit(db, row)
+    result = profiles.transfer_limit(db, row, exclude_draft=scheduled_id)
     if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')
+    if scheduled_id:
+        existing.amount_cents = data.amount_cents
+        existing.status = 'reviewed'
+        run.result = {**run.result, 'coverage_confirmed': True, 'approved_amount_cents': data.amount_cents, 'drafts_created': True, 'draft_ids': [existing.id]}
+        db.commit()
+        return {'draft': draft_json(existing), 'transfers_executed': False}
     asset = None
     if data.equipment_asset_id is not None:
         asset = financed_trailer(db, tenant_id, data.equipment_asset_id)

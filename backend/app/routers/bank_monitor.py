@@ -573,7 +573,7 @@ def list_drafts(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get
 @router.post('/drafts/{draft_id}/cancel')
 def cancel_unprepared_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
-    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').filter(BankTransferDraft.charge_reference.like('bank-review-%') | BankTransferDraft.charge_reference.like('bank-profile-%')).update({'status': 'cancelled'})
+    updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).filter(BankTransferDraft.status.in_(['reviewed', 'review_required', 'amount_review_required'])).filter(BankTransferDraft.charge_reference.like('bank-review-%') | BankTransferDraft.charge_reference.like('bank-profile-%')).update({'status': 'cancelled'})
     if not updated:
         db.rollback()
         raise HTTPException(409, 'Only a draft that has not started preparation can be removed.')
@@ -673,6 +673,12 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
             db.commit()
             raise HTTPException(422, str(exc)) from None
         limit = bank_profiles.transfer_limit(db, route, exclude_draft=draft.id)
+        if draft.charge_reference.startswith('bank-profile-scheduled-'):
+            from app.services.bank_coverage import proposals
+            coverage = next((c for c in proposals(db, profile, exclude_draft=draft.id) if c['account_id'] == binding.destination_id), None)
+            if not coverage or draft.amount_cents > coverage.get('possible_cents', 0):
+                db.commit()
+                raise HTTPException(409, 'Coverage need changed. Remove this draft and review the updated account.')
         if draft.amount_cents > limit['limit_cents']:
             db.commit()
             raise HTTPException(409, 'Bank balances or reservations changed. Remove this unprepared draft and review again.')
