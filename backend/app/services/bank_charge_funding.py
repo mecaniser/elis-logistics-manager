@@ -1,6 +1,7 @@
 """Whole-charge funding. Provider identity, never equal amounts, establishes continuity."""
 from datetime import date, datetime, timezone
 from uuid import uuid4
+import re
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.models.bank_monitor import (BankFundingCharge, BankFundingFeed, BankProfileAccount,
@@ -21,7 +22,12 @@ def ingest(db, profile, member, entries):
         return
     feed.observed_at = datetime.now(timezone.utc)
     charges = db.query(BankFundingCharge).filter_by(tenant_id=profile.tenant_id, account_id=member.account_id).all()
-    own_memos = [d.memo for d in db.query(BankTransferDraft).join(BankProfileDraft, BankProfileDraft.draft_id == BankTransferDraft.id).filter(BankTransferDraft.tenant_id == profile.tenant_id, BankProfileDraft.source_id == member.account_id, BankTransferDraft.status != 'cancelled') if d.memo]
+    normalize_memo = lambda text: re.sub(r'[^a-z0-9]', '', text.casefold())
+    own_memos = []
+    for draft in db.query(BankTransferDraft).filter_by(tenant_id=profile.tenant_id).filter(BankTransferDraft.status != 'cancelled'):
+        binding = db.get(BankProfileDraft, draft.id)
+        if (binding.source_id == member.account_id if binding else draft.from_last4 == member.last4) and draft.memo:
+            own_memos.append(normalize_memo(draft.memo))
     seen = set()
     for entry in entries:
         txid = entry.get('transaction_id')
@@ -29,7 +35,7 @@ def ingest(db, profile, member, entries):
             continue
         # Loan payments and external transfers are still checking debits to cover.
         # Exclude only a debit bearing an actual tracked outgoing transfer memo.
-        if any(memo.casefold() in entry.get('bank_description', '').casefold() for memo in own_memos):
+        if any(memo in normalize_memo(entry.get('bank_description', '')) for memo in own_memos):
             continue
         try:
             day = date.fromisoformat(entry['date'])
