@@ -113,12 +113,13 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       sessionStorage.setItem('elis-bank-profile-link', JSON.stringify(saved)); await launch(saved)
     } catch (e) { setError(errorText(e)); setBusy(false) }
   }
-  const startReview = async (route: Route, payment: TrailerPaymentIntent | null = null) => {
+  const startReview = async (route: Route, coverageOnly = false, payment: TrailerPaymentIntent | null = null) => {
     setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setTrailerIntent(payment)
     try {
       const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
       if (alive.current && response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
       update((await bankProfilesApi.request<Data>(tenantId)).data)
+      if (coverageOnly && !response.data.coverage) { if (alive.current) { setAccountId(''); setError('The refreshed account no longer has a funding proposal. Review its updated balance.'); } return }
       if (alive.current) { setReview(response.data); setAmount(payment?.amount || (response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2))) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
@@ -177,7 +178,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
         {!!active.coverage?.length && <section aria-label="Coverage proposals" className="mt-5 border-t border-slate-700 pt-4"><h3 className="font-semibold text-amber-200">Checking needs attention</h3>{active.coverage.map(c => <div key={c.account_id} className="mt-3 space-y-2 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2"><strong>{c.name} · ••{c.last4}</strong><span className="font-semibold tabular-nums">{c.minimum_cents == null ? 'Balance unavailable' : c.pending_review_required ? `${money(c.minimum_cents)}–${money(c.possible_cents)} to review` : `${money(c.minimum_cents)} to cover`}</span></div>
           <p className="text-xs text-slate-300">{c.pending_review_required ? 'Pending debits may already affect the balance. Confirm the amount before creating a draft.' : 'Includes your protected reserve and accounts for unfinished incoming transfers.'}{c.observed_at && ` Based on ${new Date(c.observed_at).toLocaleString()}.`}</p>
-          <div className="flex flex-wrap gap-2">{c.routes.map(option => { const route = data.routes.find(r => r.id === option.route_id); return route && <button key={option.route_id} disabled={busy} className={button} onClick={() => { const target = active.accounts.find(a => a.account_id === c.account_id); setAccountId(target?.id || ''); void startReview(route) }}>Review funding from ••{option.source_last4}</button> })}{!c.routes.length && <button type="button" className={button} onClick={openSettings}>Review funding settings</button>}</div>
+          <div className="flex flex-wrap gap-2">{c.routes.map(option => { const route = data.routes.find(r => r.id === option.route_id); return route && <button key={option.route_id} disabled={busy} className={button} onClick={() => { const target = active.accounts.find(a => a.account_id === c.account_id); setAccountId(target?.id || ''); void startReview(route, true) }}>Review funding from ••{option.source_last4}</button> })}{!c.routes.length && <button type="button" className={button} onClick={openSettings}>Review funding settings</button>}</div>
           {!!c.uncovered_cents && <p className="text-xs text-amber-200">Enabled funding can leave up to {money(c.uncovered_cents)} uncovered.</p>}
         </div>)}</section>}
         {[{ key: 'checking', label: 'Checking accounts', description: 'Cash available at the bank' }, { key: 'line', label: 'Credit lines', description: 'Available borrowing and balances owed' }, { key: 'card', label: 'Credit cards', description: 'Available credit and card balances' }].map(group => {
@@ -224,7 +225,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
           </>}
           {!review && trailerOpen && account.account_id && <>
             <button type="button" onClick={() => setTrailerOpen(false)} className="min-h-11 text-left text-sm font-semibold text-blue-700">← Account actions</button>
-            <AccountTrailerPayment key={account.account_id} tenantId={tenantId} accountId={account.account_id} accountName={`${account.name} · ••${account.last4}`} profileId={active.id} profileName={active.name} checking={active.accounts.filter(a => a.kind === 'checking')} routes={data.routes.filter(r => r.profile_id === active.id)} target={trailerIntent ? String(trailerIntent.asset_id) : equipmentTarget || undefined} busy={busy} onStart={(id,payment) => {const route=data.routes.find(r => r.id===id); if(route) void startReview(route,payment)}} onRoutesChanged={() => {void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e)))}} />
+            <AccountTrailerPayment key={account.account_id} tenantId={tenantId} accountId={account.account_id} accountName={`${account.name} · ••${account.last4}`} profileId={active.id} profileName={active.name} checking={active.accounts.filter(a => a.kind === 'checking')} routes={data.routes.filter(r => r.profile_id === active.id)} target={trailerIntent ? String(trailerIntent.asset_id) : equipmentTarget || undefined} busy={busy} onStart={(id,payment) => {const route=data.routes.find(r => r.id===id); if(route) void startReview(route,false,payment)}} onRoutesChanged={() => {void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e)))}} />
           </>}
           {review && <section aria-label="Review account transfer" className="space-y-4">
             <button type="button" onClick={() => setReview(null)} className="min-h-11 text-sm font-semibold text-blue-700">{trailerIntent ? '← Trailer payment' : '← Account actions'}</button>
