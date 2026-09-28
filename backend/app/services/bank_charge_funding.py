@@ -21,13 +21,16 @@ def ingest(db, profile, member, entries):
         return
     feed.observed_at = datetime.now(timezone.utc)
     charges = db.query(BankFundingCharge).filter_by(tenant_id=profile.tenant_id, account_id=member.account_id).all()
+    own_memos = [d.memo for d in db.query(BankTransferDraft).join(BankProfileDraft, BankProfileDraft.draft_id == BankTransferDraft.id).filter(BankTransferDraft.tenant_id == profile.tenant_id, BankProfileDraft.source_id == member.account_id, BankTransferDraft.status != 'cancelled') if d.memo]
     seen = set()
     for entry in entries:
         txid = entry.get('transaction_id')
         if not txid or entry.get('currency') != 'USD' or entry.get('amount_cents', 0) <= 0:
             continue
-        if entry.get('category') in {'TRANSFER_IN', 'TRANSFER_OUT', 'LOAN_PAYMENTS'}:
-            continue  # Do not borrow to fund another transfer or repayment.
+        # Loan payments and external transfers are still checking debits to cover.
+        # Exclude only a debit bearing an actual tracked outgoing transfer memo.
+        if any(memo.casefold() in entry.get('bank_description', '').casefold() for memo in own_memos):
+            continue
         try:
             day = date.fromisoformat(entry['date'])
         except (ValueError, KeyError, TypeError):
