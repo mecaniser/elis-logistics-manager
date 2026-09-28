@@ -115,4 +115,17 @@ def investment_progress(db, tenant, asset, as_of):
     if not asset.investment_plans:
         return None
     start = date.fromisoformat(min(p['effective'] for p in asset.investment_plans))
-    return settlement_progress(asset, income_sources(db, tenant, asset, start, as_of), as_of)
+    result = settlement_progress(asset, income_sources(db, tenant, asset, start, as_of), as_of)
+    if not result or result.get('unavailable'):
+        return result
+    from app.services.equipment_payments import summary
+    from app.models.repair import Repair
+    result['recorded_payments'] = summary(db, tenant, asset, as_of)
+    repairs = sum((D(x.cost) for x in db.query(Repair).filter(
+        Repair.truck_id == asset.id, Repair.repair_date >= start, Repair.repair_date <= as_of)), ZERO)
+    # Available earnings keep the larger of the repayment budget and actual cash
+    # paid protected. A confirmed payment replaces its budget, never adds to it.
+    actual = D(result['recorded_payments']['payments_total'])
+    result['repair_costs'] = money(repairs)
+    result['estimated_free_cash'] = money(D(result['allocated_income']) - max(D(result['loan_allocation']), actual) - D(result['cash_recovery']) - repairs)
+    return result

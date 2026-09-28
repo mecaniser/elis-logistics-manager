@@ -35,6 +35,7 @@ export interface PaymentAccount { id: string; name: string; account_type: 'card'
 export interface PaymentBalanceSource {id: string; provider: 'ledger' | 'monitor'; name: string; account_type: string; last4?: string; balance: string | null; as_of: string | null; basis: string; source_ref: string | null}
 export interface PaymentBalanceLink {link_id: string; provider: 'ledger' | 'monitor'; status: string; source: PaymentBalanceSource | null; reason: string}
 export const financeApi = {
+  equipmentPayments: (as_of: string) => client.get("/equipment-payments", {params: {as_of}}).then(r=>r.data),
   ownerReimbursements: () => client.get('/owner-reimbursements').then(r => r.data),
   matchOwnerReimbursement: (id: string, payload: RecordData, key: string) => client.post(`/owner-reimbursements/${id}/match`, payload, {headers: {'Idempotency-Key': key}}).then(r => r.data),
   paymentSources: () => client.get<{items: PaymentBalanceSource[]; monitor_available: boolean}>('/payment-account-sources').then(r => r.data),

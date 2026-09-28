@@ -425,3 +425,9 @@ def confirm_unreimbursed(body: ConfirmUnreimbursed, db: Session = Depends(get_db
     except Exception:
         db.rollback()
         raise
+
+
+@router.get('/equipment-payments')
+def equipment_payment_workspace(as_of: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.equipment_payments import workspace
+    return workspace(db, tenant, min(as_of, date.today()))

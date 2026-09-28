@@ -54,6 +54,7 @@ export default function VehicleDetail() {
   const [reserveBalance, setReserveBalance] = useState<ReserveBalance | null>(null)
   const [loading, setLoading] = useState(true)
   const [investmentExpanded, setInvestmentExpanded] = useState(!isMobile)
+  const [legacyRoiExpanded,setLegacyRoiExpanded] = useState(false)
   const [vehicleInfoExpanded, setVehicleInfoExpanded] = useState(!isMobile)
   const [depreciationExpanded, setDepreciationExpanded] = useState(true)
   const [repairsExpanded, setRepairsExpanded] = useState(true)
@@ -97,6 +98,7 @@ export default function VehicleDetail() {
       }
 
       setVehicle(currentVehicle)
+      setInvestmentExpanded(currentVehicle.vehicle_type !== 'trailer' && !isMobile)
       setRoiData(roiResponse.data)
       setAttachedTrailer(nextAttachedTrailer)
       setAttachedTrailerRoi(nextAttachedTrailerRoi)
@@ -264,8 +266,9 @@ export default function VehicleDetail() {
       )}
 
       {vehicle.vehicle_type === 'trailer' && <TrailerInvestmentForm key={vehicle.id} vehicle={vehicle} compact />}
+      {vehicle.vehicle_type==='trailer'&&!!vehicle.investment_plans?.length&&<button type="button" className="flex w-full justify-between items-center rounded-lg bg-white border p-4 mb-4 text-sm" aria-expanded={legacyRoiExpanded} onClick={()=>setLegacyRoiExpanded(!legacyRoiExpanded)}>Previous earnings calculation<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2" aria-hidden="true" style={{transform:legacyRoiExpanded?'rotate(90deg)':undefined}}><path d="m9 18 6-6-6-6"/></svg></button>}
       {/* ROI Metrics - Only for trucks and trailers (revenue-generating vehicles) */}
-      {vehicle.vehicle_type !== 'suv' && ((roiData.cash_investment && roiData.cash_investment > 0) || (roiData.loan_amount && roiData.loan_amount > 0)) && (
+      {(vehicle.vehicle_type !== 'trailer'||!vehicle.investment_plans?.length||legacyRoiExpanded) && vehicle.vehicle_type !== 'suv' && ((roiData.cash_investment && roiData.cash_investment > 0) || (roiData.loan_amount && roiData.loan_amount > 0)) && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-900">ROI Metrics</h2>
 
