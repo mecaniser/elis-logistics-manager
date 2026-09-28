@@ -372,6 +372,7 @@ export const authApi = {
 
 // Truck API (also handles trailers and SUVs)
 export const trucksApi = {
+  investmentProgress: (id:number, as_of:string) => api.get(`/trucks/${id}/investment-progress`,{params:{as_of}}),
   previewInvestment: (id: number, plan: Record<string, unknown>) => api.post<Record<string, string | number | null>>(id ? `/trucks/${id}/investment-plan/preview` : '/trucks/investment-preview', plan),
   saveInvestment: (id: number, plan: Record<string, unknown>) => api.post(`/trucks/${id}/investment-plan`, plan),
   getAll: (vehicleType?: 'truck' | 'trailer' | 'suv') => {

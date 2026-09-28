@@ -68,3 +68,8 @@
 .owner-flow-repair{fill:#b45309;}.owner-flow-capital{fill:#7c3aed;}.owner-flow-loan{fill:#0369a1;}.owner-flow-cost{fill:#64748b;}.owner-flow-final{fill:#166449;}
 .owner-flow-label-repair strong{color:#b45309;}.owner-flow-label-capital strong{color:#7c3aed;}.owner-flow-label-loan strong{color:#0369a1;}.owner-flow-label-cost strong{color:#64748b;}.owner-flow-label-final strong{color:#166449;}
 .owner-flow-footnote{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--finance-muted);margin:12px 0;}
+
+.investment-deduction { position: relative; text-align: left !important; }
+.investment-detail-panel { position: absolute; top: calc(100% + 8px); left: 0; width: 300px; max-width: 65vw; z-index: 50; text-align: left; }
+.freight-flow-label:has(.investment-detail-panel) { z-index: 50; }
+.investment-detail-panel .finance-waterfall { margin: 0; }

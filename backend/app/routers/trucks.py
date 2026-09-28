@@ -4,7 +4,7 @@ Trucks router
 import logging
 import mimetypes
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -670,3 +670,10 @@ def save_investment_plan(truck_id: int, plan: InvestmentPlan, db: Session = Depe
 @router.post('/investment-preview')
 def preview_unpurchased_investment(plan: InvestmentPlan, tenant_id: int = Depends(get_tenant_id)):
     return plan.projection()
+
+
+@router.get('/{truck_id}/investment-progress')
+def get_investment_progress(truck_id: int, as_of: date, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
+    from app.services.investment_progress import investment_progress
+    truck = get_tenant_truck_or_404(db, truck_id, tenant_id)
+    return investment_progress(db, tenant_id, truck, as_of)

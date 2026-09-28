@@ -1,3 +1,4 @@
+import TrailerInvestmentProgress from './TrailerInvestmentProgress'
 import { useEffect, useRef, useState } from 'react'
 import { Truck, trucksApi } from '../services/api'
 
@@ -10,6 +11,7 @@ function AmountInput({value, onChange}: {value: unknown; onChange:(value:string)
 }
 
 export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle:Partial<Truck> & {id:number}; compact?:boolean}) {
+  const [savedRevision,setSavedRevision] = useState(0)
   const [editing, setEditing] = useState(!compact)
   const saved = vehicle.investment_plans?.[vehicle.investment_plans.length - 1]
   const total = Number(vehicle.total_cost || 0)
@@ -33,7 +35,7 @@ export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle
     const version=revision.current
     setBusy(true);setMessage('')
     try {
-      if(save){ const response=await trucksApi.saveInvestment(vehicle.id,investmentPayload(plan));if(version===revision.current){setResult(response.data.projection);setMessage('Recovery plan saved. No payment or reserve was recorded.')} }
+      if(save){ const response=await trucksApi.saveInvestment(vehicle.id,investmentPayload(plan));if(version===revision.current){setResult(response.data.projection);setMessage('Recovery plan saved. No payment or reserve was recorded.');setSavedRevision(r=>r+1)} }
       else {const response=await trucksApi.previewInvestment(vehicle.id,investmentPayload(plan));if(version===revision.current)setResult(response.data)}
     } catch(error) {const detail=(error as {response?:{data?:{detail?:unknown}}}).response?.data?.detail;setMessage(typeof detail==='string'?detail:'Check purchase date, funding amounts and recovery settings.')}
     finally {setBusy(false)}
@@ -54,6 +56,7 @@ export default function TrailerInvestmentForm({vehicle, compact=false}: {vehicle
     <p className="text-xs text-slate-500 mt-3">Effective from controls when Finance uses this plan. Leave the payment override blank to calculate from the loan terms.</p>
     <div className="flex flex-wrap gap-2 mt-4"><button type="button" disabled={busy} onClick={()=>void calculate(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2 min-h-11 font-medium text-slate-800 disabled:opacity-50">Calculate</button><button type="button" disabled={busy||!result||!vehicle.id} onClick={()=>void calculate(true)} className="rounded-md bg-blue-600 px-4 py-2 min-h-11 font-medium text-white disabled:opacity-50">Save recovery plan</button></div></>}
     {result&&<><dl className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">{[['monthly_payment','Loan payment / month'],['monthly_cash_recovery','Cash recovery / month'],['monthly_left','Left / month'],['projected_profit','Lifetime profit']].map(([key,label])=><div key={key}><dt className="text-xs text-slate-600">{label}</dt><dd className="text-lg font-semibold tabular-nums">{money(result[key])}</dd></div>)}</dl><p className="text-xs text-slate-500 mt-3">Before additional operating costs and tax. Sale equity: {money(result.sale_equity)}. Cash ROI: {result.cash_roi_percent==null?'Not applicable (no cash invested)':`${result.cash_roi_percent}%`}.</p>{Number(result.quote_payment_difference)!==0&&<p className="text-xs text-amber-800 mt-2">Quote differs from rate-based payment ({money(result.rate_based_monthly_payment)}). Confirm final lender schedule.</p>}</>}
+    {vehicle.id>0&&<TrailerInvestmentProgress id={vehicle.id} revision={savedRevision}/>}
     {!vehicle.id&&<p className="text-xs text-slate-500 mt-2">Preview only. Save the vehicle purchase before attaching a recovery plan.</p>}
     {message&&<p role="status" className="text-sm mt-3">{message}</p>}
   </section>

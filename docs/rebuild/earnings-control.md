@@ -170,3 +170,9 @@ page overflow. Restored saved 60-month plan after preview. Screenshot:
 /tmp/elis-investment-summary.png. Automatic Bank Monitor account/payment linking
 and persistence of unpurchased comparison scenarios remain separate follow-ups;
 this release uses lender nicknames and transient previews. Not deployed.
+
+### Settlement-driven trailer recovery (2026-09-28)
+
+Trailer detail now includes a collapsed settlement recovery history. Original truck allocation records are counted once; generated trailer copies are excluded, while standalone trailer rental income remains included. The scenario assigns each positive source the saved monthly plan's payment and cash-recovery shares. It accumulates estimated daily interest, projects debt if those allocations are paid, and estimates the sale-balance target date from up to 90 calendar days of earnings pace. Missing statements lower the observed pace; it is not measured bank debt or proof of reserve funding. Operating costs remain separate. Changed original borrowing between revisions blocks the historical debt scenario until a financing adjustment exists.
+
+Finance retains its calendar-period protection targets and final subtotal. Capital and loan chart labels disclose asset-level amounts; already deducted equipment payments/interest reduce the additional loan amount once. The pair split now explicitly deducts trailer financing from trailer contribution. These calendar targets and earnings-funded historical scenarios are different views, not cumulative postings. No income, reserves, loans or payment events are created by this feature.
