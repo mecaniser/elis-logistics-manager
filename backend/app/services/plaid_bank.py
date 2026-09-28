@@ -189,9 +189,19 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
     pending_debit_entries = {suffix: 0 for suffix in account_map}
     pending_credit_cents = {suffix: 0 for suffix in account_map}
     pending_details = {suffix: [] for suffix in account_map}
+    charge_details = {suffix: [] for suffix in account_map}
     for row in active.values():
         suffix = ids[row['account_id']]
         (pending if row.get('pending') is True else posted)[suffix] += 1
+        amount = cents(row.get('amount'))
+        if amount and amount > 0:
+            charge_details[suffix].append({
+                'transaction_id': row.get('transaction_id'), 'pending_transaction_id': row.get('pending_transaction_id'),
+                'amount_cents': amount, 'pending': row.get('pending') is True,
+                'description': str(row.get('merchant_name') or row.get('name') or 'Bank debit')[:120],
+                'date': row.get('date'), 'currency': row.get('iso_currency_code'),
+                'category': (row.get('personal_finance_category') or {}).get('primary'),
+            })
         if row.get('pending') is True:
             amount = cents(row.get('amount'))
             if amount is None:
@@ -209,7 +219,7 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
     for suffix, details in pending_details.items():
         details.sort(key=lambda row: row['date'] or '', reverse=True)
         pending_details[suffix] = details[:30]
-    return {'pending_entries': pending, 'posted_entries': posted,
+    return {'charge_details': charge_details, 'pending_entries': pending, 'posted_entries': posted,
             'pending_debit_cents': pending_debit_cents,
             'pending_debit_entries': pending_debit_entries,
             'pending_credit_cents': pending_credit_cents,

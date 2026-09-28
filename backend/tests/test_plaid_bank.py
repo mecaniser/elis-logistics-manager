@@ -395,3 +395,17 @@ def test_posted_link_replaces_pending_without_amount_guess(monkeypatch):
         {'transaction_id': 'different', 'account_id': 'a', 'pending': True, 'amount': 636.86}], 'next_cursor': 'done', 'has_more': False})
     active, _ = plaid_bank.synced_transactions('token', {'3304': {'account_id': 'a'}})
     assert set(active) == {'posted', 'different'}
+
+
+def test_charge_details_keep_provider_identity_amount_and_posting_link(monkeypatch):
+    def request(path, payload):
+        if path == '/item/get':
+            return {'status':{}}
+        return {'added':[{'transaction_id':'posted-expense','pending_transaction_id':'pending-expense','account_id':'checking-id','pending':False,'amount':286.86,'name':'Expense','date':'2026-09-28','iso_currency_code':'USD','personal_finance_category':{'primary':'GENERAL_MERCHANDISE'}}], 'removed':[], 'modified':[], 'next_cursor':'done','has_more':False}
+    monkeypatch.setattr(plaid_bank,'request',request)
+    result=plaid_bank.transaction_visibility('token',plaid_bank.map_accounts(accounts(),rules()))
+    charge=result['charge_details']['1111'][0]
+    assert charge['transaction_id']=='posted-expense'
+    assert charge['pending_transaction_id']=='pending-expense'
+    assert charge['amount_cents']==28686
+    assert charge['currency']=='USD' and charge['pending'] is False

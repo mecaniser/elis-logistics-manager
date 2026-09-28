@@ -82,6 +82,7 @@ def discover(db, profile, rows):
 
 
 def sync_profile(db, profile):
+    db.query(BankMonitorConfig).filter_by(tenant_id=profile.tenant_id).with_for_update().one()
     try:
         token = plaid_bank.decrypt_token(profile.encrypted_access_token)
         item = plaid_bank.item(token)
@@ -94,7 +95,10 @@ def sync_profile(db, profile):
             raise plaid_bank.PlaidBankError('provider_no_supported_accounts')
         mapping = {a.id: {'account_id': a.provider_account_id, 'kind': a.kind} for a in memberships}
         visibility = plaid_bank.transaction_visibility(token, mapping)
+        from app.services.bank_charge_funding import ingest
         for a in memberships:
+            if a.kind == 'checking' and a.account_id and 'charge_details' in visibility:
+                ingest(db, profile, a, visibility['charge_details'].get(a.id, []))
             a.balance = {**a.balance, 'pending_debit_cents': visibility['pending_debit_cents'].get(a.id, 0),
                 'pending_count': visibility['pending_entries'].get(a.id, 0),
                 'transactions_updated_at': visibility.get('last_successful_update')}

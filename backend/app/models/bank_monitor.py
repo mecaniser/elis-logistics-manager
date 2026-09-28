@@ -229,3 +229,31 @@ class BankEquipmentDraft(Base):
     asset_name = Column(String(250), nullable=False)
     vin = Column(String(50), nullable=False)
     account_id = Column(String(36), nullable=False)
+
+
+class BankFundingFeed(Base):
+    """One transaction reader per canonical checking account across shared logins."""
+    __tablename__ = 'bank_funding_feeds'
+    account_id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    profile_id = Column(String(36), nullable=False)
+    initialized_at = Column(DateTime(timezone=True), nullable=False)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class BankFundingCharge(Base):
+    __tablename__ = 'bank_funding_charges'
+    __table_args__ = (UniqueConstraint('tenant_id', 'account_id', 'reference', name='uq_bank_funding_charge'),)
+    id = Column(String(36), primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    account_id = Column(String(36), nullable=False, index=True)
+    reference = Column(String(150), nullable=False)
+    provider_ids = Column(JSON, nullable=False, default=list)
+    description = Column(String(120), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    charge_date = Column(Date, nullable=False)
+    status = Column(String(40), nullable=False)  # eligible, historical, removed, dismissed, duplicate_review
+    pending = Column(Boolean, nullable=False, default=False)
+    origin = Column(String(16), nullable=False)
+    draft_id = Column(String(36), unique=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
