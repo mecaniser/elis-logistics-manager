@@ -17,3 +17,6 @@ test('unassigned losses enter company result without hiding a shortfall',()=>{
 test('unexpected bridge entries remain visible and reconciliation rejects mismatches',()=>{
  const p=plan();p.pairs[0].bridge.push({label:'Correction',amount:'-1.00'});assert.equal(ownerEarningsModel(p).reconciled,false);p.planning_subtotal='4945.15';assert.equal(ownerEarningsModel(p).reconciled,true);p.pairs[0].bridge[0].amount='invalid';assert.equal(ownerEarningsModel(p).reconciled,false)
 })
+test('planned loan gap is a distinct deduction and reconciles exactly',()=>{
+ const p=plan();p.pairs[0].bridge.push({label:'Additional planned loan payments',amount:'-120.00'});p.planning_subtotal='4826.15';const r=ownerEarningsModel(p);assert.equal(r.reconciled,true);assert.equal(r.rows.find(x=>x.label==='Additional planned loan payments').tone,'loan')
+})

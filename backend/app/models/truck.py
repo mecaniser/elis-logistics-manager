@@ -34,6 +34,7 @@ class Truck(Base):
     total_cost = Column(Numeric(10, 2), nullable=True)  # Total purchase cost (cash + loan + fees)
     registration_fee = Column(Numeric(10, 2), nullable=True)  # Registration fee for vehicle
     additional_expenses = Column(JSON, nullable=True)  # Additional expenses/fees: [{"description": "...", "amount": 100.00}, ...]
+    investment_plans = Column(JSON, nullable=True)  # Effective-dated planning revisions, not payments
     # Depreciation fields
     purchase_date = Column(Date, nullable=True)  # Date vehicle was purchased/placed in service (for depreciation)
     depreciation_method = Column(String(20), nullable=True, default='MACRS_5')  # 'MACRS_5', 'straight_line', 'none'

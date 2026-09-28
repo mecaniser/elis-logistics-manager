@@ -84,6 +84,7 @@ export interface Truck {
   default_repair_reserve_amount?: number | null
   trailer_depreciation_reserve_amount?: number | null
   expected_resale_value?: number | null
+  investment_plans?: Record<string, string | number | null>[] | null
   planned_service_weeks?: number | null
   estimated_mpg?: number | null
   fuel_card_discount_per_gallon?: number | null
@@ -371,6 +372,8 @@ export const authApi = {
 
 // Truck API (also handles trailers and SUVs)
 export const trucksApi = {
+  previewInvestment: (id: number, plan: Record<string, unknown>) => api.post<Record<string, string | number | null>>(id ? `/trucks/${id}/investment-plan/preview` : '/trucks/investment-preview', plan),
+  saveInvestment: (id: number, plan: Record<string, unknown>) => api.post(`/trucks/${id}/investment-plan`, plan),
   getAll: (vehicleType?: 'truck' | 'trailer' | 'suv') => {
     const params = vehicleType ? { vehicle_type: vehicleType } : {}
     return api.get<Truck[]>('/trucks', { params })
