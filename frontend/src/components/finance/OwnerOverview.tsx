@@ -24,7 +24,7 @@ export default function OwnerOverview({report:r,context,onSaved}: {report:Report
   return <div className="owner-dashboard">
     <section className="owner-panel"><div className="finance-section-heading"><h2>Where the freight revenue goes</h2><Link to="/settlements/reconciliation">Review original statements</Link></div>
     {savedCount>0&&<p className="finance-help">Includes {savedCount} saved settlement{savedCount===1?'':'s'} not yet posted to Accounting. <Link to="/settlements/reconciliation">Source status</Link></p>}
-    {gross !== 0 || freight.rows.length ? <FreightFlow key={`${context.tenant_id}-${r.id}`} data={freight} plan={r.earnings_plan} history={history} historyError={error}/> : <p className="finance-empty">No statements for this period. <Link to="/settlements/reconciliation">Explore the historical review</Link>.</p>}
+    {gross !== 0 || freight.rows.length ? <FreightFlow period={r.period} key={`${context.tenant_id}-${r.id}`} data={freight} plan={r.earnings_plan} history={history} historyError={error}/> : <p className="finance-empty">No statements for this period. <Link to="/settlements/reconciliation">Explore the historical review</Link>.</p>}
     </section>
     {r.earnings_plan&&<EarningsPlan plan={r.earnings_plan} detailsOnly/>}
     <section className="owner-cash-status" aria-label="Available cash status"><div><strong>Available to owner: {cash.available===null?'not yet verified':dollars(cash.available)}</strong><span>{cash.status==='reconciled'?'Reconciled':'Provisional'} · As of {cash.as_of}{cash.available!==null&&Number(cash.available)<0?' · Funding shortfall':''}</span></div><Link className="finance-secondary" to="/finance/money">{cash.status==='reconciled'?'View cash details':'Verify cash in Money'}</Link></section>
