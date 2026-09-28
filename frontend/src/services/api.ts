@@ -1036,6 +1036,7 @@ const draftHeaders = (tenantId: number) => ({ withCredentials: true, headers: { 
 const bankMonitorClient = axios.create({ baseURL: '/api', withCredentials: true })
 bankMonitorClient.interceptors.response.use((response) => response, handleAuthFailure)
 export const bankMonitorApi = {
+  plaidDashboardUsage: (tenantId: number) => bankMonitorClient.get('/bank-monitor/plaid-dashboard-usage', { headers: { 'X-Tenant-ID': String(tenantId) } }),
   plaidUsage: (tenantId: number) => bankMonitorClient.get('/bank-monitor/plaid-usage', { headers: { 'X-Tenant-ID': String(tenantId) } }),
   transferReview: (tenantId: number) => bankMonitorClient.post('/bank-monitor/transfer-reviews', {}, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'review-bank-transfers' } }),
   createReviewedTransfers: (tenantId: number, id: number, routes: { from_last4: string; to_last4: string; amount_cents: number }[]) => bankMonitorClient.post(`/bank-monitor/transfer-reviews/${id}/drafts`, { routes }, { headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'create-reviewed-transfers' } }),
