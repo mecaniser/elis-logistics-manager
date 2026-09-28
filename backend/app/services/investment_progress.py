@@ -4,7 +4,7 @@ from decimal import Decimal
 from app.models.settlement import Settlement
 from app.models.truck import Truck
 from app.schemas.investment import InvestmentPlan
-from app.services.trailer_investment import plan_for_day, plan_end, money
+from app.services.trailer_investment import plan_for_day, plan_end, money, plan_day_targets
 
 D = lambda x: Decimal(str(x or 0))
 ZERO = Decimal(0)
@@ -85,7 +85,21 @@ def settlement_progress(asset, rows, as_of):
             if forecast <= target:
                 projected_date = (as_of + timedelta(days=n)).isoformat()
                 break
-    return {'as_of': as_of.isoformat(), 'start': start.isoformat(), 'source_count': len(sources),
+    week_end = as_of - timedelta(days=as_of.weekday() + 1)
+    week_start = week_end - timedelta(days=6)
+    weekly_cash = weekly_loan = ZERO
+    for offset in range(7):
+        target_day = week_start + timedelta(days=offset)
+        target_plan = plan_for_day(asset, target_day)
+        if target_plan:
+            cash_target, loan_target = plan_day_targets(target_plan, target_day)
+            weekly_cash += cash_target
+            weekly_loan += loan_target
+    return {'original_borrowed': money(original), 'initial_cash': current['initial_cash'],
+            'cash_recovery_target': current['protected_cash_recovery'], 'sale_equity': current['sale_equity'],
+            'week_start': week_start.isoformat(), 'week_end': week_end.isoformat(),
+            'weekly_loan_target': money(weekly_loan), 'weekly_cash_target': money(weekly_cash),
+            'as_of': as_of.isoformat(), 'start': start.isoformat(), 'source_count': len(sources),
             'allocated_income': money(allocated), 'loan_allocation': money(payments),
             'modeled_interest': money(interest), 'modeled_principal_reduction': money(original - balance),
             'projected_balance': money(balance), 'cash_recovery': money(recovery),
