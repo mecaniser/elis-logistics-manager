@@ -573,6 +573,7 @@ def list_drafts(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get
 @router.post('/drafts/{draft_id}/cancel')
 def cancel_unprepared_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
+    db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one()
     updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).filter(BankTransferDraft.status.in_(['reviewed', 'review_required', 'amount_review_required'])).filter(BankTransferDraft.charge_reference.like('bank-review-%') | BankTransferDraft.charge_reference.like('bank-profile-%')).update({'status': 'cancelled'})
     if not updated:
         db.rollback()
