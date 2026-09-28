@@ -129,9 +129,9 @@ def route_accounts(db, route):
     return profile, source, destination
 
 
-def transfer_limit(db, route, exclude_draft=None):
+def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
     profile, source, destination = route_accounts(db, route)
-    if profile.status != 'synced' or not profile.last_checked_at or (datetime.now(timezone.utc) - utc(profile.last_checked_at)).total_seconds() > 300:
+    if profile.status != 'synced' or not profile.last_checked_at or (not allow_stale and (datetime.now(timezone.utc) - utc(profile.last_checked_at)).total_seconds() > 300):
         raise HTTPException(409, 'Refresh this banking profile before reviewing a transfer.')
     balances = source.balance
     if balances.get('currency') != 'USD' or destination.balance.get('currency') != 'USD':

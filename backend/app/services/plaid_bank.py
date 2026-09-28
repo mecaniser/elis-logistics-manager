@@ -171,6 +171,9 @@ def synced_transactions(access_token: str, account_map: dict) -> tuple[dict, str
         raise PlaidBankError('provider_history_incomplete')
     if not isinstance(cursor, str):
         raise PlaidBankError('provider_history_incomplete')
+    # A posted entry can explicitly replace a pending entry before its removal arrives.
+    replaced = {(r.get('account_id'), r.get('pending_transaction_id')) for r in active.values() if r.get('pending') is False}
+    active = {key: row for key, row in active.items() if not (row.get('pending') is True and (row.get('account_id'), key) in replaced)}
     return active, update_status
 
 
