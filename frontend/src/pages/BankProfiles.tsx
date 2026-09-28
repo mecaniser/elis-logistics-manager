@@ -40,6 +40,8 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const [destination, setDestination] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [coverageConfirmed, setCoverageConfirmed] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState<string | null>(null)
+  const reviewRequest = useRef(0)
   const [review, setReview] = useState<Review | null>(null)
   const [accountId, setAccountId] = useState('')
   const [intent, setIntent] = useState<'payment' | 'full_payoff'>('payment')
@@ -114,15 +116,23 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
     } catch (e) { setError(errorText(e)); setBusy(false) }
   }
   const startReview = async (route: Route, coverageOnly = false, payment: TrailerPaymentIntent | null = null) => {
+    const requestId = ++reviewRequest.current
+    const current = () => alive.current && reviewRequest.current === requestId
+    const from = active.accounts.find(a => a.account_id === route.source_id)
+    const to = active.accounts.find(a => a.account_id === route.destination_id)
+    setReviewLoading(`${from?.name || 'Source'} · ••${from?.last4 || ''} → ${to?.name || 'Destination'} · ••${to?.last4 || ''}`)
     setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setTrailerIntent(payment)
     try {
       const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
-      if (alive.current && response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
-      update((await bankProfilesApi.request<Data>(tenantId)).data)
-      if (coverageOnly && !response.data.coverage) { if (alive.current) { setAccountId(''); setError('The refreshed account no longer has a funding proposal. Review its updated balance.'); } return }
-      if (alive.current) { setReview(response.data); setAmount(payment?.amount || (response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2))) }
-    } catch (e) { if (alive.current) setError(errorText(e)) }
-    finally { if (alive.current) setBusy(false) }
+      if (!current()) return
+      if (response.data.existing_draft) { setAccountId(''); onOpenTransfer(response.data.existing_draft.id); return }
+      const refreshed = await bankProfilesApi.request<Data>(tenantId)
+      if (!current()) return
+      update(refreshed.data)
+      if (coverageOnly && !response.data.coverage) { if (current()) { setAccountId(''); setError('The refreshed account no longer has a funding proposal. Review its updated balance.'); } return }
+      if (current()) { setReview(response.data); setAmount(payment?.amount || (response.data.coverage?.pending_review_required ? '' : ((response.data.coverage?.routes.find(r => r.route_id === route.id)?.amount_cents ?? response.data.limit_cents) / 100).toFixed(2))) }
+    } catch (e) { if (current()) setError(errorText(e)) }
+    finally { if (current()) { setBusy(false); setReviewLoading(null) } }
   }
   let cents = 0
   try { cents = centsFromMoneyInput(amount) } catch { /* Invalid input cannot create a draft. */ }
@@ -202,11 +212,12 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
         })}</div></section>
         })}
         <p className="mt-4 text-xs leading-5 text-slate-400">Shared accounts use the same reserves and drafts across profiles. Pending feeds can omit payments; keep a reserve for upcoming bills.</p>
-        {account && <BankDialog title={`${account.name} · ••${account.last4}`} onClose={() => { setAccountId(''); setReview(null) }}>
+        {account && <BankDialog title={`${account.name} · ••${account.last4}`} onClose={() => { reviewRequest.current++; if (reviewLoading) setBusy(false); setReviewLoading(null); setAccountId(''); setReview(null) }}>
           <p className="text-sm text-slate-600">Bank login: {active.name}</p>
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">{error}</p>}
           <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4"><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Bank available cash' : 'Balance owed'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.balance.available_cents : account.balance.current_cents)}</p></div><div><p className="text-xs text-slate-600">{account.kind === 'checking' ? 'Protected reserve' : 'Available credit'}</p><p className="text-xl font-semibold">{money(account.kind === 'checking' ? account.reserve_cents : account.balance.available_cents)}</p></div></div>
-          {!review && !trailerOpen && <>
+          {reviewLoading && <section role="status" aria-live="polite" className="space-y-3 py-6"><div className="flex items-center gap-3"><span aria-hidden="true" className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700 motion-reduce:animate-none" /><h3 className="font-semibold">Checking balances…</h3></div><p className="text-sm text-slate-700">{reviewLoading}</p><p className="text-sm text-slate-600">Getting current bank data for your draft. No transfer has been submitted.</p></section>}
+          {!reviewLoading && !review && !trailerOpen && <>
             <section className="space-y-3"><h3 className="font-semibold">What would you like to do?</h3>
               {data.routes.filter(r => r.profile_id === active.id && r.enabled && (r.source_id === account.account_id || r.destination_id === account.account_id)).map(r => {
                 const from = active.accounts.find(a => a.account_id === r.source_id)
@@ -223,14 +234,15 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
               {data.drafts?.filter(d => d.source_id === account.account_id || d.destination_id === account.account_id).map(d => <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-semibold">{money(d.amount_cents)} · ••{d.from_last4} → ••{d.to_last4}</p>{d.equipment && <p className="text-sm text-blue-800">{d.equipment.name} · dedicated payment</p>}<p className="text-sm text-slate-600">{d.status === 'bank_history_matched' ? d.kind === 'repayment' ? 'Payment posted · full payoff not verified' : 'Transfer completed' : d.status === 'reviewed' ? 'Ready to prepare' : 'Needs verification'}</p></div>{d.status !== 'bank_history_matched' && <button type="button" className={button} onClick={() => { setAccountId(''); onOpenTransfer(d.id) }}>Continue transfer</button>}</div>)}
             </section>
           </>}
-          {!review && trailerOpen && account.account_id && <>
+          {!reviewLoading && !review && trailerOpen && account.account_id && <>
             <button type="button" onClick={() => setTrailerOpen(false)} className="min-h-11 text-left text-sm font-semibold text-blue-700">← Account actions</button>
             <AccountTrailerPayment key={account.account_id} tenantId={tenantId} accountId={account.account_id} accountName={`${account.name} · ••${account.last4}`} profileId={active.id} profileName={active.name} checking={active.accounts.filter(a => a.kind === 'checking')} routes={data.routes.filter(r => r.profile_id === active.id)} target={trailerIntent ? String(trailerIntent.asset_id) : equipmentTarget || undefined} busy={busy} onStart={(id,payment) => {const route=data.routes.find(r => r.id===id); if(route) void startReview(route,false,payment)}} onRoutesChanged={() => {void bankProfilesApi.request<Data>(tenantId).then(r => update(r.data)).catch(e => setError(errorText(e)))}} />
           </>}
           {review && <section aria-label="Review account transfer" className="space-y-4">
             <button type="button" onClick={() => setReview(null)} className="min-h-11 text-sm font-semibold text-blue-700">{trailerIntent ? '← Trailer payment' : '← Account actions'}</button>
-            <h3 className="font-semibold">{review.source_name} · ••{review.from_last4} → {review.destination_name} · ••{review.to_last4}</h3>
-            <p className="text-sm text-slate-600">1. Set amount → 2. Prepare in Truliant → 3. You approve in the bank</p>
+            <h3 className="font-semibold">{review.coverage ? 'Review coverage draft' : 'Review transfer draft'}</h3>
+            <p className="text-sm font-medium">{review.source_name} · ••{review.from_last4} → {review.destination_name} · ••{review.to_last4}</p>
+            <p className="text-sm text-slate-600">Create a draft here. Next, prepare the bank form and submit it yourself in Truliant.</p>
             {trailerIntent && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Dedicated payment for <strong>{trailerIntent.name}</strong>. This label stays in the transfer history.</p>}
             {review.kind === 'repayment' && !trailerIntent && <fieldset><legend className="mb-2 font-semibold">Payment goal</legend><div className="flex flex-wrap gap-3">{(['payment', 'full_payoff'] as const).map(value => <label key={value} className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 p-3"><input type="radio" name="payment-goal" checked={intent === value} onChange={() => setIntent(value)} />{value === 'payment' ? 'Make a payment' : 'Pay off in full'}</label>)}</div></fieldset>}
             {intent === 'full_payoff' ? <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h4 className="font-semibold">Full payoff is not verified</h4><p className="mt-2 text-sm">This connection reports the balance owed, but does not supply a current payoff quote including accrued interest. ELIS cannot prepare a full payoff from that balance. Check the payoff amount in Truliant, or choose Make a payment for a partial payment.</p></div> : <>
@@ -240,7 +252,7 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
               {review.coverage && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={coverageConfirmed} onChange={e => setCoverageConfirmed(e.target.checked)} className="mt-1" />I checked the bank balance and pending debits and approve this coverage amount.</label>}
               {!review.coverage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>}
               {review.kind === 'repayment' && cents > review.limit_cents && <p role="status" className="text-sm font-semibold text-red-800">The selected checking account does not have enough available cash for this amount. Go back to choose another checking account or change the amount.</p>}
-              <button disabled={busy || cents <= 0 || cents > Math.min(review.limit_cents, review.coverage?.possible_cents ?? review.limit_cents) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Saving…' : 'Continue to preparation'}</button>
+              <button disabled={busy || cents <= 0 || cents > Math.min(review.limit_cents, review.coverage?.possible_cents ?? review.limit_cents) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Creating draft…' : 'Create draft'}</button>
             </>}
             <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
           </section>}
