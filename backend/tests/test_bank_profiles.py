@@ -589,7 +589,7 @@ def test_no_historical_backfill_or_tracked_transfer_funding(setup,db,monkeypatch
     e={'transaction_id':'old','amount_cents':1000,'description':'Old expense','date':'2026-01-01','pending':False,'currency':'USD','category':'GENERAL_MERCHANDISE'}
     own=BankTransferDraft(id=str(uuid4()),tenant_id=1,charge_reference='own-outgoing',amount_cents=1000,from_last4='3304',to_last4='8264',memo='Rpy ELIS own-transfer',status='bank_history_matched',created_at=datetime.now(timezone.utc))
     db.add(own);db.add(BankProfileDraft(draft_id=own.id,tenant_id=1,profile_id=profile.id,route_id=route.id,source_id=route.destination_id,destination_id=route.source_id));db.flush()
-    ingest(db,profile,target,[e,{**e,'transaction_id':'internal','category':'TRANSFER_OUT','bank_description':'Regular Payment Rpy ELIS own-transfer'}]);db.commit()
+    ingest(db,profile,target,[e,{**e,'transaction_id':'internal','category':'TRANSFER_OUT','bank_description':'Regular Payment Rpy ELIS / own-transfer'}]);db.commit()
     assert db.query(BankFundingCharge).one().status=='historical'
     assert proposals(db,profile)==[]
 
