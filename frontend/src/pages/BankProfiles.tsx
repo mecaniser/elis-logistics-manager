@@ -1,3 +1,4 @@
+import type { FundingProposalState, FundingProposal } from './FundingProposals'
 import AccountTrailerPayment, {type TrailerPaymentIntent} from '../components/AccountTrailerPayment'
 import EquipmentPayments from '../components/EquipmentPayments'
 import {financeApi} from '../services/finance'
@@ -24,7 +25,7 @@ const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-s
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || (e instanceof Error ? e.message : 'Banking profile request failed.')
 
-export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
+export default function BankProfiles({ tenantId, onCoverage, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { onCoverage: (value: FundingProposalState) => void; onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
   const [settingsProfile, setSettingsProfile] = useState('')
@@ -56,7 +57,15 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
   const active = data.profiles.find(p => p.id === selected) || data.profiles[0]
   const account = active?.accounts.find(a => a.id === accountId)
   const mode = data.profiles.length > 1 || data.routes.length > 0
-  const update = (value: Data) => { if (alive.current) { setData(value); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
+  const update = (value: Data) => { if (alive.current) { setData(value);
+    const charges = new Map<string, FundingProposal>()
+    for (const profile of value.profiles) for (const coverage of profile.coverage || []) {
+      if (!coverage.charge) continue
+      const item = charges.get(coverage.charge.id) || { charge: coverage.charge, accountName: coverage.name, last4: coverage.last4, amount: coverage.minimum_cents, routes: [] }
+      for (const route of coverage.routes) if (!item.routes.some(r => r.route_id === route.route_id)) item.routes.push({ ...route, profileName: profile.name })
+      charges.set(coverage.charge.id, item)
+    }
+    onCoverage({ tenantId, items: [...charges.values()] }); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
   const request = async (path: string, method: 'post' | 'put' = 'post', body?: unknown, onSuccess?: () => void) => {
     setBusy(true); setError(''); setNotice('')
     try { const response = await bankProfilesApi.request<Data>(tenantId, path, method, body); update(response.data); if (alive.current) onSuccess?.(); if (path.endsWith('/preferences')) setNotice('Profile preferences saved.'); if (path.endsWith('/name')) { setNotice('Connection name saved.'); setEditingName('') } }
@@ -185,12 +194,6 @@ export default function BankProfiles({ tenantId, onUnified, onMode, onDraft, onO
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-200">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
-        {!!active.coverage?.length && <section aria-label="Coverage proposals" className="mt-5 border-t border-slate-700 pt-4"><h3 className="font-semibold text-amber-200">Checking needs attention</h3>{active.coverage.map(c => <div key={c.charge?.id || c.account_id} className="mt-3 space-y-2 text-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2"><strong>{c.name} · ••{c.last4}</strong><span className="font-semibold tabular-nums">{c.minimum_cents == null ? 'Balance unavailable' : c.pending_review_required ? `${money(c.minimum_cents)}–${money(c.possible_cents)} to review` : `${money(c.minimum_cents)} to cover`}</span></div>
-          <p className="text-xs text-slate-300">{c.charge?.description} · {c.charge?.date} · {c.charge?.pending ? 'Pending charge' : 'Posted charge'}{!c.routes.length && ' · No enabled source can cover the full charge.'}</p>
-          <div className="flex flex-wrap gap-2">{c.routes.map(option => { const route = data.routes.find(r => r.id === option.route_id); return route && <button key={option.route_id} disabled={busy} className={button} onClick={() => { setBusy(true); setError(''); void bankProfilesApi.request<{draft:{id:string}}>(tenantId, '/charges/draft', 'post', {route_id:route.id, charge_id:c.charge?.id}).then(r => {onDraft(); onOpenTransfer(r.data.draft.id)}).catch(e => setError(errorText(e))).finally(() => setBusy(false)) }}>Review funding from ••{option.source_last4}</button> })}{!c.routes.length && <button type="button" className={button} onClick={openSettings}>Review funding settings</button>}</div>
-          {!!c.uncovered_cents && <p className="text-xs text-amber-200">Enabled funding can leave up to {money(c.uncovered_cents)} uncovered.</p>}
-        </div>)}</section>}
         {[{ key: 'checking', label: 'Checking accounts', description: 'Cash available at the bank' }, { key: 'line', label: 'Credit lines', description: 'Available borrowing and balances owed' }, { key: 'card', label: 'Credit cards', description: 'Available credit and card balances' }].map(group => {
           const accounts = active.accounts.filter(a => (a.kind === 'checking' ? 'checking' : a.subtype === 'credit card' ? 'card' : 'line') === group.key)
           if (!accounts.length) return null
