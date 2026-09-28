@@ -488,129 +488,174 @@ def coverage_setup(setup, db, monkeypatch, pending=63686):
     return client, profile, route
 
 
-def test_coverage_pending_ambiguity_requires_review(setup, db, monkeypatch):
-    from app.services.bank_coverage import proposals
+# Whole-charge funding supersedes the former aggregate balance scenarios.
+def charge_setup(setup, db, monkeypatch):
     client, profile, route = coverage_setup(setup, db, monkeypatch)
-    suggestion = proposals(db, profile)[0]
-    assert suggestion['minimum_cents'] == 35000
-    assert suggestion['possible_cents'] == 98686
-    assert suggestion['pending_review_required'] is True
-    assert db.query(BankTransferDraft).count() == 0
-    review = client.post(f'/api/bank-monitor/profiles/routes/{route.id}/review', headers=headers()).json()
-    assert review['coverage']['minimum_cents'] == 35000
-    path = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
-    assert client.post(path, headers=headers(), json={'amount_cents': 35000}).status_code == 409
-    accepted = client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True})
-    assert accepted.status_code == 200, accepted.text
-    assert db.query(BankTransferDraft).one().status == 'reviewed'
-    assert client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True}).status_code == 409
-    assert proposals(db, profile)[0]['minimum_cents'] == 0  # existing incoming draft deducted
+    entries = [dict(transaction_id=f'charge-{i}', pending_transaction_id=None, amount_cents=amount,
+        description=f'Expense {i}', date=datetime.now(timezone.utc).date().isoformat(), pending=True,
+        currency='USD', category='GENERAL_MERCHANDISE') for i, amount in enumerate([28686, 35000])]
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', lambda token, mapping: {
+        'pending_debit_cents': {k:63686 if v['kind']=='checking' else 0 for k,v in mapping.items()},
+        'pending_entries': {k:2 if v['kind']=='checking' else 0 for k,v in mapping.items()},
+        'charge_details': {k:entries if v['kind']=='checking' else [] for k,v in mapping.items()}})
+    service.sync_profile(db, profile); db.commit()
+    return client, profile, route, entries
 
 
-def test_coverage_without_pending_and_stale_review(setup, db, monkeypatch):
-    from app.services.bank_coverage import proposals
-    client, profile, route = coverage_setup(setup, db, monkeypatch, pending=0)
-    suggestion = proposals(db, profile)[0]
-    assert suggestion['minimum_cents'] == suggestion['possible_cents'] == 35000
-    assert suggestion['pending_review_required'] is False
-    profile.last_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-    db.commit()
-    assert not proposals(db, profile)[0]['routes']
-    assert proposals(db, profile, allow_stale=True)[0]['routes']
-    review = client.post(f'/api/bank-monitor/profiles/routes/{route.id}/review', headers=headers()).json()
-    # A concurrent incoming transfer through another route must reduce the need.
-    db.add(BankTransferDraft(id=str(uuid4()), tenant_id=1, charge_reference='test incoming', amount_cents=35000, from_last4='9551', to_last4='3304', memo='test', status='reviewed', created_at=datetime.now(timezone.utc)))
-    db.commit()
-    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True})
-    assert response.status_code == 409
-
-
-def test_coverage_pending_already_in_available_not_added_twice(setup, db, monkeypatch):
-    from app.services.bank_coverage import proposals
-    _, profile, _ = coverage_setup(setup, db, monkeypatch)
-    checking = db.query(BankProfileAccount).filter_by(profile_id=profile.id, last4='3304').one()
-    checking.balance = {**checking.balance, 'current_cents': 29686, 'available_cents': -34000}
-    db.commit()
-    value = proposals(db, profile)[0]
-    assert value['minimum_cents'] == value['possible_cents'] == 35000
-    assert value['pending_review_required'] is False
-
-
-def test_daily_run_creates_unapproved_coverage_draft(setup, db, monkeypatch):
-    from app.models.bank_monitor import BankProfilePreferences
-    _, profile, _ = coverage_setup(setup, db, monkeypatch, pending=0)
+def test_daily_whole_charges_repeat_and_approval(setup, db, monkeypatch):
+    client, profile, route, entries = charge_setup(setup, db, monkeypatch)
     now = datetime.now(timezone.utc).replace(hour=22, minute=0)
     service.run_due_profiles(db, now)
-    result = db.get(BankProfilePreferences, profile.id).last_evaluation
-    assert result['status'] == 'coverage_review_required'
-    assert result['coverage'][0]['minimum_cents'] == 35000
-    assert result['transfers_executed'] is False
-    assert db.query(BankTransferDraft).one().status == 'review_required'
+    drafts = db.query(BankTransferDraft).all()
+    assert sorted(d.amount_cents for d in drafts) == [28686,35000]
+    assert all(d.status == 'review_required' for d in drafts)
     service.run_due_profiles(db, now)
-    assert db.query(BankProfileRun).filter_by(profile_id=profile.id).count() == 1
+    assert db.query(BankTransferDraft).count() == 2
+    for draft in drafts:
+        assert client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare', headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'}).status_code == 409
+        response = client.post(f'/api/bank-monitor/profiles/drafts/{draft.id}/review', headers=headers())
+        assert response.status_code == 200, response.text
+        review = response.json(); path = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
+        assert client.post(path, headers=headers(), json={'amount_cents':draft.amount_cents}).status_code == 409
+        assert client.post(path, headers=headers(), json={'amount_cents':draft.amount_cents-1,'coverage_confirmed':True}).status_code == 409
+        r=client.post(path, headers=headers(), json={'amount_cents':draft.amount_cents,'coverage_confirmed':True})
+        assert r.status_code == 200, r.text
+        assert r.json()['draft']['id'] == draft.id
+        assert client.post(path, headers=headers(), json={'amount_cents':draft.amount_cents,'coverage_confirmed':True}).status_code == 409
 
 
-def test_scheduled_coverage_review_gate_and_idempotency(setup, db, monkeypatch):
-    from app.services.bank_coverage import scheduled_drafts
-    client, profile, route = coverage_setup(setup, db, monkeypatch)
-    _, ids = scheduled_drafts(db, profile)
-    db.commit()
-    draft = db.get(BankTransferDraft, ids[0])
-    assert draft.status == 'amount_review_required'
-    assert draft.amount_cents == 98686
-    assert scheduled_drafts(db, profile)[1] == []
-    prepare = client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare', headers={**headers(), 'X-Bank-Monitor-Action': 'reviewed-transfer'})
-    assert prepare.status_code == 409
-    response = client.post(f'/api/bank-monitor/profiles/drafts/{draft.id}/review', headers=headers())
-    assert response.status_code == 200, response.text
-    review = response.json()
-    assert review['coverage']['possible_cents'] == 98686
-    path = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
-    assert client.post(path, headers=headers(), json={'amount_cents': 35000}).status_code == 409
-    assert client.post(path, headers=headers(), json={'amount_cents': 98687, 'coverage_confirmed': True}).status_code == 409
-    accepted = client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True})
-    assert accepted.status_code == 200, accepted.text
-    assert accepted.json()['draft']['id'] == draft.id
-    assert accepted.json()['draft']['status'] == 'reviewed'
-    assert db.query(BankTransferDraft).count() == 1
-    assert client.post(path, headers=headers(), json={'amount_cents': 35000, 'coverage_confirmed': True}).status_code == 409
-
-
-def test_scheduled_draft_cancel_and_changed_balance(setup, db, monkeypatch):
-    from app.services.bank_coverage import scheduled_drafts
-    client, profile, _ = coverage_setup(setup, db, monkeypatch, pending=0)
-    _, ids = scheduled_drafts(db, profile)
-    db.commit()
-    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [row('new-checking', '3304', amount=1000), row('new-credit', '8264', 'credit', 2000)])
-    response = client.post(f'/api/bank-monitor/profiles/drafts/{ids[0]}/review', headers=headers())
-    assert response.status_code == 409
-    response = client.post(f'/api/bank-monitor/drafts/{ids[0]}/cancel', headers={**headers(), 'X-Bank-Monitor-Action': 'reviewed-transfer'})
-    assert response.status_code == 200, response.text
-
-
-def test_scheduled_drafts_respect_capacity_and_shared_profiles(setup, db, monkeypatch):
-    from app.services.bank_coverage import scheduled_drafts
+def test_skip_insufficient_source_and_never_split_charge(setup, db, monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
     from app.models.bank_monitor import BankProfilePreferences
-    _, profile, route = coverage_setup(setup, db, monkeypatch)
-    source = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.source_id).one()
-    source.balance = {**source.balance, 'available_cents': 12000}
+    _,profile,route,_=charge_setup(setup,db,monkeypatch)
+    identity=BankAccountIdentity(id=str(uuid4()),tenant_id=1,institution_id=profile.institution_id,name='HELOC',last4='3062',kind='credit',reserve_cents=0)
+    db.add(identity)
+    db.add(BankProfileAccount(id=str(uuid4()),profile_id=profile.id,account_id=identity.id,provider_account_id='heloc',name='HELOC',last4='3062',kind='credit',subtype='home equity',active=True,balance={'available_cents':1164,'current_cents':9998836,'currency':'USD','pending_debit_cents':0}))
+    small=BankProfileRoute(id=str(uuid4()),tenant_id=1,profile_id=profile.id,source_id=identity.id,destination_id=route.destination_id,enabled=True)
+    db.add(small)
+    prefs=db.get(BankProfilePreferences,profile.id);prefs.settings={**prefs.settings,'funding_order':[small.id,route.id]};db.commit()
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    assert sorted(db.get(BankTransferDraft,id).amount_cents for id in ids)==[28686,35000]
+    assert all(db.get(BankProfileDraft,id).route_id==route.id for id in ids)
+    assert scheduled_drafts(db,profile)[1]==[]
+
+
+def test_pending_posted_completion_identity(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    from app.models.bank_monitor import BankFundingCharge
+    _,profile,_,entries=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    entries[0]={**entries[0],'transaction_id':'posted-0','pending_transaction_id':'charge-0','pending':False}
+    service.sync_profile(db,profile);db.commit()
+    assert db.query(BankFundingCharge).count()==2
+    for id in ids: db.get(BankTransferDraft,id).status='bank_history_matched'
     db.commit()
-    coverage, ids = scheduled_drafts(db, profile)
-    db.commit()
-    assert db.get(BankTransferDraft, ids[0]).amount_cents == 12000
-    assert coverage[0]['uncovered_cents'] == 86686
-    assert scheduled_drafts(db, profile)[1] == []
-    # A second login with the same canonical accounts cannot allocate them again.
-    other = BankProfile(id=str(uuid4()), tenant_id=1, name='Shared', item_id='shared', institution_id=profile.institution_id,
-        encrypted_access_token='shared', status='synced', legacy=False, created_at=datetime.now(timezone.utc), last_checked_at=profile.last_checked_at)
+    assert scheduled_drafts(db,profile)[1]==[]
+    assert db.query(BankFundingCharge).filter_by(pending=False).one().draft_id in ids
+
+
+def test_changed_and_removed_charge_blocks_old_review(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,entries=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    id=next(id for id in ids if db.get(BankTransferDraft,id).amount_cents==28686)
+    r=client.post(f'/api/bank-monitor/profiles/drafts/{id}/review',headers=headers()).json()
+    entries[0]['amount_cents']=30000
+    service.sync_profile(db,profile);db.commit()
+    assert client.post(f"/api/bank-monitor/profiles/reviews/{r['id']}/draft",headers=headers(),json={'amount_cents':28686,'coverage_confirmed':True}).status_code==409
+    entries.clear();service.sync_profile(db,profile);db.commit()
+    assert client.post(f'/api/bank-monitor/profiles/drafts/{id}/review',headers=headers()).status_code==409
+
+
+def test_manual_charge_duplicate_and_profile_binding(setup,db,monkeypatch):
+    from app.models.bank_monitor import BankFundingCharge
+    client,profile,route,entries=charge_setup(setup,db,monkeypatch)
+    payload={'route_id':route.id,'reference':'invoice-55','description':'Repair expense','charge_date':datetime.now(timezone.utc).date().isoformat(),'amount_cents':50000,'confirmed_uncovered':True}
+    r=client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload)
+    assert r.status_code==200,r.text
+    assert r.json()['draft']['charge']['description']=='Repair expense'
+    assert db.get(BankProfileDraft,r.json()['draft']['id']).profile_id==profile.id
+    assert client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload).status_code==409
+    entries.append({**entries[0],'transaction_id':'manual-later','amount_cents':50000})
+    service.sync_profile(db,profile);db.commit()
+    assert db.query(BankFundingCharge).filter_by(reference='plaid:manual-later').one().status=='duplicate_review'
+
+
+def test_no_historical_backfill_or_internal_transfer_funding(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import ingest,proposals
+    from app.models.bank_monitor import BankFundingCharge
+    _,profile,route=coverage_setup(setup,db,monkeypatch)
+    target=db.query(BankProfileAccount).filter_by(profile_id=profile.id,account_id=route.destination_id).one()
+    e={'transaction_id':'old','amount_cents':1000,'description':'Old expense','date':'2026-01-01','pending':False,'currency':'USD','category':'GENERAL_MERCHANDISE'}
+    ingest(db,profile,target,[e,{**e,'transaction_id':'internal','category':'TRANSFER_OUT'}]);db.commit()
+    assert db.query(BankFundingCharge).one().status=='historical'
+    assert proposals(db,profile)==[]
+
+
+def test_no_partial_charge_draft_when_all_sources_insufficient(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    _,profile,route,_=charge_setup(setup,db,monkeypatch)
+    source=db.query(BankProfileAccount).filter_by(profile_id=profile.id,account_id=route.source_id).one()
+    source.balance={**source.balance,'available_cents':12000};db.commit()
+    coverage,ids=scheduled_drafts(db,profile)
+    assert not ids
+    assert sorted(c['uncovered_cents'] for c in coverage)==[28686,35000]
+
+
+def test_shared_login_charge_feed_is_not_imported_twice(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import ingest,scheduled_drafts
+    from app.models.bank_monitor import BankFundingCharge,BankProfilePreferences
+    _,profile,route,entries=charge_setup(setup,db,monkeypatch)
+    other=BankProfile(id=str(uuid4()),tenant_id=1,name='Other login',item_id='other-charges',institution_id=profile.institution_id,encrypted_access_token='other',status='synced',created_at=datetime.now(timezone.utc),last_checked_at=profile.last_checked_at)
     db.add(other)
-    for member in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True).all():
-        db.add(BankProfileAccount(id=str(uuid4()), profile_id=other.id, account_id=member.account_id,
-            provider_account_id='shared-' + member.provider_account_id, last4=member.last4, kind=member.kind,
-            subtype=member.subtype, name=member.name, balance=member.balance, active=True))
-    other_route = BankProfileRoute(id=str(uuid4()), tenant_id=1, profile_id=other.id, source_id=route.source_id, destination_id=route.destination_id, enabled=True)
-    db.add(other_route)
-    db.add(BankProfilePreferences(profile_id=other.id, tenant_id=1, settings={'confirmed':True, 'monitor':True, 'repayment':False, 'funding_order':[other_route.id], 'repayment_order':[], 'review_required':[]}))
-    db.commit()
-    assert scheduled_drafts(db, other)[1] == []
-    assert db.query(BankTransferDraft).count() == 1
+    for member in db.query(BankProfileAccount).filter_by(profile_id=profile.id).all():
+        copied=BankProfileAccount(id=str(uuid4()),profile_id=other.id,account_id=member.account_id,provider_account_id='other-'+member.provider_account_id,name=member.name,last4=member.last4,kind=member.kind,subtype=member.subtype,active=True,balance=member.balance)
+        db.add(copied)
+        if copied.kind=='checking':
+            ingest(db,other,copied,[{**e,'transaction_id':'other-'+e['transaction_id']} for e in entries])
+    r=BankProfileRoute(id=str(uuid4()),tenant_id=1,profile_id=other.id,source_id=route.source_id,destination_id=route.destination_id,enabled=True)
+    db.add(r);db.add(BankProfilePreferences(profile_id=other.id,tenant_id=1,settings={'confirmed':True,'monitor':True,'repayment':False,'funding_order':[r.id],'repayment_order':[],'review_required':[]}));db.commit()
+    assert db.query(BankFundingCharge).count()==2
+    assert len(scheduled_drafts(db,profile)[1])==2
+    assert scheduled_drafts(db,other)[1]==[]
+
+
+def test_manual_full_charge_selection_and_tenant_scope(setup,db,monkeypatch):
+    from app.models.bank_monitor import BankFundingCharge
+    client,profile,route,_=charge_setup(setup,db,monkeypatch)
+    charge=db.query(BankFundingCharge).filter_by(amount_cents=28686).one()
+    r=client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json={'route_id':route.id,'charge_id':charge.id})
+    assert r.status_code==200,r.text
+    assert r.json()['draft']['amount_cents']==28686
+    assert client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json={'route_id':route.id,'charge_id':charge.id}).status_code==409
+    assert client.get('/api/bank-monitor/profiles/funding-charges',headers=headers(2)).status_code in {403,404}
+    cancel=client.post(f"/api/bank-monitor/drafts/{r.json()['draft']['id']}/cancel",headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    assert cancel.status_code==200
+    from app.services.bank_charge_funding import scheduled_drafts
+    _,ids=scheduled_drafts(db,profile)
+    assert len(ids)==1  # cancelled charge is not silently recreated
+
+
+def test_source_reservations_allow_only_complete_charges(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    _,profile,route,_=charge_setup(setup,db,monkeypatch)
+    source=db.query(BankProfileAccount).filter_by(profile_id=profile.id,account_id=route.source_id).one()
+    source.balance={**source.balance,'available_cents':50000};db.commit()
+    coverage,ids=scheduled_drafts(db,profile)
+    assert len(ids)==1
+    assert db.get(BankTransferDraft,ids[0]).amount_cents in {28686,35000}
+    assert sum(c['uncovered_cents'] for c in coverage) in {28686,35000}
+
+
+def test_cancelled_charge_can_be_explicitly_requeued_but_completed_cannot(setup,db,monkeypatch):
+    from app.models.bank_monitor import BankFundingCharge
+    client,profile,route,_=charge_setup(setup,db,monkeypatch)
+    charge=db.query(BankFundingCharge).filter_by(amount_cents=28686).one()
+    payload={'route_id':route.id,'charge_id':charge.id,'confirmed_uncovered':True}
+    first=client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload).json()['draft']
+    client.post(f"/api/bank-monitor/drafts/{first['id']}/cancel",headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    second=client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload)
+    assert second.status_code==200,second.text
+    assert second.json()['draft']['id']!=first['id']
+    db.get(BankTransferDraft,second.json()['draft']['id']).status='bank_history_matched';db.commit()
+    assert client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload).status_code==409

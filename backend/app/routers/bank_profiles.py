@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.bank_monitor import (BankProfile, BankProfileAccount, BankAccountIdentity, BankProfileRoute,
-    BankEquipmentAccount, BankEquipmentDraft, BankProfileDraft, BankProfileLink, BankProfileRun, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
+    BankFundingCharge, BankEquipmentAccount, BankEquipmentDraft, BankProfileDraft, BankProfileLink, BankProfileRun, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
 from app.routers.bank_monitor import bank_tenant, provider_action, draft_json
 from app.services.bank_monitor import StrictModel
 from app.services import bank_profiles as profiles, plaid_bank
@@ -35,7 +35,7 @@ def sync(db, profile):
 
 
 def view(db, tenant_id):
-    from app.services.bank_coverage import proposals
+    from app.services.bank_charge_funding import proposals
     result = []
     for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).order_by(BankProfile.created_at):
         accounts = []
@@ -264,8 +264,8 @@ def review(route_id: str, request: Request, tenant_id: int = Depends(bank_tenant
         return {'existing_draft': draft_json(existing)}
     sync(db, profile)
     result = profiles.transfer_limit(db, row)
-    from app.services.bank_coverage import proposals
-    coverage = next((c for c in proposals(db, profile) if any(r['route_id'] == row.id for r in c['routes'])), None)
+    from app.services.bank_charge_funding import proposals
+    coverage = None  # Account actions are ad hoc transfers; tracked charges use /charges/{id}/draft.
     result['coverage'] = coverage
     result.update({'source': 'profile_route', 'route_id': row.id, 'item_id': profile.item_id})
     now = datetime.now(timezone.utc)
@@ -288,8 +288,11 @@ def review_scheduled(draft_id: str, request: Request, tenant_id: int = Depends(b
     route = profiles.owned(db, BankProfileRoute, binding.route_id, tenant_id)
     profile, _, _ = profiles.route_accounts(db, route)
     sync(db, profile)
-    from app.services.bank_coverage import proposals
-    coverage = next((c for c in proposals(db, profile, exclude_draft=draft.id) if c['account_id'] == route.destination_id), None)
+    from app.services.bank_charge_funding import proposals
+    from app.services.bank_charge_funding import validate_charge, refresh_charge_feed
+    refresh_charge_feed(db, db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, draft_id=draft.id).first(), profile)
+    charge = validate_charge(db, draft)
+    coverage = next((c for c in proposals(db, profile, exclude_draft=draft.id) if c.get('charge', {}).get('id') == (charge.id if charge else None)), None)
     if not coverage or not coverage.get('possible_cents'):
         raise HTTPException(409, 'Coverage is no longer needed. Remove this draft.')
     result = profiles.transfer_limit(db, route, exclude_draft=draft.id)
@@ -299,6 +302,66 @@ def review_scheduled(draft_id: str, request: Request, tenant_id: int = Depends(b
     db.add(run)
     db.commit()
     return {'id': run.id, **result}
+
+
+class ChargeInput(StrictModel):
+    route_id: str
+    charge_id: str | None = None
+    reference: str = Field(default='', max_length=100)
+    description: str = Field(default='', max_length=120)
+    amount_cents: int = Field(default=0, ge=0, le=100000000)
+    charge_date: date | None = None
+    confirmed_uncovered: bool = False
+
+
+@router.get('/funding-charges')
+def funding_charges(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    from app.services.bank_charge_funding import charge_json
+    return [{**charge_json(db, c), 'account_id': c.account_id} for c in db.query(BankFundingCharge).filter_by(tenant_id=tenant_id).order_by(BankFundingCharge.charge_date.desc()).limit(500)]
+
+
+@router.post('/charges/draft')
+def manual_charge(data: ChargeInput, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    lock(db, tenant_id)
+    route = profiles.owned(db, BankProfileRoute, data.route_id, tenant_id)
+    profile, source, target = profiles.route_accounts(db, route)
+    if target.kind != 'checking' or source.kind != 'credit':
+        raise HTTPException(422, 'Choose a permitted credit-line-to-checking route.')
+    sync(db, profile)
+    from app.services.bank_charge_funding import make_draft
+    if data.charge_id:
+        charge = profiles.owned(db, BankFundingCharge, data.charge_id, tenant_id)
+        from app.services.bank_charge_funding import refresh_charge_feed
+        refresh_charge_feed(db, charge, profile)
+        if charge.account_id != target.account_id or charge.status not in {'eligible', 'historical'}:
+            raise HTTPException(409, 'This charge is unavailable for this checking account.')
+        if charge.draft_id:
+            previous = db.get(BankTransferDraft, charge.draft_id)
+            if not previous or previous.status != 'cancelled' or not data.confirmed_uncovered:
+                raise HTTPException(409, 'This charge already has a funding draft or has been covered.')
+        if charge.status == 'historical' and not data.confirmed_uncovered:
+            raise HTTPException(409, 'Confirm this older charge has not already been covered.')
+    else:
+        if not data.confirmed_uncovered or not data.reference.strip() or not data.description.strip() or not data.charge_date or data.amount_cents <= 0:
+            raise HTTPException(422, 'Enter a charge reference, description, date and full amount; confirm it is not already covered.')
+        duplicate = db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, account_id=target.account_id).filter(
+            (BankFundingCharge.reference == 'manual:' + data.reference.strip()) |
+            ((BankFundingCharge.amount_cents == data.amount_cents) & (BankFundingCharge.charge_date == data.charge_date))).first()
+        if duplicate:
+            db.commit()  # Retain refreshed bank charges so the user can select the existing entry.
+            raise HTTPException(409, 'A charge with this reference or amount and date is already recorded. Select the existing charge instead.')
+        charge = BankFundingCharge(id=str(uuid4()), tenant_id=tenant_id, account_id=target.account_id,
+            reference='manual:' + data.reference.strip(), description=data.description.strip(), charge_date=data.charge_date,
+            amount_cents=data.amount_cents, origin='manual', status='eligible', pending=False, provider_ids=[], created_at=datetime.now(timezone.utc))
+        db.add(charge)
+    cap = profiles.transfer_limit(db, route)['limit_cents']
+    if cap < charge.amount_cents:
+        raise HTTPException(409, 'This source cannot cover the full charge. Choose another credit line.')
+    charge.status = 'eligible'
+    draft = make_draft(db, profile, route, charge)
+    db.commit()
+    return {'draft': draft_json(draft), 'transfers_executed': False}
 
 
 def financed_trailer(db, tenant_id, asset_id):
@@ -360,8 +423,8 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
         raise HTTPException(409, 'Review expired or already used. Refresh the transfer review.')
     row = profiles.owned(db, BankProfileRoute, run.result['route_id'], tenant_id)
     profiles.route_accounts(db, row)
-    existing = existing_transfer(db, row)
     scheduled_id = run.result.get('scheduled_draft_id')
+    existing = profiles.owned(db, BankTransferDraft, scheduled_id, tenant_id) if scheduled_id else existing_transfer(db, row)
     if scheduled_id and (not existing or existing.id != scheduled_id or existing.status not in {'review_required', 'amount_review_required'}):
         raise HTTPException(409, 'This draft has changed. Open it again.')
     if existing and not scheduled_id:
@@ -370,9 +433,14 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
         raise HTTPException(409, 'Full payoff is unverified. A current bank payoff quote including accrued interest is required; the reported balance is not a payoff quote.')
     if run.result.get('coverage') and not data.coverage_confirmed:
         raise HTTPException(409, 'Confirm the coverage amount and pending debits before creating a draft.')
+    if scheduled_id and run.result.get('coverage', {}).get('charge'):
+        from app.services.bank_charge_funding import validate_charge
+        charge = validate_charge(db, existing)
+        if not charge or data.amount_cents != charge.amount_cents or data.amount_cents != run.result['coverage']['charge']['amount_cents']:
+            raise HTTPException(409, 'Fund the full charge amount. Refresh the review if the charge changed.')
     if run.result.get('coverage'):
-        from app.services.bank_coverage import proposals
-        coverage = next((c for c in proposals(db, profiles.owned(db, BankProfile, row.profile_id, tenant_id), exclude_draft=scheduled_id) if c['account_id'] == row.destination_id), None)
+        from app.services.bank_charge_funding import proposals
+        coverage = next((c for c in proposals(db, profiles.owned(db, BankProfile, row.profile_id, tenant_id), exclude_draft=scheduled_id) if c.get('charge', {}).get('id') == run.result['coverage'].get('charge', {}).get('id')), None)
         if not coverage or data.amount_cents > min(coverage.get('possible_cents', 0), run.result['coverage'].get('possible_cents', 0)):
             raise HTTPException(409, 'Coverage need changed. Refresh the review before creating a draft.')
     result = profiles.transfer_limit(db, row, exclude_draft=scheduled_id)

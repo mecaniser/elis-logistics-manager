@@ -553,6 +553,11 @@ def draft_json(d):
     db = object_session(d)
     if db:
         result['bank_session'] = bank_profiles.draft_session(db, d)
+        from app.models.bank_monitor import BankFundingCharge
+        from app.services.bank_charge_funding import charge_json
+        charge = db.query(BankFundingCharge).filter_by(tenant_id=d.tenant_id, draft_id=d.id).first()
+        if charge:
+            result['charge'] = charge_json(db, charge)
         from app.models.bank_monitor import BankEquipmentDraft
         tag = db.query(BankEquipmentDraft).filter_by(draft_id=d.id, tenant_id=d.tenant_id).first()
         if tag:
@@ -673,6 +678,10 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
         except plaid_bank.PlaidBankError as exc:
             db.commit()
             raise HTTPException(422, str(exc)) from None
+        from app.models.bank_monitor import BankFundingCharge
+        from app.services.bank_charge_funding import validate_charge, refresh_charge_feed
+        refresh_charge_feed(db, db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, draft_id=draft.id).first(), profile)
+        validate_charge(db, draft)
         limit = bank_profiles.transfer_limit(db, route, exclude_draft=draft.id)
         if draft.charge_reference.startswith('bank-profile-scheduled-'):
             from app.services.bank_coverage import proposals

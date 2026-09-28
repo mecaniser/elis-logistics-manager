@@ -85,15 +85,15 @@ def evaluate(db, profile, now, *, create_drafts=False):
                 items.append({'route_id': route_id, 'kind': kind, 'status': 'evidence_required', 'limit_cents': limit['limit_cents']})
             except HTTPException:
                 items.append({'route_id': route_id, 'kind': kind, 'status': 'review_required'})
-    from app.services.bank_coverage import proposals
+    from app.services.bank_charge_funding import proposals
     coverage = proposals(db, profile)
     draft_ids = []
     if create_drafts:
-        from app.services.bank_coverage import scheduled_drafts
+        from app.services.bank_charge_funding import scheduled_drafts
         coverage, draft_ids = scheduled_drafts(db, profile)
     summary = (f'{len(draft_ids)} coverage draft(s) created for your review.' if draft_ids else
         'No new draft: review account data, funding routes, or existing drafts.' if coverage else
-        'No additional coverage needed after reserves and existing drafts.')
+        'No new uncovered charges found. Existing drafts and previously covered charges are excluded.')
     return {'summary': summary, 'draft_ids': draft_ids, 'coverage': coverage, 'observed_at': now.isoformat(), 'status': 'coverage_review_required' if coverage else 'settings_review_required' if prefs['review_required'] else 'evidence_required' if items else 'balances_checked', 'routes': items, 'transfers_executed': False}
 
 

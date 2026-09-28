@@ -1,4 +1,6 @@
-"""Coverage calculation and unapproved scheduled drafts; bank submission is always manual."""
+"""Legacy balance scenarios, retained only to validate previously approved aggregate drafts.
+New funding uses bank_charge_funding and never schedules from these scenarios.
+"""
 from fastapi import HTTPException
 from app.models.bank_monitor import BankAccountIdentity, BankProfileAccount, BankProfileRoute, BankProfileDraft, BankTransferDraft
 
@@ -61,32 +63,3 @@ def proposals(db, profile, *, allow_stale=False, exclude_draft=None):
             'observed_at': utc(profile.last_checked_at).isoformat() if profile.last_checked_at else None,
             'routes': choices})
     return result
-
-
-def scheduled_drafts(db, profile):
-    """Persist unapproved allocations under the same tenant lock as manual drafts."""
-    from datetime import datetime, timezone
-    from uuid import uuid4
-    from app.models.bank_monitor import BankMonitorConfig
-    db.query(BankMonitorConfig).filter_by(tenant_id=profile.tenant_id).with_for_update().one()
-    coverage = proposals(db, profile)
-    created = []
-    for item in coverage:
-        for option in item['routes']:
-            route = db.get(BankProfileRoute, option['route_id'])
-            existing = db.query(BankTransferDraft).join(BankProfileDraft, BankProfileDraft.draft_id == BankTransferDraft.id).filter(
-                BankTransferDraft.tenant_id == profile.tenant_id,
-                BankProfileDraft.source_id == route.source_id, BankProfileDraft.destination_id == route.destination_id,
-                BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched'])).first()
-            if existing:
-                continue
-            id = str(uuid4())
-            db.add(BankTransferDraft(id=id, tenant_id=profile.tenant_id, charge_reference=f'bank-profile-scheduled-{id}',
-                amount_cents=option['amount_cents'], from_last4=option['source_last4'], to_last4=item['last4'],
-                memo=f'Cvr ELIS {id[:13]}', created_at=datetime.now(timezone.utc),
-                status='amount_review_required' if item['pending_review_required'] else 'review_required'))
-            db.add(BankProfileDraft(draft_id=id, tenant_id=profile.tenant_id, profile_id=profile.id,
-                route_id=route.id, source_id=route.source_id, destination_id=route.destination_id))
-            created.append(id)
-    db.flush()
-    return coverage, created
