@@ -1,3 +1,4 @@
+import { reportingRange } from '../components/finance/reportingPeriod'
 import ReportingPeriodPicker from '../components/finance/ReportingPeriodPicker'
 import EarningsPlan from '../components/finance/EarningsPlan'
 import SupportingDocuments from '../components/finance/SupportingDocuments'
@@ -23,10 +24,10 @@ export default function Finance() {
   const [searchParams] = useSearchParams()
   const advancedRepairs = section !== 'repairs' || searchParams.get('advanced') === '1'
   const {currentTenant} = useTenant()
-  const [start, setStart] = useState(() => periodStart('week'))
-  const [end, setEnd] = useState(today)
+  const [start, setStart] = useState(() => section === 'home' ? reportingRange('previous-week').start : periodStart('week'))
+  const [end, setEnd] = useState(() => section === 'home' ? reportingRange('previous-week').end : today())
   const [asOf, setAsOf] = useState(today)
-  const [homePeriod,setHomePeriod]=useState('week')
+  const [homePeriod,setHomePeriod]=useState(section === 'home' ? 'previous-week' : 'week')
   const requestSequence = useRef(0)
   const [data, setData] = useState<{context: Context; workspace: Workspace; evidence: Evidence[]; events: Event[]; report: Report} | null>(null)
   const [error, setError] = useState('')
