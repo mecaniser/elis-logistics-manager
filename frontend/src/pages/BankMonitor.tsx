@@ -1,3 +1,4 @@
+import PlaidUsageSummary from '../components/PlaidUsageSummary'
 import { lockPageScroll } from '../components/lockPageScroll'
 import { useEffect, useRef, useState } from 'react'
 import { loadPlaidLink } from '../services/plaidLink'
@@ -459,6 +460,7 @@ export default function BankMonitor() {
 
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
+        <PlaidUsageSummary key={`plaid-usage-${currentTenantId}`} tenantId={currentTenantId} />
         <BankProfiles onUnified={setUnifiedProfiles} onOpenTransfer={id => setTransferFocus({ id, request: Date.now() })} settingsTarget={bankConnectionsTarget} openSettings={() => setSettingsOpen(true)} key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
         <BankTransferQueue transferFocus={transferFocus} settingsTarget={assistantSettingsTarget} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode !== false} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode === true} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return

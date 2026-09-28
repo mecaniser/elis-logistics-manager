@@ -199,3 +199,13 @@ class BankProfilePreferences(Base):
     tenant_id = Column(Integer, nullable=False, index=True)
     settings = Column(JSON, nullable=False, default=dict)
     last_evaluation = Column(JSON, nullable=False, default=dict)
+
+
+class PlaidApiCall(Base):
+    """ELIS-wide provider attempts. Never store tokens, payloads or bank data."""
+    __tablename__ = 'plaid_api_calls'
+    id = Column(Integer, primary_key=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    environment = Column(String(20), nullable=False, index=True)
+    endpoint = Column(String(100), nullable=False)
+    outcome = Column(String(12), nullable=False)

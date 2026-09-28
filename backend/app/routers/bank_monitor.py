@@ -41,6 +41,13 @@ def bank_tenant(request: Request, db: Session = Depends(get_db)):
     return tenant_id
 
 
+@router.get('/plaid-usage')
+def plaid_usage_summary(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    # bank_tenant restricts this integration-wide report to the configured owner.
+    from app.services.plaid_usage import summary
+    return summary(db)
+
+
 @router.get('')
 def dashboard(tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     config = db.get(BankMonitorConfig, tenant_id)
