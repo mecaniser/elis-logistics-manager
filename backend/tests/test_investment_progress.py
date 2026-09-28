@@ -82,3 +82,17 @@ def test_dealer_income_allocates_quoted_payment_without_second_principal_reserve
     assert r['cash_recovery']=='0.00'
     assert r['remaining_after_allocations']=='305.00'
     assert D(r['projected_balance'])==D('58979.20')+D(r['modeled_interest'])-D('1295')
+
+
+def test_weekly_targets_use_finance_calendar_proration():
+    from app.services.trailer_investment import plan_day_targets
+    a=asset()
+    r=settlement_progress(a,[],date(2026,2,2))
+    assert r['week_start']=='2026-01-26'
+    assert r['week_end']=='2026-02-01'
+    from datetime import timedelta
+    targets=[plan_day_targets(a.investment_plans[0],date(2026,1,26)+timedelta(days=i)) for i in range(7)]
+    assert D(r['weekly_loan_target'])==sum(t[1] for t in targets)
+    assert D(r['weekly_cash_target'])==sum(t[0] for t in targets)
+    assert r['original_borrowed']=='75000.00'
+    assert r['initial_cash']=='0.00'
