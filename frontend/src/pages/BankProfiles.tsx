@@ -3,7 +3,7 @@ import AccountTrailerPayment, {type TrailerPaymentIntent} from '../components/Ac
 import EquipmentPayments from '../components/EquipmentPayments'
 import {financeApi} from '../services/finance'
 import { createPortal } from 'react-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { bankProfilesApi } from '../services/api'
 import { loadPlaidLink } from '../services/plaidLink'
 import BankDialog from '../components/BankDialog'
@@ -25,9 +25,10 @@ const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-s
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || (e instanceof Error ? e.message : 'Banking profile request failed.')
 
-export default function BankProfiles({ refreshVersion, tenantId, onCoverage, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { refreshVersion:number; onCoverage: (value: FundingProposalState) => void; onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
+export default function BankProfiles({ settingsControl, refreshVersion, tenantId, onCoverage, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { settingsControl?:ReactNode; refreshVersion:number; onCoverage: (value: FundingProposalState) => void; onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
   const [settingsProfile, setSettingsProfile] = useState('')
   const [editingName, setEditingName] = useState('')
   const [addingBank, setAddingBank] = useState(false)
@@ -164,7 +165,7 @@ export default function BankProfiles({ refreshVersion, tenantId, onCoverage, onU
     finally { if (alive.current) setBusy(false) }
   }
   return <section aria-label="Banking profiles" className="rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Banking profiles</p><h2 className="mt-1 text-xl font-semibold text-white">{loading || mode ? 'Your accounts' : 'Connect separate bank logins'}</h2><p className="mt-2 text-sm text-slate-300">Choose a profile to view its accounts. Select an account to make a payment, move funds, or view its transfers.</p></div></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-white">{loading || mode ? 'Your accounts' : 'Connect separate bank logins'}</h2>{settingsControl}</header>
     {equipmentRecords !== null && <BankDialog title="Trailer payment records" onClose={() => setEquipmentRecords(null)}><p className="text-sm text-slate-600">No single connected credit line is selected for this trailer. You can still record a payment made directly at your lender.</p><EquipmentPayments key={equipmentRecords} selectedAsset={equipmentRecords}/></BankDialog>}
     {settingsTarget && createPortal(<section aria-label="Manage bank connections" className="bank-profile-settings space-y-4 rounded-xl border border-slate-200 p-4">
       {error && <p role="alert" className="text-sm text-red-800">{error}</p>}{notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}<div className="flex items-center justify-between"><h3 className="font-semibold text-slate-950">Bank connections</h3><button type="button" aria-label="Add bank connection" aria-expanded={addingBank} onClick={() => setAddingBank(v => !v)} className="grid h-9 w-9 place-items-center rounded-lg text-2xl text-blue-700 hover:bg-blue-50">{addingBank ? '−' : '+'}</button></div>
@@ -203,10 +204,15 @@ export default function BankProfiles({ refreshVersion, tenantId, onCoverage, onU
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-200">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
-        {[{ key: 'checking', label: 'Checking accounts', description: 'Cash available at the bank' }, { key: 'line', label: 'Credit lines', description: 'Available borrowing and balances owed' }, { key: 'card', label: 'Credit cards', description: 'Available credit and card balances' }].map(group => {
+        {[{ key: 'checking', label: 'Checking accounts' }, { key: 'line', label: 'Credit lines' }, { key: 'card', label: 'Credit cards' }].map(group => {
           const accounts = active.accounts.filter(a => (a.kind === 'checking' ? 'checking' : a.subtype === 'credit card' ? 'card' : 'line') === group.key)
           if (!accounts.length) return null
-          return <section key={group.key} aria-label={group.label} className="mt-6"><div className="mb-3 flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold text-slate-100">{group.label}</h3><p className="text-xs text-slate-400">{group.description}</p></div><div className={`grid gap-3 ${accounts.length === 1 ? 'grid-cols-1' : accounts.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-3'}`}>{accounts.map(a => {
+          const cardGroup = group.key === 'card'
+          const cardsOpen = Boolean(expandedCards[active.id])
+          return <section key={group.key} aria-label={group.label} className={`mt-6 ${cardGroup ? 'border-t border-slate-800 pt-2' : ''}`}>
+            {cardGroup ? <h3><button type="button" aria-expanded={cardsOpen} aria-controls={`credit-cards-${active.id}`} onClick={() => setExpandedCards(current => ({ ...current, [active.id]: !current[active.id] }))} className="flex min-h-11 w-full items-center gap-2 rounded-lg text-left font-semibold text-slate-100 hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${cardsOpen ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{group.label}<span className="text-sm font-normal text-slate-400">({accounts.length})</span></button></h3> : <h3 className="mb-3 font-semibold text-slate-100">{group.label}</h3>}
+            <div id={cardGroup ? `credit-cards-${active.id}` : undefined} hidden={cardGroup && !cardsOpen}>
+            <div className={`grid gap-3 ${accounts.length === 1 ? 'grid-cols-1' : accounts.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-3'}`}>{accounts.map(a => {
           const checking = a.kind === 'checking'
           const shared = data.profiles.filter(p => p.accounts.some(other => other.account_id === a.account_id)).length > 1
           return <article key={a.id} className={`relative flex min-w-0 flex-col rounded-2xl border p-4 ${checking ? 'border-emerald-700/70 bg-gradient-to-br from-emerald-950 to-slate-900' : 'border-blue-700/70 bg-gradient-to-br from-blue-950 to-slate-900'}`}>
@@ -221,9 +227,9 @@ export default function BankProfiles({ refreshVersion, tenantId, onCoverage, onU
               <div className="mt-4 flex items-center justify-between gap-3 text-xs"><span className="text-slate-300">{shared ? 'Shared across profiles' : ''}</span><span className={`font-semibold ${checking ? 'text-emerald-200' : 'text-blue-200'}`}>Manage account →</span></div>
             </> : <div className="mt-3 space-y-2"><p className="text-sm text-amber-200">Possible overlapping account. Identify it before using its balance or creating a route.</p>{a.overlap_candidates.map(c => <button key={c.id} disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { account_id: c.id })}>Same account as {c.name} · ••{c.last4}{c.profiles?.length ? ` (${c.profiles.join(', ')})` : ''}</button>)}<button disabled={busy} className={`${button} w-full`} onClick={() => void request(`/${active.id}/accounts/${a.id}/resolve`, 'post', { separate_account: true })}>This is a different account</button></div>}
           </article>
-        })}</div></section>
+        })}</div></div></section>
         })}
-        <p className="mt-4 text-xs leading-5 text-slate-400">Shared accounts use the same reserves and drafts across profiles. Pending feeds can omit payments; keep a reserve for upcoming bills.</p>
+        <p className="mt-4 text-xs leading-5 text-slate-400">Pending debits may not include every payment.</p>
         {account && <BankDialog title={`${account.name} · ••${account.last4}`} onClose={() => { reviewRequest.current++; if (reviewLoading) setBusy(false); setReviewLoading(null); setAccountId(''); setReview(null) }}>
           <p className="text-sm text-slate-600">Bank login: {active.name}</p>
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-900">{error}</p>}
