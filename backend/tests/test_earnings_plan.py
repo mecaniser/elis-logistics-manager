@@ -199,3 +199,25 @@ def test_planning_freight_excludes_informational_reimbursement():
     credited = planning_freight(report, {1})
     assert next(row['amount'] for row in credited['rows'] if row['category'] == 'unclassified_statement_adjustment') == '-947.27'
     assert sum(Decimal(row['amount']) for row in credited['rows']) + Decimal(credited['settlement_remainder']) == Decimal('17000.00')
+
+
+def test_default_week_availability_uses_original_tenant_settlements(db, truck):
+    from app.routers.finance import settlement_availability
+    from app.models.settlement import Settlement
+    from fastapi import HTTPException
+    import pytest
+    start, end = date(2026,9,28), date(2026,9,29)
+    assert settlement_availability(start,end,db,truck.tenant_id)['has_settlements'] is False
+    db.add(Settlement(truck_id=truck.id,settlement_date=date(2026,9,21),gross_revenue=100))
+    db.flush()
+    assert settlement_availability(start,end,db,truck.tenant_id)['has_settlements'] is False
+    # Zero income is still an uploaded settlement; future dates are excluded.
+    current = Settlement(truck_id=truck.id,settlement_date=start,gross_revenue=0)
+    db.add(current);db.flush()
+    assert settlement_availability(start,end,db,truck.tenant_id)['has_settlements'] is True
+    assert settlement_availability(start,end,db,999)['has_settlements'] is False
+    current.source_settlement_id = 123
+    db.flush()
+    assert settlement_availability(start,end,db,truck.tenant_id)['has_settlements'] is False
+    with pytest.raises(HTTPException):
+        settlement_availability(end,start,db,truck.tenant_id)

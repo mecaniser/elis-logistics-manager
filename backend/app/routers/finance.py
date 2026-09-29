@@ -32,6 +32,16 @@ def context(request: Request, db: Session = Depends(get_db), tenant: int = Depen
     return {'tenant_id': tenant, 'currency': 'USD', 'basis': 'accrual', 'accounts': f.ACCOUNTS, 'assets': [{'id': x.id, 'name': x.name, 'type': x.vehicle_type} for x in db.query(Truck).filter_by(tenant_id=tenant).all()], 'motive_configured': bool(os.getenv(f'MOTIVE_API_KEY_TENANT_{tenant}')), 'legacy_preserved': True, 'owner_preview': bool(os.getenv('ELIS_OWNER_DASHBOARD_PREVIEW') == '1' and os.getenv('ELIS_FINANCE_LOCAL_TENANTS') and not os.getenv('APP_AUTH_USERNAME') and request.client and request.client.host in ('127.0.0.1', '::1', 'testclient')), 'home_enabled': db.query(FinanceEvent).filter_by(tenant_id=tenant, kind='activate_finance').first() is not None}
 
 
+@router.get('/settlement-availability')
+def settlement_availability(start: date, end: date, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    if start > end:
+        raise HTTPException(422, 'Start must not be after end.')
+    found = db.query(Settlement.id).join(Truck, Settlement.truck_id == Truck.id).filter(
+        Truck.tenant_id == tenant, Settlement.source_settlement_id.is_(None),
+        Settlement.settlement_date >= start, Settlement.settlement_date <= end).first()
+    return {'has_settlements': found is not None}
+
+
 @router.post('/events')
 def create_event(command: Command, idempotency_key: str = Header(..., min_length=8, max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     try:
