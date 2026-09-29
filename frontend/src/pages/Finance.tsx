@@ -28,6 +28,8 @@ export default function Finance() {
   const [end, setEnd] = useState(() => section === 'home' ? reportingRange('previous-week').end : today())
   const [asOf, setAsOf] = useState(today)
   const [homePeriod,setHomePeriod]=useState(section === 'home' ? 'previous-week' : 'week')
+  const automaticPeriod = useRef(true)
+  const periodTenant = useRef<number|null>(null)
   const requestSequence = useRef(0)
   const [data, setData] = useState<{context: Context; workspace: Workspace; evidence: Evidence[]; events: Event[]; report: Report} | null>(null)
   const [error, setError] = useState('')
@@ -44,8 +46,27 @@ export default function Finance() {
     if (!currentTenant) return
     const sequence = ++requestSequence.current
     setLoading(true); setError('')
-    try { const [context, workspace, evidence, events, report] = await Promise.all([financeApi.context(), financeApi.workspace(asOf), financeApi.evidence(), financeApi.events(), financeApi.report(start, end, asOf)]); if (sequence === requestSequence.current) setData({context, workspace, evidence, events, report}) } catch (e) { if (sequence === requestSequence.current) setError(financeError(e)) } finally { if (sequence === requestSequence.current) setLoading(false) }
-  }, [currentTenant, start, end, asOf])
+    try {
+      if (periodTenant.current !== currentTenant.id) {
+        periodTenant.current = currentTenant.id
+        automaticPeriod.current = true
+      }
+      if (section === 'home' && automaticPeriod.current) {
+        const week = reportingRange('week')
+        const available = await financeApi.settlementAvailability(week.start, week.end)
+        if (sequence !== requestSequence.current) return
+        const preset = available.has_settlements ? 'week' : 'previous-week'
+        if (automaticPeriod.current) {
+        const range = reportingRange(preset)
+        if (start !== range.start || end !== range.end || asOf !== today()) {
+          setHomePeriod(preset); setStart(range.start); setEnd(range.end); setAsOf(today())
+          return
+        }
+        setHomePeriod(preset)
+        }
+      }
+      const [context, workspace, evidence, events, report] = await Promise.all([financeApi.context(), financeApi.workspace(asOf), financeApi.evidence(), financeApi.events(), financeApi.report(start, end, asOf)]); if (sequence === requestSequence.current) setData({context, workspace, evidence, events, report}) } catch (e) { if (sequence === requestSequence.current) setError(financeError(e)) } finally { if (sequence === requestSequence.current) setLoading(false) }
+  }, [currentTenant, start, end, asOf, section])
   useEffect(() => { void load() }, [load])
   useEffect(() => { setActionIndex(0) }, [section])
   async function upload(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!file) return; setUploadBusy(true); setUploadStatus(''); try { const result = await financeApi.upload(file, documentSource, replacement); setUploadStatus(result.duplicate ? 'This document is already preserved. Its existing version is available below.' : 'Original preserved. Review extracted details before posting.'); await load() } catch (e) { setUploadStatus(financeError(e)) } finally { setUploadBusy(false) } }
@@ -68,9 +89,9 @@ export default function Finance() {
   const currentScope = data?.context.tenant_id === currentTenant?.id && r?.period.start === start && r?.period.end === end && r?.as_of === asOf
   const comparison = r ? (<details><summary>Compare with existing settlement reports</summary><p className="finance-help">{r.legacy_comparison.note}</p><button className="finance-secondary" onClick={() => void reconstruct()}>Recover original PDFs for this period</button>{reconstructionStatus && <p role="status">{reconstructionStatus}</p>}<DataTable rows={r.legacy_comparison.rows} columns={['name', 'date', 'freight_gross', 'carrier_retention', 'operating_deductions', 'settlement_remainder', 'legacy_net', 'difference']} /></details>) : null
   return <div className={`finance-app ${section==='home'?'finance-home':''}`}>
-    <header className="finance-header"><div><div className="finance-title-row"><h1>{section === 'home' ? 'Dashboard' : tabs.find(t => t[0] === section)?.[1] || 'Finance'}</h1>{section==='home'&&<button type="button" className="finance-refresh-icon" aria-label="Refresh dashboard" title="Refresh dashboard" aria-busy={loading} onClick={()=>void load()} disabled={loading}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.55-1L20 9M4 15l2.35 3A7 7 0 0 0 17.9 17"/></svg></button>}</div>{section!=='home' &&<p className="finance-help">Cash, equipment performance and the records behind every result.</p>}</div><Link className="finance-secondary" to="/legacy-dashboard">Previous dashboard</Link></header>
+    <header className="finance-header"><div><div className="finance-title-row"><h1>{section === 'home' ? 'Dashboard' : tabs.find(t => t[0] === section)?.[1] || 'Finance'}</h1>{section==='home'&&<button type="button" className="finance-refresh-icon" aria-label="Refresh dashboard" title="Refresh dashboard" aria-busy={loading} onClick={()=>void load()} disabled={loading}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.55-1L20 9M4 15l2.35 3A7 7 0 0 0 17.9 17"/></svg></button>}</div>{section!=='home' &&<p className="finance-help">Cash, equipment performance and the records behind every result.</p>}</div>{section==='home'&&<div className="finance-home-period"><ReportingPeriodPicker start={start} end={end} preset={homePeriod} onApply={(from,to,preset)=>{automaticPeriod.current=false;if(from!==start||to!==end||asOf!==today())requestSequence.current++;setStart(from);setEnd(to);setHomePeriod(preset);setAsOf(today())}}/><span>{start} – {end} · USD</span></div>}</header>
     {section !== 'home' && <nav className="finance-tabs" aria-label="Finance workspace">{tabs.map(([path, title]) => <Link key={path} className={section === path ? 'active' : ''} aria-current={section === path ? 'page' : undefined} to={path === 'home' ? '/finance' : `/finance/${path}`}>{title}</Link>)}</nav>}
-    {section==='home'?<div className="finance-home-period"><ReportingPeriodPicker start={start} end={end} preset={homePeriod} onApply={(from,to,preset)=>{setStart(from);setEnd(to);setHomePeriod(preset);setAsOf(today())}}/><span>{start} – {end} · USD</span></div>:<>
+    {section!=='home'&&<>
     <div className="finance-actions" aria-label="Reporting period presets">{['week', 'month', 'year'].map(p => <button key={p} className="finance-secondary" onClick={() => { setStart(periodStart(p)); setEnd(today()); setAsOf(today()) }}>This {p}</button>)}</div>
     <div className="finance-period"><label>Period start<input aria-label="Period start" type="date" value={start} onChange={e => setStart(e.target.value)} /></label><label>Period end<input aria-label="Period end" type="date" value={end} onChange={e => setEnd(e.target.value)} /></label><label>Cash as of<input aria-label="Cash as of" type="date" value={asOf} onChange={e => setAsOf(e.target.value)} /></label><button className="finance-secondary" onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : 'Refresh evidence'}</button></div>
     </>}

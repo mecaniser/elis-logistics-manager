@@ -51,6 +51,7 @@ export const financeApi = {
   confirmRepairs: (payload: RecordData) => client.post('/repair-confirmations', payload).then(r => r.data),
   repairHistory: (as_of: string) => client.get<RepairReviewReport>('/repair-history', {params: {as_of}}).then(r => r.data),
   history: () => client.get<HistoryReport>('/settlement-history').then(r => r.data),
+  settlementAvailability: (start:string,end:string) => client.get<{has_settlements:boolean}>('/settlement-availability',{params:{start,end}}).then(r=>r.data),
   context: () => client.get<Context>('/context').then(r => r.data),
   workspace: (as_of: string) => client.get<Workspace>('/workspace', { params: { as_of } }).then(r => r.data),
   events: async () => { const result: Event[] = []; let cursor: number | null = 0; do { const r: {data: {items: Event[]; next_cursor: number | null}} = await client.get('/events', {params: {cursor, limit: 500}}); result.push(...r.data.items); cursor = r.data.next_cursor } while (cursor !== null); return result },
