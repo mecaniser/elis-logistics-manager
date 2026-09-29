@@ -662,15 +662,33 @@ def create_repayment_drafts(run_id: int, request: Request,
 
 @router.post('/drafts/{draft_id}/prepare')
 def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    return claim_for_bank_review(draft_id, request, tenant_id, db)
+
+
+@router.post('/drafts/{draft_id}/prepare-charge')
+def claim_charge_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    """Validate a full-charge draft for the extension's explicit approval screen."""
+    return claim_for_bank_review(draft_id, request, tenant_id, db, charge_review=True)
+
+
+def claim_for_bank_review(draft_id, request, tenant_id, db, *, charge_review=False):
     draft_action(request)
     draft = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id).first()
     config = db.query(BankMonitorConfig).filter_by(tenant_id=tenant_id).with_for_update().one_or_none()
     if not draft or not config:
         raise HTTPException(409, 'Draft unavailable.')
     binding = db.get(BankProfileDraft, draft_id)
+    if charge_review:
+        from app.models.bank_monitor import BankFundingCharge
+        charge = db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, draft_id=draft_id).first()
+        if not binding or not charge or not draft.charge_reference.startswith('bank-profile-charge-'):
+            raise HTTPException(409, 'This transfer requires its existing amount review.')
     if binding:
         route = bank_profiles.owned(db, BankProfileRoute, binding.route_id, tenant_id)
-        if draft.status != 'reviewed':
+        expected_status = draft.status
+        expected_amount = draft.amount_cents
+        allowed = {'reviewed', 'review_required', 'amount_review_required'} if charge_review else {'reviewed'}
+        if expected_status not in allowed:
             raise HTTPException(409, 'Check this transfer status before preparing it again.')
         profile, _, _ = bank_profiles.route_accounts(db, route)
         try:
@@ -679,8 +697,11 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
             db.commit()
             raise HTTPException(422, str(exc)) from None
         from app.models.bank_monitor import BankFundingCharge
-        from app.services.bank_charge_funding import validate_charge, refresh_charge_feed
+        from app.services.bank_charge_funding import validate_charge, refresh_charge_feed, refresh_unprepared_memo
         refresh_charge_feed(db, db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, draft_id=draft.id).first(), profile)
+        if draft.amount_cents != expected_amount:
+            db.commit()
+            raise HTTPException(409, 'The charge amount changed. Review the updated amount in the queue before continuing.')
         validate_charge(db, draft)
         limit = bank_profiles.transfer_limit(db, route, exclude_draft=draft.id)
         if draft.charge_reference.startswith('bank-profile-scheduled-'):
@@ -692,7 +713,8 @@ def claim_draft(draft_id: str, request: Request, tenant_id: int = Depends(bank_t
         if draft.amount_cents > limit['limit_cents']:
             db.commit()
             raise HTTPException(409, 'Bank balances or reservations changed. Remove this unprepared draft and review again.')
-        updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status='reviewed').update({'status': 'preparation_requested'})
+        refresh_unprepared_memo(db, draft)
+        updated = db.query(BankTransferDraft).filter_by(id=draft_id, tenant_id=tenant_id, status=expected_status).update({'status': 'preparation_requested'})
         if not updated:
             db.rollback()
             raise HTTPException(409, 'Draft is already being prepared.')
@@ -763,6 +785,9 @@ def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id
     if not updated:
         db.rollback()
         raise HTTPException(409, 'Draft state changed; refresh the queue.')
+    if data.status == 'preparation_not_started':
+        from app.services.bank_charge_funding import refresh_unprepared_memo
+        refresh_unprepared_memo(db, db.get(BankTransferDraft, draft_id))
     db.commit()
     return {'status': outcome, 'transfers_executed': False}
 

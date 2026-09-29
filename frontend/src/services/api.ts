@@ -1046,6 +1046,7 @@ export const bankMonitorApi = {
   drafts: (tenantId: number) => bankMonitorClient.get('/bank-monitor/drafts', draftHeaders(tenantId)),
   createDraft: (tenantId: number, draft: unknown) => bankMonitorClient.post('/bank-monitor/drafts', draft, draftHeaders(tenantId)),
   prepareDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/prepare`, {}, draftHeaders(tenantId)),
+  prepareChargeDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/prepare-charge`, {}, draftHeaders(tenantId)),
   draftOutcome: (tenantId: number, id: string, status: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/outcome`, { status }, draftHeaders(tenantId)),
   retryDraft: (tenantId: number, id: string) => bankMonitorClient.post(`/bank-monitor/drafts/${id}/retry`, { reason: 'signed_out_before_form' }, draftHeaders(tenantId)),
   updateDraftBankDetails: (tenantId: number, id: string, details: { bank_state: 'posted' | 'pending'; bank_effective_date: string }) => bankMonitorClient.put(`/bank-monitor/drafts/${id}/bank-details`, details, draftHeaders(tenantId)),

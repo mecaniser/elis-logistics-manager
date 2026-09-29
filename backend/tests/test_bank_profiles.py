@@ -661,3 +661,116 @@ def test_cancelled_charge_can_be_explicitly_requeued_but_completed_cannot(setup,
     assert second.json()['draft']['id']!=first['id']
     db.get(BankTransferDraft,second.json()['draft']['id']).status='bank_history_matched';db.commit()
     assert client.post('/api/bank-monitor/profiles/charges/draft',headers=headers(),json=payload).status_code==409
+
+
+@pytest.mark.parametrize('description,label', [
+    ('Empower', 'Empower'), ('Coinbase', 'Coinbase'),
+    ('External Withdrawal PAYPAL / INSTANT TRANSFER', 'PAYPAL INSTANT'),
+    ('Café & utilities payment', 'Cafe utilities'), ('💳', 'Charge'),
+])
+def test_charge_memo_contains_purpose_date_and_bank_safe_reference(description, label):
+    import re
+    from datetime import date
+    from types import SimpleNamespace
+    from app.services.bank_charge_funding import charge_memo
+    charge = SimpleNamespace(description=description, charge_date=date(2026, 9, 28))
+    memo = charge_memo(charge, '6c42726e-26c6-0000-0000-000000000000')
+    assert memo.startswith(f'Cvr {label}')
+    assert memo.endswith(' 09-28 6c42726e')
+    assert len(memo) <= 34
+    assert re.fullmatch(r'Cvr [A-Za-z0-9 ._-]{1,30}', memo)
+
+
+def test_legacy_charge_memo_updated_during_review(setup, db, monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,entries = charge_setup(setup,db,monkeypatch)
+    _,ids = scheduled_drafts(db,profile)
+    draft = db.get(BankTransferDraft,ids[0])
+    assert draft.memo.startswith('Cvr Expense ')
+    draft.memo = f'Cvr ELIS {draft.id[:13]}'
+    db.commit()
+    review = client.post(f'/api/bank-monitor/profiles/drafts/{draft.id}/review',headers=headers()).json()
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft",headers=headers(),json={'amount_cents':draft.amount_cents,'coverage_confirmed':True})
+    assert response.status_code == 200, response.text
+    assert response.json()['draft']['memo'].startswith('Cvr Expense ')
+    assert response.json()['draft']['memo'].endswith(draft.id[:8])
+
+
+@pytest.mark.parametrize('outcome,upgraded', [
+    ('preparation_not_started', True), ('preparation_failed', False),
+    ('prepared_awaiting_submission', False),
+])
+def test_charge_memo_only_changes_after_confirmed_pre_bank_cancellation(setup,db,monkeypatch,outcome,upgraded):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,_=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile)
+    draft=db.get(BankTransferDraft,ids[0])
+    old=f'Cvr ELIS {draft.id[:13]}'
+    draft.memo=old
+    draft.status='preparation_requested'
+    db.commit()
+    response=client.post(f'/api/bank-monitor/drafts/{draft.id}/outcome',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'},json={'status':outcome})
+    assert response.status_code==200, response.text
+    db.refresh(draft)
+    assert (draft.memo != old) == upgraded
+    if upgraded: assert draft.memo.startswith('Cvr Expense ')
+    assert client.post(f'/api/bank-monitor/drafts/{draft.id}/outcome',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'},json={'status':'preparation_not_started'}).status_code==409
+
+
+def test_existing_ready_charge_gets_descriptive_memo_before_extension_dispatch(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,_=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile)
+    draft=db.get(BankTransferDraft,ids[0])
+    draft.memo=f'Cvr ELIS {draft.id[:13]}'
+    draft.status='reviewed'
+    db.commit()
+    response=client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    assert response.status_code==200, response.text
+    assert response.json()['memo'].startswith('Cvr Expense ')
+    assert response.json()['status']=='preparation_requested'
+    assert response.json()['memo'].endswith(draft.id[:8])
+    assert client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'}).status_code==409
+
+
+def test_full_charge_goes_directly_to_explicit_bank_assistant_review(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,_=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    draft=db.get(BankTransferDraft,ids[0])
+    path=f'/api/bank-monitor/drafts/{draft.id}/prepare-charge'
+    action_headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'}
+    # The generic path still requires the original approval flow.
+    assert client.post(path.replace('/prepare-charge','/prepare'),headers=action_headers).status_code==409
+    result=client.post(path,headers=action_headers)
+    assert result.status_code==200,result.text
+    assert result.json()['status']=='preparation_requested'
+    assert result.json()['amount_cents']==draft.amount_cents
+    assert result.json()['charge']['id']
+    assert result.json()['memo'].startswith('Cvr Expense ')
+    # Claimed for the extension's approval, never marked prepared or completed.
+    assert client.post(path,headers=action_headers).status_code==409
+    cancelled=client.post(path.replace('/prepare-charge','/outcome'),headers=action_headers,json={'status':'preparation_not_started'})
+    assert cancelled.status_code==200
+    assert db.get(BankTransferDraft,draft.id).status=='reviewed'
+
+
+@pytest.mark.parametrize('invalid', ['changed_amount','insufficient_source','missing_charge','other_tenant','disabled_route'])
+def test_direct_charge_review_preserves_validation_boundaries(setup,db,monkeypatch,invalid):
+    from app.services.bank_charge_funding import scheduled_drafts
+    from app.models.bank_monitor import BankFundingCharge
+    client,profile,route,entries=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    draft=db.get(BankTransferDraft,ids[0])
+    charge=db.query(BankFundingCharge).filter_by(draft_id=draft.id).one()
+    if invalid=='changed_amount':
+        for entry in entries:
+            if entry['transaction_id'] in charge.provider_ids: entry['amount_cents']+=100
+    if invalid=='insufficient_source': monkeypatch.setattr(service,'transfer_limit',lambda *a,**kw:{'limit_cents':0})
+    if invalid=='missing_charge': db.delete(charge)
+    if invalid=='disabled_route': route.enabled=False
+    db.commit()
+    response=client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare-charge',headers={**headers(2 if invalid=='other_tenant' else 1),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    assert 400<=response.status_code<500,response.text
+    db.refresh(draft)
+    assert draft.status!='preparation_requested'

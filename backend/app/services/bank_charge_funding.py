@@ -144,6 +144,28 @@ def proposals(db, profile, *, allow_stale=False, exclude_draft=None):
     return result
 
 
+def charge_memo(charge, draft_id):
+    """Bank/extension contract: Cvr plus at most 30 printable ASCII characters."""
+    import unicodedata
+    description = unicodedata.normalize('NFKD', charge.description).encode('ascii', 'ignore').decode()
+    description = re.sub(r'^(?:External Withdrawal|Point Of Sale Withdrawal|Withdrawal)\s+', '', description, flags=re.I)
+    description = re.sub(r'[^A-Za-z0-9 ._-]+', ' ', description)
+    description = ' '.join(description.split()).strip(' ._-') or 'Charge'
+    return f'Cvr {description[:15].rstrip()} {charge.charge_date:%m-%d} {draft_id[:8]}'
+
+
+def refresh_unprepared_memo(db, draft):
+    # A prepared/failed transfer may already exist in the bank with its old memo.
+    # Reviewed drafts have not started preparation, or were explicitly released
+    # after cancellation / user-confirmed non-submission before a retry.
+    safe = draft.status in {'review_required', 'amount_review_required', 'reviewed'}
+    if not safe or draft.memo != f'Cvr ELIS {draft.id[:13]}':
+        return
+    charge = db.query(BankFundingCharge).filter_by(tenant_id=draft.tenant_id, draft_id=draft.id).first()
+    if charge:
+        draft.memo = charge_memo(charge, draft.id)
+
+
 def make_draft(db, profile, route, charge):
     now = datetime.now(timezone.utc)
     source = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.source_id, active=True).one()
@@ -151,7 +173,7 @@ def make_draft(db, profile, route, charge):
     id = str(uuid4())
     draft = BankTransferDraft(id=id, tenant_id=profile.tenant_id, charge_reference=f'bank-profile-charge-{charge.id}-{id}',
         amount_cents=charge.amount_cents, from_last4=source.last4, to_last4=target.last4,
-        memo=f'Cvr ELIS {id[:13]}', status='review_required', created_at=now)
+        memo=charge_memo(charge, id), status='review_required', created_at=now)
     db.add(draft)
     db.add(BankProfileDraft(draft_id=id, tenant_id=profile.tenant_id, profile_id=profile.id,
         route_id=route.id, source_id=route.source_id, destination_id=route.destination_id))
