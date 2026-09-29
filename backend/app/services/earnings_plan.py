@@ -80,6 +80,14 @@ def planning_freight(report, included_ids):
         for key, value in row['deductions'].items():
             if key == 'loan_interest':
                 continue  # Modeled legacy interest is excluded by the planning bridge.
+            if key == 'reimbursement':
+                # Saved categories also contain informational cash reimbursements.
+                # They are not operating expenses (77 Cargo excludes them from
+                # expenses). Counting them here fabricates an offsetting category
+                # gap and forces an otherwise positive chart into the waterfall.
+                # Preserve the aggregate below: any real net credit or unresolved
+                # difference in older records must still remain visible.
+                continue
             category = EXPENSE_MAP.get(key, key)
             amounts[category] = amounts.get(category, ZERO) + D(value)
             categorized += D(value)
