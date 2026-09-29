@@ -253,7 +253,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     const left = () => { leftTransferPage.current = true }
     const returned = () => {
       if (document.hidden) { left(); return }
-      if (!leftTransferPage.current || busy) return
+      if (!leftTransferPage.current || busy || !document.hasFocus()) return
       const draft = drafts.find(d => d.bank_session && d.status === 'prepared_awaiting_submission')
       if (!draft) return
       leftTransferPage.current = false
