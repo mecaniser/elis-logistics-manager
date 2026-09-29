@@ -91,3 +91,16 @@ test('location price is volume weighted and requires gallons on every purchase',
  rows[1].gallons='0'
  assert.equal(fuelBranches('400.00',[{rows}])[0].unitPrice,null)
 })
+
+test('latest settlement operating breakdown supports money flow collapsed and expanded',()=>{
+  const data={freight_gross:'17000.00',settlement_remainder:'623.69',rows:[
+    ['carrier','2040.00'],['driver_pay','5100.00'],['fuel','6874.91'],
+    ['tolls','666.63'],['insurance','600.00'],['deduct','947.27'],['prepass','147.50'],
+  ].map(([category,amount])=>({category,amount}))}
+  for(const expanded of [false,true]) {
+    const result=freightFlowModel(data,expanded)
+    assert.equal(result.canFlow,true)
+    assert.equal(result.flows.reduce((sum,row)=>sum+row.cents,0),1700000)
+    assert.equal(result.remainder,62369)
+  }
+})

@@ -171,3 +171,31 @@ def test_funded_trailer_plan_uses_payment_not_duplicate_capital(db, truck):
     assert detail['recorded_loan_deductions'] == '100.00'
     assert detail['additional_loan'] == '801.48'
     assert next(x['amount'] for x in after['bridge'] if x['label']=='Additional planned loan payments') == '-801.48'
+
+
+def test_planning_freight_excludes_informational_reimbursement():
+    from app.services.earnings_plan import planning_freight
+    report = {'revenue_breakdown': {'freight_gross': '0.00', 'settlement_remainder': '0.00', 'rows': []},
+              'legacy_comparison': {'rows': [{
+                  'legacy_id': 1, 'freight_gross': '17000.00', 'carrier_retention': '2040.00',
+                  'settlement_remainder': '623.69', 'operating_deductions': '14336.31',
+                  'deductions': {'driver_pay': '5100.00', 'fuel': '6874.91', 'tolls': '666.63',
+                                 'insurance': '600.00', 'deduct': '947.27', 'prepass': '147.50',
+                                 'reimbursement': '947.27'},
+              }]}}
+    result = planning_freight(report, {1})
+    categories = {row['category']: Decimal(row['amount']) for row in result['rows']}
+    assert 'reimbursement' not in categories
+    assert 'unclassified_statement_adjustment' not in categories
+    assert all(value >= 0 for value in categories.values())
+    assert sum(categories.values()) + Decimal(result['settlement_remainder']) == Decimal('17000.00')
+    assert result['settlement_remainder'] == '623.69'
+
+    # Some older imports include the credit in their net expense aggregate.
+    # Keep that real difference visible rather than forcing a positive chart.
+    legacy = report['legacy_comparison']['rows'][0]
+    legacy['operating_deductions'] = '13389.04'
+    legacy['settlement_remainder'] = '1570.96'
+    credited = planning_freight(report, {1})
+    assert next(row['amount'] for row in credited['rows'] if row['category'] == 'unclassified_statement_adjustment') == '-947.27'
+    assert sum(Decimal(row['amount']) for row in credited['rows']) + Decimal(credited['settlement_remainder']) == Decimal('17000.00')
