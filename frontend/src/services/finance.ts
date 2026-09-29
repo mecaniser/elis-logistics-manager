@@ -22,7 +22,9 @@ export interface RetentionReport {
   targets: {target_percent:string; acceptable_percent:string; effective_date:string|null};
   note:string; pairs:{asset_id:number; retained:string; freight:string; retained_per_100:string|null; score:string|null; band:'target_met'|'acceptable'|'below_floor'|'no_revenue'; status:'provisional'; issues:string[]; bridge:{label:string;amount:string}[]; source_event_ids:string[]; source_repair_ids?:number[]}[]
 }
+export interface FundMovement {opening:string;added:string;used:string;balance:string}
 export interface EarningsPlan {
+  business_funds?:{start:string;end:string;repair_since:string;repair:FundMovement;capital:FundMovement;equipment:{asset_id:number;name:string;balance?:string;unavailable?:string}[]};
   revenue_breakdown?: Report['revenue_breakdown'] & {saved_unposted_count:number;fuel_sources?:import('../components/finance/freightFlowModel').FuelSource[]};
   retention?: RetentionReport;
   planning_subtotal:string; note:string; unassigned_result:string;

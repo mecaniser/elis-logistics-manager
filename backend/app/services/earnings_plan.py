@@ -276,7 +276,8 @@ def earnings_plan(db, tenant, report):
     from app.services.equipment_payments import payment_events
     unassigned_payments = sum((D(e.payload['principal']) + D(e.payload['interest']) for e in payment_events(closing)
                                if start <= e.effective_date <= end and e.id not in matched_payment_ids), ZERO)
-    return {'version': 3, 'revenue_breakdown': planning_freight(report, {sid for p in pair_rows for sid in p['saved_settlement_ids']}), 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
+    from app.services.business_funds import business_funds
+    return {'business_funds': business_funds(db, tenant, start, end), 'version': 3, 'revenue_breakdown': planning_freight(report, {sid for p in pair_rows for sid in p['saved_settlement_ids']}), 'retention': {**report['retention'], 'pairs': planning_scores, 'basis': 'planning_after_protection', 'note': 'Score = planning subtotal / matching freight revenue / target percent × 10000. Includes saved unposted history and planned protection; remains provisional.'}, 'basis': 'calendar_day_planning_using_current_saved_vehicle_settings',
             'period': report['period'], 'as_of': report['as_of'], 'status': 'provisional',
             'settings': [{k: v for k, v in p.items() if not k.startswith('_')} for p in saved.values()],
             'pairs': pair_rows, 'planning_subtotal': money(sum((D(p['planning_subtotal']) for p in pair_rows), ZERO)),
