@@ -715,3 +715,62 @@ def test_charge_memo_only_changes_after_confirmed_pre_bank_cancellation(setup,db
     assert (draft.memo != old) == upgraded
     if upgraded: assert draft.memo.startswith('Cvr Expense ')
     assert client.post(f'/api/bank-monitor/drafts/{draft.id}/outcome',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'},json={'status':'preparation_not_started'}).status_code==409
+
+
+def test_existing_ready_charge_gets_descriptive_memo_before_extension_dispatch(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,_=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile)
+    draft=db.get(BankTransferDraft,ids[0])
+    draft.memo=f'Cvr ELIS {draft.id[:13]}'
+    draft.status='reviewed'
+    db.commit()
+    response=client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    assert response.status_code==200, response.text
+    assert response.json()['memo'].startswith('Cvr Expense ')
+    assert response.json()['status']=='preparation_requested'
+    assert response.json()['memo'].endswith(draft.id[:8])
+    assert client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare',headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'}).status_code==409
+
+
+def test_full_charge_goes_directly_to_explicit_bank_assistant_review(setup,db,monkeypatch):
+    from app.services.bank_charge_funding import scheduled_drafts
+    client,profile,_,_=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    draft=db.get(BankTransferDraft,ids[0])
+    path=f'/api/bank-monitor/drafts/{draft.id}/prepare-charge'
+    action_headers={**headers(),'X-Bank-Monitor-Action':'reviewed-transfer'}
+    # The generic path still requires the original approval flow.
+    assert client.post(path.replace('/prepare-charge','/prepare'),headers=action_headers).status_code==409
+    result=client.post(path,headers=action_headers)
+    assert result.status_code==200,result.text
+    assert result.json()['status']=='preparation_requested'
+    assert result.json()['amount_cents']==draft.amount_cents
+    assert result.json()['charge']['id']
+    assert result.json()['memo'].startswith('Cvr Expense ')
+    # Claimed for the extension's approval, never marked prepared or completed.
+    assert client.post(path,headers=action_headers).status_code==409
+    cancelled=client.post(path.replace('/prepare-charge','/outcome'),headers=action_headers,json={'status':'preparation_not_started'})
+    assert cancelled.status_code==200
+    assert db.get(BankTransferDraft,draft.id).status=='reviewed'
+
+
+@pytest.mark.parametrize('invalid', ['changed_amount','insufficient_source','missing_charge','other_tenant','disabled_route'])
+def test_direct_charge_review_preserves_validation_boundaries(setup,db,monkeypatch,invalid):
+    from app.services.bank_charge_funding import scheduled_drafts
+    from app.models.bank_monitor import BankFundingCharge
+    client,profile,route,entries=charge_setup(setup,db,monkeypatch)
+    _,ids=scheduled_drafts(db,profile);db.commit()
+    draft=db.get(BankTransferDraft,ids[0])
+    charge=db.query(BankFundingCharge).filter_by(draft_id=draft.id).one()
+    if invalid=='changed_amount':
+        for entry in entries:
+            if entry['transaction_id'] in charge.provider_ids: entry['amount_cents']+=100
+    if invalid=='insufficient_source': monkeypatch.setattr(service,'transfer_limit',lambda *a,**kw:{'limit_cents':0})
+    if invalid=='missing_charge': db.delete(charge)
+    if invalid=='disabled_route': route.enabled=False
+    db.commit()
+    response=client.post(f'/api/bank-monitor/drafts/{draft.id}/prepare-charge',headers={**headers(2 if invalid=='other_tenant' else 1),'X-Bank-Monitor-Action':'reviewed-transfer'})
+    assert 400<=response.status_code<500,response.text
+    db.refresh(draft)
+    assert draft.status!='preparation_requested'

@@ -8,8 +8,8 @@ export type FundingProposal = {
 export type FundingProposalState = {tenantId:number; items:FundingProposal[]}
 
 const money = (amount?: number) => amount == null ? 'Unavailable' : (amount / 100).toLocaleString('en-US', {style:'currency', currency:'USD'})
-export default function FundingProposals({items, busy, onReview, openSettings}: {
-  items:FundingProposal[]; busy:boolean; onReview:(chargeId:string, routeId:string)=>void; openSettings:()=>void
+export default function FundingProposals({items, busy, reviewingCharge, onReview, openSettings}: {
+  items:FundingProposal[]; busy:boolean; reviewingCharge:string|null; onReview:(chargeId:string, routeId:string)=>void; openSettings:()=>void
 }) {
   if (!items.length) return null
   return <section aria-label="Charges to fund" className="border-b border-slate-200">
@@ -19,6 +19,7 @@ export default function FundingProposals({items, busy, onReview, openSettings}: 
         <p className="text-lg font-semibold tabular-nums text-slate-950">{money(item.amount)} <span className="text-sm font-medium">· {item.charge.description}</span></p>
         <p className="mt-1 text-sm text-slate-600">{item.accountName} · ••{item.last4}</p>
         <p className="mt-1 text-xs text-slate-500">{item.charge.date} · {item.charge.pending ? 'Pending charge' : 'Posted charge'}</p>
+        {reviewingCharge === item.charge.id && <p role="status" className="mt-2 flex items-center gap-2 text-sm text-blue-800"><span aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-700 border-t-transparent motion-reduce:animate-none" />Getting this charge ready for bank review…</p>}
         {!item.routes.length && <p className="mt-2 text-sm text-amber-800">No enabled source can cover this full charge.</p>}
       </div>
       <div className="space-y-2">{item.routes.map(route => <div key={route.route_id}>

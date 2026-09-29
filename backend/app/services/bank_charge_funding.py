@@ -154,11 +154,11 @@ def charge_memo(charge, draft_id):
     return f'Cvr {description[:15].rstrip()} {charge.charge_date:%m-%d} {draft_id[:8]}'
 
 
-def refresh_unprepared_memo(db, draft, *, preparation_not_started=False):
+def refresh_unprepared_memo(db, draft):
     # A prepared/failed transfer may already exist in the bank with its old memo.
-    # Only an explicit pre-bank cancellation can release a reviewed legacy memo.
-    safe = draft.status in {'review_required', 'amount_review_required'} or (
-        preparation_not_started and draft.status == 'reviewed')
+    # Reviewed drafts have not started preparation, or were explicitly released
+    # after cancellation / user-confirmed non-submission before a retry.
+    safe = draft.status in {'review_required', 'amount_review_required', 'reviewed'}
     if not safe or draft.memo != f'Cvr ELIS {draft.id[:13]}':
         return
     charge = db.query(BankFundingCharge).filter_by(tenant_id=draft.tenant_id, draft_id=draft.id).first()
