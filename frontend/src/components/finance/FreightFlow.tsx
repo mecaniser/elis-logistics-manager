@@ -71,13 +71,13 @@ export default function FreightFlow({data,history,historyError,plan,period}: {pe
 
   return <div className="freight-flow">
     {model.reconciled ? <>
-      <div className="freight-flow-toolbar"><p className="finance-help">Statement allocation · selected reporting period</p><div className="freight-flow-switch" role="group" aria-label="Revenue chart view">
+      <div className="freight-flow-toolbar"><div className="freight-flow-switch" role="group" aria-label="Revenue chart view">
         <button type="button" className="finance-secondary" aria-pressed={selected === 'flow'} disabled={!model.canFlow} onClick={() => setView('flow')}>Money flow</button>
         <button type="button" className="finance-secondary" aria-pressed={selected === 'waterfall'} onClick={() => setView('waterfall')}>Waterfall</button>
       </div></div>
 
 
-      {!model.canFlow && <p className="finance-help">Credits, a negative remainder or nonpositive freight use the signed waterfall so amounts retain their direction.</p>}
+      {!model.canFlow && <p className="finance-help">Signed amounts · waterfall view</p>}
       {selected === 'flow' ? <>
         <div className="freight-flow-origin"><span>Freight billed</span><strong className="freight-amount-carrier">{amount(model.gross)}</strong></div>
         <div className="freight-flow-diagram" style={{height: fullHeight}}>
@@ -86,7 +86,7 @@ export default function FreightFlow({data,history,historyError,plan,period}: {pe
             {continued.map(row=><g key={row.key} className={`owner-flow-${row.tone}`}><path opacity=".25" d={`M 98 ${row.source} C ${(row.source-(remainderRibbon?.destination||0))/250*80} ${row.source} ${(row.source-(remainderRibbon?.destination||0))/250*80} ${row.destination+row.height} 98 ${row.destination+row.height} L 98 ${row.destination} C ${(row.source+row.height-(remainderRibbon?.destination||0))/250*80} ${row.destination} ${(row.source+row.height-(remainderRibbon?.destination||0))/250*80} ${row.source+row.height} 98 ${row.source+row.height} Z`}/><rect x="98" y={row.destination} width="2" height={row.height}/></g>)}
             <rect className="freight-color-carrier" x="0" y={sourceTop} width="2" height="250" />
           </svg>
-          <ul aria-label="Freight allocation amounts and metrics">{headers.map(header=><li key={header.key} className="freight-flow-label freight-group-label" style={{top:header.y}}>{label(header.key,header.label)}{header.key==='fuel'&&<div className="fuel-group-actions"><button type="button" className="freight-drill-button" aria-expanded={mileageOpen} onClick={()=>setMileageOpen(!mileageOpen)}>Miles vs fuel</button><button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}</li>)}{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong className={`freight-amount-${color(row.key)}`}>{amount(row.cents)}</strong><small>{metric(row)}</small></div></li>)}{continued.map(row=><li key={row.key} className={`freight-flow-label owner-flow-label-${row.tone}`} style={{top:row.labelY}}>{plan&&(row.label==='Equipment capital recovery'||row.label==='Additional planned loan payments')?<InvestmentDeductions plan={plan} kind={row.label==='Equipment capital recovery'?'capital':'loan'} label={row.label}/>:plan&&row.tone==='final'?<OwnerContributionDetails plan={plan} period={period}/>:<span>{row.label==='Repair reserve'?'Kept for repairs':row.label}</span>}<div><strong>{amount(row.cents)}</strong>{row.tone==='final'&&<small>After costs and money kept in the business</small>}</div></li>)}</ul>
+          <ul aria-label="Freight allocation amounts and metrics">{headers.map(header=><li key={header.key} className="freight-flow-label freight-group-label" style={{top:header.y}}>{label(header.key,header.label)}{header.key==='fuel'&&<div className="fuel-group-actions"><button type="button" className="freight-drill-button" aria-expanded={mileageOpen} onClick={()=>setMileageOpen(!mileageOpen)}>Miles vs fuel</button><button type="button" className="freight-drill-button" aria-expanded={purchaseOpen} onClick={()=>setPurchaseOpen(!purchaseOpen)}>Purchase details</button></div>}</li>)}{ribbons.map(row => <li key={row.key} className="freight-flow-label" style={{top: row.labelY}}>{label(row.key,row.label)}<div><strong className={`freight-amount-${color(row.key)}`}>{amount(row.cents)}</strong><small>{metric(row)}</small></div></li>)}{continued.map(row=><li key={row.key} className={`freight-flow-label owner-flow-label-${row.tone}`} style={{top:row.labelY}}>{plan&&(row.label==='Equipment capital recovery'||row.label==='Additional planned loan payments')?<InvestmentDeductions plan={plan} kind={row.label==='Equipment capital recovery'?'capital':'loan'} label={row.label==='Equipment capital recovery'?'Capital recovery':'Loan payments · planned'}/>:plan&&row.tone==='final'?<OwnerContributionDetails plan={plan} period={period}/>:<span>{row.label==='Repair reserve'?'Kept for repairs':row.label}</span>}<div><strong>{amount(row.cents)}</strong></div></li>)}</ul>
         </div>
       </> : <div className="freight-waterfall" aria-label="Freight less deductions, with credits added">
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Freight billed</span><strong className="freight-amount-carrier">{amount(model.gross)}</strong></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-carrier" style={bar(0, model.gross)} /></div></div>
@@ -95,7 +95,7 @@ export default function FreightFlow({data,history,historyError,plan,period}: {pe
         <div className="freight-waterfall-row"><div className="freight-waterfall-label"><span>Statement remainder</span><div><strong className="freight-amount-remainder">{amount(model.remainder)}</strong><small>{share(model.remainder)}</small></div></div><div className="freight-waterfall-track" aria-hidden="true"><i className="freight-color-remainder" style={bar(0, model.remainder)} /><span className="freight-waterfall-zero" style={{left: `${position(0)}%`}} /></div></div>
       </div>}
     </> : <p className="finance-error" role="status">The reported allocation does not reconcile to freight. Review the exact statement figures below before interpreting a flow.</p>}
-    {plan&&selected==='flow'&&linked&&<div className="owner-flow-footnote"><span>Loan balances follow your repayment plan. Repairs and capital recovery remain your money.</span><Link to="/finance/money">Trailer allocation & payment details</Link></div>}
+    {plan&&selected==='flow'&&linked&&<div className="owner-flow-footnote"><Link to="/finance/money">Payment details</Link></div>}
     {plan&&(!linked||selected==='waterfall')&&<OwnerEarningsBridge plan={plan} period={period}/>}
     {mileageOpen&&<FuelMileageReport sources={data.fuel_sources||[]} history={history}/>}
     {purchaseOpen&&<section className="freight-fuel-detail" aria-label="Fuel purchase details"><div className="finance-section-heading"><h3>Fuel purchases by settlement</h3><button type="button" className="finance-secondary" onClick={()=>setPurchaseOpen(false)}>Close</button></div>
@@ -115,6 +115,6 @@ export default function FreightFlow({data,history,historyError,plan,period}: {pe
       <h3>Reported statement figures</h3>
       <dl className="freight-flow-values"><div><dt>Freight billed</dt><dd>{dollars(data.freight_gross)}</dd></div>{data.rows.map((row, i) => <div key={`${row.category}-${i}`}><dt>{model.details.find(d => d.key === row.category)?.label}</dt><dd>{dollars(row.amount)}<small>{share(Math.round(Number(row.amount) * 100))}</small></dd></div>)}<div><dt>Statement remainder</dt><dd>{dollars(data.settlement_remainder)}</dd></div></dl>
     </section>}
-    <p className="finance-help">Statement remainder is before outside bills and cash protection. Carrier and driver amounts are settlement shares, not their personal take-home. Internal trailer allocations stay in your business; reserves are not operating expenses.</p>
+
   </div>
 }
