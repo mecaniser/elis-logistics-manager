@@ -25,7 +25,7 @@ const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-s
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || (e instanceof Error ? e.message : 'Banking profile request failed.')
 
-export default function BankProfiles({ tenantId, onCoverage, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { onCoverage: (value: FundingProposalState) => void; onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
+export default function BankProfiles({ refreshVersion, tenantId, onCoverage, onUnified, onMode, onDraft, onOpenTransfer, settingsTarget, openSettings }: { refreshVersion:number; onCoverage: (value: FundingProposalState) => void; onUnified: (value: boolean) => void; settingsTarget: HTMLElement | null; openSettings: () => void; tenantId: number; onMode: (value: boolean) => void; onDraft: () => void; onOpenTransfer: (id: string) => void }) {
   const [data, setData] = useState<Data>({ profiles: [], routes: [], runs: [] })
   const [selected, setSelected] = useState('')
   const [settingsProfile, setSettingsProfile] = useState('')
@@ -103,6 +103,15 @@ export default function BankProfiles({ tenantId, onCoverage, onUnified, onMode, 
     // A tenant switch remounts this component and discards all profile state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId])
+  useEffect(() => {
+    if (!refreshVersion) return
+    let current = true
+    // The queue already refreshed the exact transfer profile; only reload ELIS data.
+    void bankProfilesApi.request<Data>(tenantId).then(r => { if (current) update(r.data) }).catch(()=>{ if (current) setError('Balances were refreshed, but the account cards could not reload. Refresh this page.') })
+    return () => { current = false }
+    // A profile read must preserve the selected tab and open account/settings panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, refreshVersion])
   useEffect(() => {
     if (!equipmentTarget || loading || equipmentOpened.current) return
     equipmentOpened.current = true
