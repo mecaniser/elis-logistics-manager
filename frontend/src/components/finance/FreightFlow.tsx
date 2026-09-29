@@ -115,6 +115,6 @@ export default function FreightFlow({data,history,historyError,plan,period}: {pe
       <h3>Reported statement figures</h3>
       <dl className="freight-flow-values"><div><dt>Freight billed</dt><dd>{dollars(data.freight_gross)}</dd></div>{data.rows.map((row, i) => <div key={`${row.category}-${i}`}><dt>{model.details.find(d => d.key === row.category)?.label}</dt><dd>{dollars(row.amount)}<small>{share(Math.round(Number(row.amount) * 100))}</small></dd></div>)}<div><dt>Statement remainder</dt><dd>{dollars(data.settlement_remainder)}</dd></div></dl>
     </section>}
-    
+
   </div>
 }
