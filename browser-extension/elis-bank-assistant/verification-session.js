@@ -17,12 +17,13 @@ export async function closeBackgroundHistoryTab(chrome, id) {
 // problem may bring this separate, read-only tab into the foreground.
 export async function openVerificationSession(chrome, draft, progress, {
   attempts=360, pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
-  interactive=true, tabId, onTab=async()=>{}
+  interactive=true, tabId, preserveTab=false, onTab=async()=>{}
 }={}) {
   let tab = tabId ? await chrome.tabs.get(tabId).catch(()=>null) : null;
   if (tab && !String(tab.url || '').startsWith(`${BANK}/`)) tab = null;
   if (!tab) tab=await chrome.tabs.create({url:BANK_HOME,active:false});
-  await onTab(tab.id);
+  let userOwned=preserveTab || Boolean(tab.active);
+  await onTab(tab.id,userOwned);
   const profile=draft.bank_session?.profile_name || 'the required bank profile';
   let prompted=false;
   await progress('checking_session', 'Checking the bank session in the background…');
@@ -40,7 +41,7 @@ export async function openVerificationSession(chrome, draft, progress, {
     if(suffixes.includes(draft.from_last4) && suffixes.includes(draft.to_last4)) {
       // Once shown for sign-in, this is the user's bank tab. Leave it alone and
       // create a separate hidden history reader instead of later closing it.
-      if (prompted || !isHistoryTab(tab)) {
+      if (userOwned || !isHistoryTab(tab)) {
         const inspection = await chrome.tabs.create({url:BANK_HOME,active:false});
         await onTab(inspection.id);
         return inspection;
@@ -50,10 +51,11 @@ export async function openVerificationSession(chrome, draft, progress, {
     const needsAccess=results.some(result=>result.result?.loginRequired) || suffixes.length>0 || /\/(login|logout)(\/|\?|$)/i.test(tab.url);
     if (needsAccess && !prompted) {
       if (!interactive) {
-        await closeBackgroundHistoryTab(chrome,tab.id);
-        await onTab(null);
+        if (!userOwned) { await closeBackgroundHistoryTab(chrome,tab.id); await onTab(null); }
         throw Object.assign(new Error(`Sign in to ${profile}, then select Check completion.`), {code:'BANK_SIGN_IN_REQUIRED'});
       }
+      userOwned=true;
+      await onTab(tab.id,true);
       await chrome.tabs.update(tab.id,{active:true});
       if (tab.windowId != null) await chrome.windows.update(tab.windowId,{focused:true});
       prompted=true;
@@ -62,7 +64,7 @@ export async function openVerificationSession(chrome, draft, progress, {
   }
   // Retain only a tab that was explicitly shown for sign-in; a slow or broken
   // page must not steal focus or accumulate invisible tabs.
-  if (!prompted) { await closeBackgroundHistoryTab(chrome,tab.id); await onTab(null); }
+  if (!userOwned) { await closeBackgroundHistoryTab(chrome,tab.id); await onTab(null); }
   throw Object.assign(new Error(prompted
     ? `Sign-in or account access is still needed for ${profile}. Finish signing in, then select Check completion again.`
     : 'Bank account information did not load. Select Check completion to retry.'), {code:'BANK_SIGN_IN_REQUIRED'});

@@ -38,8 +38,10 @@ test('wrong profile retains one sign-in tab and a retry reuses it',async()=>{
  await assert.rejects(openVerificationSession(chrome,draft,async()=>{},{...options,attempts:1}),/Sign-in or account access/);
  assert.deepEqual(chrome.removed,[]);
  chrome.scripting.executeScript=async()=>[{result:{accounts}}];
- await openVerificationSession(chrome,draft,async()=>{},{...options,tabId:7});
- assert.equal(chrome.calls.length,1);
+ const result=await openVerificationSession(chrome,draft,async()=>{},{...options,tabId:7,preserveTab:true});
+ assert.equal(result.id,8,'retry preserves the sign-in tab even after user returns to ELIS');
+ assert.equal(chrome.calls.length,2);
+ assert.deepEqual(chrome.removed,[]);
 });
 test('slow page never steals focus and is cleaned up',async()=>{
  const chrome=browser([]);
