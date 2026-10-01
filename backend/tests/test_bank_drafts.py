@@ -87,3 +87,35 @@ def test_only_explicit_not_started_outcome_releases_requested_draft(session):
     assert retry.status_code == 200
     assert retry.json() == {'status':'reviewed','reason':'signed_out_before_form','transfers_executed':False}
     assert session.post(path+'/prepare', headers=H).status_code == 200
+
+
+def test_prepared_draft_recovery_requires_explicit_non_submission_and_preserves_identity(session):
+    draft = session.post('/api/bank-monitor/drafts', headers=H, json=D).json()
+    path = '/api/bank-monitor/drafts/' + draft['id']
+    session.post(path+'/prepare', headers=H)
+    session.post(path+'/outcome', headers=H, json={'status':'prepared_awaiting_submission'})
+    assert session.post(path+'/retry', headers=H, json={'reason':'signed_out_before_form'}).status_code == 409
+    payload = {'reason':'confirmed_not_submitted','confirmed_not_submitted':True}
+    assert session.post(path+'/retry', headers=H, json={'reason':'confirmed_not_submitted'}).status_code == 422
+    assert session.post(path+'/retry', headers=H, json={**payload,'confirmed_not_submitted':'true'}).status_code == 422
+    assert session.post(path+'/retry', headers={**H,'X-Tenant-ID':'2'}, json=payload).status_code == 404
+    assert session.post(path+'/retry', headers=H, json=payload).status_code == 200
+    assert session.post(path+'/retry', headers=H, json=payload).status_code == 409
+    resumed = session.post(path+'/prepare', headers=H)
+    assert resumed.status_code == 200
+    assert resumed.json()['id'] == draft['id']
+    assert resumed.json()['memo'] == draft['memo']
+
+
+@pytest.mark.parametrize('field', ['source_evidence','destination_evidence','completed'])
+def test_recovery_refuses_existing_posting_evidence(session, db, field):
+    from app.models.bank_monitor import BankTransferDraft
+    draft = session.post('/api/bank-monitor/drafts', headers=H, json=D).json()
+    row = db.get(BankTransferDraft, draft['id'])
+    row.status = 'bank_history_matched' if field == 'completed' else 'prepared_awaiting_submission'
+    if field != 'completed':
+        setattr(row, field, 'a'*64)
+    db.commit()
+    response = session.post('/api/bank-monitor/drafts/'+draft['id']+'/retry', headers=H,
+        json={'reason':'confirmed_not_submitted','confirmed_not_submitted':True})
+    assert response.status_code == 409

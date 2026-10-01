@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BANK_HOME, focusTransferTab, openVerificationSession} from '../verification-session.js';
+import {BANK_HOME, focusTransferTab, openVerificationSession, closeBackgroundHistoryTab, assertBackgroundHistoryTab} from '../verification-session.js';
 const draft={from_last4:'3304',to_last4:'8264',bank_session:{profile_name:'Main Business'}};
 const accounts=['Business Checking **3304 $100.00','Business Preferred Line **8264 $200.00'];
 function browser(results) {
- const calls=[],updates=[],removed=[],windowUpdates=[];
+ const calls=[],updates=[],removed=[],windowUpdates=[]; let nextId=7;
  return {calls,updates,removed,windowUpdates,tabs:{
-  create:async options=>{calls.push(options);return {id:7,url:options.url,windowId:3}},
+  create:async options=>{calls.push(options);return {id:nextId++,url:options.url,windowId:3}},
   get:async id=>({id,url:BANK_HOME,windowId:3}),
   update:async(id,options)=>{updates.push({id,...options});return {id,url:BANK_HOME}},
   remove:async id=>removed.push(id)
@@ -21,7 +21,10 @@ test('signed-in verification opens only in background, including while the bank 
 });
 test('sign-in is foregrounded once only when access is needed',async()=>{
  const chrome=browser([{accounts:[],loginRequired:true},{accounts:[],loginRequired:true},{accounts}]);
- await openVerificationSession(chrome,draft,async()=>{},options);
+ const inspection=await openVerificationSession(chrome,draft,async()=>{},options);
+ assert.equal(inspection.id,8,'sign-in tab is separate from disposable reader');
+ assert.equal(chrome.calls.length,2);
+ assert.deepEqual(chrome.removed,[]);
  assert.deepEqual(chrome.updates,[{id:7,active:true}]);
  assert.deepEqual(chrome.windowUpdates,[{id:3,focused:true}]);
 });
@@ -59,4 +62,22 @@ test('missing or repurposed original tab never creates a replacement transfer',a
  chrome.tabs.get=async()=>({id:42,url:'https://example.com/'});
  await assert.rejects(focusTransferTab(chrome,{tabId:42}),/unavailable/);
  assert.deepEqual(chrome.calls,[]);assert.deepEqual(chrome.updates,[]);
+});
+
+test('cleanup and navigation never affect a foreground bank tab or a transfer form',async()=>{
+ const chrome=browser([]);
+ for (const tab of [
+   {id:7,url:BANK_HOME,active:true},
+   {id:7,url:BANK_HOME+'/olb/transfers',active:false},
+   {id:7,url:'https://example.com/',active:false}
+ ]) {
+   chrome.tabs.get=async()=>tab;
+   await closeBackgroundHistoryTab(chrome,7);
+   await assert.rejects(assertBackgroundHistoryTab(chrome,7),/left open/);
+ }
+ assert.deepEqual(chrome.removed,[]);
+ chrome.tabs.get=async()=>({id:8,url:BANK_HOME+'/olb/history?accountId=D1',active:false});
+ await assertBackgroundHistoryTab(chrome,8);
+ await closeBackgroundHistoryTab(chrome,8);
+ assert.deepEqual(chrome.removed,[8]);
 });

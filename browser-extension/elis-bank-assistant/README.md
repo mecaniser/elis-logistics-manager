@@ -103,11 +103,11 @@ passwords, or submit transfers.
 
 For an unpacked installation, update the files in the **existing extension
 folder**, then click Reload in Chrome's extension manager. Retaining the folder
-keeps the unpacked extension ID stable. ELIS requires version 0.1.29 for profile
+keeps the unpacked extension ID stable. ELIS requires version 0.1.30 for profile
 transfers. Do not remove and reinstall merely to refresh the version.
 
 
-### Transfer tab and completion checks (0.1.29)
+### Transfer tab and completion checks (0.1.30)
 
 Keep the prepared Truliant tab open until submission is finished. **Return to
 transfer** focuses that draft's original tab and window without navigating or
@@ -119,3 +119,5 @@ Only a sign-in or account-access requirement brings that tab forward; normal
 page loading does not. History tabs are closed after inspection, while a tab
 awaiting sign-in is retained and reused on retry. The prepared transfer tab is
 never used for history navigation.
+
+Read-only verification approval appears inside Bank Monitor in an isolated extension frame, bound to the requesting tab and a one-use, two-minute nonce. The page cannot approve it via external messages. Bank-form preparation retains its private extension approval window. Sign-in tabs and any history tab the user brings forward or navigates to transfers are preserved. Unsubmitted prepared drafts can return to preparation only after explicit confirmation; drafts with recorded posting evidence cannot be reset.

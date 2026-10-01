@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {verificationReviewUrl} from '../verification-approval.js';
 
 const draft = {
   id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', amount_cents:11820,
@@ -77,11 +78,11 @@ async function waitForApproval(harness) {
   for(let attempt=0;attempt<20 && !harness.approvalListener;attempt++) await new Promise(resolve=>setImmediate(resolve));
   assert.equal(typeof harness.approvalListener,'function','extension approval listener became ready');
 }
-const approve = harness => harness.approvalListener(
-  {action:'approve',nonce:harness.approval.nonce},
-  {id:'acceptance-extension',tab:{id:100},url:'chrome-extension://acceptance-extension/approve.html'},
-  ()=>{}
-);
+const approve = harness => {
+  const url=verificationReviewUrl(chrome,draft.id,sender);
+  harness.approvalListener({action:'approve',nonce:new URL(url).searchParams.get('nonce')},
+    {id:'acceptance-extension',frameId:2,tab:{id:sender.tab.id},url},()=>{});
+};
 
 test('full reauthorization and two-account verification flow returns separate evidence and clears only after ELIS acknowledgement', async t => {
   t.mock.method(globalThis, 'setTimeout', (callback, delay)=>{if(delay!==120000) queueMicrotask(callback);return 1;});
@@ -95,7 +96,7 @@ test('full reauthorization and two-account verification flow returns separate ev
   approve(harness);
   assert.deepEqual(await reauthorization,{ok:true});
   assert.equal(harness.session.activeDraft.tabId,42,'reauthorization preserves the transfer tab');
-  assert.deepEqual(await call(harness.external,{type:'ELIS_STATUS',id:draft.id}),{ok:true,progress:null});
+  assert.deepEqual(await call(harness.external,{type:'ELIS_STATUS',id:draft.id}),{ok:true,progress:null,verification_review_url:null});
 
   const verified=await call(harness.external,{type:'ELIS_VERIFY',draft,interactive:true});
   assert.deepEqual(verified,{ok:true,evidence:{source:'a'.repeat(64),destination:'b'.repeat(64)}});
@@ -117,7 +118,7 @@ test('full reauthorization and two-account verification flow returns separate ev
   assert.equal(harness.removed.length,1,'one temporary history tab serves both accounts and is closed');
   assert.equal(harness.createdTabs.length,1);
   assert.equal(harness.createdTabs.every(options=>options.active===false),true,'history verification stays in background tabs');
-  assert.deepEqual(harness.removedWindows,[500],'the approval popup is closed');
+  assert.deepEqual(harness.removedWindows,[],'no approval popup is opened or closed');
   delete globalThis.chrome;
 });
 
@@ -175,3 +176,23 @@ test('source posted-entry failure preserves the draft and reports that checking 
   assert.equal(harness.createdTabs.length,0);
   delete globalThis.chrome;
  });
+
+test('history reader taken over for transfers is never navigated or closed', async t => {
+  t.mock.method(globalThis, 'setTimeout', (callback, delay)=>{if(delay!==120000) queueMicrotask(callback);return 1;});
+  const harness=installChrome();
+  await import('../background.js?acceptance-tab-takeover');
+  const reauthorization=call(harness.external,{type:'ELIS_REAUTHORIZE_VERIFY',draft});
+  await waitForApproval(harness); approve(harness); await reauthorization;
+  const originalSend=chrome.tabs.sendMessage;
+  chrome.tabs.sendMessage=async(id,message)=>{
+    const result=await originalSend(id,message);
+    if(message.type==='ELIS_FIND_POSTED') harness.tabs.get(id).url='https://www.truliantfcuonline.org/dbank/live/app/home/olb/transfers';
+    return result;
+  };
+  const result=await call(harness.external,{type:'ELIS_VERIFY',draft,interactive:true});
+  assert.equal(result.code,'BANK_TAB_IN_USE');
+  assert.deepEqual(harness.removed,[]);
+  assert.deepEqual(harness.updatedTabs,[]);
+  assert.notEqual(harness.session.activeDraft.status,'matched');
+  delete globalThis.chrome;
+});
