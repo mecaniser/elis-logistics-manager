@@ -103,5 +103,19 @@ passwords, or submit transfers.
 
 For an unpacked installation, update the files in the **existing extension
 folder**, then click Reload in Chrome's extension manager. Retaining the folder
-keeps the unpacked extension ID stable. ELIS requires version 0.1.28 for profile
+keeps the unpacked extension ID stable. ELIS requires version 0.1.29 for profile
 transfers. Do not remove and reinstall merely to refresh the version.
+
+
+### Transfer tab and completion checks (0.1.29)
+
+Keep the prepared Truliant tab open until submission is finished. **Return to
+transfer** focuses that draft's original tab and window without navigating or
+replacing the form. If the tab or its session binding is gone, ELIS reports that
+it is unavailable rather than opening a duplicate transfer.
+
+Completion checks use one temporary background tab for both account histories.
+Only a sign-in or account-access requirement brings that tab forward; normal
+page loading does not. History tabs are closed after inspection, while a tab
+awaiting sign-in is retained and reused on retry. The prepared transfer tab is
+never used for history navigation.

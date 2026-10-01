@@ -1,5 +1,5 @@
 import {allowedSender, validDraft, transferReference, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
-import {openVerificationSession} from './verification-session.js';
+import {BANK_HOME, focusTransferTab, openVerificationSession} from './verification-session.js';
 import {fillForm} from './fill-form.js';
 import {startScheduledChromeRead} from './scheduled-check.js';
 let busy = false;
@@ -124,6 +124,14 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       reply({ok:true});
     }); return true;
   }
+  if(message?.type==='ELIS_RETURN_TO_TRANSFER' && validDraft(message.draft)) {
+    chrome.storage.session.get('activeDraft').then(async ({activeDraft})=>{
+      if(!boundDraft(activeDraft,message.draft,sender)) throw new Error('The original transfer tab is not linked to this review. Check your existing Truliant tabs; no new transfer was opened.');
+      await focusTransferTab(chrome,activeDraft);
+      reply({ok:true});
+    }).catch(error=>reply({ok:false,error:error.message}));
+    return true;
+  }
   if(!['ELIS_PREPARE','ELIS_VERIFY','ELIS_REAUTHORIZE_VERIFY'].includes(message?.type)||!validDraft(message.draft)) {reply({ok:false,error:'Invalid reviewed transfer.'});return;}
   if(busy) {reply({ok:false,error:'Another form is being prepared.'});return;}
   busy=true;
@@ -135,7 +143,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
       await approvePreparation(message.draft,'verify');
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
-      await chrome.storage.session.set({activeDraft:{id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
+      await chrome.storage.session.set({activeDraft:{...existing.activeDraft,id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
       finishReply({ok:true}); return;
     }
     if(message.type==='ELIS_VERIFY') {
@@ -146,49 +154,56 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       }
       const bankDate=existing.activeDraft.bankDate;
       if(!bankDate) throw new Error('Preparation date unavailable.');
-      const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'prepared',progress:{stage,message,at:Date.now()}}});
-      if(message.interactive === true) await openVerificationSession(chrome, message.draft, progress);
+      const verificationState={...existing.activeDraft};
+      const progress = async (stage, message) => chrome.storage.session.set({activeDraft:{...verificationState,status:'prepared',progress:{stage,message,at:Date.now()}}});
+      const inspection=await openVerificationSession(chrome,message.draft,progress,{
+        interactive:message.interactive === true,
+        tabId:verificationState.verificationTabId,
+        onTab:async id=>{verificationState.verificationTabId=id; await chrome.storage.session.set({activeDraft:{...verificationState}});}
+      });
       async function inspect(suffix,source) {
         await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
-        const inspection=await chrome.tabs.create({url:'https://www.truliantfcuonline.org/dbank/live/app/home',active:false});
-        try {
-          const navigationEnd=Date.now()+25000;
-          while(Date.now()<navigationEnd) {
-            const current=await chrome.tabs.get(inspection.id);
-            if(current.status==='complete') break;
-            await new Promise(r=>setTimeout(r,200));
-          }
-          let selected=false;
-          for(let i=0;i<60;i++) {
-            await new Promise(r=>setTimeout(r,500));
-            const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
-            if(result?.opened) {selected=true;break;}
-          }
-          const repayment = message.draft.kind === 'repayment';
-          const accountRole = repayment ? (source ? 'checking account' : 'credit account') : (source ? 'funding source' : 'checking account');
-          if(!selected) throw stageError(
-            source ? 'SOURCE_ACCOUNT_NOT_FOUND' : 'DESTINATION_ACCOUNT_NOT_FOUND',
-            `Could not open ${accountRole} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
-          );
-          const entryRole = repayment ? (source ? 'repayment debits' : 'credit payments') : (source ? 'principal disbursements' : 'deposits');
-          await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${entryRole} in account ••${suffix}…`);
-          for(let i=0;i<40;i++) {
-            await new Promise(r=>setTimeout(r,300));
-            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,reference:transferReference(message.draft),bank_date:bankDate}}).catch(()=>null);
-            if(found?.match) return found.match;
-            if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
-          }
-          throw stageError(source ? 'SOURCE_HISTORY_NOT_LOADED' : 'DESTINATION_HISTORY_NOT_LOADED',
-            `${source ? 'Funding source' : 'Checking account'} history did not load.`);
-        } finally {
-          await chrome.tabs.remove(inspection.id).catch(()=>{});
+        const navigationEnd=Date.now()+25000;
+        while(Date.now()<navigationEnd) {
+          const current=await chrome.tabs.get(inspection.id);
+          if(current.status==='complete') break;
+          await new Promise(r=>setTimeout(r,200));
         }
+        let selected=false;
+        for(let i=0;i<60;i++) {
+          await new Promise(r=>setTimeout(r,500));
+          const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
+          if(result?.opened) {selected=true;break;}
+        }
+        const repayment = message.draft.kind === 'repayment';
+        const accountRole = repayment ? (source ? 'checking account' : 'credit account') : (source ? 'funding source' : 'checking account');
+        if(!selected) throw stageError(
+          source ? 'SOURCE_ACCOUNT_NOT_FOUND' : 'DESTINATION_ACCOUNT_NOT_FOUND',
+          `Could not open ${accountRole} ••${suffix}. Sign in to Truliant in this Chrome profile and confirm the account is visible.`
+        );
+        const entryRole = repayment ? (source ? 'repayment debits' : 'credit payments') : (source ? 'principal disbursements' : 'deposits');
+        await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${entryRole} in account ••${suffix}…`);
+        for(let i=0;i<40;i++) {
+          await new Promise(r=>setTimeout(r,300));
+          const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,reference:transferReference(message.draft),bank_date:bankDate}}).catch(()=>null);
+          if(found?.match) return found.match;
+          if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
+        }
+        throw stageError(source ? 'SOURCE_HISTORY_NOT_LOADED' : 'DESTINATION_HISTORY_NOT_LOADED',
+          `${source ? 'Funding source' : 'Checking account'} history did not load.`);
       }
-      const destination=await inspect(message.draft.to_last4,false);
-      await progress('destination_matched', `Destination account ••${message.draft.to_last4} matched. Opening source account ••${message.draft.from_last4}…`);
-      const source=await inspect(message.draft.from_last4,true);
-      await chrome.storage.session.set({activeDraft:{...existing.activeDraft,status:'matched',progress:{stage:'matched',message:'Both posted bank entries matched. Saving verification in ELIS…',at:Date.now()}}});
-      finishReply({ok:true,evidence:{source,destination}});
+      try {
+        const destination=await inspect(message.draft.to_last4,false);
+        await progress('destination_matched', `Destination account ••${message.draft.to_last4} matched. Opening source account ••${message.draft.from_last4}…`);
+        await chrome.tabs.update(inspection.id,{url:BANK_HOME});
+        const source=await inspect(message.draft.from_last4,true);
+        await chrome.storage.session.set({activeDraft:{...verificationState,verificationTabId:null,status:'matched',progress:{stage:'matched',message:'Both posted bank entries matched. Saving verification in ELIS…',at:Date.now()}}});
+        finishReply({ok:true,evidence:{source,destination}});
+      } finally {
+        await chrome.tabs.remove(inspection.id).catch(()=>{});
+        const {activeDraft}=await chrome.storage.session.get('activeDraft');
+        if(activeDraft?.id===message.draft.id) await chrome.storage.session.set({activeDraft:{...activeDraft,verificationTabId:null}});
+      }
       return;
     }
     if(existing.activeDraft) throw new Error('A transfer is already awaiting review. Finish checking it before preparing another.');
@@ -222,6 +237,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     finishReply(result);
   })().catch(error=>{
     const safeCodes = new Set([
+      'BANK_SIGN_IN_REQUIRED',
       'SOURCE_ACCOUNT_NOT_FOUND', 'DESTINATION_ACCOUNT_NOT_FOUND',
       'SOURCE_HISTORY_NO_MATCH', 'DESTINATION_HISTORY_NO_MATCH',
       'SOURCE_HISTORY_NOT_LOADED', 'DESTINATION_HISTORY_NOT_LOADED'
