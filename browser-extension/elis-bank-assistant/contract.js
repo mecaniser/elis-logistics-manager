@@ -48,3 +48,11 @@ export function parseAccountSummary(text) {
     available_credit_cents:cents('Available Credit')
   };
 }
+
+// Only an identifier already embedded in the saved draft memo is authoritative.
+export function transferReference(draft) {
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(draft?.id || '')) return null;
+  const memo = String(draft.memo || '').trim().toLowerCase();
+  return [draft.id.slice(0, 13), draft.id.slice(0, 8)].map(id => id.toLowerCase())
+    .find(id => memo.endsWith(` ${id}`)) || null;
+}

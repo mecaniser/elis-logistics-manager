@@ -231,8 +231,18 @@ def transaction_visibility(access_token: str, account_map: dict) -> dict:
             'pending_complete': False}
 
 
+def transfer_reference(memo: str | None, draft_id: str | None) -> str | None:
+    """Recognize only the generated identifier bound to this saved draft."""
+    if not draft_id or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', draft_id, re.I):
+        return None
+    for reference in (draft_id[:13].lower(), draft_id[:8].lower()):
+        if (memo or '').strip().lower().endswith(' ' + reference):
+            return reference
+    return None
+
+
 def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
-                   to_last4: str, amount_cents: int, earliest: date, memo: str | None = None) -> dict:
+                   to_last4: str, amount_cents: int, earliest: date, memo: str | None = None, draft_id: str | None = None) -> dict:
     """Find one exact posted debit and credit, never infer completion from one side."""
     source = account_map.get(from_last4)
     destination = account_map.get(to_last4)
@@ -264,6 +274,17 @@ def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
 
     debits, pending_debits = candidates(source['account_id'], amount_cents)
     credits, pending_credits = candidates(destination['account_id'], -amount_cents)
+    normalize = lambda value: re.sub(r'\s+', ' ', value).strip().casefold()
+    reference = transfer_reference(memo, draft_id)
+    def matches_reference(row):
+        identity = reference or normalize(memo or '')
+        return bool(identity and re.search(r'(?<![\w-])' + re.escape(identity) + r'(?![\w-])', normalize(row['description'])))
+    # Prefer this draft's ID when several equal-amount transfers are in the feed.
+    if reference:
+        referenced_debits = [row for row in debits if matches_reference(row)]
+        referenced_credits = [row for row in credits if matches_reference(row)]
+        if referenced_debits and referenced_credits:
+            debits, credits = referenced_debits, referenced_credits
     if not debits or not credits:
         return {'status': 'posting_pending' if pending_debits or pending_credits or debits or credits else 'not_found',
                 'source_posted': len(debits), 'destination_posted': len(credits)}
@@ -273,12 +294,9 @@ def transfer_match(access_token: str, account_map: dict, *, from_last4: str,
     if abs((date.fromisoformat(debit['date']) - date.fromisoformat(credit['date'])).days) > 3:
         return {'status': 'ambiguous', 'source_posted': 1, 'destination_posted': 1}
     descriptions = f"{debit['description']} {credit['description']}".lower()
-    if not re.search(r'\b(transfer|xfer|payment|pymt|payoff)\b', descriptions):
+    reference_matched = all(matches_reference(row) for row in (debit, credit))
+    if not reference_matched and not re.search(r'\b(transfer|xfer|payment|pymt|payoff)\b', descriptions):
         return {'status': 'needs_bank_review', 'source_posted': 1, 'destination_posted': 1}
-    normalize = lambda value: re.sub(r'\s+', ' ', value).strip().casefold()
-    # Amount/date agreement alone is insufficient for unattended reconciliation.
-    # Require the draft's distinct reference on BOTH posted entries.
-    reference_matched = bool(memo and all(re.search(r'(?<![\w-])' + re.escape(normalize(memo)) + r'(?![\w-])', normalize(row['description'])) for row in (debit, credit)))
     return {'status': 'ready_for_confirmation', 'source': debit, 'destination': credit,
             'reference_matched': reference_matched}
 

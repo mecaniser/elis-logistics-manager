@@ -24,7 +24,7 @@ type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceC
 type MonitoredAccounts = { checking: Account[]; sources: Account[] }
 type PlaidMatch = { status: string; source_posted?: number; destination_posted?: number; source?: { description: string; date: string; amount_cents: number }; destination?: { description: string; date: string; amount_cents: number }; source_evidence?: string; destination_evidence?: string }
 
-const REQUIRED_EXTENSION_VERSION = '0.1.27'
+const REQUIRED_EXTENSION_VERSION = '0.1.28'
 const SELF_RELOAD_VERSION = '0.1.19'
 const ASSISTANT_UNREACHABLE_ERRORS = new Set([
   'Chrome cannot reach the bank assistant. Reload the extension and this page.',

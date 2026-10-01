@@ -1,4 +1,4 @@
-import {allowedSender, validDraft, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
+import {allowedSender, validDraft, transferReference, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
 import {openVerificationSession} from './verification-session.js';
 import {fillForm} from './fill-form.js';
 import {startScheduledChromeRead} from './scheduled-check.js';
@@ -174,7 +174,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
           await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${entryRole} in account ••${suffix}…`);
           for(let i=0;i<40;i++) {
             await new Promise(r=>setTimeout(r,300));
-            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,bank_date:bankDate}}).catch(()=>null);
+            const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,reference:transferReference(message.draft),bank_date:bankDate}}).catch(()=>null);
             if(found?.match) return found.match;
             if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
           }
