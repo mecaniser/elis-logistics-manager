@@ -861,7 +861,8 @@ def plaid_match(draft_id: str, data: PlaidMatchInput, request: Request,
         match = plaid_bank.transfer_match(token, mapping,
             from_last4=draft.from_last4, to_last4=draft.to_last4,
             amount_cents=draft.amount_cents, earliest=created.astimezone(EASTERN).date(),
-            memo=draft.memo if draft.charge_reference.startswith(('bank-review-', 'bank-profile-')) else None)
+            memo=draft.memo if draft.charge_reference.startswith(('bank-review-', 'bank-profile-')) else None,
+            draft_id=draft.id)
     except plaid_bank.PlaidBankError as exc:
         raise HTTPException(422, str(exc)) from None
     if match['status'] != 'ready_for_confirmation':

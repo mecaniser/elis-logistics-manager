@@ -40,7 +40,9 @@ An actual pilot requires the intended business/account configuration first.
 - Return to ELIS and click **I finished in Truliant — check both histories**.
   This navigates the extension's bank tab, so finish the bank flow first.
 - One exact posted checking deposit AND one credit-line disbursement must match
-  date, amount, and memo. Pending/ambiguous matches remain unconfirmed. The result
+  date, amount, and the saved transfer ID. The memo label may change if the
+  generated ID remains intact. Older memos without a generated ID still require
+  the full memo. Pending/ambiguous matches remain unconfirmed. The result
   is reported by the user's extension, not independently verified by a server API.
 - ELIS stores hashed source/destination transaction IDs with unique constraints;
   the same evidence cannot complete another draft. The extension releases its
@@ -101,5 +103,5 @@ passwords, or submit transfers.
 
 For an unpacked installation, update the files in the **existing extension
 folder**, then click Reload in Chrome's extension manager. Retaining the folder
-keeps the unpacked extension ID stable. ELIS requires version 0.1.24 for profile
+keeps the unpacked extension ID stable. ELIS requires version 0.1.28 for profile
 transfers. Do not remove and reinstall merely to refresh the version.
