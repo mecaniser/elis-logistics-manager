@@ -1,4 +1,4 @@
-import {approveVerification, verificationReviewUrl, cancelVerificationReview} from './verification-approval.js';
+import {approveVerification, verificationReview, confirmVerificationReview, cancelVerificationReview} from './verification-approval.js';
 import {allowedSender, validDraft, transferReference, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
 import {BANK_HOME, focusTransferTab, openVerificationSession, closeBackgroundHistoryTab, assertBackgroundHistoryTab} from './verification-session.js';
 import {fillForm} from './fill-form.js';
@@ -116,8 +116,12 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(message?.type==='ELIS_STATUS' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(({activeDraft})=>{
       const allowed=activeDraft?.id===message.id && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id;
-      reply({ok:true,progress:allowed ? activeDraft.progress || null : null,verification_review_url:verificationReviewUrl(chrome,message.id,sender)});
+      reply({ok:true,progress:allowed ? activeDraft.progress || null : null,verification_review:verificationReview(message.id,sender)});
     }); return true;
+  }
+  if(message?.type==='ELIS_CONFIRM_VERIFICATION_REVIEW') {
+    const ok=confirmVerificationReview(message.id,message.nonce,sender);
+    reply({ok,error:ok ? undefined : 'This history review expired. Close it and select Check completion again.'}); return;
   }
   if(message?.type==='ELIS_CANCEL_VERIFICATION_REVIEW') {
     reply({ok:cancelVerificationReview(message.id,sender)}); return;
@@ -145,7 +149,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
       if(existing.activeDraft && !boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) throw new Error('A different transfer review already exists. Finish checking that transfer first.');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
-      await approveVerification(chrome,message.draft,sender);
+      await approveVerification(message.draft,sender);
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
       await chrome.storage.session.set({activeDraft:{...existing.activeDraft,id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
       finishReply({ok:true}); return;

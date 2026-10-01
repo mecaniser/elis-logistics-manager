@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ELIS Bank Form Assistant",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "description": "Prepare reviewed Truliant forms. Never submits or schedules transfers.",
   "permissions": [
     "scripting",
@@ -35,19 +35,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors https://www.elisprotech.com http://127.0.0.1:*"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "verify.html",
-        "verify.js",
-        "verify.css"
-      ],
-      "matches": [
-        "https://www.elisprotech.com/*",
-        "http://127.0.0.1/*"
-      ]
-    }
-  ]
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  }
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verificationReviewUrl} from '../verification-approval.js';
+import {verificationReview} from '../verification-approval.js';
 
 const draft = {
   id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', amount_cents:11820,
@@ -75,13 +75,12 @@ function installChrome({findSource=true, findDestination=true, openSource=true, 
 
 const call = (listener, message) => new Promise(resolve=>listener(message,sender,resolve));
 async function waitForApproval(harness) {
-  for(let attempt=0;attempt<20 && !harness.approvalListener;attempt++) await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(typeof harness.approvalListener,'function','extension approval listener became ready');
+  for(let attempt=0;attempt<20 && !verificationReview(draft.id,sender);attempt++) await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(verificationReview(draft.id,sender),'history review became ready');
 }
 const approve = harness => {
-  const url=verificationReviewUrl(chrome,draft.id,sender);
-  harness.approvalListener({action:'approve',nonce:new URL(url).searchParams.get('nonce')},
-    {id:'acceptance-extension',frameId:2,tab:{id:sender.tab.id},url},()=>{});
+  const review=verificationReview(draft.id,sender);
+  harness.external({type:'ELIS_CONFIRM_VERIFICATION_REVIEW',id:draft.id,nonce:review.nonce},sender,()=>{});
 };
 
 test('full reauthorization and two-account verification flow returns separate evidence and clears only after ELIS acknowledgement', async t => {
@@ -96,7 +95,7 @@ test('full reauthorization and two-account verification flow returns separate ev
   approve(harness);
   assert.deepEqual(await reauthorization,{ok:true});
   assert.equal(harness.session.activeDraft.tabId,42,'reauthorization preserves the transfer tab');
-  assert.deepEqual(await call(harness.external,{type:'ELIS_STATUS',id:draft.id}),{ok:true,progress:null,verification_review_url:null});
+  assert.deepEqual(await call(harness.external,{type:'ELIS_STATUS',id:draft.id}),{ok:true,progress:null,verification_review:null});
 
   const verified=await call(harness.external,{type:'ELIS_VERIFY',draft,interactive:true});
   assert.deepEqual(verified,{ok:true,evidence:{source:'a'.repeat(64),destination:'b'.repeat(64)}});
