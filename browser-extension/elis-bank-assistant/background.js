@@ -1,5 +1,6 @@
+import {approveVerification, verificationReviewUrl, cancelVerificationReview} from './verification-approval.js';
 import {allowedSender, validDraft, transferReference, boundDraft, parseAccountSummary, TRANSFERS} from './contract.js';
-import {BANK_HOME, focusTransferTab, openVerificationSession} from './verification-session.js';
+import {BANK_HOME, focusTransferTab, openVerificationSession, closeBackgroundHistoryTab, assertBackgroundHistoryTab} from './verification-session.js';
 import {fillForm} from './fill-form.js';
 import {startScheduledChromeRead} from './scheduled-check.js';
 let busy = false;
@@ -115,8 +116,11 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
   if(message?.type==='ELIS_STATUS' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(({activeDraft})=>{
       const allowed=activeDraft?.id===message.id && activeDraft.origin===new URL(sender.url).origin && activeDraft.elisTabId===sender.tab.id;
-      reply({ok:true,progress:allowed ? activeDraft.progress || null : null});
+      reply({ok:true,progress:allowed ? activeDraft.progress || null : null,verification_review_url:verificationReviewUrl(chrome,message.id,sender)});
     }); return true;
+  }
+  if(message?.type==='ELIS_CANCEL_VERIFICATION_REVIEW') {
+    reply({ok:cancelVerificationReview(message.id,sender)}); return;
   }
   if(message?.type==='ELIS_ACK' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
     chrome.storage.session.get('activeDraft').then(async ({activeDraft})=>{
@@ -141,7 +145,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     if(message.type==='ELIS_REAUTHORIZE_VERIFY') {
       if(existing.activeDraft && !boundDraft(existing.activeDraft,message.draft,{...sender,tab:{...sender.tab,id:existing.activeDraft.elisTabId}})) throw new Error('A different transfer review already exists. Finish checking that transfer first.');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(message.draft.bank_date || '')) throw new Error('Preparation date unavailable.');
-      await approvePreparation(message.draft,'verify');
+      await approveVerification(chrome,message.draft,sender);
       const bankDate=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric'}).format(new Date(`${message.draft.bank_date}T12:00:00Z`));
       await chrome.storage.session.set({activeDraft:{...existing.activeDraft,id:message.draft.id,draft:message.draft,origin:new URL(sender.url).origin,elisTabId:sender.tab.id,status:'prepared',bankDate}});
       finishReply({ok:true}); return;
@@ -172,6 +176,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         let selected=false;
         for(let i=0;i<60;i++) {
           await new Promise(r=>setTimeout(r,500));
+          await assertBackgroundHistoryTab(chrome,inspection.id);
           const result=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_OPEN_ACCOUNT',suffix}).catch(()=>null);
           if(result?.opened) {selected=true;break;}
         }
@@ -185,6 +190,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
         await progress(source ? 'searching_source' : 'searching_checking', `Searching posted ${entryRole} in account ••${suffix}…`);
         for(let i=0;i<40;i++) {
           await new Promise(r=>setTimeout(r,300));
+          await assertBackgroundHistoryTab(chrome,inspection.id);
           const found=await chrome.tabs.sendMessage(inspection.id,{type:'ELIS_FIND_POSTED',wanted:{suffix,source,kind:message.draft.kind,amount_cents:message.draft.amount_cents,memo:message.draft.memo,reference:transferReference(message.draft),bank_date:bankDate}}).catch(()=>null);
           if(found?.match) return found.match;
           if(found?.error) throw stageError(source ? 'SOURCE_HISTORY_NO_MATCH' : 'DESTINATION_HISTORY_NO_MATCH', found.error);
@@ -195,12 +201,13 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       try {
         const destination=await inspect(message.draft.to_last4,false);
         await progress('destination_matched', `Destination account ••${message.draft.to_last4} matched. Opening source account ••${message.draft.from_last4}…`);
+        await assertBackgroundHistoryTab(chrome,inspection.id);
         await chrome.tabs.update(inspection.id,{url:BANK_HOME});
         const source=await inspect(message.draft.from_last4,true);
         await chrome.storage.session.set({activeDraft:{...verificationState,verificationTabId:null,status:'matched',progress:{stage:'matched',message:'Both posted bank entries matched. Saving verification in ELIS…',at:Date.now()}}});
         finishReply({ok:true,evidence:{source,destination}});
       } finally {
-        await chrome.tabs.remove(inspection.id).catch(()=>{});
+        await closeBackgroundHistoryTab(chrome,inspection.id);
         const {activeDraft}=await chrome.storage.session.get('activeDraft');
         if(activeDraft?.id===message.draft.id) await chrome.storage.session.set({activeDraft:{...activeDraft,verificationTabId:null}});
       }
@@ -237,7 +244,7 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
     finishReply(result);
   })().catch(error=>{
     const safeCodes = new Set([
-      'BANK_SIGN_IN_REQUIRED',
+      'BANK_SIGN_IN_REQUIRED', 'VERIFICATION_REVIEW_CANCELED', 'BANK_TAB_IN_USE',
       'SOURCE_ACCOUNT_NOT_FOUND', 'DESTINATION_ACCOUNT_NOT_FOUND',
       'SOURCE_HISTORY_NO_MATCH', 'DESTINATION_HISTORY_NO_MATCH',
       'SOURCE_HISTORY_NOT_LOADED', 'DESTINATION_HISTORY_NOT_LOADED'

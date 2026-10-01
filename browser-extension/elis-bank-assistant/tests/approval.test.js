@@ -67,27 +67,26 @@ test('login redirect releases the draft because the bank form was never reached'
   delete globalThis.chrome;
 });
 
-test('extension reload can reauthorize read-only verification without opening a bank tab', async () => {
-  let external, internal, approval;
-  const created = [], stored = [];
+test('extension reload reauthorizes verification inside the original ELIS page without creating windows', async () => {
+  let external, internal;
+  const stored = [];
   globalThis.chrome = {
-    runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,getManifest:()=>({version:'test'}),
+    runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,
       onMessageExternal:{addListener:f=>{external=f;}},
       onMessage:{addListener:f=>{internal=f;},removeListener(){}}},
-    storage:{session:{get:async()=>({}),set:async value=>{stored.push(value);if(value.approval) approval=value.approval;},remove:async()=>{}}},
-    tabs:{query:async()=>[]},
-    windows:{
-      create:async args=>{created.push(args);return {id:20,tabs:[{id:2}]};},
-      remove:async()=>{},onRemoved:{addListener(){},removeListener(){}}
-    },
-    scripting:{executeScript:async()=>assert.fail('Reauthorization must not inspect history until ELIS_VERIFY')}
+    storage:{session:{get:async()=>({}),set:async value=>stored.push(value),remove:async()=>{}}},
+    windows:{create:async()=>assert.fail('No popup for history approval')},
+    scripting:{executeScript:async()=>assert.fail('No history before approval')}
   };
   await import('../background.js?reauthorize-test');
-  const reauth = new Promise(resolve=>external({type:'ELIS_REAUTHORIZE_VERIFY',draft:{...draft,bank_date:'2026-09-14'}},sender,resolve));
+  const d={...draft,bank_date:'2026-09-14'};
+  const reauth = new Promise(resolve=>external({type:'ELIS_REAUTHORIZE_VERIFY',draft:d},sender,resolve));
   await new Promise(resolve=>setImmediate(resolve));
-  internal({action:'approve',nonce:approval.nonce},{id:'test',tab:{id:2},url:'chrome-extension://test/approve.html'},()=>{});
+  const status=await new Promise(resolve=>external({type:'ELIS_STATUS',id:d.id},sender,resolve));
+  const url=status.verification_review_url;
+  internal({action:'approve',nonce:new URL(url).searchParams.get('nonce')},
+    {id:'test',frameId:1,tab:{id:sender.tab.id},url},()=>{});
   assert.deepEqual(await reauth,{ok:true});
-  assert.deepEqual(created.map(item=>item.type),['popup']);
   assert.equal(stored.at(-1).activeDraft.bankDate,'Sep 14, 2026');
   delete globalThis.chrome;
 });

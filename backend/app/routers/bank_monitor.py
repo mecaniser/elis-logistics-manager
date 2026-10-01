@@ -756,7 +756,8 @@ class DraftOutcome(StrictModel):
 
 
 class DraftRetry(StrictModel):
-    reason: str = Field(pattern=r'^signed_out_before_form$')
+    reason: str = Field(pattern=r'^(signed_out_before_form|confirmed_not_submitted)$')
+    confirmed_not_submitted: bool = Field(default=False, strict=True)
 
 
 class DraftBankDetails(StrictModel):
@@ -795,11 +796,20 @@ def draft_outcome(draft_id: str, data: DraftOutcome, request: Request, tenant_id
 @router.post('/drafts/{draft_id}/retry')
 def retry_draft(draft_id: str, data: DraftRetry, request: Request, tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
     draft_action(request)
-    updated = db.query(BankTransferDraft).filter_by(
-        id=draft_id, tenant_id=tenant_id, status='preparation_failed').update({'status': 'reviewed'})
+    statuses = ['preparation_failed']
+    if data.reason == 'confirmed_not_submitted':
+        if data.confirmed_not_submitted is not True:
+            raise HTTPException(422, 'Confirm in Truliant that this transfer was not submitted.')
+        statuses.append('prepared_awaiting_submission')
+    updated = db.query(BankTransferDraft).filter(
+        BankTransferDraft.id == draft_id, BankTransferDraft.tenant_id == tenant_id,
+        BankTransferDraft.status.in_(statuses),
+        BankTransferDraft.source_evidence.is_(None),
+        BankTransferDraft.destination_evidence.is_(None),
+    ).update({'status': 'reviewed'})
     if not updated:
         db.rollback()
-        raise HTTPException(409, 'Only a failed preparation can be resumed.')
+        raise HTTPException(409, 'Only an unverified, unsubmitted preparation can be resumed.')
     db.commit()
     return {'status': 'reviewed', 'reason': data.reason, 'transfers_executed': False}
 
