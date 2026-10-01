@@ -163,7 +163,8 @@ chrome.runtime.onMessageExternal.addListener((message,sender,reply)=>{
       const inspection=await openVerificationSession(chrome,message.draft,progress,{
         interactive:message.interactive === true,
         tabId:verificationState.verificationTabId,
-        onTab:async id=>{verificationState.verificationTabId=id; await chrome.storage.session.set({activeDraft:{...verificationState}});}
+        preserveTab:verificationState.verificationTabUserOwned === true,
+        onTab:async (id,userOwned=false)=>{verificationState.verificationTabId=id; verificationState.verificationTabUserOwned=userOwned; await chrome.storage.session.set({activeDraft:{...verificationState}});}
       });
       async function inspect(suffix,source) {
         await progress(source ? 'opening_source' : 'opening_checking', `Opening ${source ? 'funding source' : 'checking account'} ••${suffix} in Truliant…`);
