@@ -68,12 +68,12 @@ test('login redirect releases the draft because the bank form was never reached'
 });
 
 test('extension reload reauthorizes verification inside the original ELIS page without creating windows', async () => {
-  let external, internal;
+  let external;
   const stored = [];
   globalThis.chrome = {
     runtime: {id:'test',getURL:p=>'chrome-extension://test/'+p,
       onMessageExternal:{addListener:f=>{external=f;}},
-      onMessage:{addListener:f=>{internal=f;},removeListener(){}}},
+      onMessage:{addListener(){},removeListener(){}}},
     storage:{session:{get:async()=>({}),set:async value=>stored.push(value),remove:async()=>{}}},
     windows:{create:async()=>assert.fail('No popup for history approval')},
     scripting:{executeScript:async()=>assert.fail('No history before approval')}
@@ -83,9 +83,7 @@ test('extension reload reauthorizes verification inside the original ELIS page w
   const reauth = new Promise(resolve=>external({type:'ELIS_REAUTHORIZE_VERIFY',draft:d},sender,resolve));
   await new Promise(resolve=>setImmediate(resolve));
   const status=await new Promise(resolve=>external({type:'ELIS_STATUS',id:d.id},sender,resolve));
-  const url=status.verification_review_url;
-  internal({action:'approve',nonce:new URL(url).searchParams.get('nonce')},
-    {id:'test',frameId:1,tab:{id:sender.tab.id},url},()=>{});
+  external({type:'ELIS_CONFIRM_VERIFICATION_REVIEW',id:d.id,nonce:status.verification_review.nonce},sender,()=>{});
   assert.deepEqual(await reauth,{ok:true});
   assert.equal(stored.at(-1).activeDraft.bankDate,'Sep 14, 2026');
   delete globalThis.chrome;

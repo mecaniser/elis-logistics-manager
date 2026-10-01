@@ -13,8 +13,9 @@ import { centsFromMoneyInput } from '../components/moneyAmount'
 import BankCashPlan, { type CashPlan } from './BankCashPlan'
 
 type Account = { nickname: string; last4: string; kind?: 'checking' | 'credit' | 'other' }
-type Draft = { charge?: {id:string; description:string; date:string; pending:boolean; status:string}; equipment?: {asset_id:number;name:string}; bank_session?: { profile_id: string; profile_name: string } | null; id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; kind: 'coverage' | 'repayment'; status: string; bank_date: string; bank_state?: 'posted' | 'pending' | null; bank_effective_date?: string | null }
-type ExtensionResponse = { ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
+type Draft = { charge?: {id:string; description:string; date:string; pending:boolean; status:string}; equipment?: {asset_id:number;name:string}; bank_session?: { profile_id: string; profile_name: string; source_name?: string; destination_name?: string } | null; id: string; charge_reference: string; amount_cents: number; from_last4: string; to_last4: string; memo: string; kind: 'coverage' | 'repayment'; status: string; bank_date: string; bank_state?: 'posted' | 'pending' | null; bank_effective_date?: string | null }
+type VerificationReview = {draft:Draft; nonce:string; expires_at:number}
+type ExtensionResponse = { verification_review?: VerificationReview | null; ok: boolean; error?: string; code?: string; version?: string; accounts?: Account[]; progress?: { message?: string }; evidence?: unknown; checked_at?: string; [key: string]: unknown }
 type ChromeRuntime = { sendMessage: (extension: string, message: unknown, callback: (response?: ExtensionResponse) => void) => void; lastError?: unknown }
 type BalanceAccount = { last4: string; current_cents: number | null; available_cents: number | null; available_credit_cents: number | null; outstanding_cents?: number | null }
 type PostedDebit = { reference: string; date: string; description: string; amount_cents: number; balance_cents: number | null; pending?: boolean }
@@ -25,7 +26,7 @@ type BalanceResponse = { ok: boolean; error?: string; code?: string } & BalanceC
 type MonitoredAccounts = { checking: Account[]; sources: Account[] }
 type PlaidMatch = { status: string; source_posted?: number; destination_posted?: number; source?: { description: string; date: string; amount_cents: number }; destination?: { description: string; date: string; amount_cents: number }; source_evidence?: string; destination_evidence?: string }
 
-const REQUIRED_EXTENSION_VERSION = '0.1.30'
+const REQUIRED_EXTENSION_VERSION = '0.1.31'
 const SELF_RELOAD_VERSION = '0.1.19'
 const ASSISTANT_UNREACHABLE_ERRORS = new Set([
   'Chrome cannot reach the bank assistant. Reload the extension and this page.',
@@ -144,7 +145,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [verificationReview, setVerificationReview] = useState<{url:string; id:string} | null>(null)
+  const [verificationReview, setVerificationReview] = useState<VerificationReview | null>(null)
   const [operation, setOperation] = useState<{ message: string; started: number } | null>(null)
   const [clock, setClock] = useState(Date.now())
   const [reference, setReference] = useState('')
@@ -583,8 +584,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     const poll = async () => {
       if (!polling) return
       try { const status = await send<ExtensionResponse>(extension, { type: 'ELIS_STATUS', id: draft.id }); if (polling && active.current) {
-        const url = status.verification_review_url
-        setVerificationReview(typeof url === 'string' && url.startsWith(`chrome-extension://${extension}/verify.html?nonce=`) ? {url, id:draft.id} : null)
+        setVerificationReview(status.verification_review?.draft.id === draft.id ? status.verification_review : null)
         if (status.progress?.message) setOperation(current => ({ message: status.progress?.message || '', started: current?.started || Date.now() }))
       } } catch { /* Main request reports failures. */ }
       if (polling) window.setTimeout(() => void poll(), 900)
@@ -702,9 +702,23 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     {settingsTarget && (!extension || editingAssistant) && createPortal(<section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon name="link" /></span><div><h2 className="font-semibold text-slate-950">{extension ? 'Change bank assistant' : 'Connect bank assistant'}</h2>{error && <p role="alert" className="mt-2 text-sm text-red-800">{error}</p>}<p className="mt-1 text-sm text-slate-600">The extension ID is saved in this Chrome profile. Account import runs only when you connect a new extension.</p></div></div><label className="mt-4 block text-sm font-medium text-slate-700">Chrome extension ID<input ref={assistantInput} className="mt-2 block min-h-11 w-full rounded-xl border border-slate-300 px-3 text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" value={draftExtension} maxLength={32} onChange={e => setDraftExtension(e.target.value.trim())} placeholder="32-letter extension ID" /></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button type="button" disabled={busy || !/^[a-p]{32}$/.test(draftExtension)} onClick={connect} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-blue-700 px-4 font-semibold text-white transition hover:bg-blue-800 active:scale-[0.98] disabled:opacity-45 motion-reduce:transition-none">{busy ? 'Connecting…' : extension ? draftExtension === extension ? 'Reconnect saved assistant' : 'Save replacement' : 'Connect and import'}</button>{extension && <button type="button" disabled={busy} onClick={() => { setDraftExtension(extension); setEditingAssistant(false); setError('') }} className="min-h-11 rounded-xl px-4 font-medium text-slate-700 hover:bg-slate-100">Cancel</button>}</div></section>, settingsTarget)}
 
     {verificationReview && createPortal(<BankDialog title="Review transfer verification" onClose={() => {
-      void send<ExtensionResponse>(extension, {type:'ELIS_CANCEL_VERIFICATION_REVIEW', id:verificationReview.id}).catch(() => undefined)
+      void send<ExtensionResponse>(extension, {type:'ELIS_CANCEL_VERIFICATION_REVIEW', id:verificationReview.draft.id}).catch(() => undefined)
       setVerificationReview(null)
-    }}><iframe title="Bank Assistant verification approval" src={verificationReview.url} className="block h-[420px] max-h-[65dvh] w-full border-0" /></BankDialog>, document.body)}
+    }}>
+      <p className="text-sm text-slate-600">{verificationReview.draft.bank_session?.profile_name || 'Truliant'}</p>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50" aria-label="Transfer details">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-slate-200 p-4"><div><p className="text-xs text-slate-500">From</p><p className="mt-1 font-semibold">{verificationReview.draft.bank_session?.source_name} · ••{verificationReview.draft.from_last4}</p></div><span aria-hidden="true">→</span><div className="text-right"><p className="text-xs text-slate-500">To</p><p className="mt-1 font-semibold">{verificationReview.draft.bank_session?.destination_name} · ••{verificationReview.draft.to_last4}</p></div></div>
+        <div className="flex items-center justify-between gap-3 p-4"><span className="text-sm text-slate-500">Amount</span><strong className="text-2xl tabular-nums">{money(verificationReview.draft.amount_cents)}</strong></div>
+        <div className="px-4 pb-4"><p className="text-xs text-slate-500">Memo</p><p className="mt-1 text-sm font-medium">{verificationReview.draft.memo}</p></div>
+      </section>
+      <p className="text-sm text-slate-600">Read both account histories to confirm this transfer. No money moves.</p>
+      <div className="flex gap-3"><button type="button" onClick={() => {
+        void send<ExtensionResponse>(extension, {type:'ELIS_CANCEL_VERIFICATION_REVIEW', id:verificationReview.draft.id}).catch(() => undefined)
+        setVerificationReview(null)
+      }} className="min-h-11 rounded-xl border border-slate-300 px-5 font-semibold">Cancel</button><button type="button" disabled={clock >= verificationReview.expires_at} onClick={() => {
+        void send<ExtensionResponse>(extension, {type:'ELIS_CONFIRM_VERIFICATION_REVIEW', id:verificationReview.draft.id, nonce:verificationReview.nonce}).then(() => setVerificationReview(null)).catch(error => { setVerificationReview(null); setError(errorMessage(error, 'History review expired.')) })
+      }} className="min-h-11 flex-1 rounded-xl bg-blue-700 px-5 font-semibold text-white disabled:opacity-45">Check completion</button></div>
+    </BankDialog>, document.body)}
 
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Action queue</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">Transfers in progress · All profiles</h2><p className="mt-1 text-sm text-slate-600">{pendingCharges.length ? `${pendingCharges.length} charge${pendingCharges.length === 1 ? '' : 's'} to fund${actionableDrafts.length ? ` · ${actionableDrafts.length} transfer${actionableDrafts.length === 1 ? '' : 's'} in progress` : ''}.` : actionableDrafts.length ? `${actionableDrafts.length} transfer${actionableDrafts.length === 1 ? ' needs' : 's need'} attention.` : profilesMode && fundingProposals === null ? 'Loading charges…' : 'No charges or transfers need attention.'}</p></div><button type="button" disabled={profilesMode || busy || !connected} onClick={discoverAccounts} className="min-h-11 self-start rounded-xl px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-blue-300 disabled:hover:bg-transparent">Refresh accounts</button></div>
