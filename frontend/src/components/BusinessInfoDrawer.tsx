@@ -5,36 +5,13 @@ import Toast from './Toast'
 import { tenantColor } from '../utils/tenantAppearance'
 import BusinessDetailsForm from './BusinessDetailsForm'
 import { useTenant } from '../contexts/tenantState'
+import BankNumberField from './BankNumberField'
+import { copyText as copyToClipboard } from '../utils/copyText'
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
   logistics: 'Logistics (Transportation)',
   tech: 'Tech (IT Services/Consulting)',
   real_estate: 'Real Estate (Rentals)',
-}
-
-async function copyToClipboard(value: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(value)
-      return true
-    }
-  } catch {
-    // fall through to legacy path below
-  }
-
-  try {
-    const textarea = document.createElement('textarea')
-    textarea.value = value
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(textarea)
-    return ok
-  } catch {
-    return false
-  }
 }
 
 const copyIcon = (
@@ -46,22 +23,15 @@ const copyIcon = (
 interface CopyFieldProps {
   label: string
   value?: string | null
-  /** Render as a masked secret with a show/hide toggle */
-  sensitive?: boolean
   href?: string
   mono?: boolean
   onCopied: (label: string, ok: boolean) => void
 }
 
-function CopyField({ label, value, sensitive, href, mono, onCopied }: CopyFieldProps) {
-  const [revealed, setRevealed] = useState(false)
+function CopyField({ label, value, href, mono, onCopied }: CopyFieldProps) {
   const [justCopied, setJustCopied] = useState(false)
 
   const hasValue = !!value && value.trim().length > 0
-
-  const masked = hasValue && sensitive && !revealed
-    ? `${'•'.repeat(Math.max(0, value!.length - 4))}${value!.slice(-4)}`
-    : value
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(value ?? '')
@@ -78,24 +48,15 @@ function CopyField({ label, value, sensitive, href, mono, onCopied }: CopyFieldP
       <dd className="mt-0.5 flex items-start gap-2">
         {hasValue ? (
           <>
-            <span className={`flex-1 text-sm text-gray-900 break-words ${mono || sensitive ? 'font-mono' : ''}`}>
-              {href && !sensitive ? (
+            <span className={`flex-1 text-sm text-gray-900 break-words ${mono ? 'font-mono' : ''}`}>
+              {href ? (
                 <a href={href} className="text-blue-600 hover:text-blue-800 hover:underline">
-                  {masked}
+                  {value}
                 </a>
               ) : (
-                masked
+                value
               )}
             </span>
-            {sensitive && (
-              <button
-                type="button"
-                onClick={() => setRevealed(!revealed)}
-                className="flex-shrink-0 text-xs font-medium text-gray-500 hover:text-gray-700 px-1.5 py-1 rounded hover:bg-gray-100"
-              >
-                {revealed ? 'Hide' : 'Show'}
-              </button>
-            )}
             <button
               type="button"
               onClick={handleCopy}
@@ -147,15 +108,24 @@ interface BusinessInfoDrawerProps {
 }
 
 export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: BusinessInfoDrawerProps) {
+  // Unmount sensitive state and cancel pending reads on close or business change.
+  if (!isOpen || !tenant) return null
+  return <BusinessInfoDrawerContent key={tenant.id} onClose={onClose} tenant={tenant} />
+}
+
+function BusinessInfoDrawerContent({ onClose, tenant }: { onClose: () => void; tenant: Tenant }) {
   const { loadTenants } = useTenant()
-  const [editing, setEditing] = useState(false)
+  const [editBankAccounts, setEditBankAccounts] = useState<BankAccount[] | null>(null)
+  const editing = editBankAccounts !== null
+  const [loadingEdit, setLoadingEdit] = useState(false)
+  const editRequest = useRef<AbortController | null>(null)
+  useEffect(() => () => editRequest.current?.abort(), [])
   const [formActions, setFormActions] = useState<{
     saving: boolean
     onSave: () => void
     onCancel: () => void
   } | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const openerRef = useRef<HTMLElement | null>(null)
   const [business, setBusiness] = useState<Tenant | null>(tenant)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; isVisible: boolean }>({
@@ -164,44 +134,32 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     isVisible: false,
   })
 
-  // Move focus into the drawer on open and hand it back to the opener on close,
-  // so the aria-modal declaration is actually true for keyboard users.
   useEffect(() => {
-    if (isOpen) {
-      openerRef.current = document.activeElement as HTMLElement
-      closeButtonRef.current?.focus()
-    } else if (openerRef.current) {
-      openerRef.current.focus()
-      openerRef.current = null
-    }
-  }, [isOpen])
+    const opener = document.activeElement as HTMLElement | null
+    closeButtonRef.current?.focus()
+    return () => opener?.focus()
+  }, [])
 
   // Lock body scroll while the drawer is open, matching Modal's behavior
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = 'unset'
-    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = 'unset'
+      document.body.style.overflow = previousOverflow
     }
-  }, [isOpen])
+  }, [])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
-    if (isOpen) document.addEventListener('keydown', handleEscape)
+    document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen, onClose])
+  }, [onClose])
 
   // Show what the tenant switcher already knows, then refresh from the API
   useEffect(() => {
-    if (!isOpen || !tenant) return
-
     setBusiness(tenant)
-    setEditing(false)
     let cancelled = false
 
     const refresh = async () => {
@@ -212,7 +170,7 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
           setError(null)
         }
       } catch (caught: unknown) {
-      const err = apiError(caught)
+        const err = apiError(caught)
         if (!cancelled) {
           setError(err.response?.data?.detail || 'Could not refresh business details')
         }
@@ -223,7 +181,7 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     return () => {
       cancelled = true
     }
-  }, [isOpen, tenant])
+  }, [tenant])
 
   const handleCopied = (label: string, ok: boolean) => {
     setToast({
@@ -233,12 +191,32 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
     })
   }
 
-  if (!isOpen || !business) return null
+  const startEdit = async () => {
+    if (editRequest.current) return
+    const controller = new AbortController()
+    editRequest.current = controller
+    setLoadingEdit(true)
+    try {
+      const response = await tenantsApi.getBankAccountsForEdit(tenant.id, controller.signal)
+      if (!controller.signal.aborted) setEditBankAccounts(response.data.bank_accounts)
+    } catch {
+      if (!controller.signal.aborted) {
+        setToast({ message: 'Could not access bank details for editing. Try again.', type: 'error', isVisible: true })
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        editRequest.current = null
+        setLoadingEdit(false)
+      }
+    }
+  }
+
+  if (!business) return null
 
   const cityStateZip = [business.city, business.state].filter(Boolean).join(', ')
   const cityStateZipLine = [cityStateZip, business.zip_code].filter(Boolean).join(' ')
   const fullAddress = [business.address, cityStateZipLine].filter(Boolean).join(', ')
-  const bankAccounts: BankAccount[] = business.bank_accounts || []
+  const bankAccounts = business.bank_accounts || []
 
   return (
     <>
@@ -301,14 +279,15 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
             {editing ? (
               <BusinessDetailsForm
                 business={business}
+                initialBankAccounts={editBankAccounts}
                 onSaved={async (updated) => {
                   setBusiness(updated)
-                  setEditing(false)
+                  setEditBankAccounts(null)
                   setToast({ message: 'Business details saved', type: 'success', isVisible: true })
                   // Refresh the switcher so a renamed or retyped business updates there too
                   await loadTenants()
                 }}
-                onCancel={() => setEditing(false)}
+                onCancel={() => setEditBankAccounts(null)}
                 onError={(message) => setToast({ message, type: 'error', isVisible: true })}
                 renderActions={setFormActions}
               />
@@ -351,7 +330,7 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
               ) : (
                 <div className="space-y-3 mt-2">
                   {bankAccounts.map((account, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-3">
+                    <div key={`${business.id}:${index}:${business.updated_at}`} className="border border-gray-200 rounded-lg p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <h4 className="text-sm font-semibold text-gray-900 truncate">
@@ -376,8 +355,8 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
                         )}
                       </div>
                       <dl className="mt-1">
-                        <CopyField label="Account Number" value={account.account_number} sensitive onCopied={handleCopied} />
-                        <CopyField label="Routing Number" value={account.routing_number} sensitive onCopied={handleCopied} />
+                        <BankNumberField tenantId={business.id} accountIndex={index} field="account_number" label="Account Number" maskedValue={account.account_number_masked} onCopied={handleCopied} />
+                        <BankNumberField tenantId={business.id} accountIndex={index} field="routing_number" label="Routing Number" maskedValue={account.routing_number_masked} onCopied={handleCopied} />
                       </dl>
                     </div>
                   ))}
@@ -418,10 +397,11 @@ export default function BusinessInfoDrawer({ isOpen, onClose, tenant }: Business
             ) : (
               <button
                 type="button"
-                onClick={() => setEditing(true)}
+                onClick={() => void startEdit()}
+                disabled={loadingEdit}
                 className="inline-flex items-center justify-center w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
-                Edit details
+                {loadingEdit ? 'Loading…' : 'Edit details'}
               </button>
             )}
           </div>

@@ -11,11 +11,12 @@ const BUSINESS_TYPES = [
 
 interface BusinessDetailsFormProps {
   business: Tenant
+  initialBankAccounts: BankAccount[]
   onSaved: (updated: Tenant) => void
   onCancel: () => void
   onError: (message: string) => void
   /** Rendered into the drawer footer so the actions stay pinned. */
-  renderActions: (actions: { saving: boolean; onSave: () => void; onCancel: () => void }) => void
+  renderActions: (actions: { saving: boolean; onSave: () => void; onCancel: () => void } | null) => void
 }
 
 const inputClass =
@@ -33,6 +34,7 @@ function emptyToUndefined(value: string): string | undefined {
  */
 export default function BusinessDetailsForm({
   business,
+  initialBankAccounts,
   onSaved,
   onCancel,
   onError,
@@ -52,7 +54,7 @@ export default function BusinessDetailsForm({
     zip_code: business.zip_code || '',
     notes: business.notes || '',
   })
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(business.bank_accounts || [])
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(initialBankAccounts)
   const [saving, setSaving] = useState(false)
 
   const set = (field: keyof typeof form, value: string | boolean) =>
@@ -86,7 +88,7 @@ export default function BusinessDetailsForm({
         state: emptyToUndefined(form.state),
         zip_code: emptyToUndefined(form.zip_code),
         notes: emptyToUndefined(form.notes),
-        bank_accounts: cleanedAccounts.length > 0 ? cleanedAccounts : undefined,
+        bank_accounts: cleanedAccounts,
       })
       onSaved(response.data)
     } catch (caught: unknown) {
@@ -101,6 +103,7 @@ export default function BusinessDetailsForm({
   // Keep the pinned footer actions in sync with save state
   useEffect(() => {
     renderActions({ saving, onSave: handleSave, onCancel: handleCancel })
+    return () => renderActions(null)
   }, [saving, handleSave, handleCancel, renderActions])
 
   return (

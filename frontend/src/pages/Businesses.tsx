@@ -1,7 +1,7 @@
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
-import { useEffect, useState } from 'react'
-import { tenantsApi, Tenant } from '../services/api'
+import { useEffect, useRef, useState } from 'react'
+import { tenantsApi, Tenant, BankAccount } from '../services/api'
 import Toast from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import { useTenant } from '../contexts/tenantState'
@@ -13,6 +13,11 @@ const BUSINESS_TYPES = [
 ]
 
 export default function Businesses() {
+  const { currentTenant } = useTenant()
+  return <BusinessesContent key={currentTenant?.id} />
+}
+
+function BusinessesContent() {
   const { loadTenants } = useTenant()
   const [businesses, setBusinesses] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +36,7 @@ export default function Businesses() {
     zip_code: '',
     phone: '',
     email: '',
-    bank_accounts: [] as Array<{ bank_name: string; account_number: string; routing_number: string; account_type?: string }>,
+    bank_accounts: [] as BankAccount[],
     notes: '',
   })
   const [businessToDelete, setBusinessToDelete] = useState<number | null>(null)
@@ -42,6 +47,9 @@ export default function Businesses() {
     isVisible: false,
   })
   const [saving, setSaving] = useState(false)
+  const [loadingEditId, setLoadingEditId] = useState<number | null>(null)
+  const editRequest = useRef<AbortController | null>(null)
+  useEffect(() => () => editRequest.current?.abort(), [])
 
   const loadBusinesses = useEventCallback(async () => {
     try {
@@ -108,7 +116,7 @@ export default function Businesses() {
         zip_code: formData.zip_code.trim() || undefined,
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim() || undefined,
-        bank_accounts: formData.bank_accounts.length > 0 ? formData.bank_accounts : undefined,
+        bank_accounts: formData.bank_accounts,
         notes: formData.notes.trim() || undefined,
       })
       showToast('Business created successfully', 'success')
@@ -145,7 +153,7 @@ export default function Businesses() {
         zip_code: formData.zip_code.trim() || undefined,
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim() || undefined,
-        bank_accounts: formData.bank_accounts.length > 0 ? formData.bank_accounts : undefined,
+        bank_accounts: formData.bank_accounts,
         notes: formData.notes.trim() || undefined,
       })
       showToast('Business updated successfully', 'success')
@@ -179,6 +187,9 @@ export default function Businesses() {
   }
 
   const resetForm = () => {
+    editRequest.current?.abort()
+    editRequest.current = null
+    setLoadingEditId(null)
     setFormData({
       name: '',
       business_type: 'logistics',
@@ -197,24 +208,39 @@ export default function Businesses() {
     setEditingBusiness(null)
   }
 
-  const startEdit = (business: Tenant) => {
-    setEditingBusiness(business)
-    setFormData({
-      name: business.name,
-      business_type: business.business_type,
-      is_active: business.is_active,
-      ein: business.ein || '',
-      legal_name: business.legal_name || '',
-      address: business.address || '',
-      city: business.city || '',
-      state: business.state || '',
-      zip_code: business.zip_code || '',
-      phone: business.phone || '',
-      email: business.email || '',
-      bank_accounts: business.bank_accounts || [],
-      notes: business.notes || '',
-    })
-    setShowForm(true)
+  const startEdit = async (business: Tenant) => {
+    resetForm()
+    const controller = new AbortController()
+    editRequest.current = controller
+    setLoadingEditId(business.id)
+    try {
+      const response = await tenantsApi.getBankAccountsForEdit(business.id, controller.signal)
+      if (controller.signal.aborted) return
+      setEditingBusiness(business)
+      setFormData({
+        name: business.name,
+        business_type: business.business_type,
+        is_active: business.is_active,
+        ein: business.ein || '',
+        legal_name: business.legal_name || '',
+        address: business.address || '',
+        city: business.city || '',
+        state: business.state || '',
+        zip_code: business.zip_code || '',
+        phone: business.phone || '',
+        email: business.email || '',
+        bank_accounts: response.data.bank_accounts,
+        notes: business.notes || '',
+      })
+      setShowForm(true)
+    } catch {
+      if (!controller.signal.aborted) showToast('Could not access bank details for editing. Try again.', 'error')
+    } finally {
+      if (!controller.signal.aborted) {
+        editRequest.current = null
+        setLoadingEditId(null)
+      }
+    }
   }
 
   const cancelEdit = () => {
@@ -604,7 +630,8 @@ export default function Businesses() {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => startEdit(business)}
+                          onClick={() => void startEdit(business)}
+                          disabled={loadingEditId !== null}
                           className="text-blue-600 hover:text-blue-900"
                           title="Edit"
                         >
