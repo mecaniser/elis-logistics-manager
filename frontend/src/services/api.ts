@@ -29,7 +29,7 @@ const api = axios.create({
 // Add tenant ID interceptor to include X-Tenant-ID header in all requests
 api.interceptors.request.use((config) => {
   // Skip adding tenant_id header for tenants endpoints (they don't need it)
-  if (config.url?.includes('/tenants') && config.method === 'get' && !config.url.match(/\/tenants\/\d+/)) {
+  if (config.url && /^\/tenants(?:\/|$)/.test(config.url)) {
     return config
   }
   
@@ -865,8 +865,17 @@ export interface BankAccount {
   bank_name: string
   account_number: string
   routing_number: string
-  account_type?: string  // 'checking', 'savings', etc.
+  account_type?: string | null  // 'checking', 'savings', etc.
 }
+
+export interface BankAccountSummary {
+  bank_name: string
+  account_type?: string | null
+  account_number_masked: string
+  routing_number_masked: string
+}
+
+export type BankNumberField = 'account_number' | 'routing_number'
 
 export interface Tenant {
   id: number
@@ -881,11 +890,13 @@ export interface Tenant {
   zip_code?: string
   phone?: string
   email?: string
-  bank_accounts?: BankAccount[]
+  bank_accounts?: BankAccountSummary[]
   notes?: string
   created_at: string
   updated_at?: string
 }
+
+export type TenantInput = Partial<Omit<Tenant, 'bank_accounts'>> & { bank_accounts?: BankAccount[] }
 
 // Tenant API - these endpoints don't require tenant_id header
 export const tenantsApi = {
@@ -898,11 +909,19 @@ export const tenantsApi = {
     return tempApi.get<Tenant[]>('/tenants')
   },
   getTenant: (tenantId: number) => api.get<Tenant>(`/tenants/${tenantId}`),
-  createTenant: (tenant: Partial<Tenant>) =>
+  createTenant: (tenant: TenantInput) =>
     api.post<Tenant>('/tenants', tenant),
-  updateTenant: (tenantId: number, tenant: Partial<Tenant>) =>
+  updateTenant: (tenantId: number, tenant: TenantInput) =>
     api.put<Tenant>(`/tenants/${tenantId}`, tenant),
   deleteTenant: (tenantId: number) => api.delete(`/tenants/${tenantId}`),
+  getBankNumber: (tenantId: number, accountIndex: number, field: BankNumberField, action: 'show' | 'copy', signal: AbortSignal) =>
+    api.post<{ value: string }>(`/tenants/${tenantId}/bank-details`, {
+      action, account_index: accountIndex, field,
+    }, { signal, headers: { 'X-Bank-Details-Action': action } }),
+  getBankAccountsForEdit: (tenantId: number, signal: AbortSignal) =>
+    api.post<{ bank_accounts: BankAccount[] }>(`/tenants/${tenantId}/bank-details`, { action: 'edit' }, {
+      signal, headers: { 'X-Bank-Details-Action': 'edit' },
+    }),
 }
 
 // Accounting API

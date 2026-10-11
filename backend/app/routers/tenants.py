@@ -1,14 +1,54 @@
 """
 Tenants router for multi-tenant management
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.models.tenant import Tenant
-from app.schemas.tenant import TenantCreate, TenantResponse, TenantUpdate
+from app.schemas.tenant import (TenantCreate, TenantResponse, TenantUpdate, BankDetailsAccess,
+                                BankAccountDetails, BankEditAccess, BankEditResponse, BankFieldResponse)
+from app.tenant_bank_auth import PRIVATE_HEADERS, authorized_bank_tenant
 
-router = APIRouter()
+class PrivateTenantRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def private_response(request: Request):
+            try:
+                response = await handler(request)
+            except RequestValidationError as error:
+                # FastAPI normally echoes invalid input. Bank numbers must never
+                # come back through validation errors on ordinary tenant writes.
+                response = JSONResponse(status_code=422, content={'detail': [
+                    {key: item[key] for key in ('type', 'loc', 'msg')}
+                    for item in error.errors()
+                ]})
+            response.headers.update(PRIVATE_HEADERS)
+            return response
+
+        return private_response
+
+
+router = APIRouter(route_class=PrivateTenantRoute)
+
+
+@router.post('/{tenant_id}/bank-details', response_model=BankFieldResponse | BankEditResponse)
+def access_bank_details(access: BankDetailsAccess, request: Request, response: Response,
+                        tenant: Tenant = Depends(authorized_bank_tenant)):
+    # A custom action header prevents a cross-origin HTML form from requesting a reveal.
+    if request.headers.get('x-bank-details-action') != access.action:
+        raise HTTPException(403, 'Choose Show, Copy, or Edit to access bank details.', headers=PRIVATE_HEADERS)
+    response.headers.update(PRIVATE_HEADERS)
+    accounts = tenant.bank_accounts or []
+    if isinstance(access, BankEditAccess):
+        return BankEditResponse(bank_accounts=[BankAccountDetails.from_stored(account) for account in accounts])
+    if access.account_index >= len(accounts):
+        raise HTTPException(404, 'Bank account unavailable.', headers=PRIVATE_HEADERS)
+    return BankFieldResponse(value=str(accounts[access.account_index].get(access.field) or ''))
 
 @router.get("", response_model=List[TenantResponse])
 @router.get("/", response_model=List[TenantResponse])
@@ -43,13 +83,15 @@ def get_tenant(tenant_id: int, db: Session = Depends(get_db)):
     return tenant
 
 @router.put("/{tenant_id}", response_model=TenantResponse)
-def update_tenant(tenant_id: int, tenant_update: TenantUpdate, db: Session = Depends(get_db)):
+def update_tenant(tenant_id: int, tenant_update: TenantUpdate, request: Request, db: Session = Depends(get_db)):
     """Update a tenant"""
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     
     update_data = tenant_update.model_dump(exclude_unset=True)
+    if 'bank_accounts' in update_data:
+        authorized_bank_tenant(tenant_id, request, db)
     if 'name' in update_data:
         # Check for duplicate name
         existing = db.query(Tenant).filter(
