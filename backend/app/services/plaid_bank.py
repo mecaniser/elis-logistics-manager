@@ -68,6 +68,8 @@ def request(endpoint: str, payload: dict) -> dict:
         plaid_usage.record(endpoint, env, outcome)
     if response.is_error:
         code = data.get('error_code') if isinstance(data, dict) else None
+        if endpoint == '/item/remove' and code in {'ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'}:
+            return {}  # A retry after successful revocation is already disconnected.
         if code in {'ITEM_LOGIN_REQUIRED', 'INVALID_CREDENTIALS', 'ITEM_NOT_SUPPORTED'}:
             raise PlaidBankError('provider_reauthorization_required')
         if code in {'PRODUCT_NOT_READY', 'PRODUCTS_NOT_SUPPORTED'}:
@@ -352,3 +354,8 @@ def balance_snapshot(access_token: str, rules: MonitorRules, account_map: dict,
                                          available_credit_cents=available,
                                          outstanding_cents=current if current is not None and current >= 0 else None))
     return BalanceSnapshot(observed_at=observed_at, accounts=values)
+
+
+def remove_item(access_token: str) -> None:
+    """Revoke a consented login before clearing its locally stored token."""
+    request('/item/remove', {'access_token': access_token})

@@ -774,3 +774,119 @@ def test_direct_charge_review_preserves_validation_boundaries(setup,db,monkeypat
     assert 400<=response.status_code<500,response.text
     db.refresh(draft)
     assert draft.status!='preparation_requested'
+
+
+@pytest.mark.parametrize('operation', ['reset', 'remove'])
+def test_profile_actions_require_confirmation_and_action_header(setup, operation):
+    client, profile, _ = setup
+    path = f'/api/bank-monitor/profiles/{profile.id}/{operation}'
+    assert client.post(path, headers={'X-Tenant-ID': '1'}, json={'confirmed': True}).status_code == 403
+    assert client.post(path, headers=headers(), json={'confirmed': False}).status_code == 422
+    assert client.post(path.replace(profile.id, 'unowned'), headers=headers(), json={'confirmed': True}).status_code == 404
+
+
+def test_reset_keeps_connection_and_shared_reserves(setup, db):
+    from app.models.bank_monitor import BankProfilePreferences
+    client, profile, legacy = setup
+    route = resolve_and_route(client, db, profile)
+    account = db.get(BankAccountIdentity, route['source_id'])
+    account.reserve_cents = 12345
+    db.commit()
+    result = client.post(f'/api/bank-monitor/profiles/{profile.id}/reset', headers=headers(), json={'confirmed': True})
+    assert result.status_code == 200, result.text
+    db.expire_all()
+    policy = db.get(BankProfilePreferences, profile.id)
+    assert policy.settings['monitor'] is False
+    assert policy.settings['funding_order'] == []
+    assert not db.get(BankProfileRoute, route['id']).enabled
+    assert db.get(BankAccountIdentity, account.id).reserve_cents == 12345
+    assert db.get(BankProfile, profile.id).encrypted_access_token == 'business'
+    assert db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True).count() == 2
+    assert db.get(BankProfile, legacy.id).status == 'refresh_required'
+
+
+@pytest.mark.parametrize('operation', ['reset', 'remove'])
+def test_profile_actions_block_unfinished_transfers(setup, db, monkeypatch, operation):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    created = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000})
+    assert created.status_code == 200, created.text
+    monkeypatch.setattr(plaid_bank, 'remove_item', lambda _: pytest.fail('must not revoke with open transfers'))
+    response = client.post(f'/api/bank-monitor/profiles/{profile.id}/{operation}', headers=headers(), json={'confirmed': True})
+    assert response.status_code == 409
+    db.expire_all()
+    assert db.get(BankProfileRoute, route['id']).enabled
+    assert db.query(BankTransferDraft).one().status == 'reviewed'
+
+
+def test_remove_revokes_only_selected_login_and_is_idempotent(setup, db, monkeypatch):
+    client, profile, legacy = setup
+    route = resolve_and_route(client, db, profile)
+    calls = []
+    monkeypatch.setattr(plaid_bank, 'remove_item', calls.append)
+    path = f'/api/bank-monitor/profiles/{profile.id}/remove'
+    result = client.post(path, headers=headers(), json={'confirmed': True})
+    assert result.status_code == 200, result.text
+    assert [p['id'] for p in result.json()['profiles']] == [legacy.id]
+    db.expire_all()
+    assert db.get(BankProfile, profile.id).encrypted_access_token == ''
+    assert not db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True).count()
+    assert db.get(BankAccountIdentity, route['source_id'])
+    assert db.get(BankProviderConnection, 1).encrypted_access_token == 'legacy'
+    assert client.post(path, headers=headers(), json={'confirmed': True}).status_code == 200
+    assert calls == ['business']
+    assert client.put(f"/api/bank-monitor/profiles/routes/{route['id']}", headers=headers(), json={'enabled': True}).status_code == 404
+    for action in ['sync', 'reset']:
+        assert client.post(f'/api/bank-monitor/profiles/{profile.id}/{action}', headers=headers(), json={'confirmed': True}).status_code == 404
+    assert client.post('/api/bank-monitor/profiles/initialize', headers=headers()).status_code == 200
+    assert db.query(BankProfile).count() == 2
+
+
+def test_remove_failure_preserves_retryable_connection(setup, db, monkeypatch):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    def fail(_):
+        raise plaid_bank.PlaidBankError('provider_unavailable')
+    monkeypatch.setattr(plaid_bank, 'remove_item', fail)
+    result = client.post(f'/api/bank-monitor/profiles/{profile.id}/remove', headers=headers(), json={'confirmed': True})
+    assert result.status_code == 503
+    db.expire_all()
+    assert db.get(BankProfile, profile.id).encrypted_access_token == 'business'
+    assert db.get(BankProfileRoute, route['id']).enabled
+
+
+def test_remove_legacy_does_not_reseed_or_resume_legacy_rules(setup, db, monkeypatch):
+    from app.services.bank_profile_preferences import unified
+    client, profile, legacy = setup
+    monkeypatch.setattr(plaid_bank, 'remove_item', lambda _: None)
+    result = client.post(f'/api/bank-monitor/profiles/{legacy.id}/remove', headers=headers(), json={'confirmed': True})
+    assert result.status_code == 200, result.text
+    assert db.get(BankProviderConnection, 1) is None
+    assert unified(db, 1)
+    service.seed_legacy(db, 1)
+    assert db.query(BankProfile).count() == 2
+
+
+def test_remove_keeps_completed_transfer_history(setup, db, monkeypatch):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    review = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers()).json()
+    assert client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000}).status_code == 200
+    draft = db.query(BankTransferDraft).one()
+    draft.status = 'bank_history_matched'
+    db.commit()
+    monkeypatch.setattr(plaid_bank, 'remove_item', lambda _: None)
+    assert client.post(f'/api/bank-monitor/profiles/{profile.id}/remove', headers=headers(), json={'confirmed': True}).status_code == 200
+    db.expire_all()
+    assert db.get(BankTransferDraft, draft.id).status == 'bank_history_matched'
+    assert db.get(BankProfileDraft, draft.id).profile_id == profile.id
+
+
+@pytest.mark.parametrize('operation', ['reset', 'remove'])
+def test_profile_actions_reject_other_tenants(setup, db, monkeypatch, operation):
+    client, profile, _ = setup
+    profile.tenant_id = 2
+    db.commit()
+    monkeypatch.setattr(plaid_bank, 'remove_item', lambda _: pytest.fail('must not revoke another tenant'))
+    assert client.post(f'/api/bank-monitor/profiles/{profile.id}/{operation}', headers=headers(), json={'confirmed': True}).status_code == 404

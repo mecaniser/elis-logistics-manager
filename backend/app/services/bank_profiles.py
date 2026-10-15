@@ -13,7 +13,7 @@ def utc(value):
 
 def owned(db, model, identity, tenant_id):
     row = db.query(model).filter_by(id=identity, tenant_id=tenant_id).first()
-    if not row:
+    if not row or (model is BankProfile and row.status == 'removed'):
         raise HTTPException(404, 'Bank profile or account unavailable.')
     return row
 
@@ -83,6 +83,9 @@ def discover(db, profile, rows):
 
 def sync_profile(db, profile):
     db.query(BankMonitorConfig).filter_by(tenant_id=profile.tenant_id).with_for_update().one()
+    db.refresh(profile)
+    if profile.status == 'removed':
+        raise HTTPException(409, 'Bank connection has been removed.')
     try:
         token = plaid_bank.decrypt_token(profile.encrypted_access_token)
         item = plaid_bank.item(token)
@@ -174,7 +177,10 @@ def draft_session(db, draft):
     binding = db.get(BankProfileDraft, draft.id)
     if not binding:
         return None
-    profile = owned(db, BankProfile, binding.profile_id, draft.tenant_id)
+    # Completed transfers retain their original login label after removal.
+    profile = db.query(BankProfile).filter_by(id=binding.profile_id, tenant_id=draft.tenant_id).first()
+    if not profile:
+        raise HTTPException(404, 'Bank profile or account unavailable.')
     source = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=binding.source_id).first()
     destination = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=binding.destination_id).first()
     return {'profile_id': profile.id, 'profile_name': profile.name,
@@ -194,7 +200,7 @@ def run_due_profiles(db, now):
     db.commit()
     if (local.hour, local.minute) < (17, 30):
         return
-    rows = db.query(BankProfile).join(BankMonitorConfig, BankMonitorConfig.tenant_id == BankProfile.tenant_id).join(Tenant, Tenant.id == BankProfile.tenant_id).filter(BankProfile.tenant_id.in_(allowed), BankMonitorConfig.enabled.is_(True), Tenant.is_active.is_(True)).all()
+    rows = db.query(BankProfile).join(BankMonitorConfig, BankMonitorConfig.tenant_id == BankProfile.tenant_id).join(Tenant, Tenant.id == BankProfile.tenant_id).filter(BankProfile.tenant_id.in_(allowed), BankProfile.status != 'removed', BankMonitorConfig.enabled.is_(True), Tenant.is_active.is_(True)).all()
     for profile in rows:
         from app.services.bank_profile_preferences import preferences, evaluate
         from app.models.bank_monitor import BankProfilePreferences

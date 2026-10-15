@@ -21,7 +21,7 @@ type Transfer = { id: string; source_id: string; destination_id: string; profile
 type Data = { unified?: boolean; drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
 type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-const button = 'min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
+const button = 'whitespace-nowrap min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
 const errorText = (e: unknown) => (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || (e instanceof Error ? e.message : 'Banking profile request failed.')
 
@@ -31,6 +31,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
   const [settingsProfile, setSettingsProfile] = useState('')
   const [editingName, setEditingName] = useState('')
+  const [profileAction, setProfileAction] = useState<{ profile: Profile; kind: 'reset' | 'remove' } | null>(null)
   const [addingBank, setAddingBank] = useState(false)
   const [busy, setBusy] = useState(false)
   const [refreshingProfile, setRefreshingProfile] = useState('')
@@ -166,6 +167,19 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
   }
   return <section aria-label="Banking profiles" className="rounded-2xl border border-slate-800 bg-slate-950 p-5 text-white shadow-sm sm:p-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-white">{loading || mode ? 'Your accounts' : 'Connect separate bank logins'}</h2>{settingsControl}</header>
+    {profileAction && <BankDialog title={`${profileAction.kind === 'remove' ? 'Remove bank' : 'Reset settings'}: ${profileAction.profile.name}`} onClose={() => { if (!busy) setProfileAction(null) }}>
+      <p className="text-sm leading-6 text-slate-700">{profileAction.kind === 'remove' ? 'Disconnect this bank login and remove its accounts from Bank Monitor. To use it again, add a new bank connection.' : 'Pause monitoring and repayment, turn off transfer routes, and clear funding and repayment priorities for this login. The bank stays connected.'} Transfer history and shared account reserves are kept. Finish or cancel open transfers first.</p>
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      <div className="flex flex-wrap justify-end gap-2"><button type="button" disabled={busy} className={button} onClick={() => setProfileAction(null)}>Cancel</button><button type="button" disabled={busy} className={`${primary} whitespace-nowrap`} onClick={() => {
+        const { profile, kind } = profileAction
+        void request(`/${profile.id}/${kind}`, 'post', { confirmed: true }, () => {
+          setProfileAction(null); setReview(null); setAccountId(''); setSettingsProfile(''); setEditingName(''); setSource(''); setDestination(''); setConfirmed(false)
+          if (kind === 'remove') setSelected('')
+          setNotice(kind === 'remove' ? `${profile.name} removed.` : `Settings reset for ${profile.name}. Monitoring is paused.`)
+          onDraft()
+        })
+      }}>{busy ? 'Working…' : profileAction.kind === 'remove' ? 'Remove bank' : 'Reset settings'}</button></div>
+    </BankDialog>}
     {equipmentRecords !== null && <BankDialog title="Trailer payment records" onClose={() => setEquipmentRecords(null)}><p className="text-sm text-slate-600">No single connected credit line is selected for this trailer. You can still record a payment made directly at your lender.</p><EquipmentPayments key={equipmentRecords} selectedAsset={equipmentRecords}/></BankDialog>}
     {settingsTarget && createPortal(<section aria-label="Manage bank connections" className="bank-profile-settings space-y-4 rounded-xl border border-slate-200 p-4">
       {error && <p role="alert" className="text-sm text-red-800">{error}</p>}{notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}<div className="flex items-center justify-between"><h3 className="font-semibold text-slate-950">Bank connections</h3><button type="button" aria-label="Add bank connection" aria-expanded={addingBank} onClick={() => setAddingBank(v => !v)} className="grid h-9 w-9 place-items-center rounded-lg text-2xl text-blue-700 hover:bg-blue-50">{addingBank ? '−' : '+'}</button></div>
@@ -176,6 +190,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
 
       {data.profiles.map(active => <div key={active.id} className="border-t border-slate-200 pt-3">
         <div className="flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><button type="button" aria-expanded={settingsProfile === active.id} onClick={() => { setSettingsProfile(settingsProfile === active.id ? '' : active.id); setSource(''); setDestination(''); setConfirmed(false) }} className="min-h-9 min-w-0 text-left text-sm font-semibold"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`mr-1 inline h-4 w-4 transition-transform ${settingsProfile === active.id ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg>{active.name}</button><button type="button" disabled={busy} aria-label={`Edit ${active.name} connection name`} title="Edit connection name" onClick={() => setEditingName(active.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="m16 3 5 5M4 20l4-1L21 6a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" /></svg></button></div><span className="block text-xs text-slate-500">{active.accounts.map(a => `••${a.last4}`).join(' · ')}</span></div><button type="button" disabled={busy} onClick={() => void connect(active)} aria-label={`Renew Access for ${active.name}`} className={button}>Renew Access</button></div>
+        <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} className={button} onClick={() => { setError(''); setProfileAction({ profile: active, kind: 'reset' }) }}>Reset settings</button><button type="button" disabled={busy} className={`${button} !text-red-700`} onClick={() => { setError(''); setProfileAction({ profile: active, kind: 'remove' }) }}>Remove bank</button></div>
         {editingName === active.id && <ConnectionName key={`${active.id}-${active.name}`} profile={active} busy={busy} cancel={() => setEditingName('')} save={name => request(`/${active.id}/name`, 'put', { name })} />}
         {settingsProfile === active.id && <section aria-label={`Settings for ${active.name}`} className="mt-3 space-y-3">
         {active.accounts.filter(account => account.kind === 'checking' && account.account_id).map(account => <Reserve key={account.id} account={account} busy={busy} save={(value, onSuccess) => request(`/accounts/${account.account_id}/reserve`, 'put', { reserve_cents: value }, onSuccess)} />)}
