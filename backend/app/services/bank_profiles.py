@@ -98,10 +98,24 @@ def sync_profile(db, profile):
             raise plaid_bank.PlaidBankError('provider_no_supported_accounts')
         mapping = {a.id: {'account_id': a.provider_account_id, 'kind': a.kind} for a in memberships}
         visibility = plaid_bank.transaction_visibility(token, mapping)
-        from app.services.bank_charge_funding import ingest
+        from app.services.bank_charge_funding import ingest, settlement_candidates, reconcile_posted
+        candidates = []
         for a in memberships:
             if a.kind == 'checking' and a.account_id and 'charge_details' in visibility:
-                ingest(db, profile, a, visibility['charge_details'].get(a.id, []))
+                entries = visibility['charge_details'].get(a.id, [])
+                ingest(db, profile, a, entries)
+                if settlement_candidates(db, profile, a, entries):
+                    candidates.append(a)
+        if candidates:
+            # A pre-feed balance cannot establish that these posted debits are absorbed.
+            # Only pay for this additional read while unresolved posted charges exist.
+            fresh_rows = plaid_bank.real_time_accounts(token)
+            observed_at = datetime.now(timezone.utc)
+            discover(db, profile, fresh_rows)
+            for a in candidates:
+                reconcile_posted(db, profile, a, visibility['charge_details'].get(a.id, []),
+                    balance_observed_at=observed_at)
+        for a in memberships:
             a.balance = {**a.balance, 'pending_debit_cents': visibility['pending_debit_cents'].get(a.id, 0),
                 'pending_count': visibility['pending_entries'].get(a.id, 0),
                 'transactions_updated_at': visibility.get('last_successful_update'),

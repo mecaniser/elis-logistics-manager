@@ -252,8 +252,19 @@ class BankFundingCharge(Base):
     description = Column(String(120), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     charge_date = Column(Date, nullable=False)
-    status = Column(String(40), nullable=False)  # eligible, historical, removed, dismissed, duplicate_review
+    status = Column(String(40), nullable=False)  # eligible, historical, removed, reconciled, dismissed, duplicate_review
     pending = Column(Boolean, nullable=False, default=False)
     origin = Column(String(16), nullable=False)
     draft_id = Column(String(36), unique=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class BankFundingReconciliation(Base):
+    """Evidence for retiring a funding need without claiming a matched transfer."""
+    __tablename__ = 'bank_funding_reconciliations'
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    charge_id = Column(String(36), nullable=False, index=True)
+    profile_id = Column(String(36), nullable=False)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    evidence = Column(JSON, nullable=False)
