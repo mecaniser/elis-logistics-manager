@@ -85,8 +85,8 @@ def test_review_draft_preparation_and_session_binding(setup, db):
     response = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers())
     assert response.status_code == 200, response.text
     review = response.json()
-    assert review['limit_cents'] == 90000
-    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 90001})
+    assert review['limit_cents'] == 100000
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 100001})
     assert response.status_code == 409
     response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000})
     assert response.status_code == 200, response.text
@@ -108,7 +108,7 @@ def test_shared_account_reserves_across_profiles_and_legacy_drafts(setup, db):
         from_last4='3304', to_last4='2829', memo='Rpy old transfer', status='prepared_awaiting_submission', created_at=datetime.now(timezone.utc)))
     db.commit()
     response = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers())
-    assert response.json()['limit_cents'] == 65000
+    assert response.json()['limit_cents'] == 75000
     assert response.json()['reserved_draft_cents'] == 20000
 
 
@@ -442,7 +442,7 @@ def test_equipment_draft_requires_link_and_preserves_cash_limit(setup, db, finan
     url = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
     assert client.post(url, headers=headers(), json={'amount_cents':76646, 'equipment_asset_id':asset.id}).status_code == 409
     client.put(f'/api/bank-monitor/profiles/equipment/{asset.id}/account', headers=headers(), json={'account_id':route['destination_id']})
-    assert client.post(url, headers=headers(), json={'amount_cents':90001, 'equipment_asset_id':asset.id}).status_code == 409
+    assert client.post(url, headers=headers(), json={'amount_cents':100001, 'equipment_asset_id':asset.id}).status_code == 409
     assert db.query(BankTransferDraft).count() == 0
 
 
@@ -890,3 +890,50 @@ def test_profile_actions_reject_other_tenants(setup, db, monkeypatch, operation)
     db.commit()
     monkeypatch.setattr(plaid_bank, 'remove_item', lambda _: pytest.fail('must not revoke another tenant'))
     assert client.post(f'/api/bank-monitor/profiles/{profile.id}/{operation}', headers=headers(), json={'confirmed': True}).status_code == 404
+
+
+@pytest.mark.parametrize('current,available,pending,expected', [
+    (77730, 77730, 201905, 76730),  # Transaction feed lags a fresh bank balance.
+    (279635, 77730, 201905, 76730),  # Pending holds already reduce available cash.
+    (50000, 77730, 0, 49000),  # Pending credits do not increase posted cash.
+    (-34000, -34000, 63686, 0),
+])
+def test_payment_limit_uses_bank_adjusted_cash_once(setup, db, current, available, pending, expected):
+    client, profile, _ = setup
+    route = db.get(BankProfileRoute, resolve_and_route(client, db, profile)['id'])
+    source = service.member(db, profile, route.source_id)
+    source.balance = {**source.balance, 'current_cents': current, 'available_cents': available, 'pending_debit_cents': pending}
+    db.get(BankAccountIdentity, source.account_id).reserve_cents = 1000
+    result = service.transfer_limit(db, route)
+    assert result['limit_cents'] == expected
+    assert result['pending_debit_cents'] == pending  # Never pretend the debit has posted.
+    assert result['pending_deducted_cents'] == 0
+
+
+def test_posted_debit_refresh_replaces_pending_total_and_keeps_funding_identity(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingCharge
+    from app.services.bank_charge_funding import scheduled_drafts
+    client, profile, route, entries = charge_setup(setup, db, monkeypatch)
+    _, draft_ids = scheduled_drafts(db, profile)
+    db.commit()
+    original = dict(entries[0])
+    posted = {**original, 'transaction_id': 'posted-charge', 'pending_transaction_id': original['transaction_id'], 'pending': False}
+    source = service.member(db, profile, route.destination_id)
+    def visibility(token, mapping):
+        return {'pending_debit_cents': {k: 35000 if v['kind']=='checking' else 0 for k,v in mapping.items()},
+            'pending_entries': {k: 1 if v['kind']=='checking' else 0 for k,v in mapping.items()},
+            'charge_details': {k: [posted, entries[1]] if v['kind']=='checking' else [] for k,v in mapping.items()},
+            'last_successful_update': '2026-10-15T16:00:00Z'}
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', visibility)
+    service.sync_profile(db, profile)
+    db.commit()
+    assert source.balance['pending_debit_cents'] == 35000
+    evidence = source.balance['recent_debits']
+    assert len(evidence) == 2 and sum(e['pending'] for e in evidence) == 1
+    assert all('transaction_id' not in e for e in evidence)
+    charge = db.query(BankFundingCharge).filter_by(pending=False).one()
+    assert set(charge.provider_ids) == {original['transaction_id'], 'posted-charge'}
+    assert charge.draft_id in draft_ids
+    # Posting of the expense alone cannot falsely complete its funding transfer.
+    assert db.get(BankTransferDraft, charge.draft_id).status == 'review_required'
+    assert scheduled_drafts(db, profile)[1] == []

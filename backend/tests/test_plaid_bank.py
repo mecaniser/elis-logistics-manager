@@ -430,3 +430,26 @@ def test_remove_item_does_not_hide_provider_failures(provider_env, monkeypatch):
     monkeypatch.setattr(plaid_bank.httpx, 'post', lambda *args, **kwargs: httpx.Response(500, json={'error_code': 'INTERNAL_SERVER_ERROR'}))
     with pytest.raises(plaid_bank.PlaidBankError):
         plaid_bank.remove_item('test-token')
+
+
+def test_posted_replacements_leave_only_remaining_pending_debits(monkeypatch):
+    def tx(id, amount, pending=True, previous=None):
+        return {'transaction_id': id, 'account_id': 'checking-id', 'amount': amount,
+            'pending': pending, 'pending_transaction_id': previous,
+            'date': '2026-10-15', 'iso_currency_code': 'USD', 'name': id}
+    pages = iter([
+        {'added': [tx('subscription', 29.99), tx('coinbase', 1000), tx('mortgage', 989.06)],
+            'next_cursor': 'next', 'has_more': True},
+        {'added': [tx('posted-coinbase', 1000, False, 'coinbase'),
+                   tx('posted-mortgage', 989.06, False, 'mortgage')],
+            'removed': [{'transaction_id': 'coinbase'}], 'next_cursor': 'done', 'has_more': False},
+    ])
+    def request(path, payload):
+        if path == '/item/get':
+            return {'status': {'transactions': {'last_successful_update': '2026-10-15T16:00:00Z'}}}
+        return next(pages)
+    monkeypatch.setattr(plaid_bank, 'request', request)
+    result = plaid_bank.transaction_visibility('token', {'3304': {'account_id': 'checking-id'}})
+    assert result['pending_debit_cents']['3304'] == 2999
+    assert result['posted_entries']['3304'] == 2
+    assert {r['transaction_id'] for r in result['charge_details']['3304']} == {'subscription', 'posted-coinbase', 'posted-mortgage'}
