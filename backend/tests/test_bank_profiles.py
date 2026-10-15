@@ -942,3 +942,145 @@ def test_posted_debit_refresh_replaces_pending_total_and_keeps_funding_identity(
     # Posting of the expense alone cannot falsely complete its funding transfer.
     assert db.get(BankTransferDraft, charge.draft_id).status == 'review_required'
     assert scheduled_drafts(db, profile)[1] == []
+
+
+def settlement_setup(setup, db, monkeypatch):
+    """Reproduce stale posted charges competing with three genuine pending charges."""
+    from app.models.bank_monitor import BankFundingCharge, BankProfilePreferences
+    from app.services.bank_charge_funding import make_draft
+    client, profile, route, entries = charge_setup(setup, db, monkeypatch)
+    # Keep them eligible while the checking balance is overdrawn.
+    entries[:] = [{**entries[0], 'transaction_id': 'old-posted', 'pending': False,
+                   'amount_cents': 100000, 'description': 'Old Coinbase'}]
+    service.sync_profile(db, profile)
+    old = db.query(BankFundingCharge).filter_by(reference='plaid:old-posted').one()
+    entries.append({**entries[0], 'transaction_id': 'old-fee', 'amount_cents': 2900,
+                    'description': 'Old overdraft fee'})
+    service.sync_profile(db, profile)
+    fee = db.query(BankFundingCharge).filter_by(reference='plaid:old-fee').one()
+    draft = make_draft(db, profile, route, fee)
+    for i, amount in enumerate([2999, 100000, 98906]):
+        entries.append({**entries[0], 'transaction_id': f'new-pending-{i}',
+                        'pending': True, 'amount_cents': amount, 'description': f'Pending {i}'})
+    # Match the operator's configured funding order: skip the insufficient HELOC.
+    credit = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.source_id).one()
+    credit.last4 = '2829'
+    db.get(BankAccountIdentity, credit.account_id).last4 = '2829'
+    heloc = BankAccountIdentity(id=str(uuid4()), tenant_id=1, institution_id=profile.institution_id,
+        name='HELOC', last4='3062', kind='credit', reserve_cents=0)
+    db.add(heloc)
+    db.add(BankProfileAccount(id=str(uuid4()), profile_id=profile.id, account_id=heloc.id,
+        provider_account_id='heloc', name='HELOC', last4='3062', kind='credit', active=True, balance={}))
+    small = BankProfileRoute(id=str(uuid4()), tenant_id=1, profile_id=profile.id,
+        source_id=heloc.id, destination_id=route.destination_id, enabled=True)
+    db.add(small)
+    prefs = db.get(BankProfilePreferences, profile.id)
+    prefs.settings = {**prefs.settings, 'funding_order': [small.id, route.id]}
+    reads = []
+    def restored(token):
+        reads.append('balance')
+        return [row('new-checking', '3304', amount=10), row('new-credit', '2829', 'credit', 2019.05), row('heloc', '3062', 'credit', 10.19)]
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', restored)
+    def visibility(token, mapping):
+        reads.append('transactions')
+        return {'pending_debit_cents': {k: 201905 if v['kind'] == 'checking' else 0 for k,v in mapping.items()},
+            'pending_entries': {k: 3 if v['kind'] == 'checking' else 0 for k,v in mapping.items()},
+            'charge_details': {k: entries if v['kind'] == 'checking' else [] for k,v in mapping.items()}}
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', visibility)
+    db.commit()
+    return client, profile, route, entries, old, fee, draft, reads
+
+
+def test_reconcile_posted_cash_and_530_prepares_only_three_pending(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingCharge, BankFundingReconciliation
+    from app.services.bank_charge_funding import charge_json
+    from zoneinfo import ZoneInfo
+    _, profile, route, _, old, fee, draft, reads = settlement_setup(setup, db, monkeypatch)
+    local = datetime.now(ZoneInfo('America/New_York')).replace(hour=17, minute=29, second=0)
+    service.run_due_profiles(db, local)
+    assert draft.status == 'review_required'
+    assert db.query(BankFundingReconciliation).count() == 0
+    service.run_due_profiles(db, local.replace(minute=30))
+    db.refresh(old); db.refresh(fee); db.refresh(draft)
+    assert old.status == fee.status == 'reconciled'
+    assert draft.status == 'cancelled'
+    assert charge_json(db, fee)['status'] == 'reconciled'
+    assert reads[:3] == ['balance', 'transactions', 'balance']
+    audits = db.query(BankFundingReconciliation).all()
+    assert len(audits) == 2
+    audit = next(a for a in audits if a.charge_id == fee.id)
+    assert audit.evidence['retired_draft_id'] == draft.id
+    assert audit.evidence['retired_draft_status'] == 'review_required'
+    assert audit.evidence['reason'] == 'posted_balance_restored'
+    assert audit.evidence['current_cents'] == audit.evidence['available_cents'] == audit.evidence['reserve_cents'] == 1000
+    active = db.query(BankTransferDraft).filter_by(status='review_required').all()
+    assert sorted(d.amount_cents for d in active) == [2999, 98906, 100000]
+    assert sum(d.amount_cents for d in active) == 201905
+    assert all(d.from_last4 == '2829' and d.to_last4 == '3304' for d in active)
+    assert all(db.get(BankProfileDraft, d.id).route_id == route.id for d in active)
+    assert all(db.query(BankFundingCharge).filter_by(draft_id=d.id).one().pending for d in active)
+    # Repeat scheduler and refresh cannot resurrect old charges or incur settlement reads.
+    reads.clear()
+    service.run_due_profiles(db, local.replace(minute=31))
+    assert reads == []
+    service.sync_profile(db, profile); db.commit()
+    assert reads == ['balance', 'transactions']
+    assert db.query(BankFundingReconciliation).count() == 2
+    assert db.query(BankTransferDraft).count() == 4
+
+
+@pytest.mark.parametrize('current,available,currency', [(None,1000,'USD'), (1000,None,'USD'),
+    (-34000,-34000,'USD'), (1000,999,'USD'), (999,1000,'USD'), (1000,1000,'EUR')])
+def test_settlement_requires_both_known_usd_balances_above_reserve(setup, db, monkeypatch, current, available, currency):
+    from app.models.bank_monitor import BankFundingReconciliation
+    _, profile, route, _, old, fee, draft, _ = settlement_setup(setup, db, monkeypatch)
+    calls = []
+    def balances(token):
+        calls.append(1)
+        checking = row('new-checking', '3304', amount=10)
+        # First read looks sufficient; only the post-feed read determines settlement.
+        if len(calls) > 1:
+            checking['balances'] = {'current': current / 100 if current is not None else None,
+                'available': available / 100 if available is not None else None, 'iso_currency_code': currency}
+        return [checking, row('new-credit', '2829', 'credit', 2019.05)]
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', balances)
+    service.sync_profile(db, profile); db.commit()
+    assert len(calls) == 2
+    assert old.status == fee.status == 'eligible'
+    assert draft.status == 'review_required'
+    assert db.query(BankFundingReconciliation).count() == 0
+
+
+@pytest.mark.parametrize('status', ['reviewed', 'prepared_awaiting_submission', 'failed', 'bank_history_matched', 'cancelled'])
+def test_settlement_preserves_approved_and_inflight_transfers(setup, db, monkeypatch, status):
+    from app.models.bank_monitor import BankFundingReconciliation
+    _, profile, _, _, old, fee, draft, _ = settlement_setup(setup, db, monkeypatch)
+    draft.status = status
+    db.commit()
+    service.sync_profile(db, profile); db.commit()
+    assert old.status == 'reconciled'
+    assert fee.status == 'eligible'
+    assert draft.status == status
+    assert db.query(BankFundingReconciliation).filter_by(charge_id=fee.id).count() == 0
+
+
+def test_settlement_identity_reader_and_reappearance_guards(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingReconciliation
+    from app.services.bank_charge_funding import reconcile_posted
+    _, profile, route, entries, old, fee, draft, _ = settlement_setup(setup, db, monkeypatch)
+    member = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.destination_id).one()
+    member.balance = {'current_cents':1000, 'available_cents':1000, 'currency':'USD'}
+    for bad in [{**entries[0], 'transaction_id':'unrelated'}, {**entries[0], 'amount_cents':1},
+                {**entries[0], 'pending':True}, {**entries[0], 'currency':'EUR'}]:
+        assert reconcile_posted(db, profile, member, [bad], balance_observed_at=datetime.now(timezone.utc)) == []
+    # Another login cannot reconcile this account's canonical feed.
+    other = setup[2]
+    assert reconcile_posted(db, other, member, entries, balance_observed_at=datetime.now(timezone.utc)) == []
+    service.sync_profile(db, profile); db.commit()
+    assert fee.status == 'reconciled' and draft.status == 'cancelled'
+    # A bank correction to pending invalidates settlement, without resurrecting the cancelled draft.
+    entries[1]['pending'] = True
+    service.sync_profile(db, profile); db.commit()
+    assert fee.status == 'eligible' and fee.draft_id is None
+    assert draft.status == 'cancelled'
+    assert db.query(BankFundingReconciliation).filter_by(charge_id=fee.id).one().evidence['retired_draft_id'] == draft.id

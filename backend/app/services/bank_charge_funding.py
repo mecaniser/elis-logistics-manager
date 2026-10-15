@@ -5,7 +5,7 @@ import re
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.models.bank_monitor import (BankFundingCharge, BankFundingFeed, BankProfileAccount,
-    BankProfileRoute, BankProfileDraft, BankTransferDraft)
+    BankProfileRoute, BankProfileDraft, BankTransferDraft, BankAccountIdentity, BankFundingReconciliation)
 
 UNAPPROVED = {'review_required', 'amount_review_required'}
 
@@ -53,6 +53,13 @@ def ingest(db, profile, member, entries):
                 status='duplicate_review' if duplicate else 'historical' if historical else 'eligible', created_at=datetime.now(timezone.utc))
             db.add(charge); charges.append(charge)
         else:
+            # A corrected amount or a return to pending invalidates a prior cash settlement.
+            if charge.status == 'reconciled' and (charge.amount_cents != entry['amount_cents'] or entry.get('pending')):
+                charge.status = 'eligible'
+                # The audit retains the retired draft identity; this changed charge may need a new draft.
+                retired = db.get(BankTransferDraft, charge.draft_id) if charge.draft_id else None
+                if retired and retired.status == 'cancelled':
+                    charge.draft_id = None
             charge.provider_ids = sorted(set(charge.provider_ids) | ids)
             if charge.amount_cents != entry['amount_cents']:
                 draft = db.get(BankTransferDraft, charge.draft_id) if charge.draft_id else None
@@ -72,11 +79,66 @@ def ingest(db, profile, member, entries):
     db.flush()
 
 
+def settlement_candidates(db, profile, member, entries):
+    """Match posted provider identities from the canonical reader, never amount alone."""
+    feed = db.get(BankFundingFeed, member.account_id)
+    if (member.kind != 'checking' or not member.active or member.profile_id != profile.id
+            or not feed or feed.tenant_id != profile.tenant_id or feed.profile_id != profile.id):
+        return []
+    matches = []
+    for charge in db.query(BankFundingCharge).filter_by(tenant_id=profile.tenant_id,
+            account_id=member.account_id, origin='plaid', status='eligible', pending=False):
+        draft = db.get(BankTransferDraft, charge.draft_id) if charge.draft_id else None
+        # An approved/prepared transfer may already be in flight. Never retire it using cash alone.
+        if charge.draft_id and (not draft or draft.tenant_id != profile.tenant_id or draft.status not in UNAPPROVED):
+            continue
+        entry = next((e for e in entries if e.get('transaction_id') in charge.provider_ids
+            and e.get('pending') is False and e.get('currency') == 'USD'
+            and e.get('amount_cents') == charge.amount_cents
+            and e.get('date') == charge.charge_date.isoformat()), None)
+        if entry:
+            matches.append((charge, draft, entry))
+    return matches
+
+
+def reconcile_posted(db, profile, member, entries, *, balance_observed_at):
+    """Retire posted expenses after a subsequent bank balance shows cash restored.
+
+    This reconciles a funding need, not a merchant payment or a particular incoming
+    transfer. Still-pending expenses keep their own whole-charge funding requests.
+    The caller must read the balance AFTER reading the transaction feed.
+    """
+    account = db.get(BankAccountIdentity, member.account_id)
+    b = member.balance
+    current, available = b.get('current_cents'), b.get('available_cents')
+    if (not account or account.tenant_id != profile.tenant_id or b.get('currency') != 'USD'
+            or current is None or available is None
+            or min(current, available) < account.reserve_cents):
+        return []
+    settled = []
+    for charge, draft, entry in settlement_candidates(db, profile, member, entries):
+        db.add(BankFundingReconciliation(tenant_id=profile.tenant_id, charge_id=charge.id,
+            profile_id=profile.id, observed_at=balance_observed_at, evidence={
+                'reason': 'posted_balance_restored', 'account_id': member.account_id,
+                'transaction_id': entry['transaction_id'], 'amount_cents': charge.amount_cents,
+                'posted_date': entry['date'], 'current_cents': current, 'available_cents': available,
+                'reserve_cents': account.reserve_cents, 'currency': 'USD',
+                'retired_draft_id': draft.id if draft else None,
+                'retired_draft_status': draft.status if draft else None,
+            }))
+        if draft:
+            draft.status = 'cancelled'
+        charge.status = 'reconciled'
+        settled.append(charge.id)
+    db.flush()
+    return settled
+
+
 def charge_json(db, charge):
     draft = db.get(BankTransferDraft, charge.draft_id) if charge.draft_id else None
     return {'id': charge.id, 'description': charge.description, 'amount_cents': charge.amount_cents,
         'date': charge.charge_date.isoformat(), 'pending': charge.pending, 'origin': charge.origin,
-        'status': ('covered' if draft.amount_cents == charge.amount_cents else 'amount_changed_after_funding') if draft and draft.status == 'bank_history_matched' else
+        'status': 'reconciled' if charge.status == 'reconciled' else ('covered' if draft.amount_cents == charge.amount_cents else 'amount_changed_after_funding') if draft and draft.status == 'bank_history_matched' else
             'dismissed' if draft and draft.status == 'cancelled' else 'drafted' if draft else charge.status,
         'draft_id': charge.draft_id}
 
