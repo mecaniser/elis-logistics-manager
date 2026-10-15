@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.bank_monitor import (BankProfile, BankProfileAccount, BankAccountIdentity, BankProfileRoute,
-    BankFundingCharge, BankEquipmentAccount, BankEquipmentDraft, BankProfileDraft, BankProfileLink, BankProfileRun, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
+    BankFundingCharge, BankEquipmentAccount, BankEquipmentDraft, BankProfileDraft, BankProfileLink, BankProfileRun, BankProfilePreferences, BankProviderConnection, BankMonitorConfig, BankRepaymentRun, BankTransferDraft)
 from app.routers.bank_monitor import bank_tenant, provider_action, draft_json
 from app.services.bank_monitor import StrictModel
 from app.services import bank_profiles as profiles, plaid_bank
@@ -37,7 +37,7 @@ def sync(db, profile):
 def view(db, tenant_id):
     from app.services.bank_charge_funding import proposals
     result = []
-    for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).order_by(BankProfile.created_at):
+    for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).filter(BankProfile.status != 'removed').order_by(BankProfile.created_at):
         accounts = []
         for a in db.query(BankProfileAccount).filter_by(profile_id=p.id, active=True).order_by(BankProfileAccount.last4, BankProfileAccount.id):
             candidates = db.query(BankAccountIdentity).filter_by(tenant_id=tenant_id,
@@ -46,7 +46,7 @@ def view(db, tenant_id):
             accounts.append({'id': a.id, 'account_id': a.account_id, 'name': a.name, 'last4': a.last4,
                 'kind': a.kind, 'subtype': a.subtype, 'balance': a.balance,
                 'reserve_cents': canonical.reserve_cents if canonical else 0,
-                'overlap_candidates': [{'id': c.id, 'name': c.name, 'last4': c.last4, 'profiles': [p.name for p in db.query(BankProfile).join(BankProfileAccount, BankProfileAccount.profile_id == BankProfile.id).filter(BankProfileAccount.account_id == c.id, BankProfile.tenant_id == tenant_id)]} for c in candidates]})
+                'overlap_candidates': [{'id': c.id, 'name': c.name, 'last4': c.last4, 'profiles': [p.name for p in db.query(BankProfile).join(BankProfileAccount, BankProfileAccount.profile_id == BankProfile.id).filter(BankProfileAccount.account_id == c.id, BankProfile.tenant_id == tenant_id, BankProfileAccount.active.is_(True))]} for c in candidates]})
         result.append({'id': p.id, 'name': p.name, 'institution_id': p.institution_id,
             'coverage': proposals(db, p, allow_stale=True), 'legacy': p.legacy, 'status': p.status, 'last_error': p.last_error,
             'last_checked_at': p.last_checked_at, 'accounts': accounts, 'preferences': preferences(db, p)})
@@ -91,7 +91,7 @@ def link(data: LinkInput, request: Request, tenant_id: int = Depends(bank_tenant
         raise HTTPException(422, 'Enter a banking profile name.')
     lock(db, tenant_id)
     profile = profiles.owned(db, BankProfile, data.profile_id, tenant_id) if data.profile_id else None
-    if not profile and db.query(BankProfile).filter_by(tenant_id=tenant_id).count() >= 20:
+    if not profile and db.query(BankProfile).filter_by(tenant_id=tenant_id).filter(BankProfile.status != 'removed').count() >= 20:
         raise HTTPException(409, 'The limit is 20 banking profiles.')
     try:
         token = plaid_bank.link_token(tenant_id, access_token=plaid_bank.decrypt_token(profile.encrypted_access_token) if profile else None, optional_liabilities=True)
@@ -154,6 +154,72 @@ def refresh(profile_id: str, request: Request, tenant_id: int = Depends(bank_ten
     lock(db, tenant_id)
     profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
     sync(db, profile)
+    db.commit()
+    return view(db, tenant_id)
+
+
+class ProfileActionInput(StrictModel):
+    confirmed: bool = False
+
+
+def clear_profile_plan(db, profile):
+    """Clear this login's policy without changing shared reserves or history."""
+    drafts = db.query(BankTransferDraft).outerjoin(
+        BankProfileDraft, BankProfileDraft.draft_id == BankTransferDraft.id
+    ).filter(BankTransferDraft.tenant_id == profile.tenant_id,
+             BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched']))
+    for draft in drafts:
+        binding = db.get(BankProfileDraft, draft.id)
+        if (binding and binding.profile_id == profile.id) or (not binding and profile.legacy):
+            raise HTTPException(409, 'Finish or cancel this bank connection’s open transfers before resetting or removing it.')
+    db.query(BankProfileRoute).filter_by(tenant_id=profile.tenant_id, profile_id=profile.id).update({'enabled': False})
+    policy = db.get(BankProfilePreferences, profile.id)
+    if not policy:
+        policy = BankProfilePreferences(profile_id=profile.id, tenant_id=profile.tenant_id)
+        db.add(policy)
+    policy.settings = {'confirmed': True, 'monitor': False, 'repayment': False,
+                       'funding_order': [], 'repayment_order': [], 'pending_review': []}
+    policy.last_evaluation = {}
+
+
+@router.post('/{profile_id}/reset')
+def reset_profile(profile_id: str, data: ProfileActionInput, request: Request,
+                  tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    if not data.confirmed:
+        raise HTTPException(422, 'Confirm resetting this bank connection’s settings.')
+    lock(db, tenant_id)
+    profile = profiles.owned(db, BankProfile, profile_id, tenant_id)
+    clear_profile_plan(db, profile)
+    db.commit()
+    return view(db, tenant_id)
+
+
+@router.post('/{profile_id}/remove')
+def remove_profile(profile_id: str, data: ProfileActionInput, request: Request,
+                   tenant_id: int = Depends(bank_tenant), db: Session = Depends(get_db)):
+    action(request)
+    if not data.confirmed:
+        raise HTTPException(422, 'Confirm removing this bank connection.')
+    lock(db, tenant_id)
+    profile = db.query(BankProfile).filter_by(id=profile_id, tenant_id=tenant_id).first()
+    if not profile:
+        raise HTTPException(404, 'Bank profile or account unavailable.')
+    if profile.status == 'removed':
+        return view(db, tenant_id)
+    clear_profile_plan(db, profile)
+    try:
+        plaid_bank.remove_item(plaid_bank.decrypt_token(profile.encrypted_access_token))
+    except plaid_bank.PlaidBankError as exc:
+        db.rollback()
+        raise HTTPException(503, 'Could not disconnect the bank. Try again.') from exc
+    # Keep the item tombstone and immutable audit bindings to prevent legacy reseeding.
+    profile.status, profile.encrypted_access_token, profile.last_error = 'removed', '', None
+    db.query(BankProfileAccount).filter_by(profile_id=profile.id).update({'active': False, 'balance': {}})
+    db.query(BankProfileLink).filter_by(profile_id=profile.id, tenant_id=tenant_id).update({'consumed_at': datetime.now(timezone.utc)})
+    legacy = db.get(BankProviderConnection, tenant_id)
+    if legacy and legacy.item_id == profile.item_id:
+        db.delete(legacy)
     db.commit()
     return view(db, tenant_id)
 
@@ -237,6 +303,7 @@ def route_state(route_id: str, data: RouteState, request: Request, tenant_id: in
     action(request)
     lock(db, tenant_id)
     row = profiles.owned(db, BankProfileRoute, route_id, tenant_id)
+    profiles.owned(db, BankProfile, row.profile_id, tenant_id)
     row.enabled = data.enabled
     db.commit()
     return view(db, tenant_id)

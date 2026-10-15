@@ -409,3 +409,24 @@ def test_charge_details_keep_provider_identity_amount_and_posting_link(monkeypat
     assert charge['pending_transaction_id']=='pending-expense'
     assert charge['amount_cents']==28686
     assert charge['currency']=='USD' and charge['pending'] is False
+
+
+@pytest.mark.parametrize('code', ['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'])
+def test_remove_item_accepts_already_revoked_token(provider_env, monkeypatch, code):
+    import httpx
+    calls = []
+    def post(url, **kwargs):
+        calls.append((url, kwargs['json']['access_token']))
+        return httpx.Response(400, json={'error_code': code})
+    monkeypatch.setattr(plaid_bank.httpx, 'post', post)
+    plaid_bank.remove_item('test-token')
+    assert calls == [('https://production.plaid.com/item/remove', 'test-token')]
+    with pytest.raises(plaid_bank.PlaidBankError):
+        plaid_bank.request('/accounts/balance/get', {'access_token': 'test-token'})
+
+
+def test_remove_item_does_not_hide_provider_failures(provider_env, monkeypatch):
+    import httpx
+    monkeypatch.setattr(plaid_bank.httpx, 'post', lambda *args, **kwargs: httpx.Response(500, json={'error_code': 'INTERNAL_SERVER_ERROR'}))
+    with pytest.raises(plaid_bank.PlaidBankError):
+        plaid_bank.remove_item('test-token')

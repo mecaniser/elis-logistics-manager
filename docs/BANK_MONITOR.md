@@ -340,3 +340,13 @@ stop another profile's read. Profile history is available in the profile card.
 Existing scheduled single-connection reads are retained for backward compatibility.
 Actual new-profile production access and bank form preparation must be verified
 with the user's sign-in before calling the separate-login flow fully live.
+
+### Bank connection removal and settings reset
+
+Monitoring settings → Bank connections includes **Reset settings** and **Remove bank** for each login. Both require confirmation and are blocked while that login has unfinished transfer drafts; finish or cancel those drafts first.
+
+- Reset settings pauses monitoring and repayment, disables this profile's routes, and clears funding/repayment priorities. It keeps bank access, account identities, shared account reserves, and history. Renew Access remains the separate sign-in repair action.
+- Remove bank revokes the selected Plaid item with [`/item/remove`](https://plaid.com/docs/api/items/#itemremove), clears its stored token, retires its account memberships, and hides the connection. A retained profile record preserves historical transfer labels and prevents legacy reseeding. Other logins and shared reserves remain intact. Adding the bank again requires a new connection.
+- Provider failures leave the connection and preferences available for retry. Already-revoked tokens are accepted when retrying removal. Removed profiles cannot sync, renew access, or reactivate routes.
+
+The endpoints are `POST /api/bank-monitor/profiles/{profile_id}/reset` and `/remove`, with `{ "confirmed": true }`, the selected tenant header, and `X-Bank-Monitor-Action: manage-bank-profiles`. No schema migration is needed.
