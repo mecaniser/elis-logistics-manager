@@ -150,11 +150,13 @@ def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
     if available is None or (source.kind == 'checking' and (current is None or pending is None)):
         raise HTTPException(409, 'Source balance or transaction data is unavailable. Refresh bank data.')
     account = owned(db, BankAccountIdentity, source.account_id, profile.tenant_id)
-    # /accounts/balance/get supplies bank-adjusted available cash. The transaction
-    # feed can lag behind it; subtracting that feed's pending total again can
-    # reserve a debit already reflected in the balance (or already posted).
-    # Keep the posted-balance ceiling so pending credits cannot increase capacity.
-    cap = available if source.kind == 'credit' else min(current, available) - account.reserve_cents
+    # Some pending ACH debits do not reduce available cash yet. Reserve only
+    # the pending total beyond the current-to-available balance hold, so holds
+    # are not counted twice. Posted replacements are removed by transaction sync.
+    cash_basis = available if source.kind == 'credit' else min(current, available)
+    balance_hold = 0 if source.kind == 'credit' else max(0, current - available)
+    pending_deducted = 0 if source.kind == 'credit' else max(0, pending - balance_hold)
+    cap = cash_basis if source.kind == 'credit' else cash_basis - pending_deducted - account.reserve_cents
     queued, incoming = 0, 0
     for draft in db.query(BankTransferDraft).filter_by(tenant_id=profile.tenant_id).filter(BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched'])):
         if draft.id == exclude_draft:
@@ -173,8 +175,8 @@ def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
         cap = min(cap, owed - incoming)
     return {'limit_cents': max(0, cap), 'reserved_draft_cents': queued,
         'reserve_cents': account.reserve_cents, 'pending_debit_cents': pending,
-        'cash_basis_cents': available if source.kind == 'credit' else min(current, available),
-        'pending_deducted_cents': 0,
+        'cash_basis_cents': cash_basis, 'balance_hold_cents': balance_hold,
+        'pending_deducted_cents': pending_deducted,
         'profile_name': profile.name, 'profile_id': profile.id,
         'from_last4': source.last4, 'to_last4': destination.last4,
         'source_name': source.name, 'destination_name': destination.name,

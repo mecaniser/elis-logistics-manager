@@ -19,7 +19,7 @@ type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; na
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string; equipment?: {asset_id:number;name:string} }
 type Data = { unified?: boolean; drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
-type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; cash_basis_cents: number; pending_debit_cents: number | null; observed_at: string }
+type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; cash_basis_cents: number; pending_deducted_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const button = 'whitespace-nowrap min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
@@ -291,10 +291,11 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
               {review.coverage ? <p className="text-sm text-slate-600">Available funding {money(review.limit_cents)} · Coverage ceiling {money(review.coverage.possible_cents)}</p> : <div className="rounded-xl bg-slate-50 p-4 text-sm">
                 <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 tabular-nums">
                   <dt>Bank cash</dt><dd>{money(review.cash_basis_cents)}</dd>
+                  {review.pending_deducted_cents > 0 && <><dt>Pending debit reserve</dt><dd>−{money(review.pending_deducted_cents)}</dd></>}
                   <dt>Protected reserve</dt><dd>−{money(review.reserve_cents)}</dd>
                   {review.reserved_draft_cents > 0 && <><dt>Unfinished transfers</dt><dd>−{money(review.reserved_draft_cents)}</dd></>}
                   <dt className="font-semibold">Payment limit</dt><dd className="font-semibold">{money(review.limit_cents)}</dd>
-                </dl><p className="mt-3 text-xs text-slate-500">Pending debits aren’t deducted again from bank cash.</p>
+                </dl><p className="mt-3 text-xs text-slate-500">Pending debit reserves exclude holds already reflected in bank cash.</p>
               </div>}
               {review.coverage && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={coverageConfirmed} onChange={e => setCoverageConfirmed(e.target.checked)} className="mt-1" />I checked the bank balance and pending debits and approve this coverage amount.</label>}
               {!review.coverage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>}
