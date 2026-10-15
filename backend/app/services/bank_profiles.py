@@ -104,7 +104,10 @@ def sync_profile(db, profile):
                 ingest(db, profile, a, visibility['charge_details'].get(a.id, []))
             a.balance = {**a.balance, 'pending_debit_cents': visibility['pending_debit_cents'].get(a.id, 0),
                 'pending_count': visibility['pending_entries'].get(a.id, 0),
-                'transactions_updated_at': visibility.get('last_successful_update')}
+                'transactions_updated_at': visibility.get('last_successful_update'),
+                'recent_debits': sorted([{k: e.get(k) for k in ('description', 'date', 'amount_cents', 'pending')}
+                    for e in visibility.get('charge_details', {}).get(a.id, [])],
+                    key=lambda e: (bool(e['pending']), e['date'] or ''), reverse=True)[:30]}
         profile.status, profile.last_error = 'synced', None
         profile.last_checked_at = datetime.now(timezone.utc)
     except plaid_bank.PlaidBankError as exc:
@@ -147,7 +150,11 @@ def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
     if available is None or (source.kind == 'checking' and (current is None or pending is None)):
         raise HTTPException(409, 'Source balance or transaction data is unavailable. Refresh bank data.')
     account = owned(db, BankAccountIdentity, source.account_id, profile.tenant_id)
-    cap = available if source.kind == 'credit' else min(current, available, current - pending) - account.reserve_cents
+    # /accounts/balance/get supplies bank-adjusted available cash. The transaction
+    # feed can lag behind it; subtracting that feed's pending total again can
+    # reserve a debit already reflected in the balance (or already posted).
+    # Keep the posted-balance ceiling so pending credits cannot increase capacity.
+    cap = available if source.kind == 'credit' else min(current, available) - account.reserve_cents
     queued, incoming = 0, 0
     for draft in db.query(BankTransferDraft).filter_by(tenant_id=profile.tenant_id).filter(BankTransferDraft.status.notin_(['cancelled', 'bank_history_matched'])):
         if draft.id == exclude_draft:
@@ -166,6 +173,8 @@ def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
         cap = min(cap, owed - incoming)
     return {'limit_cents': max(0, cap), 'reserved_draft_cents': queued,
         'reserve_cents': account.reserve_cents, 'pending_debit_cents': pending,
+        'cash_basis_cents': available if source.kind == 'credit' else min(current, available),
+        'pending_deducted_cents': 0,
         'profile_name': profile.name, 'profile_id': profile.id,
         'from_last4': source.last4, 'to_last4': destination.last4,
         'source_name': source.name, 'destination_name': destination.name,
