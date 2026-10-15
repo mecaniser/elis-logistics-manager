@@ -85,8 +85,8 @@ def test_review_draft_preparation_and_session_binding(setup, db):
     response = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers())
     assert response.status_code == 200, response.text
     review = response.json()
-    assert review['limit_cents'] == 100000
-    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 100001})
+    assert review['limit_cents'] == 90000
+    response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 90001})
     assert response.status_code == 409
     response = client.post(f"/api/bank-monitor/profiles/reviews/{review['id']}/draft", headers=headers(), json={'amount_cents': 50000})
     assert response.status_code == 200, response.text
@@ -108,7 +108,7 @@ def test_shared_account_reserves_across_profiles_and_legacy_drafts(setup, db):
         from_last4='3304', to_last4='2829', memo='Rpy old transfer', status='prepared_awaiting_submission', created_at=datetime.now(timezone.utc)))
     db.commit()
     response = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers())
-    assert response.json()['limit_cents'] == 75000
+    assert response.json()['limit_cents'] == 65000
     assert response.json()['reserved_draft_cents'] == 20000
 
 
@@ -442,7 +442,7 @@ def test_equipment_draft_requires_link_and_preserves_cash_limit(setup, db, finan
     url = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
     assert client.post(url, headers=headers(), json={'amount_cents':76646, 'equipment_asset_id':asset.id}).status_code == 409
     client.put(f'/api/bank-monitor/profiles/equipment/{asset.id}/account', headers=headers(), json={'account_id':route['destination_id']})
-    assert client.post(url, headers=headers(), json={'amount_cents':100001, 'equipment_asset_id':asset.id}).status_code == 409
+    assert client.post(url, headers=headers(), json={'amount_cents':90001, 'equipment_asset_id':asset.id}).status_code == 409
     assert db.query(BankTransferDraft).count() == 0
 
 
@@ -892,13 +892,17 @@ def test_profile_actions_reject_other_tenants(setup, db, monkeypatch, operation)
     assert client.post(f'/api/bank-monitor/profiles/{profile.id}/{operation}', headers=headers(), json={'confirmed': True}).status_code == 404
 
 
-@pytest.mark.parametrize('current,available,pending,expected', [
-    (77730, 77730, 201905, 76730),  # Transaction feed lags a fresh bank balance.
-    (279635, 77730, 201905, 76730),  # Pending holds already reduce available cash.
-    (50000, 77730, 0, 49000),  # Pending credits do not increase posted cash.
-    (-34000, -34000, 63686, 0),
+@pytest.mark.parametrize('current,available,pending,expected,deducted', [
+    (77730, 77730, 201905, 0, 201905),  # Unheld ACH debits still need cash.
+    (1000, 1000, 201905, 0, 201905),  # Only the reserve remains after repayment.
+    (279635, 77730, 201905, 76730, 0),  # Holds already reduce available cash.
+    (300000, 250000, 100000, 199000, 50000),  # Only part is held.
+    (300000, 180000, 100000, 179000, 0),  # Extra holds never add capacity.
+    (77730, 77730, 0, 76730, 0),  # Confirmed posted replacements no longer pending.
+    (50000, 77730, 0, 49000, 0),  # Pending credits do not increase posted cash.
+    (-34000, -34000, 63686, 0, 63686),
 ])
-def test_payment_limit_uses_bank_adjusted_cash_once(setup, db, current, available, pending, expected):
+def test_payment_limit_reserves_unheld_pending_once(setup, db, current, available, pending, expected, deducted):
     client, profile, _ = setup
     route = db.get(BankProfileRoute, resolve_and_route(client, db, profile)['id'])
     source = service.member(db, profile, route.source_id)
@@ -907,7 +911,8 @@ def test_payment_limit_uses_bank_adjusted_cash_once(setup, db, current, availabl
     result = service.transfer_limit(db, route)
     assert result['limit_cents'] == expected
     assert result['pending_debit_cents'] == pending  # Never pretend the debit has posted.
-    assert result['pending_deducted_cents'] == 0
+    assert result['pending_deducted_cents'] == deducted
+    assert result['balance_hold_cents'] == max(0, current - available)
 
 
 def test_posted_debit_refresh_replaces_pending_total_and_keeps_funding_identity(setup, db, monkeypatch):
