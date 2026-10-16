@@ -5,23 +5,54 @@ import re
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.models.bank_monitor import (BankFundingCharge, BankFundingFeed, BankProfileAccount,
-    BankProfileRoute, BankProfileDraft, BankTransferDraft, BankAccountIdentity, BankFundingReconciliation)
+    BankProfileRoute, BankProfileDraft, BankTransferDraft, BankAccountIdentity, BankFundingReconciliation, BankProfile)
 
 UNAPPROVED = {'review_required', 'amount_review_required'}
+
+
+def reader_available(db, feed):
+    owner = db.get(BankProfile, feed.profile_id) if feed else None
+    return bool(owner and owner.tenant_id == feed.tenant_id and owner.status != 'removed')
+
+
+def feed_status(db, tenant_id, account_id):
+    feed = db.get(BankFundingFeed, account_id)
+    if feed and feed.tenant_id == tenant_id and not reader_available(db, feed):
+        return 'reader_removed'
+    if db.query(BankFundingCharge).filter_by(tenant_id=tenant_id, account_id=account_id,
+            status='reader_review_required').first():
+        return 'review_required'
+    return 'ready' if feed else 'not_initialized'
 
 
 def ingest(db, profile, member, entries):
     feed = db.get(BankFundingFeed, member.account_id)
     initial = feed is None
+    replaced = False
     if initial:
         feed = BankFundingFeed(account_id=member.account_id, tenant_id=profile.tenant_id,
             profile_id=profile.id, initialized_at=datetime.now(timezone.utc), observed_at=datetime.now(timezone.utc))
         db.add(feed)
     # Shared logins must not turn the same bank debit into two charge identities.
     if feed.profile_id != profile.id:
-        return
+        if feed.tenant_id != profile.tenant_id or reader_available(db, feed):
+            return
+        # A removed login cannot read again. The caller holds the tenant lock and
+        # this membership was explicitly resolved to the same canonical account.
+        if (profile.status == 'removed' or not member.active or member.profile_id != profile.id
+                or not member.account_id):
+            return
+        replaced = True
+        feed.profile_id = profile.id
+        feed.initialized_at = datetime.now(timezone.utc)
     feed.observed_at = datetime.now(timezone.utc)
     charges = db.query(BankFundingCharge).filter_by(tenant_id=profile.tenant_id, account_id=member.account_id).all()
+    if replaced:
+        # Plaid transaction IDs can change with the login. Never infer continuity
+        # from equal amounts or automatically fund the replacement baseline twice.
+        for charge in charges:
+            if charge.origin == 'plaid' and charge.status in {'eligible', 'removed'}:
+                charge.status = 'reader_review_required'
     normalize_memo = lambda text: re.sub(r'[^a-z0-9]', '', text.casefold())
     own_memos = []
     for draft in db.query(BankTransferDraft).filter_by(tenant_id=profile.tenant_id).filter(BankTransferDraft.status != 'cancelled'):
@@ -45,17 +76,17 @@ def ingest(db, profile, member, entries):
         charge = next((c for c in charges if ids.intersection(c.provider_ids)), None)
         if charge is None:
             # Do not backfill old posted expenses when transaction tracking is first enabled.
-            historical = not entry.get('pending') and (initial or day < (feed.initialized_at.replace(tzinfo=timezone.utc) if feed.initialized_at.tzinfo is None else feed.initialized_at).astimezone(ZoneInfo('America/New_York')).date())
+            historical = not entry.get('pending') and (initial or replaced or day < (feed.initialized_at.replace(tzinfo=timezone.utc) if feed.initialized_at.tzinfo is None else feed.initialized_at).astimezone(ZoneInfo('America/New_York')).date())
             duplicate = any(c.origin == 'manual' and c.amount_cents == entry['amount_cents'] and abs((c.charge_date - day).days) <= 7 for c in charges)
             charge = BankFundingCharge(id=str(uuid4()), tenant_id=profile.tenant_id, account_id=member.account_id,
                 reference=f'plaid:{txid}', provider_ids=list(ids), description=entry['description'],
                 amount_cents=entry['amount_cents'], charge_date=day, pending=entry.get('pending', False), origin='plaid',
-                status='duplicate_review' if duplicate else 'historical' if historical else 'eligible', created_at=datetime.now(timezone.utc))
+                status='duplicate_review' if duplicate else 'historical' if historical or replaced else 'eligible', created_at=datetime.now(timezone.utc))
             db.add(charge); charges.append(charge)
         else:
             # A corrected amount or a return to pending invalidates a prior cash settlement.
             if charge.status == 'reconciled' and (charge.amount_cents != entry['amount_cents'] or entry.get('pending')):
-                charge.status = 'eligible'
+                charge.status = 'reader_review_required' if replaced else 'eligible'
                 # The audit retains the retired draft identity; this changed charge may need a new draft.
                 retired = db.get(BankTransferDraft, charge.draft_id) if charge.draft_id else None
                 if retired and retired.status == 'cancelled':
@@ -150,7 +181,7 @@ def validate_charge(db, draft):
     if charge.origin == 'plaid':
         from app.services.bank_profiles import utc
         feed = db.get(BankFundingFeed, charge.account_id)
-        if not feed or (datetime.now(timezone.utc) - utc(feed.observed_at)).total_seconds() > 300:
+        if not reader_available(db, feed) or (datetime.now(timezone.utc) - utc(feed.observed_at)).total_seconds() > 300:
             raise HTTPException(409, 'Refresh the bank connection that reports this charge before approving it.')
     if charge.status != 'eligible' or charge.amount_cents != draft.amount_cents:
         raise HTTPException(409, 'This charge changed or is no longer in the bank feed. Review the charge before preparing a transfer.')
@@ -181,7 +212,7 @@ def proposals(db, profile, *, allow_stale=False, exclude_draft=None):
             continue
         choices = []
         feed = db.get(BankFundingFeed, charge.account_id) if charge.origin == 'plaid' else None
-        if charge.origin == 'plaid' and (not feed or (not allow_stale and (datetime.now(timezone.utc) - utc(feed.observed_at)).total_seconds() > 300)):
+        if charge.origin == 'plaid' and (not reader_available(db, feed) or (not allow_stale and (datetime.now(timezone.utc) - utc(feed.observed_at)).total_seconds() > 300)):
             continue
         for route_id in prefs['funding_order']:
             route = routes.get(route_id)
@@ -251,7 +282,8 @@ def scheduled_drafts(db, profile):
     from app.models.bank_monitor import BankProfile
     accounts = {a.account_id for a in db.query(BankProfileAccount).filter_by(profile_id=profile.id, active=True) if a.account_id}
     readers = {f.profile_id for f in db.query(BankFundingFeed).filter_by(tenant_id=profile.tenant_id)
-        if f.account_id in accounts and f.profile_id != profile.id and (datetime.now(timezone.utc) - utc(f.observed_at)).total_seconds() > 300}
+        if f.account_id in accounts and f.profile_id != profile.id and reader_available(db, f)
+        and (datetime.now(timezone.utc) - utc(f.observed_at)).total_seconds() > 300}
     for reader in sorted(readers):
         sync_profile(db, owned(db, BankProfile, reader, profile.tenant_id))
     coverage = proposals(db, profile)
@@ -269,4 +301,5 @@ def refresh_charge_feed(db, charge, current_profile):
     from app.services.bank_profiles import sync_profile, owned
     feed = db.get(BankFundingFeed, charge.account_id) if charge and charge.origin == 'plaid' else None
     if feed and feed.profile_id != current_profile.id:
-        sync_profile(db, owned(db, BankProfile, feed.profile_id, current_profile.tenant_id))
+        sync_profile(db, owned(db, BankProfile, feed.profile_id, current_profile.tenant_id)
+            if reader_available(db, feed) else current_profile)

@@ -35,7 +35,7 @@ def sync(db, profile):
 
 
 def view(db, tenant_id):
-    from app.services.bank_charge_funding import proposals
+    from app.services.bank_charge_funding import proposals, feed_status
     result = []
     for p in db.query(BankProfile).filter_by(tenant_id=tenant_id).filter(BankProfile.status != 'removed').order_by(BankProfile.created_at):
         accounts = []
@@ -45,6 +45,7 @@ def view(db, tenant_id):
             canonical = db.get(BankAccountIdentity, a.account_id) if a.account_id else None
             accounts.append({'id': a.id, 'account_id': a.account_id, 'name': a.name, 'last4': a.last4,
                 'kind': a.kind, 'subtype': a.subtype, 'balance': a.balance,
+                'funding_feed_status': feed_status(db, tenant_id, a.account_id) if a.account_id and a.kind == 'checking' else None,
                 'reserve_cents': canonical.reserve_cents if canonical else 0,
                 'overlap_candidates': [{'id': c.id, 'name': c.name, 'last4': c.last4, 'profiles': [p.name for p in db.query(BankProfile).join(BankProfileAccount, BankProfileAccount.profile_id == BankProfile.id).filter(BankProfileAccount.account_id == c.id, BankProfile.tenant_id == tenant_id, BankProfileAccount.active.is_(True))]} for c in candidates]})
         result.append({'id': p.id, 'name': p.name, 'institution_id': p.institution_id,
