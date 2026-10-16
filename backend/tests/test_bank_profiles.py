@@ -1084,3 +1084,76 @@ def test_settlement_identity_reader_and_reappearance_guards(setup, db, monkeypat
     assert fee.status == 'eligible' and fee.draft_id is None
     assert draft.status == 'cancelled'
     assert db.query(BankFundingReconciliation).filter_by(charge_id=fee.id).one().evidence['retired_draft_id'] == draft.id
+
+
+def test_removed_reader_replaced_without_refunding_baseline(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingFeed, BankFundingCharge, BankProfilePreferences
+    from app.services.bank_charge_funding import scheduled_drafts, feed_status, validate_charge
+    from fastapi import HTTPException
+    client, profile, route, entries = charge_setup(setup, db, monkeypatch)
+    previous_reader = setup[2]
+    feed = db.get(BankFundingFeed, route.destination_id)
+    feed.profile_id = previous_reader.id
+    previous_reader.status = 'removed'
+    feed.observed_at = datetime.now(timezone.utc) - timedelta(days=1)
+    old = db.query(BankFundingCharge).filter_by(reference='plaid:charge-0').one()
+    prefs = dict(db.get(BankProfilePreferences, profile.id).settings)
+    db.commit()
+    assert feed_status(db, 1, route.destination_id) == 'reader_removed'
+    assert scheduled_drafts(db, profile) == ([], [])
+    # A replacement Item reports new IDs for the same underlying expenses.
+    entries[:] = [{**e, 'transaction_id': 'replacement-' + e['transaction_id']} for e in entries]
+    entries.append({**entries[0], 'transaction_id': 'baseline-posted', 'pending': False})
+    service.sync_profile(db, profile)
+    db.commit()
+    assert feed.profile_id == profile.id
+    assert old.status == 'reader_review_required'
+    assert db.query(BankFundingCharge).filter_by(reference='plaid:baseline-posted').one().status == 'historical'
+    assert scheduled_drafts(db, profile) == ([], [])
+    assert feed_status(db, 1, route.destination_id) == 'review_required'
+    response = client.get('/api/bank-monitor/profiles', headers=headers())
+    account = next(a for p in response.json()['profiles'] if p['id'] == profile.id
+        for a in p['accounts'] if a['account_id'] == route.destination_id)
+    assert account['funding_feed_status'] == 'review_required'
+    # Posting a baseline pending item must not fund it again.
+    entries[0] = {**entries[0], 'transaction_id': 'posted-replacement',
+        'pending_transaction_id': entries[0]['transaction_id'], 'pending': False}
+    service.sync_profile(db, profile)
+    assert scheduled_drafts(db, profile) == ([], [])
+    entries.append({**entries[1], 'transaction_id': 'genuinely-new', 'amount_cents': 12500})
+    service.sync_profile(db, profile)
+    _, drafts = scheduled_drafts(db, profile)
+    assert len(drafts) == 1
+    draft = db.get(BankTransferDraft, drafts[0])
+    assert draft.status == 'review_required' and draft.amount_cents == 12500
+    assert scheduled_drafts(db, profile)[1] == []
+    assert db.get(BankProfilePreferences, profile.id).settings == prefs
+    assert db.get(BankProfileRoute, route.id).enabled
+    # A fresh timestamp cannot authorize approval through a removed reader.
+    feed.profile_id = previous_reader.id
+    with pytest.raises(HTTPException) as exc:
+        validate_charge(db, draft)
+    assert exc.value.status_code == 409
+    # The current reader's baseline remains explicitly fundable after human confirmation.
+    feed.profile_id = profile.id
+    db.commit()
+    baseline = db.query(BankFundingCharge).filter_by(reference='plaid:replacement-charge-1').one()
+    assert baseline.status == 'historical'
+    payload = {'route_id': route.id, 'charge_id': baseline.id}
+    assert client.post('/api/bank-monitor/profiles/charges/draft', headers=headers(), json=payload).status_code == 409
+    response = client.post('/api/bank-monitor/profiles/charges/draft', headers=headers(),
+        json={**payload, 'confirmed_uncovered': True})
+    assert response.status_code == 200, response.text
+    assert response.json()['draft']['status'] == 'review_required'
+
+
+def test_live_reader_not_replaced_by_shared_login(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingFeed, BankFundingCharge
+    from app.services.bank_charge_funding import ingest
+    _, profile, route, entries = charge_setup(setup, db, monkeypatch)
+    other = setup[2]
+    member = db.query(BankProfileAccount).filter_by(profile_id=other.id, account_id=route.destination_id).one()
+    before = db.query(BankFundingCharge).count()
+    ingest(db, other, member, [{**entries[0], 'transaction_id': 'other-login-id'}])
+    assert db.get(BankFundingFeed, route.destination_id).profile_id == profile.id
+    assert db.query(BankFundingCharge).count() == before
