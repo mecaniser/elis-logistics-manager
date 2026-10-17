@@ -101,7 +101,8 @@ def sync_profile(db, profile):
         from app.services.bank_charge_funding import ingest, settlement_candidates, reconcile_posted
         candidates = []
         for a in memberships:
-            if a.kind == 'checking' and a.account_id and 'charge_details' in visibility:
+            if (a.kind == 'checking' and a.account_id and 'charge_details' in visibility
+                    and visibility.get('transactions_update_status') != 'NOT_READY'):
                 entries = visibility['charge_details'].get(a.id, [])
                 ingest(db, profile, a, entries)
                 if settlement_candidates(db, profile, a, entries):

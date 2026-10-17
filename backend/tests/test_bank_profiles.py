@@ -1157,3 +1157,27 @@ def test_live_reader_not_replaced_by_shared_login(setup, db, monkeypatch):
     ingest(db, other, member, [{**entries[0], 'transaction_id': 'other-login-id'}])
     assert db.get(BankFundingFeed, route.destination_id).profile_id == profile.id
     assert db.query(BankFundingCharge).count() == before
+
+
+def test_unready_feed_cannot_claim_removed_reader_or_retire_charges(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankFundingFeed, BankFundingCharge
+    from app.services.bank_charge_funding import scheduled_drafts
+    _, profile, route, _ = charge_setup(setup, db, monkeypatch)
+    previous_reader = setup[2]
+    feed = db.get(BankFundingFeed, route.destination_id)
+    feed.profile_id = previous_reader.id
+    previous_reader.status = 'removed'
+    before = feed.observed_at
+    ready_visibility = plaid_bank.transaction_visibility
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', lambda token, mapping: {
+        'pending_debit_cents': {k: 0 for k in mapping}, 'pending_entries': {},
+        'charge_details': {k: [] for k in mapping}, 'transactions_update_status': 'NOT_READY'})
+    service.sync_profile(db, profile)
+    db.flush()
+    assert feed.profile_id == previous_reader.id and feed.observed_at == before
+    assert all(c.status == 'eligible' for c in db.query(BankFundingCharge))
+    assert scheduled_drafts(db, profile) == ([], [])
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', ready_visibility)
+    service.sync_profile(db, profile)
+    assert feed.profile_id == profile.id
+    assert scheduled_drafts(db, profile) == ([], [])
