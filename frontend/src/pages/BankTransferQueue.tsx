@@ -1,3 +1,4 @@
+import BankAssistantStatus, { type AssistantConnectionState } from '../components/BankAssistantStatus'
 import BankDialog from '../components/BankDialog'
 import BankActionProgress from '../components/BankActionProgress'
 import { createTransferProfileRefresher } from '../services/bankTransferRefresh'
@@ -121,7 +122,7 @@ const plaidMatchMessage = (match: PlaidMatch) => ({
   unavailable: 'Automatic posting check could not reach Plaid. Renew bank access or retry this check.',
 })[match.status] || 'Plaid could not verify this transfer.'
 
-export default function BankTransferQueue({ onProfileRefreshed, fundingProposals = null, transferFocus, settingsTarget, openSettings, profilesMode = false, tenantId, checking, sources, basis, lastSavedCheck, lastServerCheck, cashPlan, providerLinked, serverOnline, serverChecking, onServerCheck, onReviewRepayment, repaymentEnabled, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { onProfileRefreshed: () => void; fundingProposals?: FundingProposal[] | null; transferFocus?: { id: string; request: number } | null; settingsTarget: HTMLElement | null; openSettings: () => void; profilesMode?: boolean; tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; lastServerCheck: ServerCheck | null; cashPlan: CashPlan | null; providerLinked: boolean; serverOnline: boolean; serverChecking: boolean; onServerCheck: () => void; onReviewRepayment: () => void; repaymentEnabled: boolean; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
+export default function BankTransferQueue({ onProfileRefreshed, fundingProposals = null, transferFocus, settingsTarget, openSettings, openAssistantSettings, profilesMode = false, tenantId, checking, sources, basis, lastSavedCheck, lastServerCheck, cashPlan, providerLinked, serverOnline, serverChecking, onServerCheck, onReviewRepayment, repaymentEnabled, onAccountsDiscovered, onBalanceObserved, onBrowserCheckRecorded }: { onProfileRefreshed: () => void; fundingProposals?: FundingProposal[] | null; transferFocus?: { id: string; request: number } | null; settingsTarget: HTMLElement | null; openSettings: () => void; openAssistantSettings: () => void; profilesMode?: boolean; tenantId: number; checking: Account[]; sources: Account[]; basis: string; lastSavedCheck: SavedCheck | null; lastServerCheck: ServerCheck | null; cashPlan: CashPlan | null; providerLinked: boolean; serverOnline: boolean; serverChecking: boolean; onServerCheck: () => void; onReviewRepayment: () => void; repaymentEnabled: boolean; onAccountsDiscovered: (accounts: Account[]) => Promise<MonitoredAccounts>; onBalanceObserved: (result: BalanceCheck) => void; onBrowserCheckRecorded: () => void }) {
   const [recoveryId, setRecoveryId] = useState<string | null>(null)
   const [notSubmitted, setNotSubmitted] = useState(false)
   const focusHandled = useRef<number | null>(null)
@@ -140,7 +141,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     if (editingAssistant && settingsTarget) { assistantInput.current?.focus(); assistantInput.current?.select() }
   }, [editingAssistant, settingsTarget])
   const [connected, setConnected] = useState(false)
-  const [connectionState, setConnectionState] = useState<'checking' | 'connected' | 'outdated' | 'unavailable' | 'unconfigured'>(extension ? 'checking' : 'unconfigured')
+  const [connectionState, setConnectionState] = useState<AssistantConnectionState>(extension ? 'checking' : 'unconfigured')
   const [detectedVersion, setDetectedVersion] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -526,7 +527,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     }
   }, [tenantId])
   const prepare = async (draft: Draft) => {
-    if (draft.bank_session && !versionAtLeast(detectedVersion, '0.1.24')) { setError('Reload the bank assistant to version 0.1.24 or newer for banking-profile preparation.'); return }
+    if (draft.bank_session && !versionAtLeast(detectedVersion, '0.1.24')) { setError('Reload the bank assistant to version 0.1.24 or newer for banking-profile preparation.'); openAssistantSettings(); return }
     const blockingDraft = drafts.find(item => item.id !== draft.id && item.status === 'prepared_awaiting_submission')
     if (blockingDraft) {
       setError(`Finish checking the ${money(blockingDraft.amount_cents)} transfer before preparing another one.`)
@@ -535,7 +536,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     setBusy(true); setError(''); setNotice(''); setActiveTransferId(draft.id); setOperation({ message: 'Checking current bank balances…', started: Date.now() })
     let claimed = false
     try {
-      if (!await ping()) throw new Error(`Reload bank assistant ${REQUIRED_EXTENSION_VERSION} before preparing a form.`)
+      if (!await ping()) { openAssistantSettings(); throw new Error(`Reload bank assistant ${REQUIRED_EXTENSION_VERSION} before preparing a form.`) }
       const result = await (draft.charge ? bankMonitorApi.prepareChargeDraft(tenantId, draft.id) : bankMonitorApi.prepareDraft(tenantId, draft.id)); claimed = true
       if (!active.current) throw new Error('Business changed. Preparation stopped.')
       setOperation(current => ({ message: 'Waiting for your approval in the extension review tab…', started: current?.started || Date.now() }))
@@ -591,7 +592,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
     }
     void poll()
     try {
-      if (!await ping(true)) { openSettings(); throw new Error('Connect the bank assistant in this Chrome profile to open Truliant for verification. See Monitoring settings for the connection result.') }
+      if (!await ping(true)) { openAssistantSettings(); throw new Error('Connect the bank assistant in this Chrome profile to open Truliant for verification. See Monitoring settings for the connection result.') }
       let result: ExtensionResponse
       try { result = await send<ExtensionResponse>(extension, { type: 'ELIS_VERIFY', draft, interactive: !automatic }) }
       catch (error: unknown) {
@@ -665,6 +666,7 @@ export default function BankTransferQueue({ onProfileRefreshed, fundingProposals
   const connectionText = connected ? 'Chrome assistant ready for detailed bank review' : connectionState === 'checking' ? 'Checking the saved Chrome assistant…' : connectionState === 'outdated' ? `Chrome assistant update required · ${detectedVersion} loaded` : extension ? 'Chrome assistant unavailable for detailed bank review' : 'Chrome assistant needed for detailed bank review'
 
   return <div className="space-y-5">
+    <BankAssistantStatus state={connectionState} version={detectedVersion} hasDrafts={actionableDrafts.length > 0} onSettings={openAssistantSettings} />
     {profilesMode && manualOpen && <ProfileChargeEntry tenantId={tenantId} onClose={() => setManualOpen(false)} onCreated={() => {setManualOpen(false); void reload()}} />}
     {scheduledReview && <ScheduledCoverageReview key={scheduledReview} tenantId={tenantId} draftId={scheduledReview} onClose={() => setScheduledReview(null)} onApproved={() => {setScheduledReview(null); void reload()}} />}
     {!profilesMode && <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-sm ring-1 ring-slate-900/10">

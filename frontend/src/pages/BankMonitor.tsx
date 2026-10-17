@@ -139,6 +139,8 @@ export default function BankMonitor() {
   const [unifiedProfiles, setUnifiedProfiles] = useState(false)
   const [profilesMode, setProfilesMode] = useState<boolean | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const assistantSectionRef = useRef<HTMLDivElement>(null)
   const [assistantSettingsTarget, setAssistantSettingsTarget] = useState<HTMLDivElement | null>(null)
   const [bankConnectionsTarget, setBankConnectionsTarget] = useState<HTMLDivElement | null>(null)
   const [repaymentOpen, setRepaymentOpen] = useState(false)
@@ -155,6 +157,10 @@ export default function BankMonitor() {
   const [profileRefreshVersion, setProfileRefreshVersion] = useState(0)
   const [queueVersion, setQueueVersion] = useState(0)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (settingsOpen && assistantOpen && assistantSettingsTarget) assistantSectionRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [settingsOpen, assistantOpen, assistantSettingsTarget])
 
   useEffect(() => {
     if (!settingsOpen && !repaymentOpen) return
@@ -461,7 +467,7 @@ export default function BankMonitor() {
     {data && loadedTenant === currentTenantId && <div className="space-y-6">
       <main className="min-w-0 space-y-6">
         <BankProfiles settingsControl={<button ref={settingsButtonRef} type="button" aria-expanded={settingsOpen} aria-controls="monitoring-settings-drawer" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-600 px-4 text-sm font-semibold text-slate-200 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><Icon name="settings" />Monitoring settings</button>} refreshVersion={profileRefreshVersion} onCoverage={setFundingProposals} onUnified={setUnifiedProfiles} onOpenTransfer={id => setTransferFocus({ id, request: Date.now() })} settingsTarget={bankConnectionsTarget} openSettings={() => setSettingsOpen(true)} key={`profiles-${currentTenantId}`} tenantId={currentTenantId} onMode={setProfilesMode} onDraft={() => setQueueVersion(value => value + 1)} />
-        <BankTransferQueue onProfileRefreshed={() => setProfileRefreshVersion(value => value + 1)} fundingProposals={fundingProposals?.tenantId === currentTenantId ? fundingProposals.items : null} transferFocus={transferFocus} settingsTarget={assistantSettingsTarget} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode !== false} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode === true} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
+        <BankTransferQueue onProfileRefreshed={() => setProfileRefreshVersion(value => value + 1)} fundingProposals={fundingProposals?.tenantId === currentTenantId ? fundingProposals.items : null} transferFocus={transferFocus} settingsTarget={assistantSettingsTarget} openAssistantSettings={() => { setAssistantOpen(true); setSettingsOpen(true) }} openSettings={() => setSettingsOpen(true)} profilesMode={profilesMode !== false} key={`${currentTenantId}-${queueVersion}`} tenantId={currentTenantId} checking={rules.checking} sources={rules.sources} basis={rules.basis} lastSavedCheck={data.browser_check} lastServerCheck={providerResult?.observed_at && providerAccounts && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? { observed_at: providerResult.observed_at, accounts: providerAccounts } : null} cashPlan={providerResult?.cash_plan && ['verified', 'balance_only', 'provider_pending_unverified'].includes(providerStatus || '') ? providerResult.cash_plan : null} providerLinked={data.provider_connection.linked || profilesMode === true} serverOnline={workerOnline} serverChecking={connectionPending || verifyingWorker} onServerCheck={() => void verifyWorkerConnection()} onReviewRepayment={openRepayment} repaymentEnabled={savedRules.repayment.enabled} onAccountsDiscovered={importAccounts} onBalanceObserved={setLatestBankRead} onBrowserCheckRecorded={() => {
           if (!currentTenantId) return
           const tenantId = currentTenantId
           void bankMonitorApi.get(tenantId).then(response => { if (tenantRef.current === tenantId) setData(response.data) })
@@ -511,7 +517,7 @@ export default function BankMonitor() {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-4 p-5 sm:p-6">
             <div ref={setBankConnectionsTarget} />
-            <details className="rounded-xl border border-slate-200"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-900">Bank assistant <span className="mt-1 block text-xs font-normal text-slate-500">Connect or troubleshoot Chrome form preparation and history checks.</span></summary><div ref={setAssistantSettingsTarget} className="space-y-3 border-t border-slate-200 p-3" /></details>
+            <div ref={assistantSectionRef} className="rounded-xl border border-slate-200"><button type="button" aria-expanded={assistantOpen} aria-controls="bank-assistant-settings" onClick={() => setAssistantOpen(value => !value)} className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-4 text-left text-sm font-semibold text-slate-900"><span>Truliant form assistant</span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`h-4 w-4 shrink-0 transition-transform ${assistantOpen ? 'rotate-90' : ''}`}><path d="m9 18 6-6-6-6" /></svg></button><div id="bank-assistant-settings" hidden={!assistantOpen} ref={setAssistantSettingsTarget} className="space-y-3 border-t border-slate-200 p-3" /></div>
             <details className="rounded-xl border border-slate-200"><summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-slate-900">Payment accounts <span className="mt-1 block text-xs font-normal text-slate-500">Payment sources used for repairs and expense tracking.</span></summary><PaymentAccounts key={`payment-accounts-${currentTenantId}`} /></details>
           <form onSubmit={save} className="space-y-4">
             <h3 className="font-semibold text-slate-950">Scheduled monitoring</h3>
