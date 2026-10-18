@@ -1181,3 +1181,18 @@ def test_unready_feed_cannot_claim_removed_reader_or_retire_charges(setup, db, m
     service.sync_profile(db, profile)
     assert feed.profile_id == profile.id
     assert scheduled_drafts(db, profile) == ([], [])
+
+
+def test_funding_blocker_distinguishes_missing_selection_from_capacity(setup, db, monkeypatch):
+    from app.models.bank_monitor import BankProfilePreferences
+    from app.services.bank_charge_funding import proposals
+    _, profile, route, _ = charge_setup(setup, db, monkeypatch)
+    prefs = db.get(BankProfilePreferences, profile.id)
+    saved = dict(prefs.settings)
+    prefs.settings = {**saved, 'funding_order': []}
+    assert {p['funding_blocker'] for p in proposals(db, profile)} == {'source_not_selected'}
+    prefs.settings = saved
+    assert all(p['funding_blocker'] is None for p in proposals(db, profile))
+    source = db.query(BankProfileAccount).filter_by(profile_id=profile.id, account_id=route.source_id).one()
+    source.balance = {**source.balance, 'available_cents': 1}
+    assert {p['funding_blocker'] for p in proposals(db, profile)} == {'insufficient_capacity'}

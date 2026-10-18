@@ -14,7 +14,7 @@ import { centsFromMoneyInput } from '../components/moneyAmount'
 type Account = { funding_feed_status?: string | null; id: string; account_id: string | null; name: string; last4: string; kind: string; subtype: string; reserve_cents: number; balance: { current_cents?: number | null; available_cents?: number | null; pending_debit_cents?: number | null; transactions_updated_at?: string | null; recent_debits?: {description:string; date:string; amount_cents:number; pending:boolean}[]; currency?: string }; overlap_candidates: { id: string; name: string; last4: string; profiles?: string[] }[] }
 type ReviewItem = { id: string; kind: 'funding' | 'repayment'; route_id: string | null; last4: string | null; label: string; message: string }
 type Preferences = { review_items?: ReviewItem[]; migration_pending?: boolean; monitor: boolean; repayment: boolean; funding_order: string[]; repayment_order: string[]; review_required: string[]; last_evaluation?: { status: string; summary?: string; observed_at?: string } }
-type Coverage = { charge?: {id:string; description:string; date:string; pending:boolean}; account_id: string; name: string; last4: string; status: string; minimum_cents?: number; possible_cents?: number; pending_debit_cents?: number | null; pending_review_required?: boolean; observed_at?: string; uncovered_cents?: number; routes: { route_id: string; source_name: string; source_last4: string; amount_cents: number; limit_cents: number }[] }
+type Coverage = { funding_blocker?: string | null; charge?: {id:string; description:string; date:string; pending:boolean}; account_id: string; name: string; last4: string; status: string; minimum_cents?: number; possible_cents?: number; pending_debit_cents?: number | null; pending_review_required?: boolean; observed_at?: string; uncovered_cents?: number; routes: { route_id: string; source_name: string; source_last4: string; amount_cents: number; limit_cents: number }[] }
 type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; name: string; institution_id: string; status: string; last_error: string | null; last_checked_at: string | null; accounts: Account[] }
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string; equipment?: {asset_id:number;name:string} }
@@ -64,8 +64,9 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
     const charges = new Map<string, FundingProposal>()
     for (const profile of value.profiles) for (const coverage of profile.coverage || []) {
       if (!coverage.charge) continue
-      const item = charges.get(coverage.charge.id) || { charge: coverage.charge, accountName: coverage.name, last4: coverage.last4, amount: coverage.minimum_cents, routes: [] }
+      const item = charges.get(coverage.charge.id) || { charge: coverage.charge, accountName: coverage.name, last4: coverage.last4, amount: coverage.minimum_cents, blockers: [], routes: [] }
       for (const route of coverage.routes) if (!item.routes.some(r => r.route_id === route.route_id)) item.routes.push({ ...route, profileName: profile.name })
+      if (coverage.funding_blocker && !item.blockers.includes(coverage.funding_blocker)) item.blockers.push(coverage.funding_blocker)
       charges.set(coverage.charge.id, item)
     }
     onCoverage({ tenantId, items: [...charges.values()] }); onUnified(Boolean(value.unified)); setLoading(false); onMode(value.profiles.length > 1 || value.routes.length > 0) } }
@@ -236,7 +237,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
 
       {active && <>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-300">{active.status === 'synced' ? 'Synced' : active.status.replace(/_/g, ' ')}{active.last_checked_at && ` · Last successful read ${new Date(active.last_checked_at).toLocaleString()}`}</p></div>
-        {active.preferences.monitor && !active.preferences.funding_order.length && <div role="status" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-100"><span>Automatic funding needs a selected source.</span><button type="button" className="min-h-11 whitespace-nowrap font-semibold underline" onClick={() => { setSettingsProfile(active.id); openSettings() }}>Choose funding priority</button></div>}
+        {active.preferences.monitor && !active.preferences.funding_order.length && <div role="status" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-100"><span>Automatic drafts: no funding source selected.</span><button type="button" className="min-h-11 whitespace-nowrap font-semibold underline" onClick={() => { setSettingsProfile(active.id); openSettings() }}>Set up automatic drafts</button></div>}
         {active.last_error && <p role="status" className="mt-3 text-sm text-amber-200">{active.last_error.replace(/_/g, ' ')}. Previously read balances may be stale.</p>}
         {[{ key: 'checking', label: 'Checking accounts' }, { key: 'line', label: 'Credit lines' }, { key: 'card', label: 'Credit cards' }].map(group => {
           const accounts = active.accounts.filter(a => (a.kind === 'checking' ? 'checking' : a.subtype === 'credit card' ? 'card' : 'line') === group.key)
@@ -378,12 +379,20 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
   const [value, setValue] = useState(profile.preferences)
   const [removed, setRemoved] = useState<string[]>([])
   const issues = value.review_items || []
+  const dirty = JSON.stringify(value) !== JSON.stringify(profile.preferences) || removed.length > 0 || Boolean(value.migration_pending)
   const pairs = new Map<string, Route[]>()
   for (const route of routes) {
     const key = [route.source_id, route.destination_id].sort().join(':')
     pairs.set(key, [...(pairs.get(key) || []), route])
   }
   return <div className="space-y-3 border-t border-slate-200 pt-3 text-sm">
+    <h3 className="font-semibold text-slate-950">Transfers and automatic drafts</h3>
+    <p className="text-xs text-slate-600">Allow a route, then choose whether ELIS creates drafts for it. You approve preparation and submit in Truliant.</p>
+    <div className="space-y-2 border-b border-slate-200 pb-3">
+      <label className="flex min-h-11 items-center gap-3"><input type="checkbox" disabled={busy} checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} /><span>Run daily balance and funding checks</span></label>
+      <label className="flex min-h-11 items-center gap-3"><input type="checkbox" disabled={busy} checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} /><span>Include repayment checks on Fridays</span></label>
+      {!value.monitor && <p className="text-xs text-amber-800">Daily automatic funding drafts are paused.</p>}
+    </div>
     {[...pairs.entries()].map(([key, pair]) => {
       const accounts = [pair[0].source_id, pair[0].destination_id].map(id => profile.accounts.find(a => a.account_id === id)).sort((a, b) => (a?.kind === 'checking' ? 0 : 1) - (b?.kind === 'checking' ? 0 : 1) || (a?.last4 || '').localeCompare(b?.last4 || ''))
       const twoWay = pair.some(route => route.enabled && route.source_id === accounts[0]?.account_id && route.destination_id === accounts[1]?.account_id) && pair.some(route => route.enabled && route.source_id === accounts[1]?.account_id && route.destination_id === accounts[0]?.account_id)
@@ -393,19 +402,22 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
           const from = profile.accounts.find(a => a.account_id === route.source_id)
           const to = profile.accounts.find(a => a.account_id === route.destination_id)
           const action = operationLabel(from, to)
+          const permissionLabel = to?.kind === 'credit' ? `Allow payments to ${to.subtype === 'credit card' ? 'credit card' : 'credit line'}` : from?.kind === 'credit' ? 'Allow draws to checking' : `Allow transfers to checking ••${to?.last4 || 'unknown'}`
           const kind = from?.kind === 'credit' && to?.kind === 'checking' ? 'funding' : from?.kind === 'checking' && to?.kind === 'credit' ? 'repayment' : null
           const orderKey = kind === 'funding' ? 'funding_order' : 'repayment_order'
           const index = value[orderKey].indexOf(route.id)
           return <div key={route.id} className="border-t border-slate-100 py-2">
-            <div className="flex items-center justify-between gap-3"><span>{action}</span><button type="button" role="switch" aria-checked={route.enabled} aria-label={`${action}: ${from?.last4} to ${to?.last4}`} disabled={busy} onClick={() => void toggle(route)} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 ${route.enabled ? 'bg-blue-600' : 'bg-slate-300'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${route.enabled ? 'left-0.5 translate-x-5' : 'left-0.5'}`} /></button></div>
-            {kind && <details className="mt-1 text-xs text-slate-600"><summary className="cursor-pointer py-1">{kind === 'funding' ? 'Funding' : 'Repayment'} checks{index >= 0 ? ` · Priority ${index + 1}` : ' · Not included'}</summary><div className="flex flex-wrap items-center gap-2 py-2"><label className="flex items-center gap-2"><input type="checkbox" checked={index >= 0} disabled={busy || (!route.enabled && index < 0)} onChange={e => setValue({ ...value, [orderKey]: e.target.checked ? [...value[orderKey], route.id] : value[orderKey].filter(id => id !== route.id) })} />Include this operation</label>{index >= 0 && <button type="button" disabled={busy || index === 0} aria-label={`Move ${action} from ${from?.last4} priority up`} className="min-h-9 px-2 font-semibold text-blue-700 disabled:opacity-40" onClick={() => { const order = [...value[orderKey]]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; setValue({ ...value, [orderKey]: order }) }}>Move up</button>}</div></details>}
+            <div className="flex items-center justify-between gap-3"><span className="font-medium">{permissionLabel}<span className="mt-1 block text-xs font-normal text-slate-500">{route.enabled ? 'Allowed · saved' : 'Not allowed · saved'}</span></span><button type="button" role="switch" aria-checked={route.enabled} aria-label={`${permissionLabel}: ${from?.last4} to ${to?.last4}`} disabled={busy} onClick={() => void toggle(route)} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50 ${route.enabled ? 'bg-blue-600' : 'bg-slate-300'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${route.enabled ? 'left-0.5 translate-x-5' : 'left-0.5'}`} /></button></div>
+            {kind && <div className="mt-3 space-y-2 border-t border-slate-100 pt-2">
+              <label className="flex min-h-11 items-start gap-3 py-2"><input type="checkbox" className="mt-1" checked={index >= 0} disabled={busy || (!route.enabled && index < 0)} onChange={e => setValue({ ...value, [orderKey]: e.target.checked ? [...value[orderKey], route.id] : value[orderKey].filter(id => id !== route.id) })} /><span><span className="block font-medium">{kind === 'funding' ? `Create funding drafts from ••${from?.last4}` : `Include payments to ••${to?.last4} in Friday checks`}</span><span className="mt-1 block text-xs text-slate-600">{!route.enabled ? 'Allow this transfer above first.' : index < 0 ? 'Manual transfers only.' : kind === 'funding' ? `Creates drafts for checking ••${to?.last4} when a whole charge needs coverage.` : 'Review possible repayments from this checking account.'}</span></span></label>
+              {index >= 0 && <div className="flex flex-wrap items-center justify-between gap-2 pl-6"><span className="text-xs font-medium text-blue-800">Source priority {index + 1}{kind === 'funding' && !value.monitor ? ' · daily checks paused' : kind === 'repayment' && !value.repayment ? ' · Friday checks off' : ''}</span><button type="button" disabled={busy || index === 0} aria-label={`Move ${action} from ${from?.last4} priority up`} className="min-h-11 whitespace-nowrap px-2 text-xs font-semibold text-blue-700 disabled:opacity-40" onClick={() => { const order = [...value[orderKey]]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; setValue({ ...value, [orderKey]: order }) }}>Use earlier</button></div>}
+            </div>}
+
           </div>
         })}
       </section>
     })}
-    <p className="text-xs text-slate-500">Transfer switches save as you change them. Use Save changes for the check settings.</p>
-    <label className="flex gap-2"><input type="checkbox" checked={value.monitor} onChange={e => setValue({ ...value, monitor: e.target.checked })} />Check these accounts daily</label>
-    <label className="flex gap-2"><input type="checkbox" checked={value.repayment} onChange={e => setValue({ ...value, repayment: e.target.checked })} />Check for possible payments on Fridays</label>
+    <p className="text-xs text-slate-500">“Allow” switches save immediately. Draft and schedule choices apply when you save below.</p>
     {!!issues.length && <div className="space-y-3 rounded-lg bg-amber-50 p-3 text-amber-950"><h4 className="font-semibold">Some saved transfer settings need updating</h4>{issues.map(item => {
       const removedItem = removed.includes(item.id)
       const possible = routes.filter(route => !route.enabled && (item.route_id ? route.id === item.route_id : profile.accounts.some(a => a.account_id === (item.kind === 'funding' ? route.source_id : route.destination_id) && a.last4 === item.last4)))
@@ -418,6 +430,8 @@ function ProfilePreferences({ profile, routes, busy, save, toggle }: { profile: 
     {value.repayment && !value.repayment_order.length && <p className="text-sm text-amber-900">Choose a payment above for Friday checks, or turn Friday payment checks off.</p>}
     <p className="text-xs text-slate-500">ELIS checks balances and money set aside for bills before suggesting a payment. You review and submit transfers in Truliant.</p>
     {value.last_evaluation?.status && <p className="text-xs text-slate-600">Last route check: {value.last_evaluation.status.replace(/_/g, ' ')}</p>}
-    <button type="button" disabled={busy || (value.repayment && !value.repayment_order.length)} className={primary} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>Save changes</button>
+    {value.monitor && !value.funding_order.length && <p role="status" className="text-sm text-amber-800">No automatic funding drafts: select a source above. Manual transfers remain available.</p>}
+    <p role="status" className="text-xs font-medium text-slate-600">{dirty ? 'Unsaved draft and schedule changes' : 'Draft and schedule settings saved'}</p>
+    <button type="button" disabled={busy || !dirty || (value.repayment && !value.repayment_order.length)} className={`${primary} whitespace-nowrap`} onClick={() => void save({ monitor: value.monitor, repayment: value.repayment, funding_order: value.funding_order, repayment_order: value.repayment_order, confirm_migration: true, removed_review_items: removed })}>{busy ? 'Saving…' : 'Save draft settings'}</button>
   </div>
 }

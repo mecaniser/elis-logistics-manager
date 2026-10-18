@@ -1,6 +1,7 @@
 import BankActionProgress from '../components/BankActionProgress'
 export type FundingProposal = {
   charge: {id:string; description:string; date:string; pending:boolean}
+  blockers: string[]
   accountName: string
   last4: string
   amount?: number
@@ -20,7 +21,7 @@ export default function FundingProposals({items, busy, reviewingCharge, reviewin
         <p className="text-lg font-semibold tabular-nums text-slate-950">{money(item.amount)} <span className="text-sm font-medium">· {item.charge.description}</span></p>
         <p className="mt-1 text-sm text-slate-600">{item.accountName} · ••{item.last4}</p>
         <p className="mt-1 text-xs text-slate-500">{item.charge.date} · {item.charge.pending ? 'Pending charge' : 'Posted charge'}</p>
-        {!item.routes.length && <p className="mt-2 text-sm text-amber-800">No enabled source can cover this full charge.</p>}
+        {!item.routes.length && <p className="mt-2 text-sm text-amber-800">{item.blockers.includes('source_not_selected') ? 'No automatic funding source selected. Enable “Create funding drafts” for a credit line in settings.' : item.blockers.includes('account_review_required') ? 'Selected funding accounts need a balance or connection review.' : 'Selected sources cannot cover this full charge after reserves and other drafts.'}</p>}
       </div>
       <div className="space-y-2">{item.routes.map(route => <div key={route.route_id}>
         <button type="button" disabled={busy} aria-busy={(reviewingCharge === item.charge.id && reviewingRoute === route.route_id) && Boolean(operation)} onClick={()=>onReview(item.charge.id, route.route_id)} className={`min-h-11 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 ${reviewingCharge === item.charge.id && reviewingRoute === route.route_id ? 'cursor-wait' : 'disabled:opacity-45'}`}>{(reviewingCharge === item.charge.id && reviewingRoute === route.route_id) && operation ? <BankActionProgress message={operation.message} started={operation.started} now={now} /> : <>Review funding from ••{route.source_last4}</>}</button>

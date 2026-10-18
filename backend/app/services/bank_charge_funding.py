@@ -214,6 +214,8 @@ def proposals(db, profile, *, allow_stale=False, exclude_draft=None):
         feed = db.get(BankFundingFeed, charge.account_id) if charge.origin == 'plaid' else None
         if charge.origin == 'plaid' and (not reader_available(db, feed) or (not allow_stale and (datetime.now(timezone.utc) - utc(feed.observed_at)).total_seconds() > 300)):
             continue
+        selected = [r for r in routes.values() if r.destination_id == charge.account_id and r.id in prefs['funding_order']]
+        blocker = 'source_not_selected' if not selected else 'insufficient_capacity'
         for route_id in prefs['funding_order']:
             route = routes.get(route_id)
             if not route or route.destination_id != charge.account_id:
@@ -228,11 +230,13 @@ def proposals(db, profile, *, allow_stale=False, exclude_draft=None):
                 allocated[route.source_id] = allocated.get(route.source_id, 0) + charge.amount_cents
                 break
             except (HTTPException, KeyError):
+                blocker = 'account_review_required'
                 continue
         result.append({'account_id':charge.account_id, 'last4':target.last4, 'name':target.name,
             'charge':charge_json(db, charge), 'status':'review_required' if choices else 'funding_unavailable',
             'minimum_cents':charge.amount_cents, 'possible_cents':charge.amount_cents, 'pending_review_required':False,
             'uncovered_cents':0 if choices else charge.amount_cents, 'routes':choices,
+            'funding_blocker': None if choices else blocker,
             'observed_at':utc(profile.last_checked_at).isoformat() if profile.last_checked_at else None})
     return result
 
