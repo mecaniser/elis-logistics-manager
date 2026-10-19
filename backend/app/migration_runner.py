@@ -55,6 +55,13 @@ def _add_bank_draft_transaction_details(engine: Engine) -> None:
             connection.execute(text(statement))
 
 
+def _add_bank_draft_reserve_override(engine: Engine) -> None:
+    columns = {column['name'] for column in inspect(engine).get_columns('bank_transfer_drafts')}
+    if 'reserve_override' not in columns:
+        with engine.begin() as connection:
+            connection.execute(text('ALTER TABLE bank_transfer_drafts ADD COLUMN reserve_override BOOLEAN NOT NULL DEFAULT FALSE'))
+
+
 def _add_reconciled_finance(engine: Engine) -> None:
     """Install additive tables and protect existing tables restored without triggers."""
     from app.models.finance import FinanceEvent, FinanceEvidence, FinancePosting, FinanceLine, FinanceReport
@@ -127,6 +134,7 @@ MIGRATIONS: List[Migration] = [
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),
     ("2026_07_30_trailer_resale_plan", _add_trailer_resale_plan),
     ("2026_09_15_bank_draft_transaction_details", _add_bank_draft_transaction_details),
+    ("2026_10_19_bank_draft_reserve_override", _add_bank_draft_reserve_override),
     ("2026_09_24_reconciled_finance", _add_reconciled_finance),
 
 

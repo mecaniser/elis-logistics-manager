@@ -476,6 +476,7 @@ def equipment_account(asset_id: int, data: EquipmentAccountInput, request: Reque
 
 class AmountInput(StrictModel):
     coverage_confirmed: bool = False
+    reserve_override: bool = False
     intent: str = Field(default='payment', pattern=r'^(payment|full_payoff)$')
     amount_cents: int = Field(gt=0, le=100000000, strict=True)
     equipment_asset_id: int | None = Field(default=None, gt=0, strict=True)
@@ -512,7 +513,10 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
         if not coverage or data.amount_cents > min(coverage.get('possible_cents', 0), run.result['coverage'].get('possible_cents', 0)):
             raise HTTPException(409, 'Coverage need changed. Refresh the review before creating a draft.')
     result = profiles.transfer_limit(db, row, exclude_draft=scheduled_id)
-    if data.amount_cents > min(result['limit_cents'], run.result['limit_cents']):
+    if data.reserve_override and (result['kind'] != 'repayment' or scheduled_id or run.result.get('coverage')):
+        raise HTTPException(409, 'Reserve override is available only for a new credit-line payment.')
+    limit_key = 'override_limit_cents' if data.reserve_override else 'limit_cents'
+    if data.amount_cents > min(result[limit_key], run.result.get(limit_key, 0)):
         raise HTTPException(409, 'Amount exceeds the current available allocation. Refresh the review.')
     if scheduled_id:
         from app.services.bank_charge_funding import refresh_unprepared_memo
@@ -537,7 +541,8 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     prefix = 'Rpy' if result['kind'] == 'repayment' else 'Cvr'
     draft = BankTransferDraft(id=draft_id, tenant_id=tenant_id, charge_reference=f'bank-profile-{draft_id}',
         amount_cents=data.amount_cents, from_last4=result['from_last4'], to_last4=result['to_last4'],
-        memo=f'{prefix} ELIS {draft_id[:13]}', status='reviewed', created_at=now)
+        memo=f'{prefix} ELIS {draft_id[:13]}', status='reviewed', created_at=now,
+        reserve_override=data.reserve_override)
     if asset:
         label = ''.join(c for c in (asset.vin or str(asset.id))[-6:] if c.isascii() and c.isalnum()) or str(asset.id)
         draft.memo = f'Rpy Trailer {label} {draft_id[:8]}'
@@ -546,7 +551,8 @@ def create_draft(review_id: int, data: AmountInput, request: Request, tenant_id:
     db.add(draft)
     db.add(BankProfileDraft(draft_id=draft_id, tenant_id=tenant_id, profile_id=row.profile_id,
         route_id=row.id, source_id=row.source_id, destination_id=row.destination_id))
-    run.result = {**run.result, 'coverage_confirmed': data.coverage_confirmed, 'approved_amount_cents': data.amount_cents, 'drafts_created': True, 'draft_ids': [draft_id]}
+    run.result = {**run.result, 'coverage_confirmed': data.coverage_confirmed, 'reserve_override': data.reserve_override,
+        'approved_amount_cents': data.amount_cents, 'drafts_created': True, 'draft_ids': [draft_id]}
     db.commit()
     return {'draft': draft_json(draft), 'transfers_executed': False}
 

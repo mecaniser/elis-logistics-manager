@@ -546,7 +546,7 @@ def draft_json(d):
     created = d.created_at
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
-    result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status', 'bank_state')}
+    result = {k: getattr(d, k) for k in ('id', 'charge_reference', 'amount_cents', 'from_last4', 'to_last4', 'memo', 'status', 'bank_state', 'reserve_override')}
     result['bank_effective_date'] = d.bank_effective_date.isoformat() if d.bank_effective_date else None
     result['bank_date'] = created.astimezone(EASTERN).date().isoformat()
     result['kind'] = 'repayment' if d.memo.startswith('Rpy ') else 'coverage'
@@ -710,7 +710,10 @@ def claim_for_bank_review(draft_id, request, tenant_id, db, *, charge_review=Fal
             if not coverage or draft.amount_cents > coverage.get('possible_cents', 0):
                 db.commit()
                 raise HTTPException(409, 'Coverage need changed. Remove this draft and review the updated account.')
-        if draft.amount_cents > limit['limit_cents']:
+        if draft.reserve_override and (limit['kind'] != 'repayment' or draft.charge_reference != f'bank-profile-{draft.id}'):
+            db.commit()
+            raise HTTPException(409, 'Reserve override is unavailable for this transfer.')
+        if draft.amount_cents > limit['override_limit_cents' if draft.reserve_override else 'limit_cents']:
             db.commit()
             raise HTTPException(409, 'Bank balances or reservations changed. Remove this unprepared draft and review again.')
         refresh_unprepared_memo(db, draft)

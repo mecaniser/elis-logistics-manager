@@ -19,7 +19,7 @@ type Profile = { coverage?: Coverage[]; preferences: Preferences; id: string; na
 type Route = { id: string; profile_id: string; source_id: string; destination_id: string; enabled: boolean }
 type Transfer = { id: string; source_id: string; destination_id: string; profile_id: string; amount_cents: number; status: string; from_last4: string; to_last4: string; kind: string; equipment?: {asset_id:number;name:string} }
 type Data = { unified?: boolean; drafts?: Transfer[]; profiles: Profile[]; routes: Route[]; runs: { profile_id: string; date: string; status: string }[] }
-type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; reserve_cents: number; reserved_draft_cents: number; cash_basis_cents: number; pending_deducted_cents: number; pending_debit_cents: number | null; observed_at: string }
+type Review = { coverage?: Coverage | null; route_id: string; kind: string; id: number; profile_name: string; source_name: string; destination_name: string; from_last4: string; to_last4: string; limit_cents: number; override_limit_cents: number; reserve_cents: number; reserved_draft_cents: number; cash_basis_cents: number; pending_deducted_cents: number; pending_debit_cents: number | null; observed_at: string }
 const money = (value?: number | null) => value == null ? 'Unavailable' : (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const button = 'whitespace-nowrap min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-45'
 const primary = 'min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-45'
@@ -55,6 +55,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
   const equipmentTarget = new URLSearchParams(window.location.search).get('equipment')
   const equipmentOpened = useRef(false)
   const [equipmentRecords, setEquipmentRecords] = useState<number | null>(null)
+  const [reserveOverride, setReserveOverride] = useState(false)
   const alive = useRef(true)
   const resumed = useRef(false)
   const active = data.profiles.find(p => p.id === selected) || data.profiles[0]
@@ -144,7 +145,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
     const from = routeProfile?.accounts.find(a => a.account_id === route.source_id)
     const to = routeProfile?.accounts.find(a => a.account_id === route.destination_id)
     setReviewLoading(`${from?.name || 'Source'} · ••${from?.last4 || ''} → ${to?.name || 'Destination'} · ••${to?.last4 || ''}`)
-    setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setTrailerIntent(payment)
+    setBusy(true); setError(''); setReview(null); setIntent('payment'); setCoverageConfirmed(false); setReserveOverride(false); setTrailerIntent(payment)
     try {
       const response = await bankProfilesApi.request<Review & { existing_draft?: { id: string } }>(tenantId, `/routes/${route.id}/review`, 'post')
       if (!current()) return
@@ -163,7 +164,7 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
     if (!review) return
     setBusy(true); setError('')
     try {
-      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, coverage_confirmed: coverageConfirmed, equipment_asset_id: trailerIntent?.asset_id ?? null })
+      const response = await bankProfilesApi.request<{ draft: { id: string } }>(tenantId, `/reviews/${review.id}/draft`, 'post', { amount_cents: cents, intent, coverage_confirmed: coverageConfirmed, reserve_override: reserveOverride, equipment_asset_id: trailerIntent?.asset_id ?? null })
       if (alive.current) { setReview(null); setAccountId(''); setNotice('Transfer saved. Continue below to prepare the bank form.'); onDraft(); onOpenTransfer(response.data.draft.id) }
     } catch (e) { if (alive.current) setError(errorText(e)) }
     finally { if (alive.current) setBusy(false) }
@@ -318,10 +319,11 @@ export default function BankProfiles({ settingsControl, refreshVersion, tenantId
                   <dt className="font-semibold">Payment limit</dt><dd className="font-semibold">{money(review.limit_cents)}</dd>
                 </dl><p className="mt-3 text-xs text-slate-500">Pending debit reserves exclude holds already reflected in bank cash.</p>
               </div>}
+              {review.kind === 'repayment' && !review.coverage && (review.pending_deducted_cents > 0 || review.reserve_cents > 0) && <label className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><input type="checkbox" checked={reserveOverride} onChange={e => setReserveOverride(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" /><span><strong>Override pending debit and protected reserves</strong><span className="mt-1 block">Override limit {money(review.override_limit_cents)} from bank cash after unfinished transfers. Check current cash and pending payments in Truliant before submitting.</span></span></label>}
               {review.coverage && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={coverageConfirmed} onChange={e => setCoverageConfirmed(e.target.checked)} className="mt-1" />I checked the bank balance and pending debits and approve this coverage amount.</label>}
               {!review.coverage && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Pending transactions may be missing from the feed. Confirm current bank cash before submitting.{review.kind === 'repayment' && ' Interest may be deducted from your payment. Paying the displayed balance does not guarantee a zero balance.'}</p>}
-              {review.kind === 'repayment' && cents > review.limit_cents && <p role="status" className="text-sm font-semibold text-red-800">The selected checking account does not have enough available cash for this amount. Go back to choose another checking account or change the amount.</p>}
-              <button disabled={busy || cents <= 0 || cents > Math.min(review.limit_cents, review.coverage?.possible_cents ?? review.limit_cents) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Creating draft…' : 'Create draft'}</button>
+              {review.kind === 'repayment' && cents > (reserveOverride ? review.override_limit_cents : review.limit_cents) && <p role="status" className="text-sm font-semibold text-red-800">{reserveOverride ? 'This amount exceeds bank cash after unfinished transfers. Choose another checking account or lower the amount.' : 'The selected checking account does not have enough available cash for this amount. Select the override if you have verified the pending payments and bank cash, or change the amount.'}</p>}
+              <button disabled={busy || cents <= 0 || cents > Math.min(reserveOverride && review.kind === 'repayment' && !review.coverage ? review.override_limit_cents : review.limit_cents, review.coverage?.possible_cents ?? Infinity) || Boolean(review.coverage && !coverageConfirmed)} onClick={() => void create()} className={primary}>{busy ? 'Creating draft…' : 'Create draft'}</button>
             </>}
             <p className="text-xs text-slate-500">No money moves here. Required login: {review.profile_name}. Bank data read {new Date(review.observed_at).toLocaleTimeString()}.</p>
           </section>}

@@ -96,6 +96,7 @@ class BankTransferDraft(Base):
     destination_evidence = Column(String(64), unique=True)
     charge_reference = Column(String(120), nullable=False)
     amount_cents = Column(Integer, nullable=False)
+    reserve_override = Column(Boolean, nullable=False, default=False)
     from_last4 = Column(String(4), nullable=False)
     to_last4 = Column(String(4), nullable=False)
     memo = Column(String(34), nullable=False)

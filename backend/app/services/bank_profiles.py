@@ -183,12 +183,15 @@ def transfer_limit(db, route, exclude_draft=None, *, allow_stale=False):
         if (binding.destination_id == destination.account_id if binding else draft.to_last4 == destination.last4):
             incoming += draft.amount_cents
     cap -= queued
+    override_cap = cash_basis - queued
     if destination.kind == 'credit':
         owed = destination.balance.get('current_cents')
         if owed is None:
             raise HTTPException(409, 'The destination balance owed is unavailable.')
         cap = min(cap, owed - incoming)
-    return {'limit_cents': max(0, cap), 'reserved_draft_cents': queued,
+        override_cap = min(override_cap, owed - incoming)
+    return {'limit_cents': max(0, cap), 'override_limit_cents': max(0, override_cap),
+        'reserved_draft_cents': queued,
         'reserve_cents': account.reserve_cents, 'pending_debit_cents': pending,
         'cash_basis_cents': cash_basis, 'balance_hold_cents': balance_hold,
         'pending_deducted_cents': pending_deducted,

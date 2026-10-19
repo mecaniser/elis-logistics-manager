@@ -99,6 +99,42 @@ def test_review_draft_preparation_and_session_binding(setup, db):
     assert response.json()['bank_session']['profile_id'] == p.id
 
 
+def test_repayment_reserve_override_requires_checkbox_and_stays_within_bank_cash(setup, db, monkeypatch):
+    client, profile, _ = setup
+    route = resolve_and_route(client, db, profile)
+    checking = db.query(BankAccountIdentity).filter_by(last4='3304').one()
+    checking.reserve_cents = 1000
+    db.commit()
+    monkeypatch.setattr(plaid_bank, 'transaction_visibility', lambda token, mapping: {
+        'pending_debit_cents': {key: 125000 if value['kind'] == 'checking' else 0 for key, value in mapping.items()},
+        'pending_entries': {key: 1 for key in mapping},
+    })
+    review_response = client.post(f"/api/bank-monitor/profiles/routes/{route['id']}/review", headers=headers())
+    assert review_response.status_code == 200, review_response.text
+    review = review_response.json()
+    assert review['limit_cents'] == 0
+    assert review['override_limit_cents'] == 100000
+    path = f"/api/bank-monitor/profiles/reviews/{review['id']}/draft"
+    assert client.post(path, headers=headers(), json={'amount_cents': 50000}).status_code == 409
+    assert client.post(path, headers=headers(), json={'amount_cents': 100001, 'reserve_override': True}).status_code == 409
+    response = client.post(path, headers=headers(), json={'amount_cents': 50000, 'reserve_override': True})
+    assert response.status_code == 200, response.text
+    assert response.json()['draft']['reserve_override'] is True
+    draft_id = response.json()['draft']['id']
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [
+        row('new-checking', '3304', amount=400), row('new-credit', '8264', 'credit', 2000),
+    ] if token == 'business' else [row('old-checking', '3304'), row('old-credit', '2829', 'credit', 2000)])
+    prepare_path = f'/api/bank-monitor/drafts/{draft_id}/prepare'
+    action_headers = {**headers(), 'X-Bank-Monitor-Action': 'reviewed-transfer'}
+    assert client.post(prepare_path, headers=action_headers).status_code == 409
+    monkeypatch.setattr(plaid_bank, 'real_time_accounts', lambda token: [
+        row('new-checking', '3304'), row('new-credit', '8264', 'credit', 2000),
+    ] if token == 'business' else [row('old-checking', '3304'), row('old-credit', '2829', 'credit', 2000)])
+    prepared = client.post(prepare_path, headers=action_headers)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()['reserve_override'] is True
+
+
 def test_shared_account_reserves_across_profiles_and_legacy_drafts(setup, db):
     client, p, legacy = setup
     route = resolve_and_route(client, db, p)
