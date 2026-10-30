@@ -1,6 +1,7 @@
+import { expenseActivityPeriods, reserveWithdrawalsForPeriod, serviceRepairCostsForPeriod } from '../components/repairs/reserveWithdrawals'
 import { useEventCallback } from '../utils/useEventCallback'
 interface ChartDatum { value: number; dataIndex: number; name: string; seriesName: string; seriesType: string; axisValue: string; marker: string; percent?: number }
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { analyticsApi, reserveApi, trucksApi, Truck, TimeSeriesData, TimeSeriesPeriod, ReserveBalance, DashboardData, OperationalMetrics } from '../services/api'
 import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
@@ -410,59 +411,21 @@ export default function Dashboard() {
     }
   }, [data, vehicleTypeFilter])
 
-  // Initialize selected period to most recent
-  useEffect(() => {
-    if (timeSeriesData && !selectedExpensePeriod) {
-      // For "All Time", don't set a period
-      if (expenseAnalysisView === 'all_time') {
-        return
-      }
-      
-      const periods = expenseAnalysisView === 'weekly' 
-        ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
-        : expenseAnalysisView === 'monthly'
-        ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
-        : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
-      
-      if (periods.length > 0) {
-        const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-        setSelectedExpensePeriod((periods[periods.length - 1] as TimeSeriesPeriod)[periodKey] || '')
-      }
-    }
-  }, [timeSeriesData, expenseAnalysisView, selectedExpensePeriod, vehicleTypeFilter])
+  const activityExpensePeriods = useMemo(() => {
+    const periods = expenseAnalysisView === 'weekly' ? timeSeriesData?.by_week : expenseAnalysisView === 'monthly' ? timeSeriesData?.by_month : timeSeriesData?.by_year
+    return expenseActivityPeriods(expenseAnalysisView, periods, data?.repair_reserve_withdrawals, data?.repairs_by_month)
+  }, [expenseAnalysisView, timeSeriesData, data?.repair_reserve_withdrawals, data?.repairs_by_month])
 
-  // Reset selected period when view or vehicle type filter changes
   useEffect(() => {
-    if (timeSeriesData) {
-      // For "All Time", clear the selected period
-      if (expenseAnalysisView === 'all_time') {
-        setSelectedExpensePeriod('')
-        return
-      }
-      
-      const periods = expenseAnalysisView === 'weekly' 
-        ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
-        : expenseAnalysisView === 'monthly'
-        ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
-        : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
-      
-      if (periods.length > 0) {
-        const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-        const currentPeriod = periods.find(p => (p as TimeSeriesPeriod)[periodKey] === selectedExpensePeriod)
-        if (!currentPeriod) {
-          // Period doesn't exist in new data, reset to most recent
-          setSelectedExpensePeriod((periods[periods.length - 1] as TimeSeriesPeriod)[periodKey] || '')
-        }
-      } else if (selectedExpensePeriod) {
-        // No periods available, clear selection
-        setSelectedExpensePeriod('')
-      }
+    if (expenseAnalysisView === 'all_time') setSelectedExpensePeriod('')
+    else {
+      const key = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+      if (activityExpensePeriods.length && !activityExpensePeriods.some(period => period[key] === selectedExpensePeriod)) {
+        setSelectedExpensePeriod(activityExpensePeriods[activityExpensePeriods.length - 1][key] || '')
+      } else if (!activityExpensePeriods.length && timeSeriesData && selectedExpensePeriod) setSelectedExpensePeriod('')
     }
-    // Collapse settlements info and repair expenses when view or period changes
-    setSettlementsInfoExpanded(false)
-    setRepairExpensesExpanded(false)
-    setCumulativePositionExpanded(false)
-  }, [expenseAnalysisView, timeSeriesData, selectedExpensePeriod, vehicleTypeFilter])
+    setSettlementsInfoExpanded(false); setRepairExpensesExpanded(false); setCumulativePositionExpanded(false)
+  }, [expenseAnalysisView, activityExpensePeriods, selectedExpensePeriod, timeSeriesData])
 
   useEffect(() => {
     if (currentTenant?.business_type !== 'logistics') {
@@ -678,7 +641,7 @@ export default function Dashboard() {
     if (expenseAnalysisView === 'yearly') {
       return repairsByMonth.filter((repair: RepairByMonth) => {
         if (!repair.repair_date) return false
-        const repairYear = new Date(repair.repair_date).getFullYear().toString()
+        const repairYear = repair.repair_date.slice(0, 4)
         return repairYear === pd.year_key
       })
     }
@@ -1022,17 +985,16 @@ export default function Dashboard() {
   }
 
   const selectedPeriodData = getSelectedPeriodData()
-  const availableExpensePeriods = expenseAnalysisView === 'weekly'
-    ? (Array.isArray(timeSeriesData?.by_week) ? timeSeriesData.by_week : [])
-    : expenseAnalysisView === 'monthly'
-    ? (Array.isArray(timeSeriesData?.by_month) ? timeSeriesData.by_month : [])
-    : expenseAnalysisView === 'yearly'
-    ? (Array.isArray(timeSeriesData?.by_year) ? timeSeriesData.by_year : [])
-    : []
+  const availableExpensePeriods = activityExpensePeriods
+  const activityPeriodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
+  const selectedActivityPeriod = availableExpensePeriods.find(period => period[activityPeriodKey] === selectedExpensePeriod) || null
+  const recordedReserveWithdrawals = reserveWithdrawalsForPeriod(data.repair_reserve_withdrawals, expenseAnalysisView, selectedActivityPeriod || selectedPeriodData, selectedTruck)
+  const selectedIncurredRepairCosts = serviceRepairCostsForPeriod(data.repairs_by_month, expenseAnalysisView, selectedActivityPeriod || selectedPeriodData, selectedTruck)
+
   const hasAnyTimeSeriesPeriods = Boolean(
     (timeSeriesData?.by_week?.length || 0) > 0 ||
     (timeSeriesData?.by_month?.length || 0) > 0 ||
-    (timeSeriesData?.by_year?.length || 0) > 0
+    (timeSeriesData?.by_year?.length || 0) > 0 || activityExpensePeriods.length > 0
   )
   const isTimeSeriesPending = !timeSeriesReady
   const getSelectedPeriodsList = () => {
@@ -1334,6 +1296,9 @@ export default function Dashboard() {
     ? sumNetProfitAcrossSeries(businessTimeSeries.trailer) || Number(businessSummary?.trailers?.net_profit) || 0
     : Number((businessTrailerPeriod as TimeSeriesPeriod)?.net_profit) || 0
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
+  const truckResultAvailable = expenseAnalysisView === 'all_time' || businessTruckPeriod !== null
+  const trailerResultAvailable = expenseAnalysisView === 'all_time' || businessTrailerPeriod !== null
+  const businessResultAvailable = truckResultAvailable || trailerResultAvailable
   const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
 
   const renderMetricTrend = (
@@ -1429,13 +1394,13 @@ export default function Dashboard() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Truck and trailer profit combined across all vehicles.
+              Truck and trailer results across all vehicles. Weekly results follow settlement records; monthly/yearly results include incurred repair costs.
             </p>
           </div>
           <div className="text-left lg:text-right">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Total Business Profit</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Reported business result</div>
             <div className={`text-2xl font-bold ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-              ${safeToLocaleString(businessTotalProfit)}
+              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : 'No result recorded'}
             </div>
           </div>
         </div>
@@ -1444,21 +1409,21 @@ export default function Dashboard() {
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{businessPeriodSectionLabel}</div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
-                <div className="text-xs font-medium text-gray-600">Truck Profits</div>
+                <div className="text-xs font-medium text-gray-600">Truck recorded result</div>
                 <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                  ${safeToLocaleString(truckNetProfitTotal)}
+                  {truckResultAvailable ? `$${safeToLocaleString(truckNetProfitTotal)}` : 'No result recorded'}
                 </div>
               </div>
               <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
-                <div className="text-xs font-medium text-gray-600">Trailer Profits</div>
+                <div className="text-xs font-medium text-gray-600">Trailer recorded result</div>
                 <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                  ${safeToLocaleString(trailerNetProfitTotal)}
+                  {trailerResultAvailable ? `$${safeToLocaleString(trailerNetProfitTotal)}` : 'No result recorded'}
                 </div>
               </div>
               <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
                 <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
                 <div className="mt-1 text-xl font-bold text-amber-700">
-                  ${safeToLocaleString(businessReserveDepositsThisPeriod)}
+                  {truckResultAvailable ? `$${safeToLocaleString(businessReserveDepositsThisPeriod)}` : 'No settlement recorded'}
                 </div>
               </div>
             </div>
@@ -1598,7 +1563,7 @@ export default function Dashboard() {
                     disabled={isTimeSeriesPending || availableExpensePeriods.length === 0}
                     className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    {availableExpensePeriods.map((period: TimeSeriesPeriod) => {
+                    {availableExpensePeriods.map((period) => {
                       const key = expenseAnalysisView === 'weekly' ? period.week_key : expenseAnalysisView === 'monthly' ? period.month_key : period.year_key
                       const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
                       return (
@@ -1613,6 +1578,10 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {(!isTimeSeriesPending || expenseAnalysisView === 'all_time') && recordedReserveWithdrawals !== null && recordedReserveWithdrawals !== 0 && <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3" aria-label="Recorded reserve withdrawals">
+            <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold text-gray-800">Recorded reserve withdrawals</span><span className="text-base font-semibold text-blue-800">{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(recordedReserveWithdrawals)}</span></div>
+            <p className="mt-1 text-xs text-gray-600">For the selected period. DBN payments use actual payment dates; legacy withdrawals use recorded dates. Negative values reflect withdrawal reversals. Invoice costs remain separate.</p>
+          </div>}
           {isTimeSeriesPending ? (
             <div className="space-y-4">
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
@@ -1723,7 +1692,7 @@ export default function Dashboard() {
                           </div>
                           <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
                             <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-xs sm:text-sm font-medium text-gray-600">Take-Home Profit</span>
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">{expenseAnalysisView === 'weekly' ? 'Settlement remainder' : 'Net result after repair costs'}</span>
                               <span className={`text-base sm:text-xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 ${safeToLocaleString(netProfitValue)}
                               </span>
@@ -1765,7 +1734,7 @@ export default function Dashboard() {
                           </div>
                           <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
                             <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-xs sm:text-sm font-medium text-gray-600">Settlement Net Profit</span>
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">{expenseAnalysisView === 'weekly' ? 'Settlement result before allocations' : 'Reported result before allocations'}</span>
                               <span className={`text-base sm:text-xl font-bold ${grossSettlementProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 ${safeToLocaleString(grossSettlementProfit)}
                               </span>
@@ -1921,18 +1890,18 @@ export default function Dashboard() {
                 // Filter repairs for the selected period
                 const repairsForPeriod = getRepairsForSelectedPeriod(selectedPeriodData)
                 
-                const reserveFundedRepairs = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
+                const repairExpensesForPeriod = repairsForPeriod.reduce((sum, repair) => sum + (Number(repair.cost) || 0), 0)
                 const takeHomeProfit = netProfitValue
                 return (
                   <div className="mb-6 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                      Settlement Breakdown — {periodLabel}
+                      {expenseAnalysisView === 'weekly' ? 'Settlement breakdown' : 'Net result breakdown'} — {periodLabel}
                     </h3>
 
                     <div className="mb-6 space-y-3">
                       {/* Gross settlement profit before any internal deductions */}
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                        <span className="text-sm font-medium text-gray-700">Gross Settlement Profit</span>
+                        <span className="text-sm font-medium text-gray-700">{expenseAnalysisView === 'weekly' ? 'Gross settlement result' : 'Result before shown allocations'}</span>
                         <span className="text-sm font-semibold text-gray-900">
                           ${safeToLocaleString(settlementNetProfitBeforeDeductions)}
                         </span>
@@ -1971,23 +1940,15 @@ export default function Dashboard() {
                       {/* Take-Home Profit: reconciles to the Settlement Net Profit card */}
                       <div className="pt-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-base font-semibold text-gray-900">Take-Home Profit</span>
+                          <span className="text-base font-semibold text-gray-900">{expenseAnalysisView === 'weekly' ? 'Settlement remainder' : 'Net result after repair costs'}</span>
                           <span className={`text-xl font-bold ${takeHomeProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ${safeToLocaleString(takeHomeProfit)}
                           </span>
                         </div>
-                        <div className="mt-1 text-xs text-gray-500">Reconciles to Settlement Net Profit above.</div>
+                        <div className="mt-1 text-xs text-gray-500">{expenseAnalysisView === 'weekly' ? 'Follows settlement records; incurred repair costs are shown separately.' : 'Includes incurred repair costs. This result does not establish cash paid.'}</div>
                       </div>
 
-                      {/* Reserve-funded repairs: informational — repairs covered by reserve this period */}
-                      {reserveFundedRepairs > 0 && (
-                        <div className="flex justify-between items-center py-2 mt-2 border-t border-gray-100 bg-blue-50 -mx-2 px-2 rounded-sm">
-                          <span className="text-sm text-gray-700">Reserve-Funded Repairs <span className="text-xs text-gray-400">(paid from reserve, not from take-home)</span></span>
-                          <span className="text-sm font-medium text-blue-700">
-                            ${safeToLocaleString(reserveFundedRepairs)}
-                          </span>
-                        </div>
-                      )}
+
                     </div>
 
                     <div className="mb-6 rounded-lg bg-blue-50 border border-blue-200 p-4">
@@ -2045,7 +2006,7 @@ export default function Dashboard() {
                               </span>
                             </div>
                             <div className="text-xs text-gray-500">
-                              Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Repairs paid from reserve appear under withdrawals.
+                              Reserve regime starts 2026-01-01. Current balance = deposits + manual adjustments - withdrawals. Withdrawals include verified DBN payments and legacy recorded withdrawals, net of reversals.
                             </div>
                           </div>
                         )}
@@ -2109,7 +2070,7 @@ export default function Dashboard() {
                                         </p>
                                         {repair.repair_date && (
                                           <p className="text-xs text-gray-500">
-                                            {new Date(repair.repair_date).toLocaleDateString()}
+                                            {new Date(`${repair.repair_date}T12:00:00`).toLocaleDateString()}
                                           </p>
                                         )}
                                       </div>
@@ -2126,7 +2087,7 @@ export default function Dashboard() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm font-semibold text-gray-700">Total Repair Expenses</span>
                                   <span className="text-base font-bold text-red-600">
-                                    ${safeToLocaleString(reserveFundedRepairs)}
+                                    ${safeToLocaleString(repairExpensesForPeriod)}
                                   </span>
                                 </div>
                               </div>
@@ -2553,10 +2514,14 @@ export default function Dashboard() {
               </div>
               )}
             </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              Please select a period from the dropdown above.
+          ) : selectedActivityPeriod ? (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="font-medium text-gray-800">No settlement recorded for this period.</p>
+              <p className="mt-1 text-sm text-gray-600">Settlement revenue, profit and mileage are unavailable. Recorded reserve withdrawals use their own dated ledger entries above.</p>
+              {selectedIncurredRepairCosts !== null && selectedIncurredRepairCosts !== 0 && <p className="mt-3 text-sm text-gray-800">Incurred repair costs: <strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(selectedIncurredRepairCosts)}</strong> · service/invoice date basis</p>}
             </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">Please select a period from the dropdown above.</div>
           )}
         </div>
 

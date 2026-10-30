@@ -234,7 +234,7 @@ def lock_business(db, tenant):
     db.execute(select(Tenant).where(Tenant.id == tenant).with_for_update()).scalar_one()
 
 
-def append_command(db, tenant, command, key):
+def append_command(db, tenant, command, key, *, reviewed_repair_bill_id=None):
     # Serialize writes for a business, including idempotency and closed-period checks.
     lock_business(db, tenant)
     data = command.model_dump(mode='json')
@@ -243,13 +243,32 @@ def append_command(db, tenant, command, key):
         data['payload'].pop('legacy_repair_id', None)
     if data['payload'].get('cash_count_evidence_id') is None:
         data['payload'].pop('cash_count_evidence_id', None)
-    hash_value = digest(data)
+    hash_value = digest(data if reviewed_repair_bill_id is None else
+                        {'command':data,'reviewed_repair_bill_id':reviewed_repair_bill_id})
     prior = db.query(FinanceEvent).filter_by(tenant_id=tenant, key=key).first()
     if prior:
         if prior.digest != hash_value: fail('Idempotency key was already used with different content.', 'IDEMPOTENCY_KEY_REUSED')
         return prior
     p = data['payload']
     k = p['kind']
+    reviewed_link = None
+    if reviewed_repair_bill_id is not None:
+        # This keyword is private to the reviewed source amendment service. It
+        # is not a Command field and cannot be supplied through the public API.
+        from app.models.dieselbridge import DieselBridgeRepairLink
+        reviewed_link = db.query(DieselBridgeRepairLink).filter_by(
+            tenant_id=tenant,bill_event_id=reviewed_repair_bill_id).one_or_none()
+        if not reviewed_link or reviewed_link.state != 'review_required':
+            fail('A scoped source-invoice review is required.','DBN_INVOICE_REVIEW_REQUIRED')
+        if k == 'reversal':
+            original = db.query(FinancePosting).filter_by(tenant_id=tenant,id=p['posting_id']).first()
+            if not original or original.event_id != reviewed_repair_bill_id:
+                fail('The reviewed reversal must identify the original repair bill.','DBN_INVOICE_REVIEW_REQUIRED')
+        elif k != 'bill' or p.get('legacy_repair_id') != reviewed_link.repair_id or p.get('category') != 'repairs':
+            fail('The reviewed replacement must identify the same repair.','DBN_INVOICE_REVIEW_REQUIRED')
+    if k in ('credit_note', 'reversal') and reviewed_link is None:
+        from app.services.dieselbridge_financial import require_managed_claim_review
+        require_managed_claim_review(db, tenant, p)
     when = command.effective_date
     all_events = events(db, tenant)
     closed = {}
@@ -315,7 +334,10 @@ def append_command(db, tenant, command, key):
             repair = db.query(Repair).join(Truck, Repair.truck_id == Truck.id).filter(Repair.id == p['legacy_repair_id'], Truck.tenant_id == tenant).first()
             if not repair: fail('Resource not found.', 'RESOURCE_NOT_FOUND', 404)
             if p.get('asset_id') != repair.truck_id: fail('The obligation must reference the repair asset.')
-            if any(e.kind in ('bill', 'owner_advance') and e.payload.get('legacy_repair_id') == repair.id for e in all_events):
+            previous_repair_claims = [e for e in all_events if e.kind in ('bill','owner_advance') and e.payload.get('legacy_repair_id') == repair.id]
+            if previous_repair_claims and (reviewed_link is None or
+                    reviewed_repair_bill_id not in {e.id for e in previous_repair_claims} or
+                    any(e.id in s['active_event_ids'] for e in previous_repair_claims)):
                 fail('This repair already has an obligation. Review its existing claim or correction.', 'DUPLICATE_REPAIR')
         if D(p['amount']) <= 0: fail('Amount must be greater than zero.')
         if any(e.kind in ('bill', 'owner_advance') and e.payload['source_ref'] == p['source_ref'] for e in all_events): fail('This obligation already exists.', 'DUPLICATE_SOURCE')
@@ -502,6 +524,12 @@ def append_command(db, tenant, command, key):
     db.add(event)
     db.flush()
     post(db, tenant, event, description, lines, reversal_of)
+    if k == 'payment':
+        from app.services.dieselbridge_financial import project_verified_repair_payment
+        project_verified_repair_payment(db, tenant, event)
+    elif k == 'reversal':
+        from app.services.dieselbridge_financial import project_verified_repair_payment_reversal
+        project_verified_repair_payment_reversal(db, tenant, event)
     return event
 
 

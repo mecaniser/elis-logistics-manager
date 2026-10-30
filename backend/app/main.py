@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
+import asyncio
+import re
 from pathlib import Path
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -14,7 +16,10 @@ from app.models.auth_account import AuthAccount
 from app.migration_runner import run_startup_migrations
 from app.routers import trucks, settlements, repairs, analytics, extractor, accounting, tenants, auth, repair_reserves
 from app.routers import finance, dieselbridge
+from app.routers import dieselbridge_webhooks
+from app.models.dieselbridge_events import DieselBridgeFinancialInbox
 from app.models import finance as finance_models
+from app.services.dieselbridge_financial_events import financial_events_worker
 from app.auth_utils import verify_session_token, SESSION_COOKIE_NAME
 from app.routers import bank_monitor, bank_profiles
 
@@ -30,6 +35,35 @@ app = FastAPI(
 
 from app.finance_http import install as install_finance_http
 install_finance_http(app)
+
+
+@app.on_event('startup')
+async def start_dieselbridge_financial_worker():
+    # Financial API enablement alone must never start unattended processing.
+    current = getattr(app.state, 'dbn_financial_worker_task', None)
+    if current is not None and not current.done():
+        return
+    app.state.dbn_financial_worker_task = None
+    app.state.dbn_financial_worker_stop = None
+    flags = ('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED', 'ELIS_DIESELBRIDGE_FINANCIAL_WORKER_ENABLED')
+    if not all(os.getenv(name, '').lower() in {'1', 'true'} for name in flags):
+        return
+    stop = asyncio.Event()
+    app.state.dbn_financial_worker_stop = stop
+    app.state.dbn_financial_worker_task = asyncio.create_task(financial_events_worker(SessionLocal, stop))
+
+
+@app.on_event('shutdown')
+async def stop_dieselbridge_financial_worker():
+    stop = getattr(app.state, 'dbn_financial_worker_stop', None)
+    task = getattr(app.state, 'dbn_financial_worker_task', None)
+    if stop is not None:
+        stop.set()
+    if task is not None:
+        # Let an in-flight transaction finish/rollback before service shutdown.
+        await task
+    app.state.dbn_financial_worker_task = None
+    app.state.dbn_financial_worker_stop = None
 
 # Session-based auth middleware to keep the app private while allowing a custom login page.
 APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME")
@@ -57,6 +91,11 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if self._is_allowed_path(path):
+            return await call_next(request)
+
+        # This exact POST has its own strict HMAC guard. No broader prefix or
+        # other HTTP method bypasses browser-session authentication.
+        if request.method == 'POST' and re.fullmatch(r'/api/v1/accounting/dieselbridge/webhooks/[a-zA-Z0-9_-]{1,60}', path):
             return await call_next(request)
 
         token = request.cookies.get(SESSION_COOKIE_NAME)
@@ -120,6 +159,7 @@ app.include_router(repair_reserves.router, prefix="/api", tags=["repair-reserves
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(extractor.router, prefix="/api/extractor", tags=["extractor"])
 app.include_router(dieselbridge.router, prefix='/api/v1/accounting/dieselbridge', tags=['dieselbridge'])
+app.include_router(dieselbridge_webhooks.router, prefix='/api/v1/accounting/dieselbridge', tags=['dieselbridge-events'])
 app.include_router(finance.router, prefix="/api/v1/accounting", tags=["accounting-v1"])
 app.include_router(accounting.router, prefix="/api/accounting", tags=["accounting"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

@@ -1,4 +1,7 @@
+import type { DieselBridgeFinancialState } from '../../services/api'
+
 export interface RepairReviewRow {
+  dieselbridge_financial?: DieselBridgeFinancialState | null
   dieselbridge?: { id: number; state: string; revision: string; accepted_revision: string; reason: string } | null
   legacy_id: number
   asset_name: string
@@ -29,6 +32,8 @@ export function matchesReview(row: RepairReviewRow | undefined, filter: ReviewFi
   if (!row) return false
   if (filter === 'amount') return row.issues.some(i => ['invoice_amount_difference', 'conflicting_invoice_totals'].includes(i))
   if (filter === 'documents') return row.issues.includes('missing_preserved_evidence')
+  if (filter === 'payment' && row.dieselbridge_financial) return row.dieselbridge_financial.payment_status === 'unconfirmed'
+  if (filter === 'treatment' && row.dieselbridge_financial?.state !== undefined && row.dieselbridge_financial.state !== 'active') return true
   if (filter === 'payment') return row.payment_status === 'unverified' && (!row.confirmation || row.confirmation.stale || row.confirmation.status === 'unknown')
   return row.issues.some(i => ['dieselbridge_correction_required', 'cost_or_recovery_treatment_review', 'incurred_amount_required', 'incurred_date_required'].includes(i))
 }
@@ -49,10 +54,20 @@ export function repairMoney(value: string | null): string {
 }
 
 export function repairMethod(row: RepairReviewRow | undefined): string {
+  if (row?.dieselbridge_financial) {
+    const payments = row.dieselbridge_financial.payments.filter(p => !p.reversed)
+    if (!payments.length) return 'unknown'
+    return payments.every(p => p.payer === 'cash') ? 'cash' : payments.every(p => p.payer === 'card') ? 'credit_card' : 'other'
+  }
   const c = row?.confirmation
   return c && !c.stale && ['paid', 'partial'].includes(c.status) ? c.method : 'unknown'
 }
 export function repairDocumentType(row: RepairReviewRow): string {
+  if (row.dieselbridge_financial) return 'DBN finalized invoice'
   if (row.evidence.some(e => e.extraction_version === 'dieselbridge-invoice-v1')) return 'DieselBridge invoice data'
   return row.evidence.some(e => e.media_type === 'application/pdf') ? 'Invoice PDF' : row.evidence.length ? 'Image / other attachments' : 'No preserved document'
+}
+
+export function eligibleBatchRepairs(rows: RepairReviewRow[]): RepairReviewRow[] {
+  return rows.filter(row => row.batch_eligible && !row.dieselbridge_financial)
 }

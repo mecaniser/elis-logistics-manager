@@ -66,26 +66,18 @@ def display(value):
 
 
 def preview_financial_import(*, tenant_id, shop_id, customer_id, invoices,
-                             reserve_timing=None, reserve_date_basis=None):
+                             reserve_timing='recorded_payments', reserve_date_basis='payment_date'):
     """Build a reviewable proposal; this function cannot save or grant anything.
 
-    Final-invoice allocation and recorded-payment withdrawals are alternatives.
-    Repair occurrence is completion date, otherwise evidenced invoice date. The
-    independent reserve timing/date choices remain explicit guided-review inputs.
+    Full invoice cost is an expense, but reserve movement follows only verified
+    recorded payment amounts and their actual dates. Occurrence is completion
+    date, otherwise an evidenced invoice date; execution remains hard-disabled.
     """
-    if reserve_timing not in (None, 'final_invoice', 'recorded_payments'):
-        raise ValueError('Unknown reserve timing policy.')
-    if reserve_date_basis not in (None, 'repair_date', 'invoice_date', 'payment_date'):
-        raise ValueError('Unknown reserve date policy.')
-    if reserve_timing == 'recorded_payments' and reserve_date_basis not in (None, 'payment_date'):
+    if reserve_timing != 'recorded_payments':
+        raise ValueError('Reserve withdrawals require verified recorded payments only.')
+    if reserve_date_basis != 'payment_date':
         raise ValueError('Recorded payments require actual payment dates.')
-    if reserve_timing == 'final_invoice' and reserve_date_basis == 'payment_date':
-        raise ValueError('Final invoice allocation cannot use an unestablished payment date.')
     global_blockers = []
-    if reserve_timing is None:
-        global_blockers.append('reserve_timing_required')
-    if reserve_date_basis is None:
-        global_blockers.append('reserve_date_basis_required')
     rows = []; identities = set(); invoice_ids = set(); replacement_ids = set()
     facts = []
     for item in sorted(invoices, key=lambda i:i.repair_order_id):
@@ -141,20 +133,11 @@ def preview_financial_import(*, tenant_id, shop_id, customer_id, invoices,
                 payment = {'status':'paid' if paid == total else 'partial' if paid else 'unpaid',
                     'amount_paid':display(paid),'balance_due':display(total-paid)}
             expense_delta = total - old_cost
-            if reserve_timing and reserve_date_basis:
-                if reserve_timing == 'final_invoice':
-                    reserve_date = repair_date if reserve_date_basis == 'repair_date' else item.invoice_date
-                    if reserve_date is None:
-                        blockers.append('reserve_date_evidence_required')
-                    else:
-                        target = total
-                        schedule = [{'date':reserve_date.isoformat(),'amount':display(total),'basis':'final_invoice'}] if total else []
-                elif item.payments_confirmed or not item.payments:
-                    target = paid
-                    schedule = [{'date':p.paid_on.isoformat(),'amount':display(p.amount),'basis':'recorded_payment'}
-                                for p in sorted(item.payments,key=lambda p:(p.paid_on,p.evidence_ref))]
-                if target is not None:
-                    reserve_delta = target - old_reserve
+            if item.payments_confirmed or not item.payments:
+                target = paid
+                schedule = [{'date':p.paid_on.isoformat(),'amount':display(p.amount),'basis':'recorded_payment'}
+                            for p in sorted(item.payments,key=lambda p:(p.paid_on,p.evidence_ref))]
+                reserve_delta = target - old_reserve
         if item.accepted_revision and item.accepted_revision != item.source_revision:
             blockers.append('invoice_change_review_required')
         if item.invoice_state != 'current_finalized':
@@ -167,7 +150,7 @@ def preview_financial_import(*, tenant_id, shop_id, customer_id, invoices,
             'target_reserve_withdrawal':display(target),'reserve_schedule':schedule,
             'replacement_proposals':replacements,'blockers':blockers})
         facts.append(asdict(item))
-    result = {'version':'db094-financial-preview-draft-v1','tenant_id':tenant_id,'shop_id':shop_id,
+    result = {'version':'db094-financial-preview-paid-v1','tenant_id':tenant_id,'shop_id':shop_id,
               'customer_id':customer_id,'reserve_timing':reserve_timing,'reserve_date_basis':reserve_date_basis,
               'blockers':global_blockers,'rows':rows,
               'ready_for_guided_approval':bool(rows) and not global_blockers and not any(r['blockers'] for r in rows),

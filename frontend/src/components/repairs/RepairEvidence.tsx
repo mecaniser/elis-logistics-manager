@@ -1,3 +1,4 @@
+import DieselBridgeFinancialDetails from './DieselBridgeFinancialDetails'
 import { useState } from 'react'
 import RepairPaymentReview from './RepairPaymentReview'
 import { financeApi, financeError } from '../../services/finance'
@@ -16,6 +17,7 @@ export default function RepairEvidence({ row, onSaved }: { row: RepairReviewRow;
     } catch (e) { setError(financeError(e)) }
     finally { setDownloading(null) }
   }
+  if (row.dieselbridge_financial) return <DieselBridgeFinancialDetails repairId={row.legacy_id} state={row.dieselbridge_financial} ownerReimbursement={row.recorded_owner_reimbursement} onSaved={onSaved} />
   return <div className="border-t border-gray-200 mt-3 pt-3 text-sm text-gray-700">
     <p className="font-semibold text-gray-900">Vendor / payee: {row.payee?.name || 'Payee not identified'}</p>
     <p className="mt-1 text-gray-600">{repairDocumentType(row)}{row.payee?.basis === 'invoice_header' ? ' · vendor from invoice' : row.payee?.basis === 'owner_confirmation' ? ' · vendor confirmed by you' : ''}</p>

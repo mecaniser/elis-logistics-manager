@@ -7,6 +7,7 @@ from sqlalchemy import func, and_, or_
 from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.repair import Repair
+from app.models.repair_reserve_ledger import RepairReserveLedger
 from app.models.truck import Truck
 from app.dependencies import get_tenant_id
 from app.services.diesel_price_service import get_historical_diesel_price
@@ -970,6 +971,19 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
             "pm_threshold_days": pm_threshold_days
         })
     
+    # Funding is not the repair expense: unpaid invoices have a full cost but
+    # no withdrawal. Keep actual ledger dates and reversal signs for period UI.
+    scope_ids = trucks_query.with_entities(Truck.id).all()
+    reserve_rows = db.query(RepairReserveLedger).filter(
+        RepairReserveLedger.tenant_id == tenant_id,
+        RepairReserveLedger.truck_id.in_([value[0] for value in scope_ids]),
+        RepairReserveLedger.entry_type.in_(('withdrawal','withdrawal_reversal')),
+    ).order_by(RepairReserveLedger.entry_date,RepairReserveLedger.id).all()
+    reserve_withdrawals = [{'entry_id':entry.id,'truck_id':entry.truck_id,
+        'payment_date':entry.entry_date.isoformat(),
+        'amount':float(entry.amount) * (-1 if entry.entry_type == 'withdrawal_reversal' else 1),
+        'basis':'verified_payment' if entry.source_type in ('dbn_payment','dbn_payment_reverse') else 'legacy_recorded_withdrawal'}
+        for entry in reserve_rows]
     return {
         # Combined totals (for backward compatibility)
         "total_trucks": total_trucks,
@@ -983,6 +997,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         "truck_profits": truck_profits,
         "blocks_by_truck_month": blocks_by_truck_month,
         "repairs_by_month": repairs_by_month,
+        "repair_reserve_withdrawals": reserve_withdrawals,
         "pm_status": pm_status,
         # Separated truck data
         "trucks": {
@@ -1590,6 +1605,33 @@ def _get_time_series_impl(
             "settlement_types": sorted(week_data["settlement_types"])
         })
     
+    # Add repairs to yearly/monthly data and subtract from net profit
+    repairs_query = db.query(Repair).join(Truck).filter(Truck.tenant_id == tenant_id)
+    if truck_id is not None:
+        repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
+    elif vehicle_type:
+        # Filter repairs by vehicle type when no specific truck_id is provided
+        vt = vehicle_type.lower()
+        if vt in ["truck", "trailer", "suv"]:
+            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt, Truck.tenant_id == tenant_id).all()]
+            if vehicle_ids:
+                repairs_query = repairs_query.filter(Repair.truck_id.in_(vehicle_ids))
+            else:
+                # No vehicles of this type; return empty results
+                repairs_query = repairs_query.filter(False)
+
+    repairs = repairs_query.all()
+    for repair in repairs:
+        if repair.cost and repair.repair_date:
+            repair_year = repair.repair_date.strftime("%Y")
+            repair_month = repair.repair_date.strftime("%Y-%m")
+            # Incurred costs exist even without a settlement in that period.
+            # Populate before serializing monthly rows, exactly once per repair.
+            for target in (yearly_data[repair_year], monthly_data[repair_month]):
+                target["repairs"] += float(repair.cost)
+                target["net_profit"] -= float(repair.cost)
+                target["trucks"].add(repair.truck_id)
+
     # Format monthly data
     # Filter out future months (only show months up to current month)
     current_date = datetime.now().date()
@@ -1659,6 +1701,7 @@ def _get_time_series_impl(
         by_month.append({
             "month_key": month_key,
             "month_label": month_label,
+            "repairs": round(month_data["repairs"], 2),
             "gross_revenue": round(month_data["gross_revenue"], 2),
             "raw_gross_revenue": round(month_data["raw_gross_revenue"], 2),
             "raw_gross_miles_driven": round(month_data["raw_gross_miles_driven"], 2),
@@ -1688,36 +1731,6 @@ def _get_time_series_impl(
             "settlement_count": len(month_settlements_map.get(month_key, [])),
             "settlements": month_settlements_map.get(month_key, [])  # Include settlement details for debugging
         })
-    
-    # Add repairs to yearly/monthly data and subtract from net profit
-    repairs_query = db.query(Repair).join(Truck).filter(Truck.tenant_id == tenant_id)
-    if truck_id is not None:
-        repairs_query = repairs_query.filter(Repair.truck_id == truck_id)
-    elif vehicle_type:
-        # Filter repairs by vehicle type when no specific truck_id is provided
-        vt = vehicle_type.lower()
-        if vt in ["truck", "trailer", "suv"]:
-            vehicle_ids = [t.id for t in db.query(Truck).filter(Truck.vehicle_type == vt, Truck.tenant_id == tenant_id).all()]
-            if vehicle_ids:
-                repairs_query = repairs_query.filter(Repair.truck_id.in_(vehicle_ids))
-            else:
-                # No vehicles of this type; return empty results
-                repairs_query = repairs_query.filter(False)
-    
-    repairs = repairs_query.all()
-    for repair in repairs:
-        if repair.cost and repair.repair_date:
-            repair_year = repair.repair_date.strftime("%Y")
-            if repair_year in yearly_data:
-                yearly_data[repair_year]["repairs"] += float(repair.cost)
-                # Subtract repairs from net profit to match dashboard calculation
-                yearly_data[repair_year]["net_profit"] -= float(repair.cost)
-            
-            # Also add to monthly if needed (for consistency)
-            repair_month = repair.repair_date.strftime("%Y-%m")
-            if repair_month in monthly_data:
-                monthly_data[repair_month]["repairs"] += float(repair.cost)
-                monthly_data[repair_month]["net_profit"] -= float(repair.cost)
     
     # Format yearly data
     # Filter out future years (only show years up to current year)

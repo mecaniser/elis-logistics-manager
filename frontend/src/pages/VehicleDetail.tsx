@@ -1,8 +1,7 @@
-import DieselBridgeRepairHistory from '../components/repairs/DieselBridgeRepairHistory'
 import TrailerInvestmentForm from '../components/TrailerInvestmentForm'
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { analyticsApi, trucksApi, repairsApi, settlementsApi, reserveApi, Truck, VehicleROI, Repair, Settlement, ReserveBalance } from '../services/api'
 import Toast from '../components/Toast'
@@ -45,6 +44,9 @@ export default function VehicleDetail() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const { id } = useParams<{ id: string }>()
+  const requestScope = `${currentTenant?.id}:${id}`
+  const currentRequestScope = useRef(requestScope)
+  currentRequestScope.current = requestScope
   const navigate = useNavigate()
   const [vehicle, setVehicle] = useState<Truck | null>(null)
   const [roiData, setRoiData] = useState<VehicleROI | null>(null)
@@ -67,10 +69,10 @@ export default function VehicleDetail() {
   })
 
   const loadVehicleData = useEventCallback(async () => {
-    if (!id) return
-    
+    if (!id || !currentTenant?.id) return
+    const requestedScope = requestScope
     try {
-      setLoading(true)
+      setLoading(true); setError(null)
       const vehicleId = parseInt(id)
       const vehicleResponse = await trucksApi.getById(vehicleId)
       const currentVehicle = vehicleResponse.data
@@ -98,6 +100,7 @@ export default function VehicleDetail() {
         }
       }
 
+      if (currentRequestScope.current !== requestedScope) return
       setVehicle(currentVehicle)
       setInvestmentExpanded(currentVehicle.vehicle_type !== 'trailer' && !isMobile)
       setRoiData(roiResponse.data)
@@ -107,14 +110,15 @@ export default function VehicleDetail() {
       setRepairs(repairsResponse.data || [])
       if (currentVehicle.vehicle_type === 'truck') {
         const reserveResponse = await reserveApi.getBalance(vehicleId)
-        setReserveBalance(reserveResponse.data)
+        if (currentRequestScope.current === requestedScope) setReserveBalance(reserveResponse.data)
       }
     } catch (caught: unknown) {
+      if (currentRequestScope.current !== requestedScope) return
       const err = apiError(caught)
       setError(err.response?.data?.detail || err.message || 'Failed to load vehicle data')
       showToast('Failed to load vehicle data', 'error')
     } finally {
-      setLoading(false)
+      if (currentRequestScope.current === requestedScope) setLoading(false)
     }
   })
 
@@ -125,6 +129,7 @@ export default function VehicleDetail() {
       setAttachedTrailer(null)
       setAttachedTrailerRoi(null)
       setSettlements([])
+      setRepairs([])
       setReserveBalance(null)
       loadVehicleData()
     }
@@ -266,7 +271,6 @@ export default function VehicleDetail() {
         </div>
       )}
 
-      {vehicle.vehicle_type === 'truck' && <DieselBridgeRepairHistory key={`history-${currentTenant?.id}-${vehicle.id}`} tenantId={currentTenant?.id} truckId={vehicle.id} manageSync={false} />}
 
       {vehicle.vehicle_type === 'trailer' && <TrailerInvestmentForm key={vehicle.id} vehicle={vehicle} compact />}
       {vehicle.vehicle_type==='trailer'&&!!vehicle.investment_plans?.length&&<button type="button" className="flex w-full justify-between items-center rounded-lg bg-white border p-4 mb-4 text-sm" aria-expanded={legacyRoiExpanded} onClick={()=>setLegacyRoiExpanded(!legacyRoiExpanded)}>Previous earnings calculation<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2" aria-hidden="true" style={{transform:legacyRoiExpanded?'rotate(90deg)':undefined}}><path d="m9 18 6-6-6-6"/></svg></button>}
@@ -833,14 +837,15 @@ export default function VehicleDetail() {
                       {repairs.map((repair) => (
                         <div key={repair.id} className="flex justify-between items-center bg-gray-50 rounded-lg p-3">
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{repair.description}</p>
+                            <p className="text-sm font-medium text-gray-900">{repair.title || repair.description}</p>
                             <p className="text-xs text-gray-500">
-                              {repair.repair_date ? new Date(repair.repair_date).toLocaleDateString() : 'No date'}
+                              {repair.repair_date ? new Date(`${repair.repair_date}T12:00:00`).toLocaleDateString() : 'No date'}
                             </p>
                           </div>
-                          <span className="text-sm font-semibold text-red-600">
-                            ${safeToLocaleString(repair.cost || 0)}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-sm font-semibold text-red-600">${safeToLocaleString(repair.cost || 0)}</span>
+                            <button type="button" className="mt-1 block min-h-11 text-sm text-blue-700 hover:underline" onClick={() => navigate(`/repairs?repair=${repair.id}`)}>Invoice & payment review</button>
+                          </div>
                         </div>
                       ))}
                     </div>

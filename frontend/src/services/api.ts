@@ -248,7 +248,16 @@ export interface ReserveLedgerEntry {
   created_at?: string
 }
 
+export interface RepairReserveWithdrawal {
+  entry_id: number
+  truck_id: number
+  payment_date: string
+  amount: number
+  basis: 'verified_payment' | 'legacy_recorded_withdrawal'
+}
+
 export interface DashboardData {
+  repair_reserve_withdrawals?: RepairReserveWithdrawal[]
   repairs_by_month?: Array<{ repair_id?: number; truck_id: number; month_key: string; month: string; category?: string; cost: number; truck_name?: string; description?: string; repair_date?: string }>
   blocks_by_truck_month?: Array<{ truck_id: number; month_key: string; month: string; blocks: number; block_ids?: (string | {block_id:string; delivery_date?:string})[]; truck_name?:string }>
 
@@ -1159,4 +1168,125 @@ export const dieselBridgeHistoryApi = {
   sync: (tenantId: number, slug: string, dryRun: boolean) => dieselBridgeClient.post<DieselBridgeRepairHistorySync>(`/connections/${encodeURIComponent(slug)}/repair-history/sync`, null, {
     ...dieselBridgeHeaders(tenantId), params: { dry_run: dryRun },
   }),
+}
+
+export interface DieselBridgeFinancialPayment {
+  id: number
+  event_id: string
+  amount: string
+  paid_date: string
+  payer: 'business' | 'owner' | 'card' | 'cash'
+  reversed: boolean
+  reserve_withdrawal_id: number | null
+}
+export interface DieselBridgeFinancialState {
+  link_id: number
+  connection_slug: string
+  repair_order_id: string
+  order_number?: string
+  invoice_id: string
+  invoice_number: string
+  revision: string
+  state: 'active' | 'review_required' | 'access_removed'
+  review_reason: string | null
+  source_status: string
+  invoice_total: string
+  recorded_paid_amount: string
+  recorded_balance_due: string
+  payment_status: 'unconfirmed' | 'partial' | 'paid'
+  payment_history_confirmed?: boolean
+  bill_event_id: string | null
+  payments: DieselBridgeFinancialPayment[]
+  source_pdf_url: string | null
+}
+export interface DieselBridgeFinancialPreviewRow {
+  repair_order_id: string
+  order_number?: string
+  truck_name?: string | null
+  action: 'create' | 'unchanged' | 'review_required' | 'blocked'
+  repair_id: number | null
+  invoice_id: string | null
+  invoice_total: string | null
+  repair_date: string | null
+  category: string | null
+  blockers: string[]
+}
+export interface DieselBridgeFinancialPreview {
+  version: string
+  plan_digest: string
+  source_manifest_digest: string
+  local_state_digest: string
+  source_count: number
+  selected_count: number
+  executable: boolean
+  rows: DieselBridgeFinancialPreviewRow[]
+  blockers: string[]
+}
+export interface DieselBridgeFinancialSync {
+  created: number
+  unchanged: number
+  review_required: number
+  blocked: number
+  operation_id: number | string
+  plan_digest: string
+}
+export interface DieselBridgeVerifiedPayment {
+  expected_revision: string
+  amount: string
+  paid_date: string
+  payer: 'business' | 'owner' | 'card' | 'cash'
+  transaction_id?: string
+  evidence_id?: string
+  owner_payment_confirmed?: boolean
+  note?: string
+}
+export interface DieselBridgePaymentWorkspace {
+  accounts: { id: string; name?: string; account_type: string }[]
+  transactions: { id: string; account_id: string; date: string; amount: string; description?: string; matched: boolean }[]
+}
+export interface DieselBridgePaymentEvidence {
+  id: string
+  filename: string
+  extraction_version?: string
+  supersedes_id?: string | null
+}
+const dbnAccountingClient = axios.create({ baseURL: '/api/v1/accounting', withCredentials: true })
+dbnAccountingClient.interceptors.response.use(response => response, handleAuthFailure)
+export const dieselBridgeFinancialApi = {
+  preview: (tenantId: number, slug: string) => dieselBridgeClient.post<DieselBridgeFinancialPreview>(`/connections/${encodeURIComponent(slug)}/financial-import/preview`, {}, dieselBridgeHeaders(tenantId)),
+  sync: (tenantId: number, slug: string, expectedPlanDigest: string, key: string) => dieselBridgeClient.post<DieselBridgeFinancialSync>(`/connections/${encodeURIComponent(slug)}/financial-import/sync`, { expected_plan_digest: expectedPlanDigest }, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+  state: (tenantId: number, repairId: number) => dieselBridgeClient.get<DieselBridgeFinancialState>(`/repairs/${repairId}/financial-state`, dieselBridgeHeaders(tenantId)),
+  payment: (tenantId: number, repairId: number, body: DieselBridgeVerifiedPayment, key: string) => dieselBridgeClient.post<DieselBridgeFinancialState>(`/repairs/${repairId}/verified-payments`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+  reverse: (tenantId: number, repairId: number, paymentId: number, body: { reversal_date: string; reason: string; expected_revision: string }, key: string) => dieselBridgeClient.post<DieselBridgeFinancialState>(`/repairs/${repairId}/payments/${paymentId}/reverse`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+  pdf: (tenantId: number, repairId: number) => dieselBridgeClient.get<Blob>(`/repairs/${repairId}/source-pdf`, { ...dieselBridgeHeaders(tenantId), responseType: 'blob' }),
+  paymentOptions: (tenantId: number, asOf: string) => dbnAccountingClient.get<DieselBridgePaymentWorkspace>('/workspace', { ...dieselBridgeHeaders(tenantId), params: { as_of: asOf } }),
+  paymentEvidence: async (tenantId: number) => {
+    const items: DieselBridgePaymentEvidence[] = []
+    const seen = new Set<string>()
+    let cursor: string | null = null
+    do {
+      const response: { data: { items: DieselBridgePaymentEvidence[]; next_cursor: string | null } } = await dbnAccountingClient.get('/evidence', { ...dieselBridgeHeaders(tenantId), params: { limit: 500, cursor } })
+      items.push(...response.data.items)
+      cursor = response.data.next_cursor
+      if (cursor && (seen.has(cursor) || seen.size >= 100)) throw new Error('Evidence list could not be completed.')
+      if (cursor) seen.add(cursor)
+    } while (cursor)
+    return items
+  },
+}
+
+export interface DieselBridgeSourceReview {
+  review_digest: string
+  action: 'replace_unpaid_invoice' | 'cancel_unpaid_invoice' | 'no_change' | 'blocked'
+  can_apply: boolean
+  before: { invoice_id: string; invoice_number: string; cost: string; repair_date: string | null; description?: string; category?: string }
+  after: { invoice_id: string; invoice_number: string; cost: string; repair_date: string | null; description?: string; category?: string } | null
+  recorded_paid_amount: string
+  blockers: string[]
+  candidate_pdf_url?: string | null
+}
+export const dieselBridgeSourceReviewApi = {
+  pdf: (tenantId: number, repairId: number) => dieselBridgeClient.get<Blob>(`/repairs/${repairId}/source-review/pdf`, { ...dieselBridgeHeaders(tenantId), responseType: 'blob' }),
+  preview: (tenantId: number, repairId: number, expectedRevision: string) => dieselBridgeClient.post<DieselBridgeSourceReview>(`/repairs/${repairId}/source-review/preview`, { expected_revision: expectedRevision }, dieselBridgeHeaders(tenantId)),
+  apply: (tenantId: number, repairId: number, body: { expected_revision: string; expected_review_digest: string; note: string }, key: string) => dieselBridgeClient.post(`/repairs/${repairId}/source-review/apply`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
 }

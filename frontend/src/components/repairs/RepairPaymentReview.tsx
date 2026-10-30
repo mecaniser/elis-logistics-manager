@@ -2,7 +2,7 @@ import { useState, useId, useEffect, type FormEvent } from 'react'
 import { financeApi, financeError, type PaymentAccount } from '../../services/finance'
 import { accountSecondary } from '../paymentAccountStyles'
 import { PaymentAccountEditor } from '../PaymentAccounts'
-import { repairMoney, type RepairReviewRow } from './repairReview'
+import { eligibleBatchRepairs, repairMoney, type RepairReviewRow } from './repairReview'
 
 export default function RepairPaymentReview({ rows, onSaved }: { rows: RepairReviewRow[]; onSaved: () => void }) {
   const payeeListId = useId()
@@ -78,7 +78,7 @@ export default function RepairPaymentReview({ rows, onSaved }: { rows: RepairRev
 export function RepairBatchReview({rows, onSaved}: {rows: RepairReviewRow[]; onSaved: () => void}) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<number[]>([])
-  const eligible = rows.filter(r => r.batch_eligible)
+  const eligible = eligibleBatchRepairs(rows)
   const chosen = eligible.filter(r => selected.includes(r.legacy_id))
   return <div className="mt-3">
     <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="min-h-11 text-blue-700 underline focus-visible:outline focus-visible:outline-2">Confirm matching invoices together ({eligible.length})</button>

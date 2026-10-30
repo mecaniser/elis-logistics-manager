@@ -14,17 +14,19 @@ def invoice(**changes):
         financial_access='authorized_feed'), **changes)
 
 
-def plan(rows=None, timing='final_invoice'):
+def plan(rows=None, timing='recorded_payments'):
     return preview_financial_import(tenant_id=1, shop_id='shop', customer_id='customer',
         invoices=rows or [invoice()], reserve_timing=timing,
-        reserve_date_basis='payment_date' if timing=='recorded_payments' else 'repair_date' if timing else None)
+        reserve_date_basis='payment_date')
 
 
-def test_pending_reserve_timing_blocks_without_default():
-    result=plan(timing=None)
-    assert not result['ready_for_guided_approval']
-    assert 'reserve_timing_required' in result['blockers']
-    assert result['rows'][0]['reserve_delta'] is None
+def test_paid_only_policy_is_fixed_without_another_timing_decision():
+    result=preview_financial_import(tenant_id=1,shop_id='shop',customer_id='customer',invoices=[invoice()])
+    assert result['ready_for_guided_approval']
+    assert result['blockers']==[]
+    assert result['reserve_timing']=='recorded_payments' and result['reserve_date_basis']=='payment_date'
+    assert result['rows'][0]['expense_delta']=='1000.00'
+    assert result['rows'][0]['reserve_delta']=='0.00'
     assert result['execution_enabled'] is False
 
 
@@ -43,11 +45,10 @@ def test_partial_payment_shows_paid_and_due():
     assert row['reserve_schedule']==[{'date':'2026-05-01','amount':'200.00','basis':'recorded_payment'}]
 
 
-def test_full_invoice_policy_never_adds_partial_payment_again():
-    p=RecordedPayment(amount=D('200.00'),paid_on=date(2026,5,1),evidence_ref='owner')
-    row=plan([invoice(payments=(p,),payments_confirmed=True)])['rows'][0]
-    assert row['reserve_delta']=='1000.00'
-    assert row['reserve_schedule']==[{'date':'2026-04-20','amount':'1000.00','basis':'final_invoice'}]
+@pytest.mark.parametrize('timing',[None,'final_invoice','unknown'])
+def test_any_other_reserve_timing_is_rejected(timing):
+    with pytest.raises(ValueError,match='verified recorded payments'):
+        plan(timing=timing)
 
 
 def test_evidenced_invoice_date_is_fallback_not_creation_date():
@@ -67,7 +68,7 @@ def test_replacement_is_explicit_reversible_and_nets_existing_effects():
     old=LegacyReplacement(repair_id=136,tenant_id=1,asset_id=1,cost=D('150.00'),
         reserve_withdrawn=D('150.00'),journal_ids=(9,),confirmed=True)
     row=plan([invoice(replacements=(old,))])['rows'][0]
-    assert row['expense_delta']=='850.00' and row['reserve_delta']=='850.00'
+    assert row['expense_delta']=='850.00' and row['reserve_delta']=='-150.00'
     assert row['replacement_proposals']==[{'repair_id':136,'action':'archive_and_link',
         'preserve_evidence':True,'withdrawal_reversal':'150.00','journal_ids_for_correction_review':[9]}]
 
@@ -80,7 +81,7 @@ def test_unconfirmed_replacement_or_asset_is_blocked():
 
 
 def test_replay_has_zero_cost_and_reserve_delta_and_stable_digest():
-    source=invoice(existing_cost=D('1000.00'),existing_reserve_withdrawn=D('1000.00'),accepted_revision='v1')
+    source=invoice(existing_cost=D('1000.00'),existing_reserve_withdrawn=D('1000.00'),accepted_revision='v1',payments=(RecordedPayment(D('1000.00'),date(2026,5,1),'verified'),),payments_confirmed=True)
     a=plan([source]);b=plan([source])
     assert a['rows'][0]['expense_delta']=='0.00' and a['rows'][0]['reserve_delta']=='0.00'
     assert a['plan_digest']==b['plan_digest']
@@ -113,11 +114,10 @@ def test_paid_amount_cannot_exceed_invoice_or_omit_evidence():
         with pytest.raises(ValueError):plan([invoice(payments=(p,),payments_confirmed=True)])
 
 
-def test_reserve_date_requires_its_own_explicit_decision():
-    result=preview_financial_import(tenant_id=1,shop_id='shop',customer_id='customer',
-        invoices=[invoice()],reserve_timing='final_invoice',reserve_date_basis=None)
-    assert 'reserve_date_basis_required' in result['blockers']
-    assert result['rows'][0]['reserve_delta'] is None
+def test_missing_payment_date_policy_is_rejected():
+    with pytest.raises(ValueError,match='payment dates'):
+        preview_financial_import(tenant_id=1,shop_id='shop',customer_id='customer',
+            invoices=[invoice()],reserve_date_basis=None)
 
 
 def test_payment_based_reserves_cannot_be_backdated_to_repair_date():

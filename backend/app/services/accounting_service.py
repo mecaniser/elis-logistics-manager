@@ -1095,3 +1095,163 @@ def generate_income_statement(
         "total_expenses": float(total_expenses.quantize(Decimal("0.01"))),
         "net_income": float(net_income.quantize(Decimal("0.01")))
     }
+
+
+def _dieselbridge_journal(db, *, tenant_id, truck_id, entry_date, reference_type, reference_id, description, entries):
+    """Mirror one reconciled economic fact in the legacy book; never commit."""
+    tenant = db.query(Tenant).filter_by(id=tenant_id).one()
+    per_asset = uses_per_asset_accounting(tenant)
+    account_truck = truck_id if per_asset else None
+    accounts = [(get_or_create_account(db, code, name, kind, tenant_id,
+                 truck_id=account_truck, auto_commit=False), Decimal(str(amount)))
+                for code, name, kind, amount in entries]
+    if sum((amount for _, amount in accounts), Decimal('0')) != 0:
+        raise ValueError('DieselBridge journal is not balanced.')
+    previous = db.query(JournalEntry).filter_by(tenant_id=tenant_id,
+        reference_type=reference_type, reference_id=reference_id).first()
+    if previous:
+        actual = sorted((l.account_id, Decimal(l.debit)-Decimal(l.credit), l.truck_id)
+                        for l in db.query(JournalEntryLine).filter_by(journal_entry_id=previous.id))
+        expected = sorted((account.id, amount, truck_id) for account, amount in accounts)
+        if previous.entry_date != entry_date or actual != expected:
+            raise ValueError('Existing DieselBridge journal differs; explicit correction review required.')
+        return previous
+    journal = JournalEntry(tenant_id=tenant_id, truck_id=account_truck,
+        entry_date=entry_date, reference_type=reference_type, reference_id=reference_id,
+        description=description[:500])
+    db.add(journal); db.flush()
+    for account, amount in accounts:
+        db.add(JournalEntryLine(tenant_id=tenant_id, journal_entry_id=journal.id,
+            account_id=account.id, debit=max(amount, Decimal('0')),
+            credit=max(-amount, Decimal('0')), truck_id=truck_id,
+            description=description[:500]))
+    db.flush()
+    return journal
+
+
+def _dieselbridge_asset(db, repair):
+    truck = db.query(Truck).filter_by(id=repair.truck_id).one()
+    tenant = db.query(Tenant).filter_by(id=truck.tenant_id).one()
+    return truck, '6011' if uses_per_asset_accounting(tenant) else '5100'
+
+
+def create_dieselbridge_bill_journal(db, repair, *, source_ref):
+    """Invoice = expense/payable. It establishes no Cash payment."""
+    amount = Decimal(str(repair.cost or 0))
+    if amount <= 0:
+        return None
+    if not repair.repair_date or not source_ref:
+        raise ValueError('An evidenced repair date and source reference are required.')
+    truck, expense_code = _dieselbridge_asset(db, repair)
+    return _dieselbridge_journal(db, tenant_id=truck.tenant_id, truck_id=truck.id,
+        entry_date=repair.repair_date, reference_type='dbn_bill', reference_id=repair.id,
+        description=f'DBN repair invoice: {source_ref}', entries=[
+            (expense_code, 'Maintenance & Repairs', 'Expense', amount),
+            ('2000', 'Accounts Payable', 'Liability', -amount)])
+
+
+def create_dieselbridge_payment_journal(db, repair, *, payment_id, amount, paid_date, payer):
+    """Call only after canonical Finance verifies the actual payment evidence."""
+    amount = Decimal(str(amount))
+    if not amount.is_finite() or amount <= 0 or not paid_date:
+        raise ValueError('A positive verified payment amount and actual date are required.')
+    credit = {'business':('1000','Cash','Asset'), 'cash':('1000','Cash','Asset'),
+              'card':('2105','Credit Card Payable','Liability'),
+              'owner':('2300','Due to Owner','Liability')}.get(payer)
+    if not credit:
+        raise ValueError('Unknown verified payment funding source.')
+    truck, _ = _dieselbridge_asset(db, repair)
+    return _dieselbridge_journal(db, tenant_id=truck.tenant_id, truck_id=truck.id,
+        entry_date=paid_date, reference_type='dbn_payment', reference_id=payment_id,
+        description=f'Verified DBN repair payment {payment_id}', entries=[
+            ('2000','Accounts Payable','Liability',amount), (*credit,-amount)])
+
+
+def reverse_dieselbridge_payment_journal(db, *, payment_id, reversal_date, reason, tenant_id=None):
+    """Append a linked accounting correction; no original entry is deleted."""
+    query = db.query(JournalEntry).filter_by(reference_type='dbn_payment', reference_id=payment_id)
+    if tenant_id is not None:
+        query = query.filter_by(tenant_id=tenant_id)
+    original = query.one_or_none()
+    if not original:
+        raise ValueError('Original verified payment journal not found.')
+    if not reversal_date or reversal_date < original.entry_date or not reason.strip():
+        raise ValueError('A dated reason is required; reversal cannot precede payment.')
+    entries = []; truck_id = None
+    for line in db.query(JournalEntryLine).filter_by(journal_entry_id=original.id):
+        account = db.query(ChartOfAccount).filter_by(id=line.account_id,tenant_id=original.tenant_id).one()
+        truck_id = line.truck_id
+        entries.append((account.code, account.name, account.account_type,
+                        Decimal(line.credit)-Decimal(line.debit)))
+    return _dieselbridge_journal(db, tenant_id=original.tenant_id, truck_id=truck_id,
+        entry_date=reversal_date, reference_type='dbn_payment_reversal', reference_id=payment_id,
+        description=f'Reversal of journal {original.id}: {reason}', entries=entries)
+
+
+def replace_dieselbridge_bill(db, tenant, link, *, amount, effective_date,
+                             evidence_id, description, source_ref, operation_key):
+    """Unpaid, explicitly reviewed source correction across both report books.
+
+    Caller refetches source, verifies the owner's review digest and serializes the
+    tenant. The public Finance command cannot supply the private review keyword.
+    Verified payments must be corrected first; this function never invents a
+    refund/payment or deletes original postings. All work flushes in one caller
+    transaction, so any book/period failure rolls back the entire correction.
+    """
+    import hashlib
+    from app.models.dieselbridge import DieselBridgeRepairLink, DieselBridgeRepairPayment
+    from app.models.finance import FinanceEvent, FinancePosting
+    from app.schemas.finance import Command
+    from app.services import finance as f
+    scoped = db.query(DieselBridgeRepairLink).filter_by(id=link.id,tenant_id=tenant).one_or_none()
+    if not scoped or scoped.state != 'review_required':
+        f.fail('A scoped source-invoice review is required.','DBN_INVOICE_REVIEW_REQUIRED')
+    repair = db.query(Repair).join(Truck).filter(Repair.id==link.repair_id,Truck.tenant_id==tenant).first()
+    if not repair:
+        f.fail('Repair not found.','RESOURCE_NOT_FOUND',404)
+    amount = Decimal(str(amount))
+    if not amount.is_finite() or amount < 0 or amount != amount.quantize(Decimal('0.01')):
+        f.fail('A nonnegative invoice amount in cents is required.','INVALID_AMOUNT',422)
+    if db.query(DieselBridgeRepairPayment).filter_by(tenant_id=tenant,link_id=link.id,reversal_event_id=None).first():
+        f.fail('Review the verified payments before amending this bill.','PAYMENT_CORRECTION_REQUIRED')
+    state = f.state(db,tenant,date.max)
+    old = db.query(FinanceEvent).filter_by(id=link.bill_event_id,tenant_id=tenant,kind='bill').first() if link.bill_event_id else None
+    if old and old.payload.get('legacy_repair_id') != repair.id:
+        f.fail('The accepted bill does not identify this repair.','DBN_INVOICE_REVIEW_REQUIRED')
+    if old and old.id in state['active_event_ids']:
+        if any(e.kind=='payment' and e.payload.get('claim_id')==old.id and e.id in state['active_event_ids'] for e in state['events']):
+            f.fail('Review dependent payments first.','PAYMENT_CORRECTION_REQUIRED')
+        posting = db.query(FinancePosting).filter_by(tenant_id=tenant,event_id=old.id).one()
+        f.append_command(db,tenant,Command(effective_date=old.effective_date,payload={
+            'kind':'reversal','posting_id':posting.id,'reason':'Approved DBN invoice correction: '+description[:300]}),
+            'dbn-review-reverse:'+hashlib.sha256(operation_key.encode()).hexdigest(),
+            reviewed_repair_bill_id=old.id)
+        original = db.query(JournalEntry).filter_by(tenant_id=tenant,reference_type='dbn_bill_amend',reference_id=old.sequence).first()
+        if original is None:
+            original = db.query(JournalEntry).filter_by(tenant_id=tenant,reference_type='dbn_bill',reference_id=repair.id).first()
+        if original is None:
+            f.fail('The matching legacy bill mirror is missing.','ACCOUNTING_RECONCILIATION_REQUIRED')
+        entries = []; asset = None
+        for line in db.query(JournalEntryLine).filter_by(journal_entry_id=original.id):
+            account = db.query(ChartOfAccount).filter_by(id=line.account_id,tenant_id=tenant).one()
+            asset = line.truck_id
+            entries.append((account.code,account.name,account.account_type,Decimal(line.credit)-Decimal(line.debit)))
+        _dieselbridge_journal(db,tenant_id=tenant,truck_id=asset,entry_date=old.effective_date,
+            reference_type='dbn_bill_reversal',reference_id=old.sequence,
+            description='Approved DBN bill reversal '+old.id,entries=entries)
+    if amount == 0:
+        return None
+    source_key = hashlib.sha256((source_ref+'|'+operation_key).encode()).hexdigest()
+    new = f.append_command(db,tenant,Command(effective_date=effective_date,payload={
+        'kind':'bill','legacy_repair_id':repair.id,'evidence_id':evidence_id,
+        'source_ref':'dbn-reviewed:'+source_key,'description':description[:500],
+        'amount':f.money(amount),'asset_id':repair.truck_id,'category':'repairs'}),
+        'dbn-review-new:'+hashlib.sha256(operation_key.encode()).hexdigest(),
+        reviewed_repair_bill_id=old.id if old else None)
+    truck, expense_code = _dieselbridge_asset(db,repair)
+    _dieselbridge_journal(db,tenant_id=tenant,truck_id=truck.id,entry_date=effective_date,
+        reference_type='dbn_bill_amend',reference_id=new.sequence,
+        description='Reviewed DBN repair invoice '+source_ref,entries=[
+            (expense_code,'Maintenance & Repairs','Expense',amount),
+            ('2000','Accounts Payable','Liability',-amount)])
+    return new

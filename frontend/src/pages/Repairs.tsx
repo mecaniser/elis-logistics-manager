@@ -1,9 +1,9 @@
-import DieselBridgeRepairHistory from '../components/repairs/DieselBridgeRepairHistory'
+import { useEventCallback } from '../utils/useEventCallback'
+import DieselBridgeFinancialSync from '../components/repairs/DieselBridgeFinancialSync'
 import { useSearchParams } from 'react-router-dom'
 import { apiError } from '../utils/apiError'
-import DieselBridgeInvoices from '../components/repairs/DieselBridgeInvoices'
 import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
 import RepairEvidence from '../components/repairs/RepairEvidence'
 import { useRepairReview } from '../components/repairs/useRepairReview'
@@ -19,6 +19,8 @@ export default function Repairs() {
   const documentRepair=documentParams.get('repair')
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
+  const currentTenantRef = useRef(currentTenant?.id)
+  currentTenantRef.current = currentTenant?.id
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [payeeFilter, setPayeeFilter] = useState('all')
   const [methodFilter, setMethodFilter] = useState('all')
@@ -73,6 +75,38 @@ export default function Repairs() {
   const [editCustomCategory, setEditCustomCategory] = useState<string>('')
   const [expandedImageRepairs, setExpandedImageRepairs] = useState<Set<number>>(new Set())
 
+  const loadTrucks = useEventCallback(async () => {
+    const requestedTenant = currentTenant?.id
+    if (!requestedTenant) return
+    try {
+      const response = await trucksApi.getAll()
+      if (currentTenantRef.current !== requestedTenant) return
+      setTrucks(Array.isArray(response.data) ? response.data : [])
+    } catch (err) {
+      if (currentTenantRef.current !== requestedTenant) return
+      console.error(err)
+      setTrucks([])
+    }
+  })
+
+  const loadRepairs = useEventCallback(async () => {
+    const requestedTenant = currentTenant?.id
+    if (!requestedTenant) { setLoading(false); return }
+    try {
+      setLoading(true); setError(null)
+      const response = await repairsApi.getAll()
+      if (currentTenantRef.current !== requestedTenant) return
+      setRepairs(Array.isArray(response.data) ? response.data : [])
+    } catch (caught: unknown) {
+      if (currentTenantRef.current !== requestedTenant) return
+      const err = apiError(caught)
+      setError(err.message || 'Failed to load repairs')
+      setRepairs([])
+    } finally {
+      if (currentTenantRef.current === requestedTenant) setLoading(false)
+    }
+  })
+
   useEffect(() => {
     // Reset state when tenant changes
     setRepairs([])
@@ -80,31 +114,7 @@ export default function Repairs() {
     setTrucks([])
     loadTrucks()
     loadRepairs()
-  }, [currentTenant?.id])
-
-  const loadTrucks = async () => {
-    try {
-      const response = await trucksApi.getAll()
-      setTrucks(Array.isArray(response.data) ? response.data : [])
-    } catch (err) {
-      console.error(err)
-      setTrucks([])
-    }
-  }
-
-  const loadRepairs = async () => {
-    try {
-      setLoading(true)
-      const response = await repairsApi.getAll()
-      setRepairs(Array.isArray(response.data) ? response.data : [])
-    } catch (caught: unknown) {
-      const err = apiError(caught)
-      setError(err.message || 'Failed to load repairs')
-      setRepairs([])
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [currentTenant?.id, loadRepairs, loadTrucks])
 
   const showModal = (title: string, message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
     setModalTitle(title)
@@ -408,6 +418,7 @@ export default function Repairs() {
     
     return (
       (row?.payee?.name || '').toLowerCase().includes(searchLower) ||
+      (row?.dieselbridge_financial?.order_number || '').toLowerCase().includes(searchLower) ||
       truckName.includes(searchLower) ||
       title.includes(searchLower) ||
       details.includes(searchLower) ||
@@ -419,8 +430,6 @@ export default function Repairs() {
 
   return (
     <div>
-      <DieselBridgeRepairHistory key={`history-${currentTenant?.id}`} tenantId={currentTenant?.id} />
-      <DieselBridgeInvoices key={currentTenant?.id} tenantId={currentTenant?.id} onAccepted={loadRepairs} />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div className="flex items-baseline gap-2">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Maintenance & Repairs</h1>
@@ -823,6 +832,7 @@ export default function Repairs() {
             <label>Paid to / vendor<select value={payeeFilter} onChange={e => setPayeeFilter(e.target.value)} className="block min-h-11 max-w-full border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All payees</option>{Array.from(new Set(['CaroMeck Diesel PM LLC', 'Truck Pit Stop', ...review.data.rows.map(r => r.payee?.name).filter((n): n is string => !!n)])).sort().map(name => <option key={name} value={name}>{name} ({review.data!.rows.filter(r => r.payee?.name === name).length})</option>)}<option value="unknown">Payee not identified ({review.data.rows.filter(r => !r.payee?.name).length})</option></select></label>
             <label>Payment method<select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className="block min-h-11 border border-gray-300 rounded-md px-3 mt-1 bg-white focus-visible:outline-blue-600"><option value="all">All methods</option><option value="cash">Cash</option><option value="zelle">Zelle</option><option value="credit_card">Credit card</option><option value="other">Other / multiple methods</option><option value="unknown">Not confirmed</option></select></label>
           </div>
+          <DieselBridgeFinancialSync key={`dbn-financial-${currentTenant?.id}`} tenantId={currentTenant?.id} onSaved={() => { loadRepairs(); review.retry() }} />
           <RepairBatchReview key={`${currentTenant?.id}-${reviewAsOf}`} rows={review.data.rows.filter(r => filteredRepairs.some(repair => repair.id === r.legacy_id))} onSaved={review.retry} />
         </>}
       </section>
@@ -894,7 +904,7 @@ export default function Repairs() {
                         )}
                       </>
                     )}
-                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} onSaved={review.retry} />}
+                    {reviewRows.get(repair.id) && <RepairEvidence key={`${currentTenant?.id}-${repair.id}-${reviewAsOf}`} row={reviewRows.get(repair.id)!} onSaved={() => { loadRepairs(); review.retry() }} />}
                     {/* Show images with expandable functionality */}
                     {repair.image_paths && Array.isArray(repair.image_paths) && repair.image_paths.length > 0 && (
                       <div className="mb-3">
@@ -954,10 +964,10 @@ export default function Repairs() {
                   </div>
                   <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
                     <button
-                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
+                      disabled={review.loading || Boolean(review.error) || !reviewRows.has(repair.id) || Boolean(reviewRows.get(repair.id)?.dieselbridge || reviewRows.get(repair.id)?.dieselbridge_financial)}
                       onClick={() => handleEdit(repair)}
                       className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
-                      title="Edit"
+                      title={!reviewRows.has(repair.id) ? 'Choose a review date that includes this repair before editing' : reviewRows.get(repair.id)?.dieselbridge_financial ? 'DBN invoices are managed through source review' : 'Edit'}
                     >
                       {isMobile ? (
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -968,10 +978,10 @@ export default function Repairs() {
                       )}
                     </button>
                     <button
-                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
+                      disabled={review.loading || Boolean(review.error) || !reviewRows.has(repair.id) || Boolean(reviewRows.get(repair.id)?.dieselbridge || reviewRows.get(repair.id)?.dieselbridge_financial)}
                       onClick={() => setRepairToDelete(repair.id)}
                       className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors flex items-center justify-center"
-                      title="Delete"
+                      title={!reviewRows.has(repair.id) ? 'Choose a review date that includes this repair before deleting' : reviewRows.get(repair.id)?.dieselbridge_financial ? 'DBN invoices are managed through source review' : 'Delete'}
                     >
                       {isMobile ? (
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

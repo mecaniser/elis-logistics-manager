@@ -1,195 +1,206 @@
-# DB-094 normal repair tiles and financial reconciliation
+# DB-094 normal repair tiles and paid-only reserve integration
 
-Status: **proposed local contract; execution blocked on reserve timing and individual historical attribution**. Architecture owner: financial_import_contract. Backend & Integrations is accountable for implementation. No production writes, historical grants, credentials, deployment or deletion are authorized by this document. Independent Security and QA gates remain required before financial release.
+Status: **stable local implementation contract v1; no production execution, grants, credentials or deployment**. Architecture owner: financial_import_contract. Backend & Integrations accountable. Independent Security and QA gates remain required before release. This replaces the earlier alternatives-based draft. The local pure planner must be updated to this fixed policy before reuse.
 
-## Outcome and accepted policy
+## Fixed owner policy
 
-Each DBN repair order must produce one normal Maintenance & Repairs / Invoice review repair tile with source invoice evidence, correct truck, incurred date, cost and classification. It must participate in existing repair analytics and the approved repair-reserve calculation. The separate DBN history list becomes internal provenance/staging after successful migration; it must not cause a second visible expense.
+- One current finalized DBN invoice per source RO becomes one normal `Repair` tile in Maintenance & Repairs / Invoice review, participating in existing repair-cost analytics. No second visible DBN history expense list.
+- Recognize the **full final invoice expense**, after discounts and including invoiced tax, once. Use evidenced service completion date, otherwise evidenced invoice date. An import/creation timestamp is not proof of an original issue date. Missing both dates blocks apply.
+- Repair reserve withdrawals occur **only for verified recorded payments**, including partial payments, on each actual payment date. Invoice receipt/finalization by itself creates **zero reserve withdrawal**. Negative reserve balances are allowed and never clamped.
+- Record invoice cost without assuming payment. DBN workflow `paid` is displayed only as a source status; it supplies neither an EDG paid amount nor a cash transaction. Paid/due figures derive from linked active EDG verified payment commands.
+- Future newly finalized authorized invoices automatically create normal repair tiles and their expense/bill projections. An invoice change, replacement or cancellation affecting an already booked RO creates review first and preserves the accepted amount until approved.
+- Archive only explicitly reconciled temporary duplicates, retain original rows/evidence/postings and supply a reversible correction plan. No production deletions or archive execution in the current preparation task.
+- Historical invoice/PDF access remains individually gated. The owner has requested a guided review, not granted eight historical export permissions.
 
-The owner has accepted service-completion dates with evidenced invoice-date fallback, displaying recorded partial payments and balance due without inferring them from DBN status, negative reserve balances, recording invoices without assuming payment, replacing confirmed temporary truck 609 records with ETS-0386-97052, automatic processing of future newly finalized invoices, and review before applying subsequent invoice changes or cancellations. The owner has requested a guided, individual review of eight historical invoices; access has **not** been granted.
+There is no remaining invoice-versus-payment reserve timing choice: only `reserve_timing='recorded_payments'`, `reserve_date_basis='payment_date'`, `expense_date_rule='service_completion_else_invoice'`, `payment_inference='none'` are valid. Reject alternate policies with 422. A historical invoice can become a full-cost tile/bill with unknown historical payments and zero newly invented reserve withdrawal. Do not infer payments to make historical reserve metrics look complete.
 
-The precise reserve rule remains unresolved and must be a required input rather than an implementation default:
+## Source financial manifest — locked contract
 
-1. `reserve_recognition`: `invoice_incurred` or `confirmed_payment`. In the former, allocate the full net final invoice cost once; later partial/full payments do not withdraw the same amount again. In the latter, recognize the full expense once but withdraw only separately confirmed reserve-funded payment amounts, with each payment identified once. The statement that final invoices and partial payments come from reserve does not resolve which timing is intended. Never combine both methods for one obligation.
-2. The expense-date rule is now resolved: `expense_date_rule = service_completion_else_invoice`. Use an evidenced service-completion date where present, otherwise an evidenced invoice date. Preserve the provenance and both source dates. Import/creation timestamps are not proven original invoice dates and cannot supply a fabricated fallback. If neither date is evidenced, return `DATE_EVIDENCE_REQUIRED`. Existing source completion dates prevent the four known regenerated invoice dates from moving expenses. `reserve_date_rule` remains tied to the unresolved reserve-recognition choice; payment-based withdrawals require the recorded payment date, while invoice-based reserve timing must be stated in the approved policy rather than inferred.
+`GET /api/v1/fleet-invoice-exports/repair-orders/financial`, existing read-only key and exact existing shop/customer scope. Retain operational eligibility from the existing complete history export: same customer/shop vehicle, completed/invoiced/paid RO, not internal/deleted, bounded 1,000 rows; reject oversized/partial results. No query filters. `Cache-Control: private, no-store`.
 
-Partial-payment display must expose the explicitly recorded paid amount and remaining balance, with payment evidence/provenance. Never manufacture a partial amount or real-world balance from DBN `paid` status. With no confirmed payment facts, the UI must show unconfirmed/unknown payment information; a separately labelled EDG recorded obligation may still reflect the accepted invoice less its explicitly linked payments. Once a confirmed partial payment is recorded, remaining recorded balance is invoice amount less linked payments/credits exactly once.
+There is no RO current-invoice FK in the source. Select the unique active invoice using the existing partial uniqueness rule `status <> 'cancelled'` for the scoped RO. This set includes drafts: if the unique active invoice is draft, voided or otherwise ineligible, block the row; do **not** fall back to an older visible finalized predecessor. Assert uniqueness rather than picking newest by date. Cancelled/superseded invoice versions are not separate repair costs.
 
-Reserve timing and expense recognition are separate from proof of cash payment. The source workflow status `paid` is retained as source evidence; it does not by itself mark an EDG payment, credit Cash or create an owner reimbursement balance.
-
-## Current evidence and integration traps
-
-The read-only task audit recorded 58 normal repairs and 15 separate DBN history rows. Seven currently authorized finalized invoices total $8,069.64; eight current historical invoices remain outside the invoice/PDF grant. Current RO customer assignment proves operational association, not historical billed-customer attribution. The seven-invoice amount is not the full 15-order expense total.
-
-Relevant existing code:
-
-- `services/dieselbridge_repair_history.py` imports nonfinancial metadata only; it does not establish amount, invoice access or payment.
-- `services/dieselbridge.py:accept` creates a normal `Repair` and `FinanceEvidence`, but does not create reserve withdrawals or journal entries. It currently chooses the regenerated invoice date and `maintenance` for every job; neither is suitable for this import contract without reviewed date/category selection.
-- Generic `routers/repairs.py` create/update paths synchronize full-cost reserve withdrawals and invoke `create_repair_journal_entry`. The latter credits Cash, so the new importer must not call that path for an unpaid/unknown-payment invoice.
-- `reserve_service.py` withdraws positive full repair cost dated on/after 2026-01-01. It does not implement partial-payment allocation and does not use `paid_from_reserve` to determine amount. Existing ledger entries support only positive `deposit`, `withdrawal`, `adjustment` types.
-- Dashboard repair costs, individual repair chart, PM classification and operating metrics query normal repairs. Reserve balance and cumulative withdrawals query `repair_reserve_ledger`. All projections must exclude archived temporary repairs consistently. `maintenance` identifies PM; classify non-PM repairs correctly.
-- Current legacy journals and the append-only FinanceEvent/Posting system are distinct report paths. Do not create the same expense twice within a book or infer cash by mirroring a legacy helper. The reviewed plan must identify which book receives which explicit posting and how report reconciliation links them.
-
-## Identity, source authority and access
-
-Use durable identity `(tenant_id, source_system='dieselbridge', shop_id, repair_order_id)`, never invoice number, title, date or regenerated invoice ID. Add a unique normal-repair source link containing canonical `repair_id`, accepted current invoice ID/revision, amount/date/category decision provenance, policy version and apply-operation ID. The existing operational history row may point to this link, but is not financial authorization.
-
-The financial source contract must attest the **current finalized invoice for the RO**, not merely newest visible invoice date. Existing authorized invoice feed entries may supply current totals/evidence only when the source establishes that current relationship and there is exactly one eligible current invoice. Cancelled/voided/superseded versions are preserved as lineage, never added as separate costs. Missing inaccessible ancestors do not justify exposing their PDFs or charging them. An ambiguous current pointer is `CURRENT_INVOICE_REVIEW_REQUIRED`.
-
-Operational metadata and authorized financial documents are joined only within the exact configured shop/customer and EDG tenant. Each VIN must uniquely match a same-tenant truck. An established source link cannot silently change truck/customer. Revocation, missing access, wrong scope, changed payload/hash or partial snapshots block financial apply and preserve the accepted cost pending review.
-
-For each historical invoice, keep an individual attribution packet: invoice/RO IDs and numbers; source owner authorization check; immutable billed-customer snapshot and preserved invoice-document evidence if available; current RO customer association separately labelled; original and regenerated dates; gross/tax/discount/net totals and currency; mapping/evidence currently absent or present; exact proposed recipient customer/key scope; owner decision and evidence reference. Do not treat the current RO association alone as historical billing evidence. A source owner may inspect an invoice without authorizing its export to the customer key. Granting eight current documents does not grant all cancelled predecessors.
-
-The source audit also reports that the existing historical-grant route rejects ETS-imported invoices/ROs and requires preserved invoice bytes, independent staff verification and an owner decision for eligible records. Preserve these gates. An ETS-origin packet is a **policy/contract incompatibility**, not a missing checkbox that the importer can bypass. Any source policy change must be separately designed, independently reviewed and explicitly authorized; neither current customer reassignment nor a broad owner approval silently removes those requirements.
-
-## Proposed storage and reversible replacements
-
-The exact migration is subject to implementation review, but it must provide:
-
-1. The unique RO-to-normal-repair source link above.
-2. An immutable import/reconciliation operation with canonical request digest, source snapshot/revision manifest, expected local-row digests, policy decisions, created links and all resulting projection/posting IDs.
-3. A reversible archive/supersession record for each explicitly selected temporary repair: original repair ID, complete frozen record and evidence references, source/canonical repair link, original reserve/journal/finance links, reason, owner-reviewed mapping, operation ID and restore history. The repair and its attachments/evidence are retained. Normal active-repair query scope excludes archived records; archived records remain inspectable and cannot be edited/deleted through generic routes.
-4. Append-only reserve correction links, including a distinct positive `withdrawal_reversal` classification with `reversal_of_id`. Cumulative **net withdrawals** are withdrawals less their linked reversals; manual adjustments remain manual adjustments. Balance is deposits plus adjustments minus net withdrawals. A compensating reversal must not inflate manual adjustments or erase the original withdrawal. Update constraints, serialization, totals, ledger UI, exports and tests together. Restoring a replacement appends the opposite linked correction once and cannot leave both duplicate expenses active.
-5. A payment/reserve-allocation identity if `confirmed_payment` is selected. Each confirmed payment has source/evidence ID, amount, paid date, funding attribution and reserve-applied amount. Invoice cost and remaining liability are separate. Partial amounts cannot exceed the obligation unless an explicit credit/overpayment review handles it.
-
-The strong temporary-component matches on truck 609 are ID123 (NOx/heating, 2026-03-21), ID125 (steer tires, 2026-03-27) and ID126 (batteries, 2026-04-18), each with null cost. Additional ID136 (cleaning, 2026-03-30, $150.00) and ID114 (diagnostic, 2026-02-26, $202.80) remain ambiguous and must be preserved until the owner confirms that specific job is covered by the ETS invoice. They are **not** an approved deletion/archive set. The earlier audit showed reserve withdrawals and legacy journals for 114/136, but no central FinanceEvent repair links (all 16 recorded events were settlements). Similar descriptions with different dates do not prove 114 is the same diagnostic event. Refresh exact rows and component mapping in the guided review. Use explicit `legacy_repair_ids`; never broad title matching or deletion by truck.
-
-For an approved replacement, preview separately: removed active expense by original date/category; original reserve reversal by its date; new DBN expense by approved date; new reserve allocation according to policy; and bookkeeping reversal/replacement lines. Retain original journals and append approved bookkeeping corrections; do not call destructive legacy journal deletion. A prior Cash credit can be reversed as an identified bookkeeping correction without claiming a real bank refund. Payment-confirmation evidence must not transfer to a different invoice unless explicitly matched. Closed-period restrictions are reviewed, never bypassed.
-
-## Proposed EDG API
-
-All endpoints below are proposals under `/api/v1/accounting/dieselbridge/connections/{slug}/financial-import`. They require the existing strong accounting authentication, authorized tenant and owner-capable financial-write permission. Tenant comes from the authenticated dependency and is rechecked against server-managed connection configuration. Reject body-supplied tenant/shop/customer overrides. Cross-tenant/missing objects return the same 404 shape.
-
-### Preview: `POST /preview`
-
-No persistent writes or source grants. Request:
+Response (all keys exact; nullable values explicit):
 
 ```json
 {
-  "version": "db094-financial-plan-v1",
-  "repair_order_ids": ["source-ro-uuid"],
-  "policy": {
-    "version": "owner-policy-version",
-    "reserve_recognition": null,
-    "expense_date_rule": "service_completion_else_invoice",
-    "reserve_date_rule": null,
-    "allow_negative_reserve": true,
-    "payment_inference": "none"
-  },
-  "decisions": [{
-    "repair_order_id": "source-ro-uuid",
-    "expected_invoice_id": "source-invoice-uuid",
-    "expected_invoice_revision": "source-revision",
-    "expense_date": null,
-    "expense_date_basis": null,
-    "category": null,
-    "legacy_repair_ids": [],
-    "legacy_component_evidence": [],
-    "reserve_allocations": []
+  "version": "db094-repair-financial-v1",
+  "shop_id": "uuid",
+  "customer_id": "uuid",
+  "complete": true,
+  "count": 15,
+  "snapshot_id": "sha256",
+  "items": [{
+    "repair_order_id": "uuid",
+    "order_number": "TPS-...",
+    "vehicle_id": "uuid",
+    "vin": "VIN-or-null",
+    "unit_number": "603-or-null",
+    "description": "source-work-summary-or-null",
+    "work_completed_at": "UTC-ISO-or-null",
+    "service_date": "YYYY-MM-DD-or-null",
+    "authorization": "authorized",
+    "invoice": {
+      "invoice_id": "uuid",
+      "revision": "source-invoice-revision",
+      "invoice_number": "invoice-number-or-null",
+      "status": "current_finalized",
+      "invoice_date": "YYYY-MM-DD-or-null",
+      "invoice_date_basis": "native_issue_timestamp",
+      "currency": "USD",
+      "total_amount": "1000.00",
+      "line_items": {},
+      "pdf_sha256": null
+    },
+    "revision": "sha256-of-row-without-revision"
   }]
 }
 ```
 
-Null reserve-policy fields or missing date-evidence fields are valid only for preparing a **blocked** preview; they cannot produce an executable plan. Monetary fields use fixed two-decimal strings and source currency, with integer minor-unit arithmetic for sums; never floats. Category evidence distinguishes actual PM from other repairs. Explicit payment allocations require separate payment evidence and cannot derive from source `paid` alone.
+Allowed `authorization`: `authorized`, `attribution_required`, `not_finalized`, `unavailable`. For every non-authorized row `invoice` is **null**: do not leak inaccessible current financial IDs, totals, invoice dates, line items or PDF metadata through an operational grant. The response may still include all 15 authorized operational RO identities, with eight blocked financial subobjects. Source actor/owner inspection is not customer-key export authorization.
 
-Reply:
+`service_date` is the UTC completion date only; missing completion remains null, rather than operational-history created-date fallback. `invoice_date_basis`: `native_issue_timestamp`, `preserved_issue_date`, or `unknown`. Only an evidenced invoice issue date is eligible as expense fallback. Imported/created-at metadata alone is `unknown`. Source may return `invoice_date:null` when unproven. `line_items` reuses the existing approved retail labor/parts projection, not raw snapshot wholesale; exclude internal costs, mechanic identifiers, private notes, supplier/contact information and unrelated payment data. PDF hash is present only for authorized preserved bytes; this route must not generate PDFs, reconstruct snapshots, backfill attribution or mutate source records.
+
+Canonical SHA256 uses sorted compact JSON, ASCII escaping and UTF-8. Row revision excludes itself. Snapshot digest covers exactly `{version,shop_id,customer_id,items}` including row revisions; count/complete/snapshot_id excluded. Monetary values are nonnegative two-decimal strings; consumer initially supports USD only and blocks other currency. Invoice status is the neutral `current_finalized`. Its revision is the canonical digest of the displayed authorized invoice fields excluding revision; raw payment status, paid_at and Invoice.updated_at are excluded, so recording source payment alone does not invent EDG payment or trigger spurious cost-change review. The invoice object is the exact unique active invoice, independently checked against billing/export authorization. Snapshot materialization must consistently attest that relationship rather than joining independently changing loosely paginated histories. The accepted immutable observation is recorded; a later source change is a review event, not a claim that a cross-app transaction froze the source.
+
+Category is derived from authorized invoice/work evidence in the consumer, with an explicit category decision for ambiguous work. Never default all jobs to `maintenance`: dashboard treats that category as PM. Operational VIN assignment and economic cost asset are separate: INV000023's six trailer tires need cost-asset confirmation even if the RO belongs operationally to truck609.
+
+## Backend models — locked names and responsibilities
+
+Add these in Backend-owned `backend/app/models/dieselbridge.py`, with an additive idempotent migration integrated by root. Store UUID event/evidence IDs using the existing Finance model conventions; use Numeric(18,2) or integer minor units for money, not float.
+
+1. **`DieselBridgeRepairLink`** (`dieselbridge_repair_links`): integer id; tenant_id FK; source_system default dieselbridge; shop_id; customer_id; repair_order_id; repair_id FK unique; operational_truck_id FK; cost_asset_id FK; accepted_invoice_id/revision; accepted_manifest_id; accepted_total; currency; expense_date; expense_date_basis; category_basis; source_evidence_id FK FinanceEvidence; bill_event_id FK FinanceEvent.id nullable for true-zero cost; state (`accepted`, `review_required`, `source_unavailable`); pending_source JSON nullable; payment_history_confirmed bool default false; created_at. Unique `(tenant_id,source_system,shop_id,repair_order_id)`. Invoice number is not identity. Existing accepted assignment cannot silently move trucks/customers. A recorded historical-total packet cannot set financial authorization.
+2. **`DieselBridgeRepairPayment`** (`dieselbridge_repair_payments`): integer id; tenant_id; repair_link_id FK; finance_payment_event_id FK unique; amount; paid_on; payer; transaction_id nullable; evidence_id nullable; reserve_withdrawal_id FK nullable when outside the retained 2026 reserve regime; reversal_event_id FK nullable; reserve_reversal_id FK nullable. Each active Finance payment for the canonical DBN bill has at most one reserve projection. The wire payment date is `paid_date`; wire reversal date is `reversal_date`. Reversal references immutable Finance history; do not delete payment evidence.
+3. **`DieselBridgeFinancialOperation`** (`dieselbridge_financial_operations`): UUID id; tenant_id; connection_slug; action; idempotency_key; request_digest; plan_digest; result JSON; created_at. Unique `(tenant_id,connection_slug,action,idempotency_key)`. Same key/content returns original receipt; same key/different content is409. One transaction persists the completed operation and all results.
+4. **`DieselBridgeFinancialInbox`** (`dieselbridge_financial_inbox`): integer id; tenant_id; connection_slug; event_id; body_digest; payload JSON; received_at; processed_at nullable; attempts; last_error_code nullable; operation_id nullable. Unique `(tenant_id,connection_slug,event_id)`. An authenticated event is a durable wake-up, not authority to book payload facts. Worker refetches the manifest. A changed-body replay with the same ID is409.
+
+Root owns the archive model, active-repair filtering, registrations and migration integration. A proposed archive must preserve complete original row/evidence/payment/reserve/journal snapshots and immutable links, not turn existing costs to zero or delete rows. Backend supplies archive **preview** effects only in this phase. No archive apply route is enabled until the guided mapping and replacement plan are approved.
+
+## Finance engine and reserve behavior
+
+For a newly eligible authorized finalized RO: create normal `Repair` with full accepted cost/date/category, preserve source FinanceEvidence, and call existing `finance.append_command` with `Command(kind='bill', legacy_repair_id=repair.id, asset_id=cost_asset_id, category='repairs', amount=total, evidence_id=source_evidence_id, source_ref='dbn-ro:<shop>:<ro>:<accepted-revision>')` at expense date. This debits Repairs and credits Payable, with no Cash credit. Zero-cost finalized evidence produces a zero-cost tile and no positive-money bill/payment. Preserve no-charge facts as evidence, never nominal $0.01 expenses.
+
+Do not call generic repair-create/update/delete helpers or the legacy `create_repair_journal_entry`, which currently credits Cash. Root supplies a compatibility adapter for legacy reports: DBN source-linked repairs are represented once in normal cost analytics and their authoritative Finance bill/payment path; legacy journal surfaces must either read the linked Finance postings or use a source-linked non-cash accrual mirror, never a second independent charge. The first implementation may omit a legacy journal mirror if no affected report requires it, but must state that limitation and test the affected reports. Generic repair edit/delete must reject source-linked financial rows and direct corrections through review.
+
+For a verified payment: use the existing `finance.append_command` payment contract against **the canonical link's bill_event_id**, on actual paid date. Existing Finance rules require reconciled transactions for business/card/cash and explicit qualified evidence for owner payment. Do not weaken them or trust a client `verified:true`. Retain account/funding evidence. Payment amount must be positive, at most remaining recorded obligation, and not in future. Existing closed-period/dependent-posting checks apply. Root handles existing `business_funds` compatibility without bypassing verification.
+
+Project that accepted Finance payment once to `RepairReserveLedger` using `source_type='dbn_payment'`, `source_id=DieselBridgeRepairPayment.id`, `entry_type='withdrawal'`, actual payment date/amount and cost asset. Keep the existing reserve regime start2026-01-01; prior paid facts remain visible but do not fabricate 2026 withdrawals. The invoice itself does not project a withdrawal. Owner reimbursement/card-principal repayment is not a second repair payment: project only payments whose claim_id is the link's original canonical bill, never the reimbursement claim created by an owner payment.
+
+Generic Finance payment/reversal entry points must invoke the same projection helper, not just the new DBN-specific route. Otherwise recording a legitimate payment elsewhere would leave reserve stale. Root owns the Finance command hook; Backend exposes idempotent `project_verified_repair_payment(db, tenant, event)` and `project_verified_repair_payment_reversal(db, tenant, reversal_event)`.
+
+Payment reversal appends the existing Finance reversal command after its dependency/period checks, then appends one positive reserve `withdrawal_reversal` linked to the original withdrawal; retain both originals. Root owns ledger enum/check/migration/balance/filter integration. Net withdrawals = withdrawals minus linked withdrawal reversals; balance = deposits + manual adjustments - net withdrawals. Do not put a payment reversal in manual adjustments. Repeated or concurrent reversals create no second financial/reserve effect. A later approved re-payment is a new verified payment event.
+
+## EDG routes and JSON — locked contract
+
+Base prefix `/api/v1/accounting/dieselbridge`. Reuse strong `accounting_tenant` authentication and same server-managed connection origin/customer scope. Tenant/shop/customer may not be overridden by request body. Every referenced repair, bill, transaction, evidence and payment is tenant-checked. Cross-tenant/missing objects return404 without disclosing existence. Router owns commit/rollback; sync handlers run blocking locks/HTTP in worker threads.
+
+### Financial preview/sync
+
+`POST /connections/{slug}/financial-import/preview` is read-only. Request `{version:'db094-financial-import-v1', repair_order_ids?:string[], decisions?:[{repair_order_id,cost_asset_id?,category?,legacy_repair_ids?:int[]}]}`. Decisions must be server-reconciled; client booleans cannot authorize source access or assert verified payments. Default initial batch is all selected operational RO rows, not silently just the seven authorized invoices. Explicit smaller selection is supported for a separately approved narrower batch.
+
+Reply exact envelope:
 
 ```json
 {
-  "version": "db094-financial-plan-v1",
-  "executable": false,
-  "plan_digest": "sha256-canonical-reviewed-plan",
-  "source_manifest_digest": "sha256",
-  "local_state_digest": "sha256",
-  "policy_digest": "sha256",
-  "rows": [{
-    "repair_order_id": "source-ro-uuid",
-    "action": "blocked",
-    "canonical_repair_id": null,
-    "invoice": null,
-    "expense_before": "0.00",
-    "expense_after": null,
-    "replacement_ids": [],
-    "expense_effective_date": null,
-    "reserve_events": [],
-    "posting_plan": [],
-    "blockers": ["RESERVE_POLICY_REQUIRED"]
+  "version":"db094-financial-import-v1",
+  "plan_digest":"sha256",
+  "source_manifest_digest":"sha256",
+  "local_state_digest":"sha256",
+  "executable":false,
+  "execution_enabled":false,
+  "rows":[{
+    "repair_order_id":"uuid","order_number":"TPS-...","repair_id":null,
+    "action":"blocked","truck_name":"Volvo609","source_revision":"sha256","invoice_id":null,
+    "invoice_total":null,"currency":null,"operational_truck_id":1,"cost_asset_id":1,
+    "repair_date":"2026-04-20","repair_date_basis":"service_completion",
+    "category":null,"expense_delta":null,"reserve_delta":"0.00",
+    "recorded_paid_amount":"0.00","recorded_balance_due":null,
+    "payment_history_confirmed":false,"payment_status":"unconfirmed",
+    "replacement_proposals":[],"blockers":["financial_access_required"]
   }],
-  "effects": {
-    "active_repair_count_before": 58,
-    "active_repair_count_after": null,
-    "expense_delta_by_truck_month": [],
-    "reserve_delta_by_truck_date": [],
-    "resulting_reserve_balances": [],
-    "payment_changes": [],
-    "bookkeeping_corrections": []
-  },
-  "blockers": [],
-  "warnings": []
+  "summary":{"source_count":15,"create":0,"unchanged":0,"review_required":0,"blocked":15},
+  "effects":{"expense_delta_by_asset_month":[],"reserve_delta_by_asset_date":[],"negative_balances":[]},
+  "blockers":[]
 }
 ```
 
-Unavailable invoice access is represented by `invoice: null`, unknown amount/delta, and `HISTORICAL_ATTRIBUTION_REQUIRED`, never a fabricated zero. Do not report a final 15-order total until every selected current invoice is properly accessible and reconciled. Block the initial reviewed batch atomically unless the owner explicitly selects and approves a narrower subset.
+`action` is `create`, `unchanged`, `review_required`, `blocked`. Unauthorized financial fields remain null, not zero. A valid new invoice has full-cost expense_delta and reserve_delta0. `recorded_paid_amount`/`recorded_balance_due` explicitly describe EDG recorded activity, not verified complete real-world history. Status is `unconfirmed` with no confirmed payment facts, `partial` after recorded amount between0 and total, `paid` only when recorded verified amounts satisfy accepted total. Display the history caveat until confirmed; source `paid` cannot switch this status. Existing payments and full original bill stay stable across unchanged replay. Changed/cancelled source has no new cost/reserve delta and enters review.
 
-Canonical digest: SHA256 of UTF-8 compact JSON with sorted keys and ASCII escaping, including version, exact scoped connection identity, RO/current-invoice manifests and hashes, per-row decisions, original repair/evidence/confirmation/reserve/posting digests, effective policy version, proposed operations and all period/truck deltas. Exclude volatile observation timestamps from the content digest; return them separately. Do not include secrets, bearer tokens, signed PDF URLs or private contacts in replies or hashes intended as public references.
+Canonical plan digest uses sorted compact ASCII-escaped JSON/UTF-8 and includes exact server scope, fixed policy version, immutable source manifest, accepted local links/repair/evidence/payment/ledger state digests, explicit cost-asset/category/replacement decisions and proposed effects. Exclude volatile observation timestamps and all credentials/signed URLs. Regenerated invoice IDs cannot create a second RO link.
 
-### Apply: `POST /apply`
+`POST /connections/{slug}/financial-import/sync` uses the same request plus `plan_digest`, `source_manifest_digest`, `local_state_digest`; requires `Idempotency-Key`. Proposed reply `{version,operation_id,status:'applied'|'already_applied',created_repair_ids,unchanged_repair_ids,review_required_repair_ids,blocked_repair_order_ids,source_manifest_digest}`. Root supplies an execution guard defaultfalse for this local task; disabled mutation returns409 `EXECUTION_DISABLED` with zero writes. There is no production enablement approval. Once enabled after release approval, complete initial selected batch is atomic: block any unknown access/date/cost asset; do not partially charge7 of15 by default. Background processing of a new single authorized finalized event can run its single-RO batch under the previously approved automatic policy.
 
-Requires explicit execution authorization, approved policy, all individual access grants and a reviewed executable preview. Proposed request:
+Refetch/validate source, acquire existing tenant advisory lock and deterministic affected-row locks, recompute local digests, reject stale plans409, persist canonical repair/evidence/bill/source link/operation atomically. Avoid unbounded PDF work under the write lock. Source observation and local commit are not a distributed transaction; record the exact accepted immutable revision and process later changes as review events. Roll back all local effects on any failure.
+
+### Financial state used by existing tiles
+
+`GET /repairs/{repair_id}/financial-state` replies `{repair_id,source_system,repair_order_id,order_number,invoice_id,invoice_number,accepted_revision,state,source_status,invoice_total,currency,repair_date,repair_date_basis,operational_truck_id,cost_asset_id,category,recorded_paid_amount,recorded_balance_due,payment_status,payment_history_confirmed,payments,review_reason,can_record_payment,can_edit,can_delete}`. Source-linked `can_edit`/`can_delete` arefalse; use correction review. `payments` items `{id,amount,paid_on,payer,evidence_id,transaction_id,status:'active'|'reversed',reversal_event_id}`. No credentials, secret refs or cached inaccessible PDF URL.
+
+Bulk `GET /repair-financial-states?truck_id=<optional>&after=0&limit=100` replies `{items:[<same-state-object>],next_after}` scoped to linked normal repairs; limit1..500. Frontend merges by normal repair_id; it does not render a second DBN repair list. Individual scoped absent/unlinked ID returns404. Existing normal `/repairs` list remains canonical tile list.
+
+### Verified payment and reversal
+
+`POST /repairs/{repair_id}/verified-payments` body `{amount:'100.00',paid_date:'2026-10-30',payer:'business'|'owner'|'card'|'cash',transaction_id?:string,evidence_id?:string,expected_revision:string,owner_payment_confirmed:false,note:string(min3)}` and `Idempotency-Key`. Owner payments additionally require `owner_payment_confirmed:true`, a preserved independent payment receipt and the explicit note; the source invoice alone is insufficient evidence. Other payers reject owner attestation. Server resolves accepted bill/link, verifies all facts via existing Finance engine, applies payment+one reserve projection in one tenant-locked transaction. Reply `{operation_id,payment_id,finance_event_id,reserve_withdrawal_id,financial_state:<state-object>}`. All money strict positive decimal-cent strings, dates actual evidenced paid dates. Reject overpayment, stale accepted revision, missing verification, wrong account type/scope, future date, review-required/cancelled invoice, closed period and duplicate content conflict.
+
+`POST /repairs/{repair_id}/verified-payments/{payment_id}/reverse` body `{reversal_date:'YYYY-MM-DD',reason:string,expected_revision:string}` and `Idempotency-Key`. Reply `{operation_id,payment_id,reversal_event_id,reserve_reversal_id,financial_state}`. Validate exact link/tenant and immutable Finance reversal rules, then append compensation once. No payment deletion and no fake bank refund. Identical retry returns original result.
+
+### Archive preparation only
+
+`POST /connections/{slug}/financial-import/archive-preview` body `{repair_order_id,legacy_repair_ids:[123,125,126],reason,expected_source_revision}`; no persistent writes. Reply `{executable:false,execution_enabled:false,plan_digest,replacement_candidates:[{repair_id,match_basis,cost,original_date,reserve_entries,journal_entries,payment_evidence,proposed_archive,blockers}],effects,blockers}`. IDs are explicit guided selections, not title-based matches. Root owns archive execution contract/implementation later; no delete/archive mutation endpoint in this preparation release.
+
+401 unauthenticated;403 unauthorized financial action;404 scoped object absent;409 stale state/review/idempotency/execution disabled/closed period;422 invalid money/date/policy/body;502 invalid/incomplete source manifest. Errors disclose no secrets or cross-tenant data.
+
+## Exact future finalization wake-up contract
+
+Source: durable outbox in invoice finalization/change/cancellation transaction; sender retries with backoff and acknowledges only successful durable receiver acceptance. Source must select only the configured customer's eligible export scope; current RO assignment cannot broaden billing access. EDG inbox wakes a worker to refetch financial manifest; payload facts never directly book an expense/payment.
+
+POST `/api/v1/accounting/dieselbridge/webhooks/{slug}` raw UTF-8 JSON body exact keys:
 
 ```json
-{
-  "version": "db094-financial-plan-v1",
-  "plan_digest": "reviewed-sha256",
-  "source_manifest_digest": "sha256",
-  "local_state_digest": "sha256",
-  "policy_digest": "sha256",
-  "decisions": []
-}
+{"version":"db094-financial-wakeup-v1","event_id":"uuid","shop_id":"uuid","customer_id":"uuid","repair_order_id":"uuid","kind":"invoice_finalized","occurred_at":"UTC-ISO"}
 ```
 
-Require an `Idempotency-Key` scoped to tenant + connection + action. Persist request digest with operation. Identical retry returns the original result; same key with different content returns 409 `IDEMPOTENCY_CONFLICT`. Proposed reply: `{operation_id, status:'applied'|'already_applied', plan_digest, created_repair_ids, archived_repair_ids, unchanged_repair_ids, reserve_event_ids, posting_ids, totals_before, totals_after}`. A normal retry creates no new repair, reserve movement, expense, posting, confirmation or payment.
+`kind`: `invoice_finalized`, `invoice_changed`, `invoice_cancelled`. No invoice IDs, amounts, revisions, contacts or payment facts. Headers `X-DBN-Event-Id` equals body event_id; `X-DBN-Timestamp` is Unix integer seconds; `X-DBN-Signature` is `v1=` plus lowercase HMACSHA256(secret, timestamp + '.' + exact_raw_body_bytes). Verify constant-time, strict fields/UUID/time/scope, timestamp within±300seconds and HTTPS destination. Re-sign a retry with current timestamp while keeping body/eventID stable. Durable inbox unique tenant/slug/eventID plus bodydigest; identical duplicate202 `{status:'accepted'|'duplicate',event_id}`; changed-body replay409. Verify signature before exposing duplicate state. No browser cookies substitute for sender authentication.
 
-Refetch/validate the source manifest, then acquire the existing tenant advisory transaction lock and lock affected local source/repair/reserve rows in deterministic order. Recompute the entire executable plan from supplied decisions and current local state. Compare all reviewed digests and source revisions before writes. Unique database constraints enforce RO identity and operation/event identities even with concurrent deliveries. On any stale input, authorization change, missing access or review requirement, rollback the complete operation. Do not fetch an unbounded PDF while holding the write lock; retrieve/hash authorized evidence first, then revalidate revisions before commit.
+Sender/receiver use separately approved server-managed secret references, never reuse the read-only invoice API key as signing secret. Missing secret/config failsclosed (receiver503 `WEBHOOK_NOT_CONFIGURED`, sender no transmission). Do not create/configure credential values in this task. Persist/retry outbox failures; signed notifications only schedule refetch. Worker claim/ack is durable; crash after financial commit then repeat is harmless by source/operation identities. Invalid/revoked authorization blocks processing. New finalized RO can auto-create unpaid bill+tile after policy/transport release approval; accepted revision change/cancellation produces review and preserves booked effects. No automatic archive or historical grant.
 
-The source manifest must be a bounded consistent financial snapshot with current-invoice attestation and an observed watermark/revision, rather than an unverified join of independently changing operational and invoice reads. There is no distributed transaction across the two applications: acceptance records the exact observed immutable source revision. A source change after the final verified observation must arrive as a subsequent review event; never claim that the local commit freezes the source invoice. Failed/partial source reconciliation cannot advance the accepted manifest or infer absence.
+## Reversible temporary truck609 replacement facts
 
-New canonical repair, archival links, evidence references, reserve events, approved bookkeeping entries and operation result commit in one transaction. Injected failure after any step must rollback all projection/ledger effects. External event acknowledgement occurs only after durable inbox/operation receipt. The source financial payload is immutable evidence for the accepted revision; a later source change creates a review candidate, not in-place silent overwrites.
+Strong matches: ID123 NOx/heating2026-03-21, ID125 steer tires2026-03-27, ID126 batteries2026-04-18. All currently null-cost, with zero reserve/journal effects. Preserve row/evidence snapshots and eventually archive only their explicitly confirmed component mapping to ETS-0386-97052. The new ETS normal tile cannot be financially created until its attribution/source evidence policy is resolved.
 
-### Review and restoration
+Preserve ID136 cleaning2026-03-30 ($150; withdrawal73/journal514), because the charge is absent from the immutable invoice snapshot despite RO summary text. Preserve ID114 diagnostic2026-02-26 ($202.80; withdrawal33/journal395), which has independent invoice4076 and business-Zelle payment confirmation. Neither is proven temporary duplicate. Do not subtract352.80 from expenses or reverse their reserve/journals without contrary evidence and explicit per-ID confirmation.
 
-`POST /reviews/{id}/preview` and `/apply` use the same explicit decisions, digests, authorization, lock and idempotency rules for changed totals, cancellations, credits, truck identity changes and reversals. Accepted cost remains active with a review badge until approval. Hiding source text after revoked access does not silently erase a booked expense.
+For any subsequently approved positive-cost replacement, retain original journals/reserve entries and append linked bookkeeping/reserve reversals rather than delete history. Distinct `withdrawal_reversal` keeps net withdrawals accurate without masquerading as manual adjustments. Reactivating originals requires a reviewed compensating operation that first prevents both original and replacement expense from being active. All dependent payment/closed-period checks remain enforced.
 
-`POST /operations/{id}/restore/preview` and `/apply` create an explicit compensating plan. They retain the original operation/repair/evidence/postings; archive or reverse the replacement as necessary before reactivating approved originals. Restoration must not delete financial history, reopen closed periods implicitly, duplicate cash/payment facts or make two versions simultaneously active. This is a reviewed correction, not an unrestricted generic delete/undo endpoint.
+## File ownership before parallel implementation
 
-Errors: 401 unauthenticated; 403 unauthorized tenant/financial action; 404 scoped object absent; 409 stale plan/source/local state, duplicate current invoice, identity conflict, closed period or idempotency conflict; 422 invalid/missing required execution policy/decision; 502 invalid/incomplete source protocol. Errors never expose credential values or cross-tenant existence.
+| Owner | Exclusive files / responsibilities |
+| --- | --- |
+| Architecture (this task) | `docs/DB094_FINANCIAL_IMPORT_DESIGN.md` only; stable contract and policy clarifications. |
+| Backend agent | Existing `backend/app/models/dieselbridge.py` and `routers/dieselbridge.py`; new `schemas/dieselbridge_financial.py` and `services/dieselbridge_financial.py`; `services/repair_history.py`, manual managed-repair guards in `routers/repairs.py`; dedicated migration helper/new migration resource if coordinated with root; `tests/test_dieselbridge_financial.py` and dedicated PostgreSQL cases. Financial manifests/read validation, bill/source/payment models, preview/sync, state endpoints, verified-payment/reversal helpers, signed inbox/durable receiver worker hooks. Expose helpers for root hooks; do not edit root-owned shared files concurrently. |
+| Frontend agent | Existing normal tile integration in `frontend/src/pages/Repairs.tsx` and `VehicleDetail.tsx`, typed API additions in `frontend/src/services/api.ts`, new focused payment/state/sync control components under `components/repairs`, focused tests. Remove standalone DBN history list after replacing it with a compact source sync/review control; render financial state inside canonical existing tiles. Existing expense list remains authoritative. |
+| Source agent | New current-financial manifest endpoint, source outbox model/migration/sender and source finalization/change/cancellation event hooks, scoped source fixtures/tests and source contract documentation. Coordinate source router registration with root; no grants/credential creation. |
+| Root integration | `app/main.py`/router and model registrations, shared migration_runner integration, existing pure planner fixed-policy update, `Repair` archive model/active filters, analytics/report/reserve reversal projections, legacy journal compatibility, `finance.py` payment/reversal hook and business_funds compatibility, source/root registration conflicts, project board, release integration. Shared tests modified only with explicit handoff. |
 
-## Immediate future finalization flow
+Frontend must not call generic repair Edit/Delete for source-linked rows or record unverified payment booleans. Show full cost, service/invoice date provenance, source invoice/PDF via existing guarded proxy, recorded paid amount/balance/history caveat and review state. Payment dialog collects real date/amount/funding/evidence or matched transaction and displays resulting reserve movement before save. Pending attribution/cost-asset/category issues are review controls, not fabricated zero-cost tiles. Invalidate normal repairs, review coverage, source state, dashboard/vehicle analytics and reserve queries after successful mutations. Preserve tenant switches and stale-response guards.
 
-There is currently no automatic finalization webhook or financial scheduler. To satisfy immediate future import, propose a durable source outbox event on successful invoice finalization and an authenticated EDG inbox/worker. Event contains only scoped IDs, immutable event ID, source revision, action and timestamp; EDG refetches authorized financial data through the existing read-only customer key. The event is a wake-up, not financial truth or customer-attribution proof.
+## Acceptance gates
 
-Transport must have an independently scoped signing/verification mechanism, replay/time-window protection, durable delivery retries and backoff. Any new persistent secret or broader access requires its own action-time approval; none is created by this contract. Do not reuse an existing read-only API key as an invented webhook signing secret. Source outbox records customer scope at finalization; receipt rejects altered shop/customer/connection identity. Worker is connection/tenant serialized, with dead-letter review and reconciliation for missed events.
-
-Only previously unseen RO/current-final-invoice identities with an approved automatic policy and complete evidence can create normal tiles and calculate their approved reserve/expense effects automatically. Unknown reserve policy or missing date evidence, duplicate candidates, missing history attribution or invalid currency blocks execution. Revisions, replacements and cancellations affecting an already booked RO create review items and preserve accepted amounts until approved. Repeated events, reordered deliveries and lost acknowledgements are harmless by operation/source identities. Operational metadata sync alone never triggers an expense.
-
-## Acceptance and release gates
-
-1. Exactly one active normal tile per selected RO; 603/609 assignments remain 6/9 before any approved overlap archive; original attachments/evidence remain inspectable. Canonical RO links survive regenerated invoice IDs.
-2. All 15 selected current invoices accessible through approved scope or initial batch remains blocked. Missing totals are unknown, never zero; cancelled versions are not costs. Wrong tenant/customer/truck or revoked grants cannot apply.
-3. A blocked preview with unset reserve policy writes nothing. The approved expense rule chooses service completion, then evidenced invoice date; missing both blocks apply. Import/created timestamps never become fabricated original invoice dates. Invoice service/issue/payment dates are separately preserved. Four known regenerated dates do not replace available completion dates.
-4. Full-invoice policy withdraws once and subsequent partial payment does not withdraw again. Confirmed-payment policy books full expense once and applies each approved partial reserve allocation once. Negative balances are allowed and visible, never clamped.
-5. Null/zero/no-charge temporary records cause no invented expense or withdrawal. Positive archived amounts are explicitly reversed once, with original journal/reserve records preserved. Candidate ID114 is not included just because its text says diagnostic. Failure and restoration tests prove reversibility.
-6. New invoices recorded unpaid/unknown never create a cash credit, real payment, owner reimbursement or payment confirmation. Existing confirmations are preserved and matched explicitly. Book/report totals reconcile without duplicating the same expense.
-7. Normal tile list, invoice review coverage, individual repair chart, per-truck/month/year totals, all-in cost per mile, PM timing, reserve ledger/net withdrawals/balance and exports all use the same active-record definition. Trailer costs and unrelated repairs remain unchanged. Monthly/yearly operating profit and settlement take-home definitions are reconciled explicitly rather than double-subtracting reserve contributions and repairs.
-8. Identical replay and concurrent same-RO events create zero duplicate rows/withdrawals/postings. Changed source/local decisions stale the preview. Transaction failures leave originals active and all financial projections unchanged.
-9. Updated/cancelled invoices leave accepted cost intact with review state until an approved correction. Invoice/PDF access removal preserves financial audit while withholding inaccessible cached source content.
-10. Webhook tampering, replay, wrong scope, missing credentials, worker crash after commit and duplicate delivery tests pass. A finalized new invoice becomes a tile promptly only after policy/transport approval; revisions require review.
-11. Local implementation/TDD and independent Architecture/Security/QA checks precede focused PRs. Production deployment, historical grants, initial financial apply and signed-in desktop/mobile acceptance require their specific remaining approvals/evidence. Prepare a read-only per-row before/after plan first. Do not mark this item Done while any reserve timing, date evidence, attribution, gate, release or runtime acceptance remains pending.
-
+1. Missing/partial/wrong-scope source snapshots or non-current/draft/voided financial documents create no cost. Blocked8 expose no unauthorized financial fields. Current active invoice selection never falls back to an older visible predecessor.
+2. Exactly one active normal repair/source link/bill per RO under replay/concurrency; invoice regeneration does not add a second cost. Cost asset confirmation is independent of operational VIN for trailer work. No duplicate source history expense list remains.
+3. Full cost uses completion then evidenced invoice date. No fabricated import date. Correct categories keep actualPM distinct from transmission/tires/other repairs. Missing facts block rather than guess.
+4. Invoice finalization creates **zero reserve withdrawal and zero Cash credit**. A verified100 partial payment on1000 creates one100 withdrawal, recorded paid100 and recorded balance900. Later verified900 creates one900 withdrawal and zero balance. Repeated calls/events create no extra movement. Negative reserve balance stays visible. Historical unknown payments remain unconfirmed and unprojected.
+5. Existing Finance business/card/cash transaction verification, owner evidence, tenant, remaining-obligation, dependent-payment and closed-period checks cannot be bypassed. Owner reimbursement/card repayment does not withdraw reserve a second time. Generic Finance entry points use the same DBN projection helper.
+6. Reversal retains originals, appends one Finance reversal and one linked reserve reversal, restores recorded balance, and preserves manual-adjustment totals. Replay/concurrency and failure-after-each-write tests prove all-or-nothing behavior.
+7. Archive preview for123/125/126 preserves all evidence and shows zero prior financial reversal. Preserve136/114 and their352.80 effects. No archive/delete execution in current preparation. Later positive-cost replacement/restoration is separately tested and reviewed.
+8. Existing normal tile list/review coverage, per-truck/month/year costs, individual repair chart, all-in cost per mile, PM status, net withdrawals/balance and exports reconcile using active repairs and source-linked Finance effects once. Settlement take-home and accrual repair profit are not double-subtracted. Unrelated repairs/trailers remain unchanged.
+9. Source revision changes/cancellations mark review, keep accepted amounts, and do not silently reverse paid facts. Access removal withholds source data without deleting booked audit history.
+10. Signed wake-ups verify exact bytes/time/scope/replay, persist inbox before ack, survive worker crash/retry, and never import payload amounts. Missing signing config is disabled/failclosed; no credentials are generated. Future newly finalized invoice becomes a normal unpaid tile only after explicit release enablement.
+11. TDD local implementation, PostgreSQL concurrency/rollback, independent Security/QA, focused PR/CI and signed-in desktop/mobile runtime acceptance precede release. Current task creates no production financial writes, grants, secrets, archive or deployment. Initial15 financial batch remains blocked until all selected historical attributions/cost-asset facts are reconciled and approved; a smaller batch requires explicit reviewed selection.
 
 ## Local preparation evidence
 
-A pure preview builder (`backend/app/services/dieselbridge_financial_plan.py`) is prepared with no database/network/apply path and execution hard-disabled. TDD: missing-module RED then18 focused tests GREEN. It requires explicit reserve timing/date, preserves unconfirmed payment status, displays confirmed partial paid/due amounts, selects completion then evidenced invoice date, blocks owner-review-only source totals and unconfirmed cost assets/replacements, nets existing effects and reviews invoice changes/cancellations. It is not the full financial mutation/UI/worker implementation.
+The pure preview builder (`backend/app/services/dieselbridge_financial_plan.py`) now enforces the fixed recorded-payments/payment-date policy. The local implementation also includes normal repair tiles, source-linked Finance bills, verified partial-payment and reversal projections, migration/lifecycle registration, scoped manifest transport, durable signed wake-ups and unpaid amendment/cancellation review. Both financial import and worker feature flags default off. Temporary-record archive execution and historical access grants remain outside this release. See `DB094_FINANCIAL_LOCAL_VERIFICATION.md` for final checks and explicit release holds.
 
 Owner-scoped read-only inspection subsequently establishes eight historical gross totals11,810.06 and all15 gross19,879.70 before reconciliation. All8 still lack attribution evidence/mapping; no grant approved. INV000023 lists six trailer tires and needs cost-asset confirmation. INV000006 lacks an immutable line snapshot. ETSINV0718 remains blocked by the imported-ETS historical-attribution guard.
 
