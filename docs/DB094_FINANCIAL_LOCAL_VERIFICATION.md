@@ -28,3 +28,11 @@ Date: 2026-10-30. Accountable owner: Backend & Integrations. Status: development
 4. Future delivery needs a separately approved signing-secret/configuration action. No signing credential was generated or installed. Financial import/worker and source delivery flags remain off by default.
 
 Product outcome is not marked Done. The earlier deployed15 metadata-only history records remain separate from this undeployed financial phase.
+
+## Reconciliation notes addition
+
+Owner requested visible per-RO notes. The local implementation adds independently scoped append-only notes before or after financial import, visible on normal Repairs/VehicleDetail tiles. Source references, confirmed service-date decisions, original invoice dates and unexplained amount differences persist through replay/source changes; correction entries retain originals. Server-derived author/UTC time, scoped idempotency, full-history pagination, tenant-switch guards, and database/ORM update/delete protection are tested. Notes cannot grant access or change imported financial facts. Distinct migration2026_10_30_dieselbridge_reconciliation_notes upgrades databases that already applied the financial migration.
+
+Final refreshed verification: **699 backend tests passed** with disposable PostgreSQL (23.33s), including8 note tests and2 additive migration tests (SQLite/realPostgreSQL). **85 frontend tests passed**, changed-file ESLint, TypeScript and production build passed. Independent incremental Security: development GO, no unresolved defect; QA: conditional development PASS (64 backend/5 frontend/TypeScript); browser acceptance remains unverified under the existing CUA blocker. No production action.
+
+Two private owner-confirmed attachment payloads are prepared in task workspace db094-reconciliation-note-attachment-plan.json, not executed: RO46↔ETS1344, and RO45↔ETS1183 with owner-approved July13 completion. No amount difference explanation or historical payment inferred. These private decisions are not seeded into repository defaults. The current source still reports August31 for RO45; an audited source-date correction or tested reviewed override path is required before importing that RO with July13. Notes record the decision but do not silently apply it. Historical bill-to evidence/verification/grants remain separate required gates.

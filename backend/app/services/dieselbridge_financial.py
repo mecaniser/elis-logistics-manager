@@ -140,6 +140,7 @@ def scoped_link(db,tenant,repair_id):
 
 
 def public_state(db,tenant,link):
+    from app.services.dieselbridge_reconciliation import for_link
     repair=db.query(Repair).join(Truck).filter(Repair.id==link.repair_id,Truck.tenant_id==tenant).execution_options(include_archived_repairs=True).first()
     if not repair:f.fail('Repair not found.','RESOURCE_NOT_FOUND',404)
     rows=db.query(Payment).filter_by(tenant_id=tenant,link_id=link.id).order_by(Payment.id).all()
@@ -155,7 +156,8 @@ def public_state(db,tenant,link):
         'bill_event_id':link.bill_event_id,'payments':[{'id':p.id,'event_id':p.event_id,'amount':f.money(p.amount),
             'paid_date':p.paid_date.isoformat(),'payer':p.payer,'reversed':bool(p.reversal_event_id),
             'reserve_withdrawal_id':p.reserve_withdrawal_id} for p in rows],
-        'source_pdf_url':f'/api/v1/accounting/dieselbridge/repairs/{repair.id}/source-pdf' if link.state!='access_removed' else None}
+        'source_pdf_url':f'/api/v1/accounting/dieselbridge/repairs/{repair.id}/source-pdf' if link.state!='access_removed' else None,
+        **for_link(db,tenant,link)}
 
 
 def build_preview(db,tenant,config,value,selection=None):

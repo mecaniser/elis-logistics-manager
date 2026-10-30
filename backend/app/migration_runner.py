@@ -293,7 +293,14 @@ def _add_investment_plans(engine: Engine) -> None:
             connection.execute(text('ALTER TABLE trucks ADD COLUMN investment_plans JSON'))
 
 
+def _add_dieselbridge_reconciliation_notes(engine: Engine) -> None:
+    from app.models.dieselbridge_reconciliation import DieselBridgeReconciliationNote
+    with engine.begin() as connection:
+        DieselBridgeReconciliationNote.__table__.create(connection, checkfirst=True)
+
+
 MIGRATIONS: List[Migration] = [
+    ("2026_10_30_dieselbridge_reconciliation_notes", _add_dieselbridge_reconciliation_notes),
     ("2026_10_30_dieselbridge_financial", _add_dieselbridge_financial),
     ("2026_10_30_dieselbridge_repair_history", _add_dieselbridge_repair_history),
     ("2026_10_30_dieselbridge_import", _add_dieselbridge_import),

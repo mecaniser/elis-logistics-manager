@@ -17,3 +17,4 @@ from .dieselbridge import DieselBridgeConnection, DieselBridgeInvoice
 from .dieselbridge import DieselBridgeRepairHistory, DieselBridgeHistorySync
 from .dieselbridge import DieselBridgeRepairLink, DieselBridgeRepairPayment, DieselBridgeFinancialOperation
 from .dieselbridge_events import DieselBridgeFinancialInbox
+from .dieselbridge_reconciliation import DieselBridgeReconciliationNote

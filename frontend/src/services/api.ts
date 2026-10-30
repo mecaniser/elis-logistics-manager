@@ -1179,7 +1179,29 @@ export interface DieselBridgeFinancialPayment {
   reversed: boolean
   reserve_withdrawal_id: number | null
 }
+export interface DieselBridgeReconciliationNote {
+  id: number
+  note: string
+  source_references: string[]
+  confirmed_service_date: string | null
+  original_invoice_date: string | null
+  amount_discrepancy: string | null
+  supersedes_note_id: number | null
+  created_at: string
+  author: string
+  repair_order_id: string
+}
+export interface DieselBridgeReconciliationNoteInput {
+  note: string
+  source_references: string[]
+  confirmed_service_date?: string
+  original_invoice_date?: string
+  amount_discrepancy?: string
+  supersedes_note_id?: number
+}
 export interface DieselBridgeFinancialState {
+  reconciliation_notes?: DieselBridgeReconciliationNote[]
+  reconciliation_notes_has_older?: boolean
   link_id: number
   connection_slug: string
   repair_order_id: string
@@ -1252,6 +1274,10 @@ export interface DieselBridgePaymentEvidence {
 }
 const dbnAccountingClient = axios.create({ baseURL: '/api/v1/accounting', withCredentials: true })
 dbnAccountingClient.interceptors.response.use(response => response, handleAuthFailure)
+export const dieselBridgeReconciliationApi = {
+  list: (tenantId: number, repairId: number, after = 0) => dieselBridgeClient.get<{ items: DieselBridgeReconciliationNote[]; next_after: number | null }>(`/repairs/${repairId}/reconciliation-notes`, { ...dieselBridgeHeaders(tenantId), params: { limit: 100, after } }),
+  append: (tenantId: number, repairId: number, body: DieselBridgeReconciliationNoteInput, key: string) => dieselBridgeClient.post<DieselBridgeReconciliationNote>(`/repairs/${repairId}/reconciliation-notes`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+}
 export const dieselBridgeFinancialApi = {
   preview: (tenantId: number, slug: string) => dieselBridgeClient.post<DieselBridgeFinancialPreview>(`/connections/${encodeURIComponent(slug)}/financial-import/preview`, {}, dieselBridgeHeaders(tenantId)),
   sync: (tenantId: number, slug: string, expectedPlanDigest: string, key: string) => dieselBridgeClient.post<DieselBridgeFinancialSync>(`/connections/${encodeURIComponent(slug)}/financial-import/sync`, { expected_plan_digest: expectedPlanDigest }, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),

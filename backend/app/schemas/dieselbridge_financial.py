@@ -40,3 +40,17 @@ class SourceReviewPreview(BaseModel):
 class SourceReviewApply(SourceReviewPreview):
     expected_review_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
     note: str = Field(min_length=3,max_length=2000)
+
+
+from typing import Annotated
+from pydantic import StringConstraints
+
+
+class ReconciliationNoteInput(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    note: str = Field(min_length=3,max_length=4000)
+    source_references: list[Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=300)]] = Field(default_factory=list,max_length=10)
+    confirmed_service_date: date | None = None
+    original_invoice_date: date | None = None
+    amount_discrepancy: str | None = Field(default=None,max_length=1000)
+    supersedes_note_id: int | None = Field(default=None,gt=0)

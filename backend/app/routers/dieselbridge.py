@@ -203,3 +203,43 @@ async def source_review_pdf(repair_id: int, db: Session = Depends(get_db), tenan
     if inv['pdf_sha256'] and financial.hashlib.sha256(content).hexdigest()!=inv['pdf_sha256']:
         d.f.fail('Preserved invoice PDF changed. Review the document.','SOURCE_DOCUMENT_CHANGED',502)
     return Response(content,media_type='application/pdf',headers={'Cache-Control':'private, no-store','Content-Disposition':'inline; filename=invoice.pdf'})
+
+
+from app.schemas.dieselbridge_financial import ReconciliationNoteInput
+from app.services import dieselbridge_reconciliation as reconciliation
+import os
+
+
+def _note_author():
+    # accounting_tenant already verifies this exact configured principal.
+    return os.getenv('APP_AUTH_USERNAME') or 'local-development'
+
+
+@router.get('/connections/{slug}/repair-orders/{repair_order_id}/reconciliation-notes')
+def source_reconciliation_notes(slug: str, repair_order_id: str, after: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=100), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    return reconciliation.page(db,tenant,slug,repair_order_id,after,limit)
+
+
+@router.post('/connections/{slug}/repair-orders/{repair_order_id}/reconciliation-notes')
+def append_source_reconciliation_note(slug: str, repair_order_id: str, body: ReconciliationNoteInput, key: str = Header(alias='Idempotency-Key',min_length=1,max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result=reconciliation.append(db,tenant,slug,repair_order_id,body,key,_note_author())
+        db.commit();return result
+    except Exception:
+        db.rollback();raise
+
+
+@router.get('/repairs/{repair_id}/reconciliation-notes')
+def repair_reconciliation_notes(repair_id: int, after: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=100), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    link=financial.scoped_link(db,tenant,repair_id)
+    return reconciliation.page(db,tenant,link.slug,link.repair_order_id,after,limit)
+
+
+@router.post('/repairs/{repair_id}/reconciliation-notes')
+def append_repair_reconciliation_note(repair_id: int, body: ReconciliationNoteInput, key: str = Header(alias='Idempotency-Key',min_length=1,max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        link=financial.scoped_link(db,tenant,repair_id)
+        result=reconciliation.append(db,tenant,link.slug,link.repair_order_id,body,key,_note_author())
+        db.commit();return result
+    except Exception:
+        db.rollback();raise

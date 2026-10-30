@@ -4,6 +4,7 @@ import { dieselBridgeFinancialApi, dieselBridgeSourceReviewApi, type DieselBridg
 import { financeError } from '../../services/finance'
 import { financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
 import { repairMoney } from './repairReview'
+import DieselBridgeReconciliationNotes from './DieselBridgeReconciliationNotes'
 
 const EMPTY_WORKSPACE: DieselBridgePaymentWorkspace = { accounts: [], transactions: [] }
 export default function DieselBridgeFinancialDetails({ repairId, state, ownerReimbursement, onSaved }: { repairId: number; state: DieselBridgeFinancialState; ownerReimbursement?: string | null; onSaved: () => void }) {
@@ -128,6 +129,7 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     <p className="font-semibold text-gray-900">DBN invoice {state.invoice_number}</p>
     <p className="mt-1 text-gray-600">{state.order_number ? `Repair order ${state.order_number}` : 'Linked to its source repair order'}</p>
     {state.state !== 'active' && <p className="mt-2 rounded bg-amber-50 p-2 font-medium text-amber-900">{financialReviewMessage(state.review_reason)}</p>}
+    <DieselBridgeReconciliationNotes key={`${tenantId}:${repairId}:${state.repair_order_id}`} repairId={repairId} state={state} onSaved={onSaved} />
     <dl className="mt-3 space-y-1">
       <div className="flex flex-wrap justify-between gap-2"><dt>Verified payments recorded</dt><dd className="font-medium">{repairMoney(state.recorded_paid_amount)}</dd></div>
       <div className="flex flex-wrap justify-between gap-2"><dt>Recorded balance due</dt><dd className="font-medium">{repairMoney(state.recorded_balance_due)}</dd></div>
