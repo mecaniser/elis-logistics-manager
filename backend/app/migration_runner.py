@@ -128,6 +128,13 @@ def _add_dieselbridge_import(engine: Engine) -> None:
             model.__table__.create(connection, checkfirst=True)
 
 
+def _add_dieselbridge_repair_history(engine: Engine) -> None:
+    from app.models.dieselbridge import DieselBridgeRepairHistory, DieselBridgeHistorySync
+    with engine.begin() as connection:
+        for model in (DieselBridgeRepairHistory, DieselBridgeHistorySync):
+            model.__table__.create(connection, checkfirst=True)
+
+
 # Keep this ordered. New migrations must be additive/idempotent and be added
 # here in the same change that introduces their schema or data dependency.
 def _add_investment_plans(engine: Engine) -> None:
@@ -137,6 +144,7 @@ def _add_investment_plans(engine: Engine) -> None:
 
 
 MIGRATIONS: List[Migration] = [
+    ("2026_10_30_dieselbridge_repair_history", _add_dieselbridge_repair_history),
     ("2026_10_30_dieselbridge_import", _add_dieselbridge_import),
     ('2026_09_28_investment_plans', _add_investment_plans),
     ("2026_07_29_settlement_cash_adjustments", _add_settlement_cash_adjustments),

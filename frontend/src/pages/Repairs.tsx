@@ -1,3 +1,4 @@
+import DieselBridgeRepairHistory from '../components/repairs/DieselBridgeRepairHistory'
 import { useSearchParams } from 'react-router-dom'
 import { apiError } from '../utils/apiError'
 import DieselBridgeInvoices from '../components/repairs/DieselBridgeInvoices'
@@ -418,6 +419,7 @@ export default function Repairs() {
 
   return (
     <div>
+      <DieselBridgeRepairHistory key={`history-${currentTenant?.id}`} tenantId={currentTenant?.id} />
       <DieselBridgeInvoices key={currentTenant?.id} tenantId={currentTenant?.id} onAccepted={loadRepairs} />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div className="flex items-baseline gap-2">

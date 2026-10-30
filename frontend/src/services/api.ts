@@ -1108,3 +1108,55 @@ export const dieselBridgeApi = {
   accept: (tenantId: number, id: number, revision: string, note: string) => dieselBridgeClient.post(`/invoices/${id}/accept`, { revision, note, cost_treatment: 'repair_expense' }, dieselBridgeHeaders(tenantId)),
   pdf: (tenantId: number, id: number) => dieselBridgeClient.get<Blob>(`/invoices/${id}/pdf`, { ...dieselBridgeHeaders(tenantId), responseType: 'blob' }),
 }
+
+export interface DieselBridgeRepairHistoryService {
+  repair_order_id: string
+  order_number: string
+  vehicle_id: string
+  vin: string | null
+  unit_number: string | null
+  status: 'completed' | 'invoiced' | 'paid'
+  description: string | null
+  created_at: string
+  work_completed_at: string | null
+  service_date: string
+  service_date_source: 'work_completed_at' | 'created_at_fallback'
+  revision: string
+}
+export interface DieselBridgeRepairHistoryRow {
+  id: number
+  shop_id: string
+  repair_order_id: string
+  truck_id: number | null
+  truck_name: string | null
+  revision: string
+  state: 'imported' | 'review_required' | 'source_unavailable'
+  review_reason: string
+  service: DieselBridgeRepairHistoryService | null
+  legacy_repair_candidates: number[]
+}
+export interface DieselBridgeRepairHistoryPage {
+  items: DieselBridgeRepairHistoryRow[]
+  total: number
+  next_after: number | null
+}
+export interface DieselBridgeRepairHistorySync {
+  dry_run: boolean
+  source_count: number
+  matched: number
+  review_required: number
+  created: number
+  updated: number
+  unchanged: number
+  source_unavailable: number
+  legacy_candidate_count: number
+  snapshot_id: string
+}
+export const dieselBridgeHistoryApi = {
+  list: (tenantId: number, truckId?: number, after = 0) => dieselBridgeClient.get<DieselBridgeRepairHistoryPage>('/repair-history', {
+    ...dieselBridgeHeaders(tenantId), params: { truck_id: truckId, after },
+  }),
+  sync: (tenantId: number, slug: string, dryRun: boolean) => dieselBridgeClient.post<DieselBridgeRepairHistorySync>(`/connections/${encodeURIComponent(slug)}/repair-history/sync`, null, {
+    ...dieselBridgeHeaders(tenantId), params: { dry_run: dryRun },
+  }),
+}

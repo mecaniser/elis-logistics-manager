@@ -13,3 +13,5 @@ from .auth_account import AuthAccount
 __all__ = ["Tenant", "Truck", "Driver", "Settlement", "Repair", "RepairReserveLedger", "VehicleDocument", "ChartOfAccount", "JournalEntry", "JournalEntryLine", "AuthAccount"]
 
 from .dieselbridge import DieselBridgeConnection, DieselBridgeInvoice
+
+from .dieselbridge import DieselBridgeRepairHistory, DieselBridgeHistorySync

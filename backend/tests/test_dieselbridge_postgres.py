@@ -90,3 +90,37 @@ def test_postgres_concurrent_sync_keeps_event_loop_responsive(postgres, monkeypa
             assert len(calls) == 2 and all(t != threading.current_thread().ident for t in calls)
     try: asyncio.run(scenario())
     finally: app.router.routes[:] = [r for r in app.router.routes if getattr(r, 'path', '') != path]
+
+
+def test_postgres_ro_history_fifteen_atomic_replay_and_concurrent_sync(postgres, monkeypatch):
+    from app.models.dieselbridge import DieselBridgeRepairHistory
+    from app.migration_runner import _add_dieselbridge_repair_history
+    from tests.test_dieselbridge_repair_history import item, digest
+    engine, sessions, tenant = postgres
+    _add_dieselbridge_repair_history(engine); _add_dieselbridge_repair_history(engine)
+    with sessions() as db:
+        first=db.query(Truck).filter_by(tenant_id=tenant).one();first.vin='VIN603'
+        second=Truck(tenant_id=tenant,name='609',vehicle_type='truck',vin='VIN609');db.add(second);db.commit()
+        first_id,second_id=first.id,second.id
+    items=[item(n,vin='VIN603' if n<=6 else 'VIN609') for n in range(1,16)]
+    scope={'version':'db094-repair-history-v1','shop_id':'fixture-shop','customer_id':'fixture-customer','items':items}
+    value={**scope,'count':15,'complete':True,'snapshot_id':digest(scope)}
+    async def request(self,path,params=None):
+        assert path=='repair-orders'
+        await asyncio.sleep(0.05)
+        return httpx.Response(200,json=value)
+    monkeypatch.setattr(d.SourceClient,'request',request)
+    async def scenario():
+        async with httpx.AsyncClient(app=app,base_url='http://testserver') as client:
+            url='/api/v1/accounting/dieselbridge/connections/fixture/repair-history/sync?dry_run=false'
+            headers={'X-Tenant-ID':str(tenant)}
+            first,second=await asyncio.wait_for(asyncio.gather(client.post(url,headers=headers),client.post(url,headers=headers)),3)
+            assert first.status_code==second.status_code==200
+            assert sorted([first.json()['created'],second.json()['created']])==[0,15]
+    asyncio.run(scenario())
+    with sessions() as db:
+        rows=db.query(DieselBridgeRepairHistory).filter_by(tenant_id=tenant).all()
+        assert len(rows)==15 and sum(r.truck_id==first_id for r in rows)==6 and sum(r.truck_id==second_id for r in rows)==9
+        assert all(r.payload['service_date']=='2026-10-08' for r in rows)
+        assert db.query(Repair).join(Truck).filter(Truck.tenant_id==tenant).count()==0
+        assert db.query(FinanceEvent).filter_by(tenant_id=tenant).count()==0
