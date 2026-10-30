@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { apiError } from '../utils/apiError'
+import DieselBridgeInvoices from '../components/repairs/DieselBridgeInvoices'
 import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
@@ -417,6 +418,7 @@ export default function Repairs() {
 
   return (
     <div>
+      <DieselBridgeInvoices key={currentTenant?.id} tenantId={currentTenant?.id} onAccepted={loadRepairs} />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div className="flex items-baseline gap-2">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Maintenance & Repairs</h1>

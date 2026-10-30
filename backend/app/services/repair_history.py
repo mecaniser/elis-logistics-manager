@@ -59,8 +59,14 @@ def repair_history(db, tenant, as_of):
                      'recorded_owner_reimbursement': f.money(owner) if active else None,
                      'payment_status': 'linked_activity' if payments else 'unverified',
                      'issues': list(dict.fromkeys(issues)), 'automatic_posting_allowed': False})
+    from app.models.dieselbridge import DieselBridgeInvoice
+    imported = {i.repair_id: i for i in db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant).all() if i.repair_id}
     for row in rows:
-        row['review_snapshot'] = f.digest({k: row[k] for k in ('legacy_id', 'asset_id', 'date', 'description', 'invoice_number', 'recorded_cost', 'source_totals', 'evidence')})
+        source = imported.get(row['legacy_id'])
+        row['dieselbridge'] = ({'id': source.id, 'state': source.state, 'revision': source.revision, 'accepted_revision': source.accepted_revision, 'reason': source.review_reason} if source else None)
+        if source and source.state != 'accepted':
+            row['issues'].append('dieselbridge_correction_required')
+        row['review_snapshot'] = f.digest({k: row[k] for k in ('legacy_id', 'asset_id', 'date', 'description', 'invoice_number', 'recorded_cost', 'source_totals', 'evidence') + (('dieselbridge',) if source else ())})
         confirmation = confirmations.get(row['legacy_id'])
         row['confirmation'] = ({'id': confirmation.id, **confirmation.extracted,
                                 'stale': confirmation.extracted.get('snapshot') != row['review_snapshot']} if confirmation else None)
@@ -70,7 +76,7 @@ def repair_history(db, tenant, as_of):
         from app.services.repair_owner_posting import assessment
         row['owner_posting'] = assessment(db, tenant, row, ledger_state=state, posting_links=[d for d in docs if d.extraction_version == 'repair-owner-posting-v1' and d.source_key == f"repair-owner-posting:{row['legacy_id']}"])
         row['batch_eligible'] = bool(row['source_totals']) and not confirmation and not row['obligation_event_ids'] and not any(i in row['issues'] for i in (
-            'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
+            'dieselbridge_correction_required', 'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
             'incurred_amount_required', 'cost_or_recovery_treatment_review'))
     return {'version': 'repair-history-v1', 'tenant_id': tenant, 'as_of': as_of.isoformat(),
             'scope': 'legacy_repairs', 'basis': 'evidence_and_explicit_ledger_links',

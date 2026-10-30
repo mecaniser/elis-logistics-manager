@@ -32,6 +32,8 @@ def save_confirmation(db, tenant, request):
     for item in request.items:
         row = rows.get(item.repair_id)
         if not row: f.fail('Repair not found.', 'RESOURCE_NOT_FOUND', 404)
+        if 'dieselbridge_correction_required' in row['issues']:
+            f.fail('Review the changed DieselBridge invoice before confirming payment.', 'REVIEW_REQUIRED')
         if row['review_snapshot'] != item.snapshot:
             f.fail('Repair details changed. Refresh and review before saving.', 'STALE_REPAIR')
         if len(request.items) > 1 and not row['batch_eligible']:
