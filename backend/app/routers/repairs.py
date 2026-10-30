@@ -48,6 +48,13 @@ def get_tenant_repair_or_404(db: Session, repair_id: int, tenant_id: int) -> Rep
     return repair
 
 
+def require_manual_repair(db: Session, repair: Repair, tenant_id: int) -> None:
+    # Source-linked costs must never enter the legacy form's automatic funding path.
+    from app.models.dieselbridge import DieselBridgeInvoice
+    if db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant_id, repair_id=repair.id).first():
+        raise HTTPException(status_code=409, detail="DieselBridge repair requires invoice correction review. Existing cost and accounting entries were preserved.")
+
+
 def validate_paid_from_reserve(repair_date, paid_from_reserve: bool) -> None:
     if paid_from_reserve and not repair_date:
         raise HTTPException(
@@ -304,6 +311,7 @@ async def update_repair(
 ):
     """Update a repair, optionally adding new images"""
     repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
+    require_manual_repair(db, repair, tenant_id)
     
     # Parse JSON data from form
     update_data = {}
@@ -656,6 +664,7 @@ async def delete_repair_image(
 def delete_repair(repair_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a repair"""
     repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
+    require_manual_repair(db, repair, tenant_id)
 
     try:
         delete_reserve_ledger_entry(db, source_type="repair", source_id=repair_id)

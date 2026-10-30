@@ -1086,3 +1086,25 @@ export const bankMonitorApi = {
 export const bankProfilesApi = {
   request: <T>(tenantId: number, path = '', method: 'get' | 'post' | 'put' = 'get', data?: unknown) => bankMonitorClient.request<T>({ url: `/bank-monitor/profiles${path}`, method, data, headers: { 'X-Tenant-ID': String(tenantId), 'X-Bank-Monitor-Action': 'manage-bank-profiles' } }),
 }
+
+
+export interface DieselBridgeInvoice {
+  id: number
+  invoice_id: string
+  revision: string
+  truck_id: number | null
+  repair_id: number | null
+  state: string
+  review_reason: string
+  invoice: { invoice_number?: string; vin?: string; total_amount?: string }
+}
+const dieselBridgeClient = axios.create({ baseURL: '/api/v1/accounting/dieselbridge', withCredentials: true })
+dieselBridgeClient.interceptors.response.use(response => response, handleAuthFailure)
+const dieselBridgeHeaders = (tenantId: number) => ({ headers: { 'X-Tenant-ID': String(tenantId) } })
+export const dieselBridgeApi = {
+  connections: (tenantId: number) => dieselBridgeClient.get('/connections', dieselBridgeHeaders(tenantId)),
+  invoices: (tenantId: number, after = 0) => dieselBridgeClient.get<{ items: DieselBridgeInvoice[]; next_after: number | null }>('/invoices', { ...dieselBridgeHeaders(tenantId), params: { after } }),
+  sync: (tenantId: number, slug: string, dryRun: boolean) => dieselBridgeClient.post(`/connections/${encodeURIComponent(slug)}/sync`, null, { ...dieselBridgeHeaders(tenantId), params: { dry_run: dryRun } }),
+  accept: (tenantId: number, id: number, revision: string, note: string) => dieselBridgeClient.post(`/invoices/${id}/accept`, { revision, note, cost_treatment: 'repair_expense' }, dieselBridgeHeaders(tenantId)),
+  pdf: (tenantId: number, id: number) => dieselBridgeClient.get<Blob>(`/invoices/${id}/pdf`, { ...dieselBridgeHeaders(tenantId), responseType: 'blob' }),
+}

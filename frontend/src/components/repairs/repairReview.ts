@@ -1,4 +1,5 @@
 export interface RepairReviewRow {
+  dieselbridge?: { id: number; state: string; revision: string; accepted_revision: string; reason: string } | null
   legacy_id: number
   asset_name: string
   date: string | null
@@ -29,9 +30,10 @@ export function matchesReview(row: RepairReviewRow | undefined, filter: ReviewFi
   if (filter === 'amount') return row.issues.some(i => ['invoice_amount_difference', 'conflicting_invoice_totals'].includes(i))
   if (filter === 'documents') return row.issues.includes('missing_preserved_evidence')
   if (filter === 'payment') return row.payment_status === 'unverified' && (!row.confirmation || row.confirmation.stale || row.confirmation.status === 'unknown')
-  return row.issues.some(i => ['cost_or_recovery_treatment_review', 'incurred_amount_required', 'incurred_date_required'].includes(i))
+  return row.issues.some(i => ['dieselbridge_correction_required', 'cost_or_recovery_treatment_review', 'incurred_amount_required', 'incurred_date_required'].includes(i))
 }
 export const reviewIssueLabels: Record<string, string> = {
+  dieselbridge_correction_required: 'The DieselBridge invoice changed or access was removed. Review the existing repair and accounting entries before confirming payment.',
   missing_preserved_evidence: 'Attach an invoice or receipt to the evidence register.',
   incurred_date_required: 'Confirm when the repair was incurred.',
   incurred_amount_required: 'Confirm the actual charge, including whether the work was free.',
@@ -51,5 +53,6 @@ export function repairMethod(row: RepairReviewRow | undefined): string {
   return c && !c.stale && ['paid', 'partial'].includes(c.status) ? c.method : 'unknown'
 }
 export function repairDocumentType(row: RepairReviewRow): string {
+  if (row.evidence.some(e => e.extraction_version === 'dieselbridge-invoice-v1')) return 'DieselBridge invoice data'
   return row.evidence.some(e => e.media_type === 'application/pdf') ? 'Invoice PDF' : row.evidence.length ? 'Image / other attachments' : 'No preserved document'
 }

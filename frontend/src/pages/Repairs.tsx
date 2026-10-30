@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { apiError } from '../utils/apiError'
+import DieselBridgeInvoices from '../components/repairs/DieselBridgeInvoices'
 import { RepairBatchReview } from '../components/repairs/RepairPaymentReview'
 import { useEffect, useState } from 'react'
 import { repairsApi, trucksApi, Repair, Truck } from '../services/api'
@@ -417,6 +418,7 @@ export default function Repairs() {
 
   return (
     <div>
+      <DieselBridgeInvoices key={currentTenant?.id} tenantId={currentTenant?.id} onAccepted={loadRepairs} />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div className="flex items-baseline gap-2">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Maintenance & Repairs</h1>
@@ -950,6 +952,7 @@ export default function Repairs() {
                   </div>
                   <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
                     <button
+                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
                       onClick={() => handleEdit(repair)}
                       className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
                       title="Edit"
@@ -963,6 +966,7 @@ export default function Repairs() {
                       )}
                     </button>
                     <button
+                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
                       onClick={() => setRepairToDelete(repair.id)}
                       className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors flex items-center justify-center"
                       title="Delete"

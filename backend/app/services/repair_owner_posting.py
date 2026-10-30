@@ -13,6 +13,8 @@ VERSION = 'repair-owner-posting-v1'
 def assessment(db, tenant, row, ledger_state=None, posting_links=None):
     c = row.get('confirmation')
     result = {'repair_id': row['legacy_id'], 'status': 'not_applicable', 'reason': '', 'owner_claim_id': None}
+    if 'dieselbridge_correction_required' in row.get('issues', []):
+        return {**result, 'status': 'review_required', 'reason': 'DieselBridge invoice changed or access was removed. Review the existing repair and entries.'}
     if not c: return result
     links = posting_links if posting_links is not None else db.query(FinanceEvidence).filter_by(tenant_id=tenant, extraction_version=VERSION, source_key=f"repair-owner-posting:{row['legacy_id']}").all()
     fingerprint = f.digest({'asset': row['asset_id'], 'incurred': row['date'], 'cost': row['recorded_cost'],
