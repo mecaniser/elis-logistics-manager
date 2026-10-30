@@ -50,8 +50,9 @@ def get_tenant_repair_or_404(db: Session, repair_id: int, tenant_id: int) -> Rep
 
 def require_manual_repair(db: Session, repair: Repair, tenant_id: int) -> None:
     # Source-linked costs must never enter the legacy form's automatic funding path.
-    from app.models.dieselbridge import DieselBridgeInvoice
-    if db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant_id, repair_id=repair.id).first():
+    from app.models.dieselbridge import DieselBridgeInvoice, DieselBridgeRepairLink
+    if (db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant_id, repair_id=repair.id).first()
+            or db.query(DieselBridgeRepairLink).filter_by(tenant_id=tenant_id, repair_id=repair.id).first()):
         raise HTTPException(status_code=409, detail="DieselBridge repair requires invoice correction review. Existing cost and accounting entries were preserved.")
 
 

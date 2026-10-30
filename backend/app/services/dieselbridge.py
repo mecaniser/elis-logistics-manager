@@ -220,6 +220,18 @@ def accept(db, tenant, invoice_id, revision, note):
     if row.repair_id:
         if row.state == 'accepted' and row.accepted_revision == revision: return row
         f.fail('An existing repair requires explicit correction.', 'CORRECTION_REQUIRED')
+    # The old invoice-only flow cannot resolve a conditional card surcharge.
+    # Route new costs through the settlement-aware importer; retain idempotent
+    # access to already accepted historical records above.
+    # Explicitly present fee data must be a canonical known zero. Missing
+    # fields remain compatible with older fee-free staging fixtures; malformed
+    # or conditional fee values must never fall through as zero.
+    if 'service_fee_amount' in row.payload and row.payload['service_fee_amount'] != '0.00':
+        f.fail('Use the settlement-aware repair import to distinguish quoted card fees from actual repair cost.', 'SETTLEMENT_IMPORT_REQUIRED')
+    from app.models.dieselbridge import DieselBridgeRepairLink
+    managed = db.query(DieselBridgeRepairLink).filter_by(tenant_id=tenant, shop_id=row.shop_id).all()
+    if any(link.repair_order_id == row.payload.get('repair_order_id') or link.accepted_invoice_id == row.invoice_id for link in managed):
+        f.fail('This repair order already has a canonical financial repair. Use its source review.', 'EXISTING_REPAIR_SOURCE_REVIEW')
     if row.state == 'access_removed': f.fail('Source access requires review.', 'REVIEW_REQUIRED')
     # Re-evaluate on owner action: trucks can be added or their VINs changed.
     matched, reason = match(db, tenant, row.payload.get('vin'))

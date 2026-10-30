@@ -31,7 +31,8 @@ def _reserve_balance_query(db: Session, tenant_id: int):
                 case((RepairReserveLedger.entry_type == "deposit", RepairReserveLedger.amount), else_=0)
             ).label("deposits_total"),
             func.sum(
-                case((RepairReserveLedger.entry_type == "withdrawal", RepairReserveLedger.amount), else_=0)
+                case((RepairReserveLedger.entry_type == "withdrawal", RepairReserveLedger.amount),
+                     (RepairReserveLedger.entry_type == "withdrawal_reversal", -RepairReserveLedger.amount), else_=0)
             ).label("withdrawals_total"),
             func.sum(
                 case((RepairReserveLedger.entry_type == "adjustment", RepairReserveLedger.amount), else_=0)

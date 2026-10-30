@@ -1,9 +1,11 @@
 """Management fund balances from business records, independent of bank matching."""
 from datetime import date
+from sqlalchemy import and_, or_
 from app.models.truck import Truck
 from app.models.settlement import Settlement
 from app.models.repair import Repair
 from app.models.repair_reserve_ledger import RepairReserveLedger
+from app.models.dieselbridge import DieselBridgeRepairLink, DieselBridgeInvoice
 from app.services.investment_progress import income_sources, settlement_progress
 from app.services.finance import D, ZERO, money
 
@@ -21,11 +23,24 @@ def business_funds(db, tenant, start, end):
     regime = date(2026, 1, 1)
     settlements = db.query(Settlement).filter(Settlement.truck_id.in_(ids), Settlement.source_settlement_id.is_(None), Settlement.settlement_date >= regime, Settlement.settlement_date <= end).all()
     repairs = db.query(Repair).filter(Repair.truck_id.in_(ids), Repair.paid_from_reserve.is_(True), Repair.repair_date >= regime, Repair.repair_date <= end).all()
+    # Source invoice cost is an incurred expense, not proof of reserve payment.
+    # Exclude managed repairs even if a restored legacy flag incorrectly says
+    # paid. Actual verified payment/reversal copies below are authoritative.
+    managed = {r[0] for r in db.query(DieselBridgeRepairLink.repair_id).filter_by(tenant_id=tenant).all()}
+    managed |= {r[0] for r in db.query(DieselBridgeInvoice.repair_id).filter(
+        DieselBridgeInvoice.tenant_id == tenant, DieselBridgeInvoice.repair_id.isnot(None)).all()}
     # Derive source entries directly; synced ledger deposits/withdrawals are copies.
     adjustments = db.query(RepairReserveLedger).filter_by(tenant_id=tenant, entry_type='adjustment').filter(RepairReserveLedger.truck_id.in_(ids), RepairReserveLedger.entry_date >= regime, RepairReserveLedger.entry_date <= end).all()
     repair_entries = [(s.settlement_date, D(s.repair_reserve_amount)) for s in settlements]
-    repair_entries += [(r.repair_date, -D(r.cost)) for r in repairs]
+    repair_entries += [(r.repair_date, -D(r.cost)) for r in repairs if r.id not in managed]
     repair_entries += [(a.entry_date, D(a.amount)) for a in adjustments]
+    paid_entries = db.query(RepairReserveLedger).filter(
+        RepairReserveLedger.tenant_id == tenant, RepairReserveLedger.truck_id.in_(ids),
+        RepairReserveLedger.entry_date >= regime, RepairReserveLedger.entry_date <= end,
+        or_(and_(RepairReserveLedger.source_type == 'dbn_payment', RepairReserveLedger.entry_type == 'withdrawal'),
+            and_(RepairReserveLedger.source_type == 'dbn_payment_reverse', RepairReserveLedger.entry_type == 'withdrawal_reversal')),
+    ).all()
+    repair_entries += [(p.entry_date, D(p.amount) if p.entry_type == 'withdrawal_reversal' else -D(p.amount)) for p in paid_entries]
     capital_entries = []
     equipment = []
     for asset in assets:
@@ -44,4 +59,4 @@ def business_funds(db, tenant, start, end):
     return {'start': start.isoformat(), 'end': end.isoformat(), 'repair_since': regime.isoformat(),
             'repair': movement(repair_entries, start, end), 'capital': movement(capital_entries, start, end),
             'equipment': equipment,
-            'basis': 'Settlement records and saved recovery plans. Repair spending follows repairs marked paid from reserve. Capital shows cumulative recovery before owner withdrawals; it is not a bank balance.'}
+            'basis': 'Settlement records and saved recovery plans. Legacy repair spending follows saved reserve flags; DBN spending follows verified payment dates and amounts only. Returned payments add funds on their reversal date. Capital shows cumulative recovery before owner withdrawals; it is not a bank balance.'}

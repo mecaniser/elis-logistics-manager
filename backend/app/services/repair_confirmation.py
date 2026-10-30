@@ -32,6 +32,8 @@ def save_confirmation(db, tenant, request):
     for item in request.items:
         row = rows.get(item.repair_id)
         if not row: f.fail('Repair not found.', 'RESOURCE_NOT_FOUND', 404)
+        if row.get('dieselbridge_financial'):
+            f.fail('Record source-linked payments through verified payment matching, not a legacy confirmation.', 'VERIFIED_PAYMENT_REQUIRED')
         if 'dieselbridge_correction_required' in row['issues']:
             f.fail('Review the changed DieselBridge invoice before confirming payment.', 'REVIEW_REQUIRED')
         if row['review_snapshot'] != item.snapshot:

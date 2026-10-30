@@ -36,13 +36,14 @@ class RepairReserveLedger(Base):
     description = Column(String(255), nullable=True)
     source_type = Column(String(20), nullable=True)
     source_id = Column(Integer, nullable=True)
+    reversal_of_id = Column(Integer, ForeignKey('repair_reserve_ledger.id'), nullable=True, unique=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint("source_type", "source_id", "entry_type", name="uq_reserve_source"),
         Index("ix_reserve_truck_type_amount", "truck_id", "entry_type", "amount"),
         CheckConstraint(
-            "entry_type IN ('deposit', 'withdrawal', 'adjustment')",
+            "entry_type IN ('deposit', 'withdrawal', 'adjustment', 'withdrawal_reversal')",
             name="check_reserve_entry_type",
         ),
         CheckConstraint("amount > 0", name="check_reserve_amount_positive"),

@@ -78,6 +78,16 @@ def repair_history(db, tenant, as_of):
         row['batch_eligible'] = bool(row['source_totals']) and not confirmation and not row['obligation_event_ids'] and not any(i in row['issues'] for i in (
             'dieselbridge_correction_required', 'invoice_amount_difference', 'conflicting_invoice_totals', 'incurred_date_required',
             'incurred_amount_required', 'cost_or_recovery_treatment_review'))
+    from app.models.dieselbridge import DieselBridgeRepairLink
+    from app.services.dieselbridge_financial import public_state
+    links = {i.repair_id:i for i in db.query(DieselBridgeRepairLink).filter_by(tenant_id=tenant).all()}
+    for row in rows:
+        link = links.get(row['legacy_id'])
+        row['dieselbridge_financial'] = public_state(db, tenant, link) if link else None
+        if link:
+            row['batch_eligible'] = False
+            if link.state != 'active':
+                row['issues'].append('dieselbridge_correction_required')
     return {'version': 'repair-history-v1', 'tenant_id': tenant, 'as_of': as_of.isoformat(),
             'scope': 'legacy_repairs', 'basis': 'evidence_and_explicit_ledger_links',
             'evidence_status': 'review_required', 'rows': rows,

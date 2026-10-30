@@ -23,6 +23,11 @@ class Repair(Base):
     invoice_number = Column(String(50), nullable=True)  # Invoice number from PDF
     image_paths = Column(JSON, nullable=True)  # List of image file paths
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Reviewed replacements retain original evidence and financial references.
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    replaced_by_repair_id = Column(Integer, ForeignKey('repairs.id'), nullable=True)
+    archive_operation_id = Column(String(80), nullable=True)
+    archive_reason = Column(String(500), nullable=True)
 
     # Relationships
     truck = relationship("Truck", back_populates="repairs")
