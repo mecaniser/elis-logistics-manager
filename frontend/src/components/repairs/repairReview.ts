@@ -1,4 +1,5 @@
 export interface RepairReviewRow {
+  dieselbridge?: { id: number; state: string; revision: string; accepted_revision: string; reason: string } | null
   legacy_id: number
   asset_name: string
   date: string | null

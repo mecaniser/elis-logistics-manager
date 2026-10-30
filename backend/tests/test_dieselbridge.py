@@ -239,3 +239,20 @@ def test_migration_additive_repeatable(db):
     for name in ('tenants', 'trucks', 'repairs'): Base.metadata.tables[name].create(engine)
     _add_dieselbridge_import(engine); _add_dieselbridge_import(engine)
     assert {'dieselbridge_connections', 'dieselbridge_invoices'} <= set(inspect(engine).get_table_names())
+
+
+@pytest.mark.parametrize('action', ['edit_title', 'remap_truck', 'delete'])
+def test_imported_repairs_cannot_enter_legacy_funding_path(db, truck, client, action):
+    row = stage(db)
+    assert accept(client, row).status_code == 200
+    repair_id = row.repair_id
+    if action == 'delete':
+        response = client.delete(f'/api/repairs/{repair_id}', headers=H)
+    else:
+        body = {'title': 'Metadata-only edit'} if action == 'edit_title' else {'truck_id': truck.id + 1}
+        response = client.put(f'/api/repairs/{repair_id}', headers=H, data={'repair_update_json': json.dumps(body)})
+    assert response.status_code == 409
+    repair = db.query(Repair).filter_by(id=repair_id).one()
+    assert not repair.paid_from_reserve and repair.truck_id == truck.id
+    for model in (FinanceEvent, FinancePosting, JournalEntry, RepairReserveLedger):
+        assert db.query(model).count() == 0

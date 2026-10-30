@@ -952,6 +952,7 @@ export default function Repairs() {
                   </div>
                   <div className="flex gap-2 mt-auto pt-3 border-t border-gray-100">
                     <button
+                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
                       onClick={() => handleEdit(repair)}
                       className="flex-1 px-3 py-1.5 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
                       title="Edit"
@@ -965,6 +966,7 @@ export default function Repairs() {
                       )}
                     </button>
                     <button
+                      disabled={Boolean(reviewRows.get(repair.id)?.dieselbridge)}
                       onClick={() => setRepairToDelete(repair.id)}
                       className="flex-1 px-3 py-1.5 text-sm border border-red-600 text-red-600 rounded hover:bg-red-50 transition-colors flex items-center justify-center"
                       title="Delete"

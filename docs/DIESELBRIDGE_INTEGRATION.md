@@ -119,9 +119,9 @@ cd backend
 DATABASE_URL=sqlite:////tmp/elis-db094-test.db ../.venv/bin/python -m pytest tests -q
 ```
 
-No live end-to-end connection has been tested. Release still needs configured
-production scopes/key, deployed source availability, reconciliation against real
-invoices, PostgreSQL execution, and independent Security/QA review.
+No live end-to-end connection has been tested. Activation still needs explicit
+approval to provision the exact production shop/bill-to key and store it in the
+EDG web service, followed by dry-run reconciliation against real invoices.
 
 ### Verified on 2026-10-30
 
@@ -138,3 +138,29 @@ invoices, PostgreSQL execution, and independent Security/QA review.
   `paid_from_reserve=false`, zero finance events, zero journal entries and zero
   reserve withdrawals.
 - No live credentials, customer imports, deployment, or remote pushes performed.
+
+
+### Production release verification (2026-10-30)
+
+- Rebased the integration onto current deployed EDG main `bf0c9cf` so existing
+  login, bank-monitor, accounting and investment features are preserved.
+- Full backend suite: **530 passed, 2 optional PostgreSQL checks skipped**.
+  Both optional checks were separately executed against disposable PostgreSQL 16:
+  **2 passed** (additive migration/replay/acceptance; concurrent sync plus responsive
+  unrelated ASGI heartbeat). Frontend production build and **57 frontend checks passed**.
+- Independent security and QA reviews identified a blocking event-loop lock wait
+  and a legacy repair-edit path that could invent reserve payment. Both were fixed
+  and re-reviewed. Sync now runs as one worker-thread transaction; legacy edit and
+  delete reject source-linked repairs before financial side effects. Three added
+  tests cover title edits, truck remapping and deletion.
+- Public production health checks passed for EDG and DieselBridge. The fleet export
+  route returns 401 without credentials. Metadata-only Railway inspection confirmed
+  no existing DieselBridge destination configuration; no raw environment values were
+  retrieved. Three source Elis bill-to scopes exist. Only the Truck Pit Stop
+  `Elis Logistics LLC (DBN)` scope currently has native finalized invoice snapshots
+  (12); no existing active export key exists for any of the three scopes.
+- Proposed activation is one read-only connection for EDG Elis Logistics tenant 1
+  to that exact DBN bill-to scope. The other source bill-to records and historical
+  mappings are not included. Persistent key creation and destination secret/config
+  writes require action-time approval; no such action was performed during release
+  preparation. No invoice, payment, mapping or accounting production data was changed.

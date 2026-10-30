@@ -1,4 +1,5 @@
 """Authenticated tenant-scoped DB-094 operator endpoints."""
+import asyncio
 from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -26,9 +27,10 @@ def connections(db: Session = Depends(get_db), tenant: int = Depends(accounting_
 
 
 @router.post('/connections/{slug}/sync')
-async def sync(slug: str, dry_run: bool = True, restart: bool = False, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+def sync(slug: str, dry_run: bool = True, restart: bool = False, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     try:
-        result = await d.sync_page(db, tenant, slug, dry_run, restart)
+        # Keep the blocking tenant lock and its HTTP wait on a worker thread.
+        result = asyncio.run(d.sync_page(db, tenant, slug, dry_run, restart))
         if dry_run: db.rollback()
         else: db.commit()
         return result
