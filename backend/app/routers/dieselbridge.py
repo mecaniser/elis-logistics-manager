@@ -70,3 +70,32 @@ async def pdf(invoice_id: int, db: Session = Depends(get_db), tenant: int = Depe
     d.connection(db, tenant, c)
     content = await d.SourceClient(c).pdf(row.invoice_id)
     return Response(content, media_type='application/pdf', headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline; filename=invoice.pdf'})
+
+
+@router.get('/repair-history')
+def repair_order_history(truck_id: int | None = None, limit: int = Query(100, ge=1, le=500), after: int = Query(0, ge=0), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.models.dieselbridge import DieselBridgeRepairHistory
+    query = db.query(DieselBridgeRepairHistory).filter(DieselBridgeRepairHistory.tenant_id == tenant)
+    if truck_id is not None:
+        if not db.query(d.Truck).filter_by(id=truck_id, tenant_id=tenant).first():
+            d.f.fail('Truck not found.', 'RESOURCE_NOT_FOUND', 404)
+        query = query.filter(DieselBridgeRepairHistory.truck_id == truck_id)
+    total = query.count()
+    rows = query.filter(DieselBridgeRepairHistory.id > after).order_by(DieselBridgeRepairHistory.id).limit(limit + 1).all()
+    from app.services.dieselbridge_repair_history import public
+    return {'items': [public(db, tenant, row) for row in rows[:limit]], 'total': total, 'next_after': rows[limit - 1].id if len(rows) > limit else None}
+
+
+@router.post('/connections/{slug}/repair-history/sync')
+def sync_repair_order_history(slug: str, dry_run: bool = True, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.services.dieselbridge_repair_history import sync_history
+    try:
+        result = asyncio.run(sync_history(db, tenant, slug, dry_run))
+        if dry_run:
+            db.rollback()
+        else:
+            db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise

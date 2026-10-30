@@ -1,3 +1,4 @@
+import DieselBridgeRepairHistory from '../components/repairs/DieselBridgeRepairHistory'
 import TrailerInvestmentForm from '../components/TrailerInvestmentForm'
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
@@ -264,6 +265,8 @@ export default function VehicleDetail() {
         )}
         </div>
       )}
+
+      {vehicle.vehicle_type === 'truck' && <DieselBridgeRepairHistory key={`history-${currentTenant?.id}-${vehicle.id}`} tenantId={currentTenant?.id} truckId={vehicle.id} manageSync={false} />}
 
       {vehicle.vehicle_type === 'trailer' && <TrailerInvestmentForm key={vehicle.id} vehicle={vehicle} compact />}
       {vehicle.vehicle_type==='trailer'&&!!vehicle.investment_plans?.length&&<button type="button" className="flex w-full justify-between items-center rounded-lg bg-white border p-4 mb-4 text-sm" aria-expanded={legacyRoiExpanded} onClick={()=>setLegacyRoiExpanded(!legacyRoiExpanded)}>Previous earnings calculation<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2" aria-hidden="true" style={{transform:legacyRoiExpanded?'rotate(90deg)':undefined}}><path d="m9 18 6-6-6-6"/></svg></button>}
