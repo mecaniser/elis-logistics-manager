@@ -44,6 +44,41 @@ class SourceReviewApply(SourceReviewPreview):
     note: str = Field(min_length=3,max_length=2000)
 
 
+class TemporaryReplacementPreview(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    repair_order_id: str = Field(min_length=1, max_length=80)
+    legacy_repair_ids: list[int] = Field(min_length=1, max_length=30)
+    correction_date: date
+
+
+class TemporaryReplacementApply(TemporaryReplacementPreview):
+    expected_plan_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    confirmed_same_job: bool
+    reviewed_existing_effects: bool
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class TemporaryReplacementRestorePreview(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    correction_date: date
+
+
+class TemporaryReplacementRestore(TemporaryReplacementRestorePreview):
+    expected_plan_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    reviewed_existing_effects: bool
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class EquipmentAllocationInput(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    asset_id: int = Field(gt=0)
+    expected_source_revision: str = Field(pattern=r'^[0-9a-f]{64}$')
+    work_equipment_type: Literal['truck','trailer']
+    interim_unit_allocation: bool = False
+    supersedes_id: int | None = Field(default=None,gt=0)
+    reason: str = Field(min_length=3,max_length=2000)
+
+
 from typing import Annotated
 from pydantic import StringConstraints
 

@@ -219,6 +219,16 @@ def create_journal_entry(
     tenant_id: int = Depends(get_tenant_id)
 ):
     """Create a manual journal entry."""
+    from app.services.finance import lock_business
+    lock_business(db,tenant_id)
+    if (entry.reference_type or '').startswith('dbn_'):
+        raise HTTPException(409,detail='DBN journal references are managed by reviewed integration operations.')
+    if entry.reference_type=='repair' and entry.reference_id:
+        from app.models.repair import Repair
+        from app.routers.repairs import require_manual_repair
+        repair=db.query(Repair).join(Truck).filter(Repair.id==entry.reference_id,Truck.tenant_id==tenant_id).execution_options(include_archived_repairs=True).first()
+        if not repair:raise HTTPException(404,detail='Repair not found.')
+        require_manual_repair(db,repair,tenant_id)
     from app.models.tenant import Tenant
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     from app.services.accounting_service import uses_per_asset_accounting

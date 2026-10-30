@@ -1232,7 +1232,20 @@ export interface DieselBridgeSourceSettlement {
   refund_pending: string
   payments: DieselBridgeSourcePaymentAttempt[]
 }
+export interface DieselBridgeEquipmentAllocation {
+  id: number
+  asset_id: number
+  work_equipment_type: 'truck' | 'trailer'
+  interim_unit_allocation: number
+  reason: string
+  author: string
+  created_at: string
+  supersedes_id: number | null
+}
 export interface DieselBridgeFinancialState {
+  temporary_replacements?: { id: number; reason: string; restored: boolean; repair_ids: number[] }[]
+  equipment_allocation?: DieselBridgeEquipmentAllocation | null
+  cost_asset_id?: number
   reconciliation_notes?: DieselBridgeReconciliationNote[]
   reconciliation_notes_has_older?: boolean
   link_id: number
@@ -1264,6 +1277,9 @@ export interface DieselBridgeFinancialState {
   source_pdf_url: string | null
 }
 export interface DieselBridgeFinancialPreviewRow {
+  equipment_allocation?: DieselBridgeEquipmentAllocation | null
+  cost_asset_id?: number | null
+  source_revision?: string | null
   repair_order_id: string
   order_number?: string
   truck_name?: string | null
@@ -1324,7 +1340,21 @@ export const dieselBridgeReconciliationApi = {
   list: (tenantId: number, repairId: number, after = 0) => dieselBridgeClient.get<{ items: DieselBridgeReconciliationNote[]; next_after: number | null }>(`/repairs/${repairId}/reconciliation-notes`, { ...dieselBridgeHeaders(tenantId), params: { limit: 100, after } }),
   append: (tenantId: number, repairId: number, body: DieselBridgeReconciliationNoteInput, key: string) => dieselBridgeClient.post<DieselBridgeReconciliationNote>(`/repairs/${repairId}/reconciliation-notes`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
 }
+export interface DieselBridgeReplacementPlan {
+  plan_digest: string
+  correction_date: string
+  expense_removed: string
+  reserve_correction: string
+  temporary_records: { repair: { id: string; title: string | null; description: string | null; repair_date: string | null; cost: string | null }; withdrawals: { id: string; amount: string; entry_date: string }[]; journals: { entry: { id: string; entry_date: string }; lines: { account_id: string; debit: string; credit: string }[] }[] }[]
+}
 export const dieselBridgeFinancialApi = {
+  replacementCandidates: (tenantId: number, repairId: number) => dieselBridgeClient.get<{ items: { id: number; title: string; date: string | null; cost: string | null }[] }>(`/repairs/${repairId}/replacement-candidates`, dieselBridgeHeaders(tenantId)),
+  replacementPreview: (tenantId: number, slug: string, body: { repair_order_id: string; legacy_repair_ids: number[]; correction_date: string }) => dieselBridgeClient.post<DieselBridgeReplacementPlan>(`/connections/${encodeURIComponent(slug)}/financial-import/archive-preview`, body, dieselBridgeHeaders(tenantId)),
+  replacementApply: (tenantId: number, slug: string, body: Record<string, unknown>, key: string) => dieselBridgeClient.post(`/connections/${encodeURIComponent(slug)}/financial-import/archive-apply`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+  replacementRestorePreview: (tenantId: number, slug: string, operationId: number, correctionDate: string) => dieselBridgeClient.post<{ plan_digest: string; original_operation: { plan: DieselBridgeReplacementPlan } }>(`/connections/${encodeURIComponent(slug)}/financial-import/replacements/${operationId}/restore-preview`, { correction_date: correctionDate }, dieselBridgeHeaders(tenantId)),
+  replacementRestore: (tenantId: number, slug: string, operationId: number, body: Record<string, unknown>, key: string) => dieselBridgeClient.post(`/connections/${encodeURIComponent(slug)}/financial-import/replacements/${operationId}/restore`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
+  equipmentOptions: (tenantId: number) => dieselBridgeClient.get<{ items: { id: number; name: string; vehicle_type: 'truck' | 'trailer'; vin: string | null }[] }>('/equipment-options', dieselBridgeHeaders(tenantId)),
+  allocateEquipment: (tenantId: number, slug: string, ro: string, body: { asset_id: number; expected_source_revision: string; work_equipment_type: 'truck' | 'trailer'; interim_unit_allocation: boolean; supersedes_id?: number; reason: string }, key: string) => dieselBridgeClient.post<DieselBridgeEquipmentAllocation>(`/connections/${encodeURIComponent(slug)}/repair-orders/${encodeURIComponent(ro)}/equipment-allocation`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
   preview: (tenantId: number, slug: string) => dieselBridgeClient.post<DieselBridgeFinancialPreview>(`/connections/${encodeURIComponent(slug)}/financial-import/preview`, {}, dieselBridgeHeaders(tenantId)),
   sync: (tenantId: number, slug: string, expectedPlanDigest: string, key: string) => dieselBridgeClient.post<DieselBridgeFinancialSync>(`/connections/${encodeURIComponent(slug)}/financial-import/sync`, { expected_plan_digest: expectedPlanDigest }, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
   state: (tenantId: number, repairId: number) => dieselBridgeClient.get<DieselBridgeFinancialState>(`/repairs/${repairId}/financial-state`, dieselBridgeHeaders(tenantId)),

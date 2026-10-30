@@ -51,7 +51,7 @@ def get_tenant_repair_or_404(db: Session, repair_id: int, tenant_id: int) -> Rep
 def require_manual_repair(db: Session, repair: Repair, tenant_id: int) -> None:
     # Source-linked costs must never enter the legacy form's automatic funding path.
     from app.models.dieselbridge import DieselBridgeInvoice, DieselBridgeRepairLink
-    if (db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant_id, repair_id=repair.id).first()
+    if (repair.archive_operation_id or db.query(DieselBridgeInvoice).filter_by(tenant_id=tenant_id, repair_id=repair.id).first()
             or db.query(DieselBridgeRepairLink).filter_by(tenant_id=tenant_id, repair_id=repair.id).first()):
         raise HTTPException(status_code=409, detail="DieselBridge repair requires invoice correction review. Existing cost and accounting entries were preserved.")
 
@@ -311,6 +311,8 @@ async def update_repair(
     tenant_id: int = Depends(get_tenant_id),
 ):
     """Update a repair, optionally adding new images"""
+    from app.services.finance import lock_business
+    lock_business(db,tenant_id)
     repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
     require_manual_repair(db, repair, tenant_id)
     
@@ -629,7 +631,10 @@ async def delete_repair_image(
     tenant_id: int = Depends(get_tenant_id),
 ):
     """Delete a specific image from a repair"""
+    from app.services.finance import lock_business
+    lock_business(db,tenant_id)
     repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
+    require_manual_repair(db,repair,tenant_id)
     
     if not repair.image_paths or not isinstance(repair.image_paths, list):
         raise HTTPException(status_code=400, detail="No images found for this repair")
@@ -664,6 +669,8 @@ async def delete_repair_image(
 @router.delete("/{repair_id}")
 def delete_repair(repair_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
     """Delete a repair"""
+    from app.services.finance import lock_business
+    lock_business(db,tenant_id)
     repair = get_tenant_repair_or_404(db, repair_id, tenant_id)
     require_manual_repair(db, repair, tenant_id)
 

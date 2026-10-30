@@ -333,6 +333,7 @@ def append_command(db, tenant, command, key, *, reviewed_repair_bill_id=None):
             from app.models.repair import Repair
             repair = db.query(Repair).join(Truck, Repair.truck_id == Truck.id).filter(Repair.id == p['legacy_repair_id'], Truck.tenant_id == tenant).first()
             if not repair: fail('Resource not found.', 'RESOURCE_NOT_FOUND', 404)
+            if repair.archive_operation_id: fail('This repair belongs to a reviewed replacement audit. Review its restoration before creating an obligation.','REPLACEMENT_REVIEW_REQUIRED')
             if p.get('asset_id') != repair.truck_id: fail('The obligation must reference the repair asset.')
             previous_repair_claims = [e for e in all_events if e.kind in ('bill','owner_advance') and e.payload.get('legacy_repair_id') == repair.id]
             if previous_repair_claims and (reviewed_link is None or

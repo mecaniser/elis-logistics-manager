@@ -3,6 +3,7 @@ import { dieselBridgeApi, dieselBridgeFinancialApi, type DieselBridgeFinancialPr
 import { financeError } from '../../services/finance'
 import { financialReviewMessage, previewCounts } from './dieselBridgeFinancial'
 import { repairMoney } from './repairReview'
+import DieselBridgeEquipmentReview from './DieselBridgeEquipmentReview'
 
 export default function DieselBridgeFinancialSync({ tenantId, onSaved }: { tenantId?: number; onSaved: () => void }) {
   const [connections, setConnections] = useState<{ slug: string }[]>([])
@@ -77,6 +78,7 @@ export default function DieselBridgeFinancialSync({ tenantId, onSaved }: { tenan
               {row.action === 'unchanged' && <p>Already imported; no change.</p>}
               {row.action === 'create' && <p>Will add one repair tile.</p>}
               {row.blockers.map(reason => <p key={reason} className="text-amber-800">{financialReviewMessage(reason)}</p>)}
+              {tenantId && <DieselBridgeEquipmentReview key={`${tenantId}:${connection.slug}:${row.repair_order_id}:${result.plan_digest}`} tenantId={tenantId} slug={connection.slug} row={row} onSaved={() => { void preview(connection.slug) }} />}
             </li>)}</ul>
           </details>
         </div>}
