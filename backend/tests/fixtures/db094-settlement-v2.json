@@ -1,0 +1,82 @@
+{
+  "version": "db094-repair-financial-v2",
+  "shop_id": "f8211720-f360-4bd4-8b47-c82eff17a064",
+  "customer_id": "6336b351-a7aa-42da-8d6b-cd14331fd104",
+  "items": [
+    {
+      "repair_order_id": "404f5787-d55b-4217-84d9-53c0521602a9",
+      "order_number": "FIXTURE-RO41",
+      "vehicle_id": "9a01f4bc-0f10-4e98-b6c2-b094e8e16a7a",
+      "vin": "VIN609",
+      "unit_number": "609",
+      "description": "Fixture front bearings and tires",
+      "work_completed_at": "2026-08-24T12:00:00+00:00",
+      "service_date": "2026-08-24",
+      "authorization": "authorized",
+      "invoice": {
+        "invoice_id": "f36ae334-e661-4872-b8f5-a9d4309fc9ae",
+        "invoice_number": "FIXTURE-000017",
+        "status": "current_finalized",
+        "invoice_date": "2026-08-31",
+        "invoice_date_basis": "native_issue_timestamp",
+        "currency": "USD",
+        "total_amount": "5057.40",
+        "line_items": {
+          "labor": [
+            {
+              "description": "Front bearings and tire repair",
+              "hours": "14.00",
+              "hourly_rate": "100.00"
+            }
+          ],
+          "parts": []
+        },
+        "pdf_sha256": null,
+        "breakdown": {
+          "subtotal": "4844.38",
+          "shop_supplies_amount": "42.00",
+          "service_fee_amount": "171.02",
+          "tax_amount": "0.00",
+          "discount_amount": "0.00"
+        },
+        "revision": "35397602d58f150b1c82516e6e6b09b47975d4d7f44192c70f8bc474482efc13"
+      },
+      "revision": "2a0cf95080755969f661ea14456cf19dcfbbf4f54b4563585ce33c0e2353cd9d",
+      "settlement": {
+        "settlement_id": "aae295ed-8486-4291-9ceb-e39edefec460",
+        "status": "available",
+        "review_reasons": [],
+        "source_state": "paid",
+        "principal_total": "4886.38",
+        "max_card_fee": "171.02",
+        "max_card_fee_tax": "0.00",
+        "confirmed_principal": "4886.38",
+        "pending_principal": "0.00",
+        "unapplied_credit": "0.00",
+        "refund_pending": "0.00",
+        "payments": [
+          {
+            "attempt_id": "ac286c02-9b9e-4fd8-ad9d-32842880db7b",
+            "rail": "cash",
+            "state": "confirmed",
+            "principal_amount": "4886.38",
+            "received_amount": "4886.38",
+            "gross_received_amount": "4886.38",
+            "applied_principal_amount": "4886.38",
+            "applied_card_fee_amount": "0.00",
+            "applied_card_fee_tax_amount": "0.00",
+            "unapplied_amount": "0.00",
+            "confirmed_at": "2026-09-13T00:00:00+00:00",
+            "actual_paid_date": null,
+            "paid_date_basis": "unknown",
+            "revision": "0d8e43c8f3a2a446078e8703e061baf9a5244344618772ce1ce0879c3997849a"
+          }
+        ],
+        "revision": "4bb8af452077aa45882401b94a353b84712f7c8227bdc25273a076597f9b476d"
+      }
+    }
+  ],
+  "complete": true,
+  "count": 1,
+  "snapshot_id": "015ff46511aa40cbe065c65afc9420f9555203f5b59d1181b1970a7d24f8310a"
+}

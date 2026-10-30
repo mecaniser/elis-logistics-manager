@@ -5,6 +5,8 @@ import { financeError } from '../../services/finance'
 import { financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
 import { repairMoney } from './repairReview'
 import DieselBridgeReconciliationNotes from './DieselBridgeReconciliationNotes'
+import DieselBridgeSettlementDetails from './DieselBridgeSettlementDetails'
+import { actualSourcePaidDate, eligibleSourceReceipts, sourceAttemptKey, sourceRailLabel, sourceReceiptAmount, sourceSettlementNeedsReview } from './dieselBridgeSettlement'
 
 const EMPTY_WORKSPACE: DieselBridgePaymentWorkspace = { accounts: [], transactions: [] }
 export default function DieselBridgeFinancialDetails({ repairId, state, ownerReimbursement, onSaved }: { repairId: number; state: DieselBridgeFinancialState; ownerReimbursement?: string | null; onSaved: () => void }) {
@@ -32,6 +34,7 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
   const [sourceReview, setSourceReview] = useState<DieselBridgeSourceReview | null>(null)
   const [sourceNote, setSourceNote] = useState('')
   const [sourceConfirmed, setSourceConfirmed] = useState(false)
+  const [sourceAttempt, setSourceAttempt] = useState('')
   const scope = `${tenantId}:${repairId}`
   const currentScope = useRef(scope)
   const mounted = useRef(true)
@@ -42,11 +45,11 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     setOpen(false); setBusy(false); setError(''); setMessage(''); setWorkspace(EMPTY_WORKSPACE); setEvidence([])
     setAmount(''); setPaidDate(''); setTransactionId(''); setEvidenceId(''); setAttested(false); setNote(''); keys.current.clear()
     setReverseId(null); setReverseDate(''); setReverseReason(''); setReverseConfirmed(false)
-    setSourceReview(null); setSourceNote(''); setSourceConfirmed(false)
+    setSourceReview(null); setSourceNote(''); setSourceConfirmed(false); setSourceAttempt('')
   }, [scope])
   useEffect(() => {
-    if (state.state !== 'active') setOpen(false)
-  }, [state.state])
+    if (state.state !== 'active' || sourceSettlementNeedsReview(state)) setOpen(false)
+  }, [state])
   useEffect(() => {
     let active = true
     if (!open || !tenantId) return
@@ -71,11 +74,26 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     try { await action(requested) } catch (e) { if (current(requested)) setError(financeError(e)) }
     finally { if (current(requested)) setBusy(false) }
   }
+  const receipts = eligibleSourceReceipts(state)
+  const selectedReceipt = receipts.find(attempt => sourceAttemptKey(attempt) === sourceAttempt)
+  const paymentBlocked = state.state !== 'active' || sourceSettlementNeedsReview(state)
   const transactions = payer === 'owner' ? [] : paymentTransactions(workspace, payer)
+  useEffect(() => {
+    if (sourceAttempt && !selectedReceipt) {
+      setSourceAttempt(''); setAmount(''); setPaidDate(''); setTransactionId(''); setEvidenceId(''); setAttested(false)
+      setError('The selected DBN payment record changed or is no longer available. Review it and choose payment evidence again.')
+    }
+  }, [sourceAttempt, selectedReceipt])
   const control = 'mt-1 block min-h-11 w-full rounded border border-gray-300 bg-white px-3 text-base focus-visible:outline-blue-600'
   const button = 'min-h-11 rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600'
   function choosePayer(next: DieselBridgeVerifiedPayment['payer']) {
-    setPayer(next); setTransactionId(''); setPaidDate(''); setEvidenceId(''); setAttested(false)
+    setPayer(next); setTransactionId(''); setPaidDate(next === 'owner' && selectedReceipt ? actualSourcePaidDate(selectedReceipt) : ''); setEvidenceId(''); setAttested(false)
+  }
+  function chooseSourceAttempt(key: string) {
+    const attempt = receipts.find(item => sourceAttemptKey(item) === key)
+    setSourceAttempt(key); setAmount(attempt ? sourceReceiptAmount(attempt) || '' : '')
+    setTransactionId(''); setEvidenceId(''); setAttested(false)
+    setPaidDate(attempt && payer === 'owner' ? actualSourcePaidDate(attempt) : '')
   }
   function chooseTransaction(id: string) {
     setTransactionId(id)
@@ -84,13 +102,14 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
   }
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!tenantId || state.state !== 'active' || !validPaymentAmount(amount, state.recorded_balance_due)) return
+    if (!tenantId || paymentBlocked || (sourceAttempt && !selectedReceipt) || !validPaymentAmount(amount, state.recorded_balance_due)) return
     const body: DieselBridgeVerifiedPayment = { expected_revision: state.revision, amount, paid_date: paidDate, payer, note: note.trim(),
-      ...(payer === 'owner' ? { evidence_id: evidenceId, owner_payment_confirmed: true } : { transaction_id: transactionId }) }
+      ...(payer === 'owner' ? { evidence_id: evidenceId, owner_payment_confirmed: true } : { transaction_id: transactionId }),
+      ...(selectedReceipt ? { source_attempt_id: selectedReceipt.attempt_id, source_attempt_revision: selectedReceipt.revision } : {}) }
     await run(async requested => {
       await dieselBridgeFinancialApi.payment(tenantId, repairId, body, idempotencyKey(`payment:${JSON.stringify(body)}`))
       if (!current(requested)) return
-      setAmount(''); setTransactionId(''); setPaidDate(''); setAttested(false); setEvidenceId(''); setNote('')
+      setAmount(''); setTransactionId(''); setPaidDate(''); setAttested(false); setEvidenceId(''); setNote(''); setSourceAttempt('')
       setOpen(false); setMessage('Verified payment recorded. The reserve withdrawal uses this amount and payment date.'); onSaved()
     })
   }
@@ -129,6 +148,7 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     <p className="font-semibold text-gray-900">DBN invoice {state.invoice_number}</p>
     <p className="mt-1 text-gray-600">{state.order_number ? `Repair order ${state.order_number}` : 'Linked to its source repair order'}</p>
     {state.state !== 'active' && <p className="mt-2 rounded bg-amber-50 p-2 font-medium text-amber-900">{financialReviewMessage(state.review_reason)}</p>}
+    <DieselBridgeSettlementDetails state={state} />
     <DieselBridgeReconciliationNotes key={`${tenantId}:${repairId}:${state.repair_order_id}`} repairId={repairId} state={state} onSaved={onSaved} />
     <dl className="mt-3 space-y-1">
       <div className="flex flex-wrap justify-between gap-2"><dt>Verified payments recorded</dt><dd className="font-medium">{repairMoney(state.recorded_paid_amount)}</dd></div>
@@ -146,8 +166,9 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
         const link = document.createElement('a'); link.href = url; link.download = `DBN-${state.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`; link.click()
         setTimeout(() => URL.revokeObjectURL(url), 60000)
       })}>Current DBN invoice PDF</button>}
-      <button type="button" aria-expanded={open} className={`${button} text-blue-700`} disabled={busy || state.state !== 'active' || !validPaymentAmount('0.01', state.recorded_balance_due)} onClick={() => { setOpen(!open); setError('') }}>Record verified payment</button>
+      <button type="button" aria-expanded={open} className={`${button} text-blue-700`} disabled={busy || paymentBlocked || !validPaymentAmount('0.01', state.recorded_balance_due)} onClick={() => { setOpen(!open); setError('') }}>Record verified payment</button>
     </div>
+    <p className="mt-2 text-xs text-gray-600">The current DBN invoice PDF may include quoted conditional card fees. Use the settlement and actual charged fees above to reconcile the booked repair cost. This is a current source copy.</p>
     {state.state !== 'active' && <p className="mt-2 text-xs text-amber-900">The current DBN PDF may differ from the accepted repair cost. Review the proposed correction before changing saved costs.</p>}
     {state.state !== 'active' && <button type="button" className={`${button} mt-2 text-blue-700`} disabled={busy} onClick={previewSourceReview}>Review source change</button>}
     {sourceReview && <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3">
@@ -174,6 +195,10 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     </div>}
     {open && <form onSubmit={save} className="mt-3 space-y-3 rounded border border-gray-200 bg-gray-50 p-3">
       <p>Record an actual payment already made. This records its accounting and reserve effects; it does not send money.</p>
+      {state.source_settlement && <>
+        <label className="block">DBN confirmed payment record (optional)<select className={control} value={sourceAttempt} disabled={busy} onChange={event => chooseSourceAttempt(event.target.value)}><option value="">No DBN attempt selected — reconcile independently</option>{receipts.map(attempt => <option key={sourceAttemptKey(attempt)} value={sourceAttemptKey(attempt)}>{sourceRailLabel[attempt.rail]} · {repairMoney(sourceReceiptAmount(attempt)!)} · {actualSourcePaidDate(attempt) || 'Actual date unknown'} · {attempt.attempt_id}</option>)}</select></label>
+        {selectedReceipt ? <p className="text-xs text-gray-600">The full DBN receipt is {repairMoney(sourceReceiptAmount(selectedReceipt)!)}: applied principal plus actual card fee and fee tax. Partial allocations of one source receipt are not supported. Verify its actual date and funding below; DBN confirmation time is not a payment date.</p> : <p className="text-xs text-amber-900">Before recording an independent payment, check the DBN attempts and existing EDG payments to avoid recording the same receipt twice. Pending, refunded, reversed, unapplied or already linked source attempts cannot be selected.</p>}
+      </>}
       {optionsLoading && <p>Loading reconciled transactions and payment evidence…</p>}
       {optionsError && <p role="alert" className="text-red-700">Payment choices could not be loaded: {optionsError}. Close this form and reopen it to retry.</p>}
       <label className="block">Funding source<select className={control} value={payer} disabled={busy} onChange={e => choosePayer(e.target.value as DieselBridgeVerifiedPayment['payer'])}><option value="business">Business bank account</option><option value="card">Business credit card</option><option value="cash">Business cash account</option><option value="owner">Personal funds</option></select></label>
@@ -183,16 +208,17 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
         <label className="flex min-h-11 items-start gap-2"><input type="checkbox" required checked={attested} disabled={busy} onChange={e => setAttested(e.target.checked)} className="mt-1" /><span>I confirm this was an actual personal payment and the selected document supports its amount and date.</span></label>
       </>}
       <label className="block">Payment explanation<textarea className={`${control} py-2`} required minLength={3} maxLength={2000} value={note} disabled={busy} onChange={e => setNote(e.target.value)} /></label>
-      <label className="block">Amount paid on this occasion<input className={control} inputMode="decimal" required value={amount} disabled={busy} onChange={e => setAmount(e.target.value)} placeholder="0.00" /></label>
+      <label className="block">Amount paid on this occasion<input className={control} inputMode="decimal" required value={amount} disabled={busy} readOnly={!!selectedReceipt} onChange={e => setAmount(e.target.value)} placeholder="0.00" /></label>
       {amount && !validPaymentAmount(amount, state.recorded_balance_due) && <p className="text-red-700">Enter a positive amount no greater than the recorded balance due, with at most two decimal places.</p>}
       <label className="block">Actual payment date<input className={control} type="date" required max={localToday()} value={paidDate} disabled={busy || payer !== 'owner'} onChange={e => setPaidDate(e.target.value)} /></label>
       <p className="text-xs">A partial payment reduces the recorded balance due by its amount. The server checks transaction allocation and remaining balance again before saving.</p>
-      <button type="submit" className={`${button} bg-white text-blue-700`} disabled={busy || state.state !== 'active' || optionsLoading || !!optionsError || !paidDate || note.trim().length < 3 || !validPaymentAmount(amount, state.recorded_balance_due) || (payer === 'owner' ? !attested || !evidenceId || note.trim().length < 3 : !transactionId)}>Record payment</button>
+      <button type="submit" className={`${button} bg-white text-blue-700`} disabled={busy || paymentBlocked || (!!sourceAttempt && !selectedReceipt) || optionsLoading || !!optionsError || !paidDate || note.trim().length < 3 || !validPaymentAmount(amount, state.recorded_balance_due) || (payer === 'owner' ? !attested || !evidenceId || note.trim().length < 3 : !transactionId)}>Record payment</button>
       <button type="button" className={`${button} ml-2`} disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
     </form>}
     {!!state.payments.length && <details className="mt-3"><summary className="min-h-11 cursor-pointer py-2 text-blue-700">Verified payment records ({state.payments.length})</summary>
       <ul className="space-y-2">{state.payments.map(payment => <li key={payment.id} className="rounded border border-gray-200 p-2">
         <p>{payment.paid_date} · {repairMoney(payment.amount)} · {{ business: 'business bank', owner: 'personal funds', card: 'business card', cash: 'business cash' }[payment.payer]}{payment.reversed ? ' · reversed' : ''}</p>
+        {payment.source_attempt_id && <p className="mt-1 break-all text-xs text-gray-600">Linked DBN payment attempt: {payment.source_attempt_id}</p>}
         {!payment.reversed && <button type="button" className={`${button} mt-2 text-blue-700`} disabled={busy} onClick={() => { setReverseId(reverseId === payment.id ? null : payment.id); setReverseDate(''); setReverseReason(''); setReverseConfirmed(false) }}>Review payment correction</button>}
         {reverseId === payment.id && <form onSubmit={reverse} className="mt-3 space-y-2">
           <p>The original payment and evidence will be retained. This appends a correction and reverses its reserve withdrawal.</p>

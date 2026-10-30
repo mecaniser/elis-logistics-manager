@@ -299,9 +299,22 @@ def _add_dieselbridge_reconciliation_notes(engine: Engine) -> None:
         DieselBridgeReconciliationNote.__table__.create(connection, checkfirst=True)
 
 
+def _add_dieselbridge_settlement_observations(engine: Engine) -> None:
+    changes={'dbn_repair_links':{'source_settlement_payload':'JSON','source_payment_review_reasons':'JSON'},'dbn_repair_payments':{'source_attempt_id':'VARCHAR(80)','source_attempt_revision':'VARCHAR(64)','source_shop_id':'VARCHAR(80)'}}
+    with engine.begin() as connection:
+        for table,columns in changes.items():
+            if table not in inspect(connection).get_table_names():continue
+            existing={c['name'] for c in inspect(connection).get_columns(table)}
+            for name,kind in columns.items():
+                if name not in existing:connection.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {kind}'))
+        if 'dbn_repair_payments' in inspect(connection).get_table_names():
+            connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_dbn_active_source_payment ON dbn_repair_payments(tenant_id,source_shop_id,source_attempt_id) WHERE source_attempt_id IS NOT NULL AND reversal_event_id IS NULL'))
+
+
 MIGRATIONS: List[Migration] = [
     ("2026_10_30_dieselbridge_reconciliation_notes", _add_dieselbridge_reconciliation_notes),
     ("2026_10_30_dieselbridge_financial", _add_dieselbridge_financial),
+    ("2026_10_30_dieselbridge_settlement_observations", _add_dieselbridge_settlement_observations),
     ("2026_10_30_dieselbridge_repair_history", _add_dieselbridge_repair_history),
     ("2026_10_30_dieselbridge_import", _add_dieselbridge_import),
     ('2026_09_28_investment_plans', _add_investment_plans),

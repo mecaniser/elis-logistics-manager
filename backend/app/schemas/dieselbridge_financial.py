@@ -21,6 +21,8 @@ class VerifiedRepairPayment(BaseModel):
     payer: Literal['business','owner','card','cash']
     transaction_id: str | None = Field(default=None, max_length=160)
     evidence_id: str | None = Field(default=None, max_length=36)
+    source_attempt_id: str | None = Field(default=None,min_length=1,max_length=80)
+    source_attempt_revision: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
     owner_payment_confirmed: bool = False
     note: str = Field(min_length=3, max_length=2000)
 

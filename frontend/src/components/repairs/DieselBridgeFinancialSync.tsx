@@ -71,7 +71,9 @@ export default function DieselBridgeFinancialSync({ tenantId, onSaved }: { tenan
           <details className="mt-2"><summary className="min-h-11 cursor-pointer py-2 text-blue-700">Review individual invoices ({result.rows.length})</summary>
             <ul className="divide-y divide-gray-200">{result.rows.map((row, index) => <li key={row.repair_order_id} className="py-2">
               <p className="font-medium">{row.order_number || `Repair order ${index + 1}`}{row.truck_name ? ` · ${row.truck_name}` : ''}</p>
-              <p>{row.invoice_total === null ? 'Invoice amount unavailable until access is approved.' : `${repairMoney(row.invoice_total)} · ${row.repair_date || 'Service date needs review'}`}</p>
+              <p>{row.invoice_total === null ? 'Bookable amount unavailable; resolve source access or settlement review.' : `Proposed repair cost ${repairMoney(row.invoice_total)} · ${row.repair_date || 'Service date needs review'}`}</p>
+              {row.source_invoice_total != null && <p className="text-gray-600">DBN quoted invoice total: {repairMoney(row.source_invoice_total)}</p>}
+              {row.price_basis === 'settlement_principal_plus_applied_card_fees' && <p className="text-xs text-gray-600">Cost includes the full settlement principal and actual applied card fees, excluding uncharged quoted fees.</p>}
               {row.action === 'unchanged' && <p>Already imported; no change.</p>}
               {row.action === 'create' && <p>Will add one repair tile.</p>}
               {row.blockers.map(reason => <p key={reason} className="text-amber-800">{financialReviewMessage(reason)}</p>)}

@@ -1,5 +1,5 @@
 """DB-094 staging and durable page progress, separate from accounting."""
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON, UniqueConstraint, Numeric, Date
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON, UniqueConstraint, Numeric, Date, Index, text
 from app.database import Base
 
 
@@ -82,6 +82,8 @@ class DieselBridgeRepairLink(Base):
     accepted_snapshot_id = Column(String(64), nullable=False)
     accepted_payload = Column(JSON, nullable=False)
     latest_payload = Column(JSON)
+    source_settlement_payload = Column(JSON)
+    source_payment_review_reasons = Column(JSON)
     evidence_id = Column(String(36), ForeignKey('finance_evidence.id'), nullable=False)
     bill_event_id = Column(String(36), ForeignKey('finance_events.id'))
     state = Column(String(30), nullable=False, default='active')
@@ -99,9 +101,13 @@ class DieselBridgeRepairPayment(Base):
     paid_date = Column(Date, nullable=False)
     payer = Column(String(15), nullable=False)
     evidence_id = Column(String(36), ForeignKey('finance_evidence.id'))
+    source_attempt_id = Column(String(80))
+    source_attempt_revision = Column(String(64))
+    source_shop_id = Column(String(80))
     reserve_withdrawal_id = Column(Integer, ForeignKey('repair_reserve_ledger.id'), unique=True)
     reversal_event_id = Column(String(36), ForeignKey('finance_events.id'), unique=True)
     reversal_reserve_id = Column(Integer, ForeignKey('repair_reserve_ledger.id'), unique=True)
+    __table_args__ = (Index('uq_dbn_active_source_payment','tenant_id','source_shop_id','source_attempt_id',unique=True,sqlite_where=text('source_attempt_id IS NOT NULL AND reversal_event_id IS NULL'),postgresql_where=text('source_attempt_id IS NOT NULL AND reversal_event_id IS NULL')),)
 
 
 class DieselBridgeFinancialOperation(Base):

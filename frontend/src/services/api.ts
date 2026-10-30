@@ -1178,6 +1178,8 @@ export interface DieselBridgeFinancialPayment {
   payer: 'business' | 'owner' | 'card' | 'cash'
   reversed: boolean
   reserve_withdrawal_id: number | null
+  source_attempt_id?: string | null
+  source_attempt_revision?: string | null
 }
 export interface DieselBridgeReconciliationNote {
   id: number
@@ -1199,6 +1201,37 @@ export interface DieselBridgeReconciliationNoteInput {
   amount_discrepancy?: string
   supersedes_note_id?: number
 }
+export interface DieselBridgeSourcePaymentAttempt {
+  attempt_id: string
+  revision: string
+  rail: 'cash' | 'card' | 'zelle' | 'check' | 'ach' | 'fleet_payment'
+  state: 'pending' | 'confirmed' | 'failed' | 'expired' | 'refunded' | 'reversed'
+  principal_amount: string
+  received_amount: string | null
+  gross_received_amount: string | null
+  applied_principal_amount: string
+  applied_card_fee_amount: string
+  applied_card_fee_tax_amount: string
+  unapplied_amount: string
+  confirmed_at: string | null
+  actual_paid_date: string | null
+  paid_date_basis: 'unknown' | 'explicit_verified_date'
+}
+export interface DieselBridgeSourceSettlement {
+  settlement_id: string
+  revision: string
+  status: 'available' | 'review_required'
+  review_reasons: string[]
+  source_state: string
+  principal_total: string
+  max_card_fee: string
+  max_card_fee_tax: string
+  confirmed_principal: string
+  pending_principal: string
+  unapplied_credit: string
+  refund_pending: string
+  payments: DieselBridgeSourcePaymentAttempt[]
+}
 export interface DieselBridgeFinancialState {
   reconciliation_notes?: DieselBridgeReconciliationNote[]
   reconciliation_notes_has_older?: boolean
@@ -1213,6 +1246,15 @@ export interface DieselBridgeFinancialState {
   review_reason: string | null
   source_status: string
   invoice_total: string
+  source_invoice_total?: string
+  booked_cost?: string
+  source_settlement?: DieselBridgeSourceSettlement | null
+  source_payment_review_required?: boolean
+  source_payment_review_reasons?: string[]
+  source_obligation_amount?: string | null
+  source_confirmed_amount?: string | null
+  source_recorded_balance?: string | null
+  source_claims?: { source_attempt_id: string; payment_id: number; reversed: boolean; source_attempt_revision: string }[]
   recorded_paid_amount: string
   recorded_balance_due: string
   payment_status: 'unconfirmed' | 'partial' | 'paid'
@@ -1229,6 +1271,8 @@ export interface DieselBridgeFinancialPreviewRow {
   repair_id: number | null
   invoice_id: string | null
   invoice_total: string | null
+  source_invoice_total?: string | null
+  price_basis?: 'settlement_principal_plus_applied_card_fees' | 'fee_free_invoice' | 'unresolved'
   repair_date: string | null
   category: string | null
   blockers: string[]
@@ -1253,6 +1297,8 @@ export interface DieselBridgeFinancialSync {
   plan_digest: string
 }
 export interface DieselBridgeVerifiedPayment {
+  source_attempt_id?: string
+  source_attempt_revision?: string
   expected_revision: string
   amount: string
   paid_date: string

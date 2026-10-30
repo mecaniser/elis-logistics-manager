@@ -22,14 +22,14 @@ def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
 
 def item(n=1,authorization='authorized',total='1000.00',**changes):
-    inv={'invoice_id':f'invoice-{n}','invoice_number':f'INV-{n}','status':'current_finalized','invoice_date':'2026-10-19','invoice_date_basis':'native_issue_timestamp','currency':'USD','total_amount':total,'line_items':{'labor':[{'description':'Transmission clutch replacement'}],'parts':[]},'pdf_sha256':None}
+    inv={'invoice_id':f'invoice-{n}','invoice_number':f'INV-{n}','status':'current_finalized','invoice_date':'2026-10-19','invoice_date_basis':'native_issue_timestamp','currency':'USD','total_amount':total,'breakdown':{'subtotal':total,'shop_supplies_amount':'0.00','service_fee_amount':'0.00','tax_amount':'0.00','discount_amount':'0.00'},'line_items':{'labor':[{'description':'Transmission clutch replacement'}],'parts':[]},'pdf_sha256':None}
     inv['revision']=digest(inv)
-    row={'repair_order_id':f'ro-{n}','order_number':f'RO-{n}','vehicle_id':'vehicle','vin':'VIN609','unit_number':'609','description':'Transmission clutch replacement','work_completed_at':'2026-10-01T12:00:00+00:00','service_date':'2026-10-01','authorization':authorization,'invoice':inv if authorization=='authorized' else None,**changes}
-    row['revision']=digest(row)
+    row={'repair_order_id':f'ro-{n}','order_number':f'RO-{n}','vehicle_id':'vehicle','vin':'VIN609','unit_number':'609','description':'Transmission clutch replacement','work_completed_at':'2026-10-01T12:00:00+00:00','service_date':'2026-10-01','authorization':authorization,'invoice':inv if authorization=='authorized' else None,'settlement':None,**changes}
+    row['revision']=digest({k:v for k,v in row.items() if k!='settlement'})
     return row
 
 def snapshot(items):
-    body={'version':'db094-repair-financial-v1','shop_id':'shop-1','customer_id':'customer-1','items':items}
+    body={'version':'db094-repair-financial-v2','shop_id':'shop-1','customer_id':'customer-1','items':items}
     return {**body,'complete':True,'count':len(items),'snapshot_id':digest(body)}
 
 @pytest.fixture(autouse=True)
@@ -335,7 +335,7 @@ def test_completion_missing_uses_evidenced_issue_not_unknown_import_date(monkeyp
     other=item(2,work_completed_at=None,service_date=None)
     other['invoice']['invoice_date']=None;other['invoice']['invoice_date_basis']='unknown'
     other['invoice']['revision']=digest({k:v for k,v in other['invoice'].items() if k!='revision'})
-    other['revision']=digest({k:v for k,v in other.items() if k!='revision'})
+    other['revision']=digest({k:v for k,v in other.items() if k not in ('revision','settlement')})
     source(monkeypatch,snapshot([other]));result=sync(db,'unknown-issue',repair_order_ids=['ro-2'])
     assert result['blocked']==1 and db.query(Repair).count()==1
 
@@ -476,7 +476,7 @@ def test_scoped_financial_state_and_payment_hide_foreign_repair(monkeypatch,db,c
 
 def test_pending_pdf_selects_fresh_authorized_current_invoice_not_client_id(monkeypatch,db,client):
     source(monkeypatch,snapshot([item()]));sync(db);db.commit();link=db.query(DieselBridgeRepairLink).one()
-    pending=item(total='1200.00');pending['invoice']['invoice_id']='replacement-invoice';pending['invoice']['revision']=digest({k:v for k,v in pending['invoice'].items() if k!='revision'});pending['revision']=digest({k:v for k,v in pending.items() if k!='revision'})
+    pending=item(total='1200.00');pending['invoice']['invoice_id']='replacement-invoice';pending['invoice']['revision']=digest({k:v for k,v in pending['invoice'].items() if k!='revision'});pending['revision']=digest({k:v for k,v in pending.items() if k not in ('revision','settlement')})
     source(monkeypatch,snapshot([pending]));seen=[]
     async def pdf(self,invoice_id):seen.append(invoice_id);return b'%PDF-1.4 fixture'
     monkeypatch.setattr(d.SourceClient,'pdf',pdf)
