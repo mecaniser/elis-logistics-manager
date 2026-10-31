@@ -20,6 +20,7 @@ from app.services import dieselbridge as d
 from app.services import finance as f
 from app.utils.reserve_regime import RESERVE_REGIME_START_DATE
 from app.services import dieselbridge_settlement as settlement
+from app.services import dieselbridge_equipment as equipment
 
 VERSION = 'db094-repair-financial-v2'
 SNAPSHOT_FIELDS = {'version','shop_id','customer_id','complete','count','snapshot_id','items'}
@@ -149,6 +150,7 @@ def scoped_link(db,tenant,repair_id):
 
 def public_state(db,tenant,link):
     from app.services.dieselbridge_reconciliation import for_link
+    from app.services.dieselbridge_replacements import audit_summaries
     repair=db.query(Repair).join(Truck).filter(Repair.id==link.repair_id,Truck.tenant_id==tenant).execution_options(include_archived_repairs=True).first()
     if not repair:f.fail('Repair not found.','RESOURCE_NOT_FOUND',404)
     rows=db.query(Payment).filter_by(tenant_id=tenant,link_id=link.id).order_by(Payment.id).all()
@@ -159,7 +161,10 @@ def public_state(db,tenant,link):
     visible_settlement=link.source_settlement_payload if link.state!='access_removed' else None
     observed=settlement.projection(source_row) if inv.get('breakdown') and link.state!='access_removed' else {'amount':None,'confirmed':None,'balance':None}
     source_claims=[{'source_attempt_id':p.source_attempt_id,'source_attempt_revision':p.source_attempt_revision,'payment_id':p.id,'reversed':bool(p.reversal_event_id)} for p in rows if p.source_attempt_id]
+    allocation=equipment.latest(db,tenant,{'slug':link.slug,'shop_id':link.shop_id,'bill_to_id':link.customer_id},link.repair_order_id)
     return {'link_id':link.id,'connection_slug':link.slug,'repair_order_id':link.repair_order_id,
+        'equipment_allocation':equipment.public(allocation) if allocation else None,'cost_asset_id':repair.truck_id,
+        'temporary_replacements':audit_summaries(db,tenant,link),
         'order_number':payload['order_number'],'invoice_id':link.accepted_invoice_id,
         'invoice_number':inv['invoice_number'],'revision':link.accepted_revision,'state':link.state,
         'review_reason':link.review_reason,'source_status':'cancelled' if link.state=='cancelled' else 'unavailable' if link.state=='access_removed' else 'finalized',
@@ -254,7 +259,7 @@ def build_preview(db,tenant,config,value,selection=None):
         row=available.get(rid);link=old.get(rid);inv=row.get('invoice') if row else None
         repair=db.query(Repair).filter_by(id=link.repair_id).execution_options(include_archived_repairs=True).first() if link else None
         if link and not repair:f.fail('Accepted source repair is unavailable. Review its archive.','REPAIR_ARCHIVE_REVIEW')
-        blockers=[];truck_id,reason=d.match(db,tenant,row['vin']) if row else (None,'source_unavailable')
+        blockers=[];truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
         when=occurrence(row) if row else None
         projected=settlement.projection(row) if inv else None
         if link and repair.archived_at:
@@ -274,7 +279,8 @@ def build_preview(db,tenant,config,value,selection=None):
             elif row['authorization']!='authorized':blockers.append('historical_attribution_required' if row['authorization']=='attribution_required' else 'current_finalized_invoice_required')
             if reason!='cost_treatment_required':blockers.append(reason)
             if when is None:blockers.append('date_evidence_required')
-            if row and needs_asset_review(row):blockers.append('cost_asset_review_required')
+            asset=db.query(Truck).filter_by(id=truck_id,tenant_id=tenant).first() if truck_id else None
+            if row and needs_asset_review(row) and not allocation and (not asset or asset.vehicle_type!='trailer'):blockers.append('cost_asset_review_required')
             if projected:blockers.extend(projected['reasons'])
             if inv and db.query(Repair).join(Truck).filter(Truck.tenant_id==tenant,Repair.invoice_number==inv['invoice_number']).first():blockers.append('existing_repair_invoice_review')
             if row:
@@ -284,6 +290,7 @@ def build_preview(db,tenant,config,value,selection=None):
         name=db.query(Truck.name).filter_by(id=repair.truck_id if repair else truck_id,tenant_id=tenant).scalar() if (repair or truck_id) else None
         rows.append({'repair_order_id':rid,'order_number':row['order_number'] if row else link.accepted_payload['order_number'],
             'truck_name':name,'action':action,'repair_id':link.repair_id if link else None,
+            'equipment_allocation':allocation,'cost_asset_id':truck_id,'source_revision':row['revision'] if row else None,
             'invoice_id':inv['invoice_id'] if inv else None,'invoice_total':projected['amount'] if projected else None,'source_invoice_total':inv['total_amount'] if inv else None,
             'price_basis':'unresolved' if not projected or projected['reasons'] else 'settlement_principal_plus_applied_card_fees' if row.get('settlement') else 'fee_free_invoice',
             'repair_date':when.isoformat() if when else None,'category':category(row) if row else None,'blockers':blockers})
@@ -317,7 +324,7 @@ def save_operation(db,tenant,slug,kind,key,request_digest,result):
 
 
 def create_repair(db,tenant,config,row,snapshot_id):
-    inv=row['invoice'];truck_id,reason=d.match(db,tenant,row['vin'])
+    inv=row['invoice'];truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
     if reason!='cost_treatment_required':f.fail('Unique truck identity is required.','TRUCK_REVIEW_REQUIRED')
     text=work_text(row)
     repair=Repair(truck_id=truck_id,repair_date=occurrence(row),title=(row['description'] or f"DBN repair {row['order_number']}")[:200],
@@ -597,9 +604,10 @@ async def review_preview(db,tenant,repair_id,expected_revision):
             'cost':f.money(repair.cost),'repair_date':repair.repair_date.isoformat(),'description':repair.details or repair.description or repair.title,
             'category':repair.category}
     if row and row['authorization']=='authorized':
-        inv=row['invoice'];when=occurrence(row);truck_id,reason=d.match(db,tenant,row['vin'])
+        inv=row['invoice'];when=occurrence(row);truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
         if reason!='cost_treatment_required' or truck_id!=repair.truck_id:blockers.append('TRUCK_IDENTITY_REVIEW_REQUIRED')
-        if needs_asset_review(row):blockers.append('COST_ASSET_REVIEW_REQUIRED')
+        asset=db.query(Truck).filter_by(id=truck_id,tenant_id=tenant).first() if truck_id else None
+        if needs_asset_review(row) and not allocation and (not asset or asset.vehicle_type!='trailer'):blockers.append('COST_ASSET_REVIEW_REQUIRED')
         if not when:blockers.append('DATE_EVIDENCE_REQUIRED')
         blockers.extend(settlement.projection(row)['reasons'])
         blockers.extend(source_claim_issues(db,tenant,link,row))

@@ -1,0 +1,50 @@
+# Equipment attribution and temporary repair replacement
+
+Local release candidate, 2026-10-30. No publication, deployment, activation, historical grant, source correction or production financial mutation is authorized by this document.
+
+## Equipment model
+
+EDG already represents trucks and trailers in `trucks.vehicle_type`; each repair and reserve entry references that equipment's stable ID. Reuse those records and existing equipment pages/ROI/report filters. DBN's current v2 manifest already carries source vehicle ID and VIN. No DBN schema, export-version or credential expansion is needed for this focused implementation.
+
+The financial importer now uniquely matches a normalized VIN across truck and trailer records. Duplicate VINs across either type require review. A whole-invoice equipment decision can explicitly select existing equipment before import. It preserves source vehicle/VIN separately from the cost asset, author, reason, time and correction chain. Trailer work can explicitly remain under a truck unit as an interim assignment when trailer identity is unknown. The tile retains that it was trailer work and that the assignment is interim. No trailer identity is inferred from unit number, tow pairing or description.
+
+Equipment decisions cannot grant invoice access, establish a payment, change source service dates or move reserve money. Changing a source vehicle/VIN invalidates its decision. An imported cost cannot be silently reassigned: it requires a separately reviewed financial reclassification. Mixed-equipment invoices must be reconciled before whole-invoice assignment; splitting invoice amounts is outside this release.
+
+Append-only `dbn_equipment_allocations` installs through an independent, replay-safe migration with ORM and SQLite/PostgreSQL update/delete guards. No existing repair, asset or financial row is rewritten. Existing seven eligible source invoices keep their current allocation until reviewed. The owner superseded the initial interim609 proposal and then explicitly confirmed invoice000023's six Aufine tires belong to trailerT1003130, the oldest trailer: existing EDG asset3, VIN7VGAA5324T1003130, tag559-4574. Reconcile to that actual trailer from the start. Its ETS match/date and historical invoice access remain unresolved; do not apply the interim truck assignment or infer a payment.
+
+Truck and trailer detail pages now show the existing canonical equipment-filtered repair records, their recorded cost total, and a deep link to the same invoice/payment review record. The former history block was inside an SUV-only layout; the new section is outside investment/ROI visibility gates. Trailer detail also reads the existing repair-reserve ledger separately from replacement savings. It does not create duplicate repairs or deduct the displayed total again.
+
+Production ROI and reserve-allocation function hashes match the assessed local code. Clean Cash Return already deducts incurred canonical repair costs, including unpaid invoices, while truck settlement gross revenue is reduced by repair-reserve allocations. Consequently the current badge mixes incurred cost and earmarked funds rather than verified cash. Do not deduct repair costs again. Define earned return versus verified unrestricted cash and remaining reserve treatment before changing this calculation; no metric formula changes are included here. Current trailer pairings are not evidence of past trailer-tire work.
+
+## Review endpoints
+
+All paths below are relative to `/api/v1/accounting/dieselbridge`, use authenticated server-resolved tenant scope, and reject extra body fields. Mutations require `Idempotency-Key` and existing financial enablement. Preview routes do not commit.
+
+- GET `/equipment-options`: this tenant's truck/trailer IDs, names, types and VINs.
+- POST `/connections/{slug}/repair-orders/{ro}/equipment-allocation`: `asset_id`, `expected_source_revision`, `work_equipment_type`, explicit `interim_unit_allocation`, `reason`, optional prior `supersedes_id`. Corrections append; imported targets are blocked.
+- GET `/repairs/{repair_id}/replacement-candidates`: active unmanaged same-equipment records; no title-based job match.
+- POST `/connections/{slug}/financial-import/archive-preview`: `repair_order_id`, explicit unique `legacy_repair_ids`, `correction_date`. Requires an already accepted, active source target and a fresh unchanged authorized source manifest. Returns complete old repair/evidence references, existing withdrawals and journals, proposed cost removal/reserve correction, and digest.
+- POST `/connections/{slug}/financial-import/archive-apply`: preview fields plus `expected_plan_digest`, `confirmed_same_job`, `reviewed_existing_effects`, `reason`. One transaction archives selected records, links to the canonical target, retains all original fields/attachments, appends exact inverse journal lines and reserve reversals only for verified existing entries, and records actor/time/snapshots. It never creates a payment or refund.
+- GET `/connections/{slug}/financial-import/replacements/{operation_id}`: tenant/connection-scoped persistent audit.
+- POST `/connections/{slug}/financial-import/replacements/{operation_id}/restore-preview`: `correction_date`.
+- POST `/connections/{slug}/financial-import/replacements/{operation_id}/restore`: date, fresh `expected_plan_digest`, `reviewed_existing_effects`, `reason`. Preserves original archive audit, appends compensating reinstatement entries, and restores original record visibility. The source repair remains active: undo explicitly returns the pre-replacement state and can reintroduce duplicate expenses. UI warns before confirmation.
+
+The normal repair tile provides both replacement and undo review controls. Selected IDs/date changes invalidate a preview; unchanged retries retain their key. Restored records retain their audit marker and cannot be edited/deleted or used for new claims through legacy flows. A second replacement of a restored record requires a separate review, rather than reusing already reversed original effects.
+
+## Financial boundaries
+
+Legacy reserve flags and null costs produce no inferred entries. Existing Finance claims/payments require a separate dependent-effect review and block this workflow. Cross-tenant/asset, already-corrected, managed, stale, unbalanced or inconsistent effects are rejected. Correction dates cannot precede affected original dates or be in the future. Undated repairs with financial effects require reconciliation; closed original/correction periods block execution. Restore revalidates original and compensating snapshots and cannot precede replacement.
+
+Apply/restore, normal legacy repair edits/deletes/image removal, Finance commands, and manual journal writes share the tenant lock. Manual journals cannot forge DBN-managed references or append to reviewed replacement records. A PostgreSQL edit-versus-replacement test confirms a prior edit commits first, invalidates the preview, and creates no archive/reversal.
+
+The temporary609 candidate evidence identifies records123/125/126 with null costs/no withdrawals and record136 with an existing150.00 withdrawal/journal. Record114 is a separate202.80 repair and is not automatically selected. No production selection or replacement has executed; historical target ETS-0386-97052 remains access-blocked.
+
+## Verification and release holds
+
+Complete backend:758passed, no skips, disposable PostgreSQL enabled. Follow-up frontend:93passed; TypeScript/Vite build and changed-file ESLint pass. Independent read-only review found no remaining actionable blocker after concurrency, restoration protection and chronology fixes. Its follow-up display finding was addressed by including reserve adjustments alongside deposits, withdrawals and balance.
+
+Synthetic browser: explicit trailer selection saved without importing or moving reserves; import produced5truck603/9truck609/1trailer tiles, with source identity preserved; repeat preview15unchanged. Synthetic temporary150.00 duplicate archive retained original rows and appended one matching reserve/journal reversal with no payment. Browser undo evidence is recorded separately in the task receipt.
+
+Equipment-detail follow-up: synthetic trailer shows one canonical1000.00 repair; truck603 shows34own records and excludes that trailer repair; invoice review opens the same repair66. A verified synthetic200.00 personal payment produced one trailer200.00 reserve withdrawal and -200.00 balance while its incurred repair stayed1000.00 and total financial links stayed15. Mobile width390 has no horizontal overflow. Whole-dollar input200 initially failed API decimal formatting without creating a payment; the UI now submits exact200.00 and the corrected flow passed. Bundle index-BfJNFAet.js. No ROI/cash-return formula changed.
+
+Production read-only preview after the previous merged release:15ROs, seven create candidates, eight blocked by historical attribution; no batch executed. Financial API/worker/source delivery flags remain off. This new candidate must be reviewed, published and released through the approved process before use. Historical attribution/date/amount/asset decisions and verified payment dates/funding remain separate holds.

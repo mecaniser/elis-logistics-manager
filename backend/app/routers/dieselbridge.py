@@ -103,6 +103,76 @@ def sync_repair_order_history(slug: str, dry_run: bool = True, db: Session = Dep
 
 from app.schemas.dieselbridge_financial import FinancialSelection, FinancialSync, VerifiedRepairPayment, RepairPaymentReversal, SourceReviewPreview, SourceReviewApply
 from app.services import dieselbridge_financial as financial
+from app.services import dieselbridge_replacements as replacements
+from app.schemas.dieselbridge_financial import TemporaryReplacementPreview, TemporaryReplacementApply, TemporaryReplacementRestorePreview, TemporaryReplacementRestore
+from app.schemas.dieselbridge_financial import EquipmentAllocationInput
+from app.services import dieselbridge_equipment
+
+
+@router.get('/equipment-options')
+def financial_equipment_options(db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.models.truck import Truck
+    return {'items':[{'id':x.id,'name':x.name,'vehicle_type':x.vehicle_type,'vin':x.vin} for x in db.query(Truck).filter(Truck.tenant_id==tenant,Truck.vehicle_type.in_(['truck','trailer'])).order_by(Truck.name,Truck.id)]}
+
+
+@router.post('/connections/{slug}/repair-orders/{repair_order_id}/equipment-allocation')
+def allocate_repair_equipment(slug: str, repair_order_id: str, body: EquipmentAllocationInput, key: str = Header(alias='Idempotency-Key',min_length=1,max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result=asyncio.run(dieselbridge_equipment.append(db,tenant,slug,repair_order_id,body,key,_note_author()))
+        db.commit();return result
+    except Exception:
+        db.rollback();raise
+
+
+@router.post('/connections/{slug}/financial-import/archive-preview')
+def temporary_replacement_preview(slug: str, body: TemporaryReplacementPreview, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result = asyncio.run(replacements.preview(db,tenant,slug,body))
+        db.rollback(); return result
+    except Exception:
+        db.rollback(); raise
+
+
+@router.get('/connections/{slug}/financial-import/replacements/{operation_id}')
+def temporary_replacement_audit(slug: str, operation_id: int, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    from app.models.dieselbridge import DieselBridgeFinancialOperation
+    result=db.query(DieselBridgeFinancialOperation).filter_by(id=operation_id,tenant_id=tenant,slug=slug,kind='temp_replace').first()
+    if not result:
+        from fastapi import HTTPException
+        raise HTTPException(404,detail='Replacement operation not found.')
+    return result.result
+
+
+@router.get('/repairs/{repair_id}/replacement-candidates')
+def temporary_replacement_candidates(repair_id: int, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    return replacements.candidates(db,tenant,repair_id)
+
+
+@router.post('/connections/{slug}/financial-import/archive-apply')
+def temporary_replacement_apply(slug: str, body: TemporaryReplacementApply, key: str = Header(alias='Idempotency-Key', min_length=1,max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result = asyncio.run(replacements.apply(db,tenant,slug,body,key,_note_author()))
+        db.commit(); return result
+    except Exception:
+        db.rollback(); raise
+
+
+@router.post('/connections/{slug}/financial-import/replacements/{operation_id}/restore-preview')
+def temporary_replacement_restore_preview(slug: str, operation_id: int, body: TemporaryReplacementRestorePreview, db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result = asyncio.run(replacements.restore_preview(db,tenant,slug,operation_id,body))
+        db.rollback(); return result
+    except Exception:
+        db.rollback(); raise
+
+
+@router.post('/connections/{slug}/financial-import/replacements/{operation_id}/restore')
+def temporary_replacement_restore(slug: str, operation_id: int, body: TemporaryReplacementRestore, key: str = Header(alias='Idempotency-Key', min_length=1,max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result = asyncio.run(replacements.restore(db,tenant,slug,operation_id,body,key,_note_author()))
+        db.commit(); return result
+    except Exception:
+        db.rollback(); raise
 
 
 @router.post('/connections/{slug}/financial-import/preview')

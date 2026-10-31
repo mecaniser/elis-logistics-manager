@@ -311,7 +311,14 @@ def _add_dieselbridge_settlement_observations(engine: Engine) -> None:
             connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_dbn_active_source_payment ON dbn_repair_payments(tenant_id,source_shop_id,source_attempt_id) WHERE source_attempt_id IS NOT NULL AND reversal_event_id IS NULL'))
 
 
+def _add_dieselbridge_equipment(engine: Engine) -> None:
+    from app.models.dieselbridge_equipment import DieselBridgeEquipmentAllocation
+    with engine.begin() as connection:
+        DieselBridgeEquipmentAllocation.__table__.create(connection, checkfirst=True)
+
+
 MIGRATIONS: List[Migration] = [
+    ('2026_10_31_dieselbridge_equipment', _add_dieselbridge_equipment),
     ("2026_10_30_dieselbridge_reconciliation_notes", _add_dieselbridge_reconciliation_notes),
     ("2026_10_30_dieselbridge_financial", _add_dieselbridge_financial),
     ("2026_10_30_dieselbridge_settlement_observations", _add_dieselbridge_settlement_observations),

@@ -7,6 +7,7 @@ import { analyticsApi, trucksApi, repairsApi, settlementsApi, reserveApi, Truck,
 import Toast from '../components/Toast'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/tenantState'
+import EquipmentRepairHistory from '../components/repairs/EquipmentRepairHistory'
 
 // Helper function to safely format numbers (handles null/undefined)
 const safeToLocaleString = (value: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
@@ -108,7 +109,7 @@ export default function VehicleDetail() {
       setAttachedTrailerRoi(nextAttachedTrailerRoi)
       setSettlements(settlementsResponse.data || [])
       setRepairs(repairsResponse.data || [])
-      if (currentVehicle.vehicle_type === 'truck') {
+      if (currentVehicle.vehicle_type === 'truck' || currentVehicle.vehicle_type === 'trailer') {
         const reserveResponse = await reserveApi.getBalance(vehicleId)
         if (currentRequestScope.current === requestedScope) setReserveBalance(reserveResponse.data)
       }
@@ -642,6 +643,8 @@ export default function VehicleDetail() {
           )}
         </div>
       )}
+
+      {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && <EquipmentRepairHistory key={`${currentTenant?.id}:${vehicle.id}`} equipmentName={vehicle.name} repairs={repairs} repairReserve={vehicle.vehicle_type === 'trailer' ? reserveBalance : undefined} onReview={repairId => navigate(`/repairs?repair=${repairId}`)} />}
 
       {/* SUV Expense Tracking - Only for SUVs */}
       {vehicle.vehicle_type === 'suv' && (

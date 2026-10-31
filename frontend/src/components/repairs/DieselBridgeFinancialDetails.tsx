@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTenant } from '../../contexts/tenantState'
 import { dieselBridgeFinancialApi, dieselBridgeSourceReviewApi, type DieselBridgeSourceReview, type DieselBridgeFinancialState, type DieselBridgePaymentEvidence, type DieselBridgePaymentWorkspace, type DieselBridgeVerifiedPayment } from '../../services/api'
 import { financeError } from '../../services/finance'
-import { financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
+import { canonicalPaymentAmount, financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
 import { repairMoney } from './repairReview'
 import DieselBridgeReconciliationNotes from './DieselBridgeReconciliationNotes'
 import DieselBridgeSettlementDetails from './DieselBridgeSettlementDetails'
+import DieselBridgeReplacementReview from './DieselBridgeReplacementReview'
 import { actualSourcePaidDate, eligibleSourceReceipts, sourceAttemptKey, sourceRailLabel, sourceReceiptAmount, sourceSettlementNeedsReview } from './dieselBridgeSettlement'
 
 const EMPTY_WORKSPACE: DieselBridgePaymentWorkspace = { accounts: [], transactions: [] }
@@ -103,7 +104,9 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!tenantId || paymentBlocked || (sourceAttempt && !selectedReceipt) || !validPaymentAmount(amount, state.recorded_balance_due)) return
-    const body: DieselBridgeVerifiedPayment = { expected_revision: state.revision, amount, paid_date: paidDate, payer, note: note.trim(),
+    const canonicalAmount = canonicalPaymentAmount(amount)
+    if (!canonicalAmount) return
+    const body: DieselBridgeVerifiedPayment = { expected_revision: state.revision, amount: canonicalAmount, paid_date: paidDate, payer, note: note.trim(),
       ...(payer === 'owner' ? { evidence_id: evidenceId, owner_payment_confirmed: true } : { transaction_id: transactionId }),
       ...(selectedReceipt ? { source_attempt_id: selectedReceipt.attempt_id, source_attempt_revision: selectedReceipt.revision } : {}) }
     await run(async requested => {
@@ -147,8 +150,10 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
   return <div className="mt-3 border-t border-gray-200 pt-3 text-sm text-gray-700" aria-label="DBN invoice and verified payments" aria-busy={busy}>
     <p className="font-semibold text-gray-900">DBN invoice {state.invoice_number}</p>
     <p className="mt-1 text-gray-600">{state.order_number ? `Repair order ${state.order_number}` : 'Linked to its source repair order'}</p>
+    {state.equipment_allocation && <p className="mt-1 text-gray-600">{state.equipment_allocation.work_equipment_type === 'trailer' ? 'Trailer work' : 'Truck work'}{state.equipment_allocation.interim_unit_allocation ? ' · temporarily assigned to this truck unit; trailer identity unresolved' : ' · equipment reviewed'}. {state.equipment_allocation.reason}</p>}
     {state.state !== 'active' && <p className="mt-2 rounded bg-amber-50 p-2 font-medium text-amber-900">{financialReviewMessage(state.review_reason)}</p>}
     <DieselBridgeSettlementDetails state={state} />
+    {tenantId && <DieselBridgeReplacementReview key={`${tenantId}:${repairId}:${state.revision}`} tenantId={tenantId} repairId={repairId} state={state} onSaved={onSaved} />}
     <DieselBridgeReconciliationNotes key={`${tenantId}:${repairId}:${state.repair_order_id}`} repairId={repairId} state={state} onSaved={onSaved} />
     <dl className="mt-3 space-y-1">
       <div className="flex flex-wrap justify-between gap-2"><dt>Verified payments recorded</dt><dd className="font-medium">{repairMoney(state.recorded_paid_amount)}</dd></div>
