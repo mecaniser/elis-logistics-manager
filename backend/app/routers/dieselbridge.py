@@ -101,7 +101,7 @@ def sync_repair_order_history(slug: str, dry_run: bool = True, db: Session = Dep
         raise
 
 
-from app.schemas.dieselbridge_financial import FinancialSelection, FinancialSync, VerifiedRepairPayment, RepairPaymentReversal, SourceReviewPreview, SourceReviewApply
+from app.schemas.dieselbridge_financial import FinancialSelection, FinancialSync, VerifiedRepairPayment, HistoricalBusinessCashPayment, RepairPaymentReversal, SourceReviewPreview, SourceReviewApply
 from app.services import dieselbridge_financial as financial
 from app.services import dieselbridge_replacements as replacements
 from app.schemas.dieselbridge_financial import TemporaryReplacementPreview, TemporaryReplacementApply, TemporaryReplacementRestorePreview, TemporaryReplacementRestore
@@ -212,6 +212,15 @@ def financial_state(repair_id: int, db: Session = Depends(get_db), tenant: int =
 def verified_repair_payment(repair_id: int, body: VerifiedRepairPayment, key: str = Header(alias='Idempotency-Key', min_length=1, max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
     try:
         result = financial.record_verified_payment(db, tenant, repair_id, body, key)
+        db.commit(); return result
+    except Exception:
+        db.rollback(); raise
+
+
+@router.post('/repairs/{repair_id}/historical-business-cash-payments')
+def historical_business_cash_payment(repair_id: int, body: HistoricalBusinessCashPayment, key: str = Header(alias='Idempotency-Key', min_length=1, max_length=160), db: Session = Depends(get_db), tenant: int = Depends(accounting_tenant)):
+    try:
+        result = financial.record_historical_cash_payment(db,tenant,repair_id,body,key,_note_author())
         db.commit(); return result
     except Exception:
         db.rollback(); raise

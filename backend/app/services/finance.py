@@ -156,10 +156,24 @@ def state(db, tenant, as_of):
     return result
 
 
+def historical_cash_coverage(db,tenant,current_state):
+    payments=[e for e in current_state['events'] if e.kind=='payment' and e.id in current_state['active_event_ids'] and e.payload.get('evidence_id')]
+    ids={e.payload['evidence_id'] for e in payments}
+    proofs={p.id for p in db.query(FinanceEvidence).filter(FinanceEvidence.tenant_id==tenant,
+        FinanceEvidence.id.in_(ids),FinanceEvidence.extraction_version=='db094-historical-business-cash-v1').all()} if ids else set()
+    receipts=[e for e in payments if e.payload['evidence_id'] in proofs]
+    return {'status':'unreconciled' if receipts else 'none','count':len(receipts),
+            'amount':money(sum((D(e.payload['amount']) for e in receipts),ZERO)),
+            'payment_event_ids':[e.id for e in receipts], 'physical_cash_balance':None}
+
+
 def cash_position(db, tenant, as_of):
     s = state(db, tenant, as_of)
     coverage, cash, card = [], ZERO, ZERO
     issues = []
+    historical_cash = historical_cash_coverage(db,tenant,s)
+    if historical_cash['count']:
+        issues.append(f"{historical_cash['count']} historical business-cash receipts ({historical_cash['amount']}) have unverified cashbook funding and balances.")
     for aid, a in s['accounts'].items():
         statements = [x for x in s['statements'].values() if x['account_id'] == aid and date.fromisoformat(x['end']) <= as_of]
         latest = max(statements, key=lambda x: x['end']) if statements else None
@@ -196,7 +210,7 @@ def cash_position(db, tenant, as_of):
         if not policy.get(key): issues.append(f'{title} needs confirmation before available cash is final.')
     if reserve_total > max(cash, ZERO): issues.append('Protected reserve balances exceed reconciled cash; funding requires review.')
     has_cash_evidence = any(c['balance'] is not None and c['type'] in ('bank', 'cash') for c in coverage)
-    return {'as_of': as_of.isoformat(), 'currency': 'USD', 'basis': 'reconciled_cash_position', 'status': 'provisional' if issues else 'reconciled', 'funding_ready': funding_ready, 'available': money(available) if has_cash_evidence else None, 'business_cash': money(cash) if has_cash_evidence else None, 'protected_reserves': money(reserve_total), 'uncovered_bills': money(unpaid), 'owner_reimbursement': money(owner), 'card_obligations': money(card), 'committed_financing': money(committed), 'coverage': coverage, 'claims': protected_claims, 'issues': issues}
+    return {'as_of': as_of.isoformat(), 'currency': 'USD', 'basis': 'reconciled_cash_position', 'status': 'provisional' if issues else 'reconciled', 'funding_ready': funding_ready, 'available': money(available) if has_cash_evidence and not historical_cash['count'] else None, 'business_cash': money(cash) if has_cash_evidence and not historical_cash['count'] else None, 'protected_reserves': money(reserve_total), 'uncovered_bills': money(unpaid), 'owner_reimbursement': money(owner), 'card_obligations': money(card), 'committed_financing': money(committed), 'coverage': coverage, 'historical_cash_coverage': historical_cash, 'claims': protected_claims, 'issues': issues}
 
 
 def parse_statement(db, tenant, p):
@@ -360,6 +374,11 @@ def append_command(db, tenant, command, key, *, reviewed_repair_bill_id=None):
         if p['payer'] == 'owner':
             if claim['creditor'] == 'owner' or not p.get('evidence_id') or p.get('transaction_id'): fail('Owner payment needs evidence and an unpaid vendor bill.')
             credit = 'owner_advance'
+        elif (p['payer']=='cash' and p.get('evidence_id') and
+              evidence(db,tenant,p['evidence_id']).extraction_version=='db094-historical-business-cash-v1'):
+            from app.services.dieselbridge_financial import validate_historical_cash_evidence
+            validate_historical_cash_evidence(db,tenant,p,when)
+            credit = 'cash'
         else:
             t = s['transactions'].get(p.get('transaction_id'))
             if not t or t['id'] in s['matches']: fail('Choose an unmatched reconciled transaction.')
@@ -571,6 +590,7 @@ def ledger_report(db, tenant, start, end):
                     cashflows[bucket] += value
     revenue = -sum((v for a, v in period.items() if ACCOUNTS[a] == 'revenue'), ZERO)
     expenses = sum((v for a, v in period.items() if ACCOUNTS[a] == 'expense'), ZERO)
+    historical_cash = historical_cash_coverage(db,tenant,state(db,tenant,end))
     assets = sum((v for a, v in balances.items() if ACCOUNTS[a] in ('asset', 'contra_asset')), ZERO)
     liabilities = -sum((v for a, v in balances.items() if ACCOUNTS[a] == 'liability'), ZERO)
     equity = -sum((v for a, v in balances.items() if ACCOUNTS[a] in ('equity', 'contra_equity', 'revenue', 'expense')), ZERO)
@@ -579,7 +599,7 @@ def ledger_report(db, tenant, start, end):
         'general_ledger': general,
         'income_statement': {'revenue': money(revenue), 'expenses': money(expenses), 'operating_earnings': money(revenue - expenses + period['interest'] + period['depreciation'] + period['disposal_gain']), 'disposal_gain': money(-period['disposal_gain']), 'interest': money(period['interest']), 'depreciation': money(period['depreciation']), 'net_income': money(revenue - expenses), 'by_account': {a: money(-v if ACCOUNTS[a] == 'revenue' else v) for a, v in period.items() if ACCOUNTS[a] in ('revenue', 'expense')}},
         'balance_sheet': {'assets': money(assets), 'liabilities': money(liabilities), 'equity_including_earnings': money(equity), 'difference': money(assets - liabilities - equity)},
-        'cash_flow': {**{a: money(cashflows[a]) for a in ('operating', 'investing', 'financing', 'unclassified')}, 'opening_balance': money(balances['cash'] - period['cash'] + cashflows['opening']), 'net_change': money(sum((v for a, v in cashflows.items() if a != 'opening'), ZERO)), 'closing_balance': money(balances['cash'])},
+        'cash_flow': {**{a: money(cashflows[a]) for a in ('operating', 'investing', 'financing', 'unclassified')}, 'opening_balance': None if historical_cash['count'] else money(balances['cash'] - period['cash'] + cashflows['opening']), 'net_change': money(sum((v for a, v in cashflows.items() if a != 'opening'), ZERO)), 'closing_balance': None if historical_cash['count'] else money(balances['cash']), 'ledger_opening_balance': money(balances['cash'] - period['cash'] + cashflows['opening']), 'ledger_closing_balance': money(balances['cash']), 'balance_basis': 'unreconciled_ledger' if historical_cash['count'] else 'ledger', 'historical_cash_coverage': historical_cash},
         'asset_earnings': [{'asset_id': aid, 'earnings': money(value)} for aid, value in asset_income.items()],
         'ledger_cash': money(balances['cash']), 'ledger_cards': money(-balances['card_payable']), 'ledger_payable': money(-balances['payable']), 'ledger_owner_claims': money(-balances['owner_advance']),
     }

@@ -161,6 +161,7 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
     </dl>
     {ownerReimbursement && Number(ownerReimbursement) > 0 && <p className="mt-2 font-medium text-emerald-800">Recorded business reimbursement owed to you: {repairMoney(ownerReimbursement)}</p>}
     <p className="mt-2 text-xs text-gray-600">{paymentSummary(state)}</p>
+    {state.historical_cash_coverage?.status === 'unreconciled' && <p className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-900">Historical business-cash payment and handover date confirmed. Cashbook funding and cash balances remain unreconciled; this payment does not establish available cash.</p>}
     {state.payment_history_confirmed !== true && <p className="mt-1 text-xs text-gray-600">Balances reflect payments recorded here. Reconcile any earlier payments before adding another.</p>}
     <p className="mt-1 text-xs text-gray-600">Only verified recorded payments withdraw from reserve; invoice cost is recorded once.</p>
     <div className="mt-3 flex flex-wrap gap-2">
