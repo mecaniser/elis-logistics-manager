@@ -27,6 +27,14 @@ class VerifiedRepairPayment(BaseModel):
     note: str = Field(min_length=3, max_length=2000)
 
 
+class HistoricalBusinessCashPayment(VerifiedRepairPayment):
+    """Explicit historical fact attestation, never a cashbook balance claim."""
+    payer: Literal['cash'] = 'cash'
+    business_cash_handover_confirmed: Literal[True]
+    actual_handover_date_confirmed: Literal[True]
+    unreconciled_cash_coverage_acknowledged: Literal[True]
+
+
 class RepairPaymentReversal(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     expected_revision: str = Field(min_length=1, max_length=64)

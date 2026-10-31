@@ -1276,6 +1276,7 @@ export interface DieselBridgeFinancialState {
   recorded_balance_due: string
   payment_status: 'unconfirmed' | 'partial' | 'paid'
   payment_history_confirmed?: boolean
+  historical_cash_coverage?: { status: 'none' | 'unreconciled'; count: number; amount: string; physical_cash_balance: null }
   bill_event_id: string | null
   payments: DieselBridgeFinancialPayment[]
   source_pdf_url: string | null

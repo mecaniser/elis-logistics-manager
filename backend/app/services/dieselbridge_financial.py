@@ -183,6 +183,7 @@ def public_state(db,tenant,link):
         'review_reason':link.review_reason,'source_status':'cancelled' if link.state=='cancelled' else 'unavailable' if link.state=='access_removed' else 'finalized',
         'invoice_total':f.money(total),'source_invoice_total':inv['total_amount'],'booked_cost':f.money(total),'recorded_paid_amount':f.money(paid),
         'recorded_balance_due':f.money(total-paid),'payment_status':'unconfirmed' if paid==0 else 'paid' if paid==total else 'partial',
+        'historical_cash_coverage':f.historical_cash_coverage(db,tenant,{'events':[e for e in db.query(FinanceEvent).filter(FinanceEvent.tenant_id==tenant,FinanceEvent.id.in_([p.event_id for p in rows if not p.reversal_event_id])).all()], 'active_event_ids':{p.event_id for p in rows if not p.reversal_event_id}}),
         'bill_event_id':link.bill_event_id,'payments':[{'id':p.id,'event_id':p.event_id,'amount':f.money(p.amount),
             'paid_date':p.paid_date.isoformat(),'payer':p.payer,'reversed':bool(p.reversal_event_id),
             'reserve_withdrawal_id':p.reserve_withdrawal_id,'source_attempt_id':p.source_attempt_id,'source_attempt_revision':p.source_attempt_revision} for p in rows],
@@ -427,9 +428,54 @@ def require_receipt_unallocated(db,tenant,receipt_sha):
             f.fail('This payment receipt already supports an active recorded payment. Reverse an incorrect allocation before reusing it.','DUPLICATE_PAYMENT')
 
 
-def record_verified_payment(db,tenant,repair_id,body,key):
+HISTORICAL_CASH_VERSION = 'db094-historical-business-cash-v1'
+
+
+def record_historical_cash_payment(db,tenant,repair_id,body,key,author):
+    if os.getenv('ELIS_DIESELBRIDGE_HISTORICAL_CASH_ENABLED','').lower() not in ('1','true'):
+        f.fail('Historical business-cash review is disabled pending explicit release approval.','FEATURE_DISABLED',503)
+    if not author or not author.strip():f.fail('An authenticated reviewer is required.','PAYMENT_EVIDENCE_REQUIRED')
+    if (body.payer!='cash' or body.transaction_id or body.evidence_id or body.owner_payment_confirmed
+            or not body.source_attempt_id or not body.source_attempt_revision
+            or not body.business_cash_handover_confirmed or not body.actual_handover_date_confirmed
+            or not body.unreconciled_cash_coverage_acknowledged):
+        f.fail('Confirm business cash, the actual handover date and unresolved cash coverage against a source receipt.','PAYMENT_EVIDENCE_REQUIRED')
+    review={'business_cash_handover_confirmed':True,'actual_handover_date_confirmed':True,
+            'unreconciled_cash_coverage_acknowledged':True,'reviewer':author,
+            'cash_coverage':'unreconciled','funding_origin':'not_established'}
+    return record_verified_payment(db,tenant,repair_id,body,key,historical_cash_review=review)
+
+
+def validate_historical_cash_evidence(db,tenant,payload,paid_date):
+    """Shared Finance entry points cannot turn an ordinary receipt into this exception."""
+    proof=f.evidence(db,tenant,payload.get('evidence_id'))
+    facts=proof.extracted
+    review=facts.get('historical_cash_review',{})
+    link=db.query(Link).filter_by(tenant_id=tenant,bill_event_id=payload.get('claim_id')).first()
+    if (proof.extraction_version!=HISTORICAL_CASH_VERSION or not link or payload.get('payer')!='cash'
+            or payload.get('transaction_id') or facts.get('claim_id')!=link.bill_event_id
+            or facts.get('amount')!=f.money(payload['amount']) or facts.get('paid_date')!=paid_date.isoformat()
+            or review.get('cash_coverage')!='unreconciled' or review.get('funding_origin')!='not_established'
+            or not review.get('reviewer') or any(review.get(k) is not True for k in
+                ('business_cash_handover_confirmed','actual_handover_date_confirmed','unreconciled_cash_coverage_acknowledged'))):
+        f.fail('Historical cash needs the explicit source-linked business-cash review.','PAYMENT_EVIDENCE_REQUIRED')
+    try:
+        raw=base64.b64decode(proof.content_base64,validate=True)
+        if hashlib.sha256(raw).hexdigest()!=proof.sha256 or json.loads(raw)!=facts:raise ValueError()
+    except (ValueError,TypeError):
+        f.fail('Historical payment evidence failed its integrity check.','PAYMENT_EVIDENCE_INTEGRITY')
+    require_enabled()
+    if os.getenv('ELIS_DIESELBRIDGE_HISTORICAL_CASH_ENABLED','').lower() not in ('1','true'):
+        f.fail('Historical business-cash review is disabled.','FEATURE_DISABLED',503)
+    require_active_revision(link,link.accepted_revision)
+    validate_source_claim(db,tenant,link,facts.get('source_payment_claim') or {},payload['amount'],paid_date,'cash')
+    return proof
+
+
+def record_verified_payment(db,tenant,repair_id,body,key,*,historical_cash_review=None):
     require_enabled();f.lock_business(db,tenant);link=scoped_link(db,tenant,repair_id)
     request={'repair_id':repair_id,'body':body.model_dump(mode='json')}
+    if historical_cash_review:request['historical_cash_review']=historical_cash_review
     prior,request_digest=operation(db,tenant,link.slug,'payment',key,request)
     if prior:return prior.result
     require_active_revision(link,body.expected_revision)
@@ -437,7 +483,9 @@ def record_verified_payment(db,tenant,repair_id,body,key):
     if body.paid_date>date.today():f.fail('Payment date cannot be in the future.','INVALID_PAYMENT_DATE',422)
     evidence_id=body.evidence_id
     source_claim=source_claim_request(body)
-    if source_claim:validate_source_claim(db,tenant,link,source_claim,body.amount,body.paid_date,body.payer)
+    source_receipt=None
+    if source_claim:
+        _,source_receipt=validate_source_claim(db,tenant,link,source_claim,body.amount,body.paid_date,body.payer)
     if body.payer=='owner':
         if not body.owner_payment_confirmed or not evidence_id:f.fail('Confirm the actual personal payment and select its preserved receipt.','PAYMENT_EVIDENCE_REQUIRED')
         proof,receipt_sha=preserved_payment_receipt(db,tenant,evidence_id)
@@ -458,10 +506,14 @@ def record_verified_payment(db,tenant,repair_id,body,key):
         f.fail('Owner payment attestation applies only to personal payments.','INVALID_PAYMENT_EVIDENCE',422)
     if source_claim and body.payer!='owner':
         facts={'source_payment_claim':source_claim,'claim_id':link.bill_event_id,'amount':f.money(body.amount),'paid_date':body.paid_date.isoformat(),'note':body.note}
+        if historical_cash_review:
+            facts['historical_cash_review']=historical_cash_review
+            facts['reviewed_at']=datetime.now(timezone.utc).isoformat()
+            facts['source_receipt']=source_receipt
         raw=json.dumps(facts,sort_keys=True).encode();sha=hashlib.sha256(raw).hexdigest()
         proof=db.query(FinanceEvidence).filter_by(tenant_id=tenant,sha256=sha).first()
         if not proof:
-            proof=FinanceEvidence(tenant_id=tenant,sha256=sha,filename='verified-source-payment.json',media_type='application/json',content_base64=base64.b64encode(raw).decode(),source_key='dbn-payment-claim:'+str(link.id),extraction_version='db094-source-payment-verification-v2',extracted=facts)
+            proof=FinanceEvidence(tenant_id=tenant,sha256=sha,filename='verified-source-payment.json',media_type='application/json',content_base64=base64.b64encode(raw).decode(),source_key='dbn-payment-claim:'+str(link.id),extraction_version=HISTORICAL_CASH_VERSION if historical_cash_review else 'db094-source-payment-verification-v2',extracted=facts)
             db.add(proof);db.flush()
         evidence_id=proof.id
     event=f.append_command(db,tenant,Command(effective_date=body.paid_date,payload={'kind':'payment','claim_id':link.bill_event_id,
