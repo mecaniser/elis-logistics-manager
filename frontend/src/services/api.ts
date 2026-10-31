@@ -1182,6 +1182,8 @@ export interface DieselBridgeFinancialPayment {
   source_attempt_revision?: string | null
 }
 export interface DieselBridgeReconciliationNote {
+  date_treatment?: 'note_only' | 'confirmed_service_date' | 'source_default'
+  source_revision?: string | null
   id: number
   note: string
   source_references: string[]
@@ -1194,6 +1196,8 @@ export interface DieselBridgeReconciliationNote {
   repair_order_id: string
 }
 export interface DieselBridgeReconciliationNoteInput {
+  date_treatment?: 'note_only' | 'confirmed_service_date' | 'source_default'
+  expected_source_revision?: string
   note: string
   source_references: string[]
   confirmed_service_date?: string
@@ -1277,6 +1281,7 @@ export interface DieselBridgeFinancialState {
   source_pdf_url: string | null
 }
 export interface DieselBridgeFinancialPreviewRow {
+  date_decision?: DieselBridgeReconciliationNote | null
   equipment_allocation?: DieselBridgeEquipmentAllocation | null
   cost_asset_id?: number | null
   source_revision?: string | null
@@ -1337,6 +1342,7 @@ export interface DieselBridgePaymentEvidence {
 const dbnAccountingClient = axios.create({ baseURL: '/api/v1/accounting', withCredentials: true })
 dbnAccountingClient.interceptors.response.use(response => response, handleAuthFailure)
 export const dieselBridgeReconciliationApi = {
+  appendSource: (tenantId: number, slug: string, repairOrderId: string, body: DieselBridgeReconciliationNoteInput, key: string) => dieselBridgeClient.post<DieselBridgeReconciliationNote>(`/connections/${encodeURIComponent(slug)}/repair-orders/${encodeURIComponent(repairOrderId)}/reconciliation-notes`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
   list: (tenantId: number, repairId: number, after = 0) => dieselBridgeClient.get<{ items: DieselBridgeReconciliationNote[]; next_after: number | null }>(`/repairs/${repairId}/reconciliation-notes`, { ...dieselBridgeHeaders(tenantId), params: { limit: 100, after } }),
   append: (tenantId: number, repairId: number, body: DieselBridgeReconciliationNoteInput, key: string) => dieselBridgeClient.post<DieselBridgeReconciliationNote>(`/repairs/${repairId}/reconciliation-notes`, body, { headers: { 'X-Tenant-ID': String(tenantId), 'Idempotency-Key': key } }),
 }

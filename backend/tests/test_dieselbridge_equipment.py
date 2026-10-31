@@ -107,3 +107,21 @@ def test_scope_change_does_not_reuse_equipment_decision(monkeypatch,db):
     trailer(db);row=item();source(monkeypatch,snapshot([row]));allocate(db,row)
     config={**C,'bill_to_id':'another-customer'}
     assert e.latest(db,1,config,row['repair_order_id']) is None
+
+
+def test_confirmed_trailer_tire_job_stays_with_actual_trailer_when_sync_disabled(monkeypatch,db):
+    asset=trailer(db);asset.name='T1003130';asset.vin='7VGAA5324T1003130';db.commit()
+    row=item(description='Repair work')
+    row['invoice']['line_items']={'labor':[],'parts':[{'name':'Trailer Tire Aufine','quantity':6}]}
+    row['invoice']['revision']=financial.digest({k:v for k,v in row['invoice'].items() if k!='revision'})
+    row['revision']=financial.digest({k:v for k,v in row.items() if k not in ('revision','settlement')})
+    source(monkeypatch,snapshot([row]))
+    assert 'cost_asset_review_required' in asyncio.run(financial.preview_financial(db,1,'shop'))['rows'][0]['blockers']
+    monkeypatch.delenv('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED')
+    allocate(db,row,reason='Owner confirms six Aufine tires belong to trailer T1003130; source tractor retained.')
+    db.commit();assert db.query(Repair).count()==db.query(Reserve).count()==0
+    monkeypatch.setenv('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED','1')
+    sync(db);db.commit();sync(db,'repeat-trailer');db.commit()
+    assert db.query(Repair).one().truck_id==2
+    assert db.query(Repair).filter_by(truck_id=1).count()==0
+    assert db.query(Link).one().accepted_payload['vin']=='VIN609'

@@ -317,7 +317,16 @@ def _add_dieselbridge_equipment(engine: Engine) -> None:
         DieselBridgeEquipmentAllocation.__table__.create(connection, checkfirst=True)
 
 
+def _add_dieselbridge_reviewed_dates(engine: Engine) -> None:
+    _add_dieselbridge_reconciliation_notes(engine)
+    with engine.begin() as connection:
+        existing={c['name'] for c in inspect(connection).get_columns('dbn_reconciliation_notes')}
+        for name,kind in {'date_treatment':"VARCHAR(30) NOT NULL DEFAULT 'note_only'",'source_revision':'VARCHAR(64)'}.items():
+            if name not in existing:connection.execute(text(f'ALTER TABLE dbn_reconciliation_notes ADD COLUMN {name} {kind}'))
+
+
 MIGRATIONS: List[Migration] = [
+    ('2026_10_31_dieselbridge_reviewed_dates', _add_dieselbridge_reviewed_dates),
     ('2026_10_31_dieselbridge_equipment', _add_dieselbridge_equipment),
     ("2026_10_30_dieselbridge_reconciliation_notes", _add_dieselbridge_reconciliation_notes),
     ("2026_10_30_dieselbridge_financial", _add_dieselbridge_financial),

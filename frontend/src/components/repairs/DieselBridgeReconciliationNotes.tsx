@@ -73,7 +73,7 @@ export default function DieselBridgeReconciliationNotes({ repairId, state, onSav
   }
   return <section className="mt-3 rounded border border-gray-200 bg-gray-50 p-3" aria-label="Repair reconciliation notes" aria-busy={busy}>
     <h4 className="font-semibold text-gray-900">Reconciliation notes</h4>
-    <p className="mt-1 text-xs text-gray-600">Source references, date decisions and amount differences stay with this repair through future syncs. Dates and amounts in notes are reference only; saving a note does not change repair costs, dates, payments or reserve withdrawals.</p>
+    <p className="mt-1 text-xs text-gray-600">Source references, date decisions and amount differences stay with this repair through future syncs. The note form below records references only. Explicit service-date decisions are reviewed in the DBN invoice preview; changing an imported repair still requires financial review. Notes never establish payment or withdraw reserves.</p>
     {!notes.length && <p className="mt-2 text-gray-600">No reconciliation notes recorded.</p>}
     {!!notes.length && <ol className="mt-3 space-y-3">{notes.map(note => <li key={note.id} className="rounded border border-gray-200 bg-white p-3">
       <p className="text-xs text-gray-600">Note #{note.id} · {note.created_at} · {note.author}</p>
@@ -81,7 +81,8 @@ export default function DieselBridgeReconciliationNotes({ repairId, state, onSav
       {corrected.has(note.id) && <p className="mt-1 text-xs font-medium text-amber-900">Later correction recorded; retained for audit.</p>}
       <p className="mt-2 whitespace-pre-wrap break-words">{note.note}</p>
       {!!note.source_references.length && <div className="mt-2"><p className="text-xs font-medium">Source references</p><ul className="list-inside list-disc space-y-1">{note.source_references.map((reference, index) => <li key={index} className="whitespace-pre-wrap break-words">{reference}</li>)}</ul></div>}
-      {note.confirmed_service_date && <p className="mt-2">Confirmed service date (note): {note.confirmed_service_date}</p>}
+      {note.confirmed_service_date && <p className="mt-2">{note.date_treatment === 'confirmed_service_date' ? 'Reviewed service completion date:' : 'Service date (reference only):'} {note.confirmed_service_date}</p>}
+      {note.date_treatment === 'source_default' && <p className="mt-2">Reviewed return to DBN service completion date, then invoice date.</p>}
       {note.original_invoice_date && <p className="mt-1">Original invoice creation date (note): {note.original_invoice_date}</p>}
       {note.amount_discrepancy && <p className="mt-2 whitespace-pre-wrap break-words"><span className="font-medium">Amount discrepancy: </span>{note.amount_discrepancy}</p>}
     </li>)}</ol>}
@@ -95,7 +96,7 @@ export default function DieselBridgeReconciliationNotes({ repairId, state, onSav
         <label className="block">Original invoice creation date (optional)<input className={control} type="date" disabled={busy} value={draft.invoiceDate} onChange={event => setDraft({ ...draft, invoiceDate: event.target.value })} /></label>
       </div>
       <label className="block">Amount discrepancy and unresolved details (optional)<textarea className={control} maxLength={1000} disabled={busy} value={draft.discrepancy} onChange={event => setDraft({ ...draft, discrepancy: event.target.value })} /></label>
-      <label className="block">Corrects an earlier note (optional)<select className={control} disabled={busy} value={draft.supersedes} onChange={event => setDraft({ ...draft, supersedes: event.target.value })}><option value="">New note</option>{notes.filter(note => !corrected.has(note.id)).map(note => <option key={note.id} value={note.id}>Note #{note.id}: {note.note.slice(0, 80)}</option>)}</select></label>
+      <label className="block">Corrects an earlier note (optional)<select className={control} disabled={busy} value={draft.supersedes} onChange={event => setDraft({ ...draft, supersedes: event.target.value })}><option value="">New note</option>{notes.filter(note => !corrected.has(note.id) && (!note.date_treatment || note.date_treatment === 'note_only')).map(note => <option key={note.id} value={note.id}>Note #{note.id}: {note.note.slice(0, 80)}</option>)}</select></label>
       {draft.note && !input && <p className="text-red-700">Use a note of 3–4000 characters, up to 10 references of 300 characters each, valid dates, and at most 1000 discrepancy characters.</p>}
       <p className="text-xs text-gray-600">Corrections append a new entry. Original notes cannot be edited or deleted. Notes do not approve invoice access or prove a payment.</p>
       <button type="submit" className={`${button} bg-white text-blue-700`} disabled={busy || !input}>Save reconciliation note</button>
