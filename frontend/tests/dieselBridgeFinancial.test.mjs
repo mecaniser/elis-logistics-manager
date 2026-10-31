@@ -7,7 +7,15 @@ async function load(path) {
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText
   return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)
 }
-const { moneyCents, validPaymentAmount, paymentSummary, paymentTransactions, previewCounts, financialReviewMessage, sourceReviewAllowsApply } = await load('../src/components/repairs/dieselBridgeFinancial.ts')
+const { moneyCents, validPaymentAmount, canonicalPaymentAmount, paymentSummary, paymentTransactions, previewCounts, financialReviewMessage, sourceReviewAllowsApply } = await load('../src/components/repairs/dieselBridgeFinancial.ts')
+
+test('accepted whole and single-decimal payment inputs serialize as exact API cents', () => {
+  assert.equal(canonicalPaymentAmount('200'), '200.00')
+  assert.equal(canonicalPaymentAmount('200.5'), '200.50')
+  assert.equal(canonicalPaymentAmount('000200.05'), '200.05')
+  assert.equal(canonicalPaymentAmount('0.01'), '0.01')
+  for (const value of ['0', '-1', '0.001', '1e2', 'NaN', '9007199254740991']) assert.equal(canonicalPaymentAmount(value), null)
+})
 const { matchesReview, repairMethod, repairDocumentType, eligibleBatchRepairs } = await load('../src/components/repairs/repairReview.ts')
 
 test('payment amounts retain cents and reject overpayment, rounding and ambiguous formats', () => {

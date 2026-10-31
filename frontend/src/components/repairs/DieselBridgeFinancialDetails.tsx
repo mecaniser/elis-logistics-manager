@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTenant } from '../../contexts/tenantState'
 import { dieselBridgeFinancialApi, dieselBridgeSourceReviewApi, type DieselBridgeSourceReview, type DieselBridgeFinancialState, type DieselBridgePaymentEvidence, type DieselBridgePaymentWorkspace, type DieselBridgeVerifiedPayment } from '../../services/api'
 import { financeError } from '../../services/finance'
-import { financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
+import { canonicalPaymentAmount, financialReviewMessage, paymentSummary, paymentTransactions, sourceReviewAllowsApply, validPaymentAmount } from './dieselBridgeFinancial'
 import { repairMoney } from './repairReview'
 import DieselBridgeReconciliationNotes from './DieselBridgeReconciliationNotes'
 import DieselBridgeSettlementDetails from './DieselBridgeSettlementDetails'
@@ -104,7 +104,9 @@ export default function DieselBridgeFinancialDetails({ repairId, state, ownerRei
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!tenantId || paymentBlocked || (sourceAttempt && !selectedReceipt) || !validPaymentAmount(amount, state.recorded_balance_due)) return
-    const body: DieselBridgeVerifiedPayment = { expected_revision: state.revision, amount, paid_date: paidDate, payer, note: note.trim(),
+    const canonicalAmount = canonicalPaymentAmount(amount)
+    if (!canonicalAmount) return
+    const body: DieselBridgeVerifiedPayment = { expected_revision: state.revision, amount: canonicalAmount, paid_date: paidDate, payer, note: note.trim(),
       ...(payer === 'owner' ? { evidence_id: evidenceId, owner_payment_confirmed: true } : { transaction_id: transactionId }),
       ...(selectedReceipt ? { source_attempt_id: selectedReceipt.attempt_id, source_attempt_revision: selectedReceipt.revision } : {}) }
     await run(async requested => {

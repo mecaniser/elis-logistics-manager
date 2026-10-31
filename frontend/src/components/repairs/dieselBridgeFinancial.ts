@@ -11,6 +11,11 @@ export function validPaymentAmount(amount: string, balance: string): boolean {
   const remaining = moneyCents(balance)
   return cents !== null && remaining !== null && cents > 0 && cents <= remaining
 }
+export function canonicalPaymentAmount(amount: string): string | null {
+  const cents = moneyCents(amount)
+  if (cents === null || cents <= 0) return null
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
+}
 export function paymentSummary(state: Pick<DieselBridgeFinancialState, 'payment_status' | 'recorded_paid_amount' | 'recorded_balance_due'>): string {
   if (state.payment_status === 'unconfirmed') return 'Payment history has not been confirmed. The invoice status in DBN does not establish a payment here.'
   return state.payment_status === 'paid' ? 'Paid in full from verified recorded payments.' : 'Partly paid from verified recorded payments.'

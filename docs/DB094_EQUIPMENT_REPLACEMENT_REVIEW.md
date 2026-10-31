@@ -10,7 +10,11 @@ The financial importer now uniquely matches a normalized VIN across truck and tr
 
 Equipment decisions cannot grant invoice access, establish a payment, change source service dates or move reserve money. Changing a source vehicle/VIN invalidates its decision. An imported cost cannot be silently reassigned: it requires a separately reviewed financial reclassification. Mixed-equipment invoices must be reconciled before whole-invoice assignment; splitting invoice amounts is outside this release.
 
-Append-only `dbn_equipment_allocations` installs through an independent, replay-safe migration with ORM and SQLite/PostgreSQL update/delete guards. No existing repair, asset or financial row is rewritten. Existing seven eligible source invoices keep their current allocation until reviewed. The owner's instruction to book invoice 000023's trailer tires to unit609 is preserved in the private reconciliation decisions; it has not been applied in production, and its ETS match/date remain unresolved.
+Append-only `dbn_equipment_allocations` installs through an independent, replay-safe migration with ORM and SQLite/PostgreSQL update/delete guards. No existing repair, asset or financial row is rewritten. Existing seven eligible source invoices keep their current allocation until reviewed. The owner superseded the initial interim609 proposal: reconcile invoice000023 to its actual trailer from the start. Its trailer identity and ETS match/date remain unresolved; do not apply the interim assignment.
+
+Truck and trailer detail pages now show the existing canonical equipment-filtered repair records, their recorded cost total, and a deep link to the same invoice/payment review record. The former history block was inside an SUV-only layout; the new section is outside investment/ROI visibility gates. Trailer detail also reads the existing repair-reserve ledger separately from replacement savings. It does not create duplicate repairs or deduct the displayed total again.
+
+Production ROI and reserve-allocation function hashes match the assessed local code. Clean Cash Return already deducts incurred canonical repair costs, including unpaid invoices, while truck settlement gross revenue is reduced by repair-reserve allocations. Consequently the current badge mixes incurred cost and earmarked funds rather than verified cash. Do not deduct repair costs again. Define earned return versus verified unrestricted cash and remaining reserve treatment before changing this calculation; no metric formula changes are included here. Current trailer pairings are not evidence of past trailer-tire work.
 
 ## Review endpoints
 
@@ -37,8 +41,10 @@ The temporary609 candidate evidence identifies records123/125/126 with null cost
 
 ## Verification and release holds
 
-Complete backend:758passed, no skips, disposable PostgreSQL enabled. Frontend:92passed; TypeScript/Vite build and changed-file ESLint pass. Independent read-only review found no remaining actionable blocker after concurrency, restoration protection and chronology fixes.
+Complete backend:758passed, no skips, disposable PostgreSQL enabled. Follow-up frontend:93passed; TypeScript/Vite build and changed-file ESLint pass. Independent read-only review found no remaining actionable blocker after concurrency, restoration protection and chronology fixes. Its follow-up display finding was addressed by including reserve adjustments alongside deposits, withdrawals and balance.
 
 Synthetic browser: explicit trailer selection saved without importing or moving reserves; import produced5truck603/9truck609/1trailer tiles, with source identity preserved; repeat preview15unchanged. Synthetic temporary150.00 duplicate archive retained original rows and appended one matching reserve/journal reversal with no payment. Browser undo evidence is recorded separately in the task receipt.
+
+Equipment-detail follow-up: synthetic trailer shows one canonical1000.00 repair; truck603 shows34own records and excludes that trailer repair; invoice review opens the same repair66. A verified synthetic200.00 personal payment produced one trailer200.00 reserve withdrawal and -200.00 balance while its incurred repair stayed1000.00 and total financial links stayed15. Mobile width390 has no horizontal overflow. Whole-dollar input200 initially failed API decimal formatting without creating a payment; the UI now submits exact200.00 and the corrected flow passed. Bundle index-BfJNFAet.js. No ROI/cash-return formula changed.
 
 Production read-only preview after the previous merged release:15ROs, seven create candidates, eight blocked by historical attribution; no batch executed. Financial API/worker/source delivery flags remain off. This new candidate must be reviewed, published and released through the approved process before use. Historical attribution/date/amount/asset decisions and verified payment dates/funding remain separate holds.
