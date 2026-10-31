@@ -22,6 +22,8 @@ export function paymentSummary(state: Pick<DieselBridgeFinancialState, 'payment_
 }
 export function financialReviewMessage(reason: string | null | undefined): string {
   const messages: Record<string, string> = {
+    date_decision_source_changed: 'The DBN source changed after the service date review. Reconfirm the date against the current invoice.',
+    repair_date_changed: 'The reviewed service date differs from the imported repair. Review its booked expense and payments before applying it.',
     invoice_changed: 'The source invoice changed. The accepted cost is preserved until the correction is reviewed.',
     invoice_cancelled: 'The source invoice was cancelled. Review its existing expense and payments before applying a correction.',
     source_access_removed: 'Source access changed. Existing costs and payment records are preserved for review.',

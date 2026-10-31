@@ -1,4 +1,4 @@
-"""Append-only owner reconciliation evidence, separate from imported financial facts."""
+"""Append-only reconciliation evidence with explicitly reviewed occurrence decisions."""
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON, Date, UniqueConstraint, event, DDL
 from app.database import Base
 
@@ -14,6 +14,8 @@ class DieselBridgeReconciliationNote(Base):
     note = Column(Text, nullable=False)
     source_references = Column(JSON, nullable=False)
     confirmed_service_date = Column(Date)
+    date_treatment = Column(String(30), nullable=False, server_default='note_only')
+    source_revision = Column(String(64))
     original_invoice_date = Column(Date)
     amount_discrepancy = Column(Text)
     supersedes_note_id = Column(Integer, ForeignKey('dbn_reconciliation_notes.id'), unique=True)

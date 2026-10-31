@@ -34,7 +34,7 @@ def resolve(db,tenant,config,row):
 
 async def append(db,tenant,slug,rid,body,key,author):
     from app.services import dieselbridge_financial as financial
-    financial.require_enabled();f.lock_business(db,tenant)
+    f.lock_business(db,tenant) # Reviewed metadata can be prepared before financial activation.
     config=d.config(tenant,slug)
     request_digest=financial.digest({'body':body.model_dump(mode='json'),'author':author,'scope':[str(config['shop_id']),str(config['bill_to_id'])]})
     prior=db.query(Allocation).filter_by(tenant_id=tenant,slug=slug,repair_order_id=rid,key=key).first()

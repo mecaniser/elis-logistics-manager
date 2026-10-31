@@ -175,3 +175,19 @@ def test_restore_closed_period_and_original_chronology(db,seeded):
     with pytest.raises(HTTPException):asyncio.run(r.restore_preview(db,1,'shop',result['operation_id'],RestorePreview(correction_date='2026-10-21')))
     db.add(FinanceEvent(tenant_id=1,key='closed-restoration',kind='close_period',effective_date=date(2026,10,24),payload={'start':'2026-10-22','end':'2026-10-23'},digest='d'*64));db.flush()
     with pytest.raises(HTTPException):asyncio.run(r.restore_preview(db,1,'shop',result['operation_id'],RestorePreview(correction_date='2026-10-24')))
+
+
+def test_three_null_cost609_placeholders_archive_once_and_protect_other_jobs(monkeypatch,db):
+    source(monkeypatch,snapshot([item()]));sync(db)
+    canonical=db.query(Link).one().repair_id
+    old=[Repair(truck_id=1,repair_date=date(2026,4,20),title=title,cost=None,paid_from_reserve=False) for title in ['Temporary bearings','Temporary steering','Temporary tires']]
+    cleaning=Repair(truck_id=1,repair_date=date(2026,4,20),title='Separate cleaning',cost=Decimal('150.00'),paid_from_reserve=False)
+    diagnostic=Repair(truck_id=1,repair_date=date(2026,4,20),title='Separate diagnostic',cost=Decimal('202.80'),paid_from_reserve=False)
+    db.add_all([*old,cleaning,diagnostic]);db.commit();ids=[r.id for r in old]
+    first=apply(db,ids);db.commit();sync(db,'repeat-source');db.commit()
+    assert db.query(Repair).count()==3
+    assert {r.id for r in db.query(Repair).all()}=={canonical,cleaning.id,diagnostic.id}
+    archived=db.query(Repair).filter(Repair.id.in_(ids)).execution_options(include_archived_repairs=True).all()
+    assert len(archived)==3 and all(r.replaced_by_repair_id==canonical and r.cost is None for r in archived)
+    assert db.query(Reserve).count()==0
+    assert first['operation_id']

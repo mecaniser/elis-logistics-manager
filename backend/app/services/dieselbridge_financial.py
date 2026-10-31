@@ -116,6 +116,19 @@ def occurrence(row):
     return None
 
 
+def resolved_occurrence(db,tenant,config,row):
+    """Only explicit reviews override source occurrence; narrative dates remain notes."""
+    if not row:return None,None,None
+    from app.models.dieselbridge_reconciliation import DieselBridgeReconciliationNote as Note
+    decision=db.query(Note).filter_by(tenant_id=tenant,slug=config['slug'],shop_id=str(config['shop_id']),
+        customer_id=str(config['bill_to_id']),repair_order_id=row['repair_order_id']).filter(Note.date_treatment!='note_only').order_by(Note.id.desc()).first()
+    if not decision:return occurrence(row),None,None
+    from app.services.dieselbridge_reconciliation import public
+    proof=public(decision)
+    if decision.source_revision!=row['revision']:return None,proof,'date_decision_source_changed'
+    return (decision.confirmed_service_date if decision.date_treatment=='confirmed_service_date' else occurrence(row)),proof,None
+
+
 def work_text(row):
     inv=row.get('invoice') or {}; lines=inv.get('line_items') or {}
     text=[row.get('description') or '']
@@ -260,13 +273,15 @@ def build_preview(db,tenant,config,value,selection=None):
         repair=db.query(Repair).filter_by(id=link.repair_id).execution_options(include_archived_repairs=True).first() if link else None
         if link and not repair:f.fail('Accepted source repair is unavailable. Review its archive.','REPAIR_ARCHIVE_REVIEW')
         blockers=[];truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
-        when=occurrence(row) if row else None
+        when,date_decision,date_issue=resolved_occurrence(db,tenant,config,row)
         projected=settlement.projection(row) if inv else None
         if link and repair.archived_at:
             if row and row['authorization']=='authorized':action='review_required';blockers=['archived_repair_restoration_required']
             else:action='unchanged'
         elif link:
             if not row or row['authorization']!='authorized':action='review_required';blockers=['source_access_or_invoice_unavailable']
+            elif date_issue:action='review_required';blockers=[date_issue]
+            elif when!=repair.repair_date:action='review_required';blockers=['repair_date_changed']
             elif truck_id!=repair.truck_id:action='review_required';blockers=['truck_identity_changed']
             elif projected['reasons']:action='review_required';blockers=projected['reasons']
             elif Decimal(projected['amount'])!=Decimal(repair.cost):action='review_required';blockers=['source_settlement_cost_changed']
@@ -278,7 +293,7 @@ def build_preview(db,tenant,config,value,selection=None):
             if not row:blockers.append('source_order_unavailable')
             elif row['authorization']!='authorized':blockers.append('historical_attribution_required' if row['authorization']=='attribution_required' else 'current_finalized_invoice_required')
             if reason!='cost_treatment_required':blockers.append(reason)
-            if when is None:blockers.append('date_evidence_required')
+            if when is None:blockers.append(date_issue or 'date_evidence_required')
             asset=db.query(Truck).filter_by(id=truck_id,tenant_id=tenant).first() if truck_id else None
             if row and needs_asset_review(row) and not allocation and (not asset or asset.vehicle_type!='trailer'):blockers.append('cost_asset_review_required')
             if projected:blockers.extend(projected['reasons'])
@@ -293,7 +308,7 @@ def build_preview(db,tenant,config,value,selection=None):
             'equipment_allocation':allocation,'cost_asset_id':truck_id,'source_revision':row['revision'] if row else None,
             'invoice_id':inv['invoice_id'] if inv else None,'invoice_total':projected['amount'] if projected else None,'source_invoice_total':inv['total_amount'] if inv else None,
             'price_basis':'unresolved' if not projected or projected['reasons'] else 'settlement_principal_plus_applied_card_fees' if row.get('settlement') else 'fee_free_invoice',
-            'repair_date':when.isoformat() if when else None,'category':category(row) if row else None,'blockers':blockers})
+            'date_decision':date_decision,'repair_date':when.isoformat() if when else None,'category':category(row) if row else None,'blockers':blockers})
         local.append({'ro':rid,'link':link.id if link else None,'accepted':link.accepted_revision if link else None,
             'state':link.state if link else None,'repair':{'id':repair.id,'asset':repair.truck_id,'date':str(repair.repair_date),'cost':f.money(repair.cost),'category':repair.category,'archived_at':str(repair.archived_at) if repair.archived_at else None} if repair else None})
     local_digest=digest(local)
@@ -326,15 +341,17 @@ def save_operation(db,tenant,slug,kind,key,request_digest,result):
 def create_repair(db,tenant,config,row,snapshot_id):
     inv=row['invoice'];truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
     if reason!='cost_treatment_required':f.fail('Unique truck identity is required.','TRUCK_REVIEW_REQUIRED')
+    when,date_decision,date_issue=resolved_occurrence(db,tenant,config,row)
+    if date_issue or not when:f.fail('Refresh and review service date evidence.','DATE_EVIDENCE_REQUIRED')
     text=work_text(row)
-    repair=Repair(truck_id=truck_id,repair_date=occurrence(row),title=(row['description'] or f"DBN repair {row['order_number']}")[:200],
+    repair=Repair(truck_id=truck_id,repair_date=when,title=(row['description'] or f"DBN repair {row['order_number']}")[:200],
         details=text or None,description=text or row['order_number'],category=category(row),cost=Decimal(settlement.projection(row)['amount']),
         paid_from_reserve=False,invoice_number=inv['invoice_number'])
     db.add(repair);db.flush()
-    content=json.dumps({'shop_id':config['shop_id'],'customer_id':config['bill_to_id'],'source':row},sort_keys=True).encode()
+    content=json.dumps({'shop_id':config['shop_id'],'customer_id':config['bill_to_id'],'source':row,'date_decision':date_decision},sort_keys=True).encode()
     evidence=FinanceEvidence(tenant_id=tenant,sha256=hashlib.sha256(content).hexdigest(),filename=f"dbn-{row['repair_order_id']}.json",
         media_type='application/json',content_base64=base64.b64encode(content).decode(),source_key='dbn-financial:'+digest({'shop':config['shop_id'],'ro':row['repair_order_id']}),
-        extraction_version='dieselbridge-financial-v1',extracted={'legacy_repair_ids':[repair.id],'invoice_review':{'source_total':f.money(repair.cost),'quoted_total':inv['total_amount'],'amount_basis':'settlement_principal_plus_applied_card_fees' if row.get('settlement') else 'fee_free_invoice'},'payment_basis':'not_established','source':row})
+        extraction_version='dieselbridge-financial-v1',extracted={'legacy_repair_ids':[repair.id],'invoice_review':{'source_total':f.money(repair.cost),'quoted_total':inv['total_amount'],'amount_basis':'settlement_principal_plus_applied_card_fees' if row.get('settlement') else 'fee_free_invoice'},'payment_basis':'not_established','date_decision':date_decision,'source':row})
     db.add(evidence);db.flush()
     link=Link(tenant_id=tenant,slug=config['slug'],shop_id=str(config['shop_id']),customer_id=str(config['bill_to_id']),repair_order_id=row['repair_order_id'],repair_id=repair.id,
         accepted_invoice_id=inv['invoice_id'],accepted_revision=inv['revision'],accepted_snapshot_id=snapshot_id,accepted_payload=row,source_settlement_payload=row.get('settlement'),source_payment_review_reasons=[],evidence_id=evidence.id,state='active',review_reason='')
@@ -572,13 +589,14 @@ async def authorized_cancellation(config,invoice_id):
 
 
 def capture_invoice_evidence(db,tenant,config,row,*,note,repair_id=None,supersedes_id=None):
-    raw=json.dumps({'shop_id':config['shop_id'],'customer_id':config['bill_to_id'],'source':row,'review_note':note,
+    _,date_decision,_=resolved_occurrence(db,tenant,config,row) if row.get('invoice') else (None,None,None)
+    raw=json.dumps({'date_decision':date_decision,'shop_id':config['shop_id'],'customer_id':config['bill_to_id'],'source':row,'review_note':note,
         'repair_id':repair_id,'supersedes_id':supersedes_id},sort_keys=True).encode()
     sha=hashlib.sha256(raw).hexdigest()
     prior=db.query(FinanceEvidence).filter_by(tenant_id=tenant,sha256=sha).first()
     if prior:return prior
     previous=f.evidence(db,tenant,supersedes_id) if supersedes_id else None
-    extracted={'source':row,'review_note':note,'payment_basis':'not_established'}
+    extracted={'source':row,'date_decision':date_decision,'review_note':note,'payment_basis':'not_established'}
     if repair_id:extracted['legacy_repair_ids']=[repair_id]
     if row.get('invoice'):extracted['invoice_review']={'source_total':settlement.projection(row)['amount'],'quoted_total':row['invoice']['total_amount'],'amount_basis':'settlement_principal_plus_applied_card_fees' if row.get('settlement') else 'fee_free_invoice'}
     evidence=FinanceEvidence(tenant_id=tenant,sha256=sha,filename=f"dbn-source-review-{row['repair_order_id']}.json",media_type='application/json',
@@ -604,7 +622,8 @@ async def review_preview(db,tenant,repair_id,expected_revision):
             'cost':f.money(repair.cost),'repair_date':repair.repair_date.isoformat(),'description':repair.details or repair.description or repair.title,
             'category':repair.category}
     if row and row['authorization']=='authorized':
-        inv=row['invoice'];when=occurrence(row);truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
+        inv=row['invoice'];when,date_decision,date_issue=resolved_occurrence(db,tenant,config,row);truck_id,reason,allocation=equipment.resolve(db,tenant,config,row)
+        if date_issue:blockers.append(date_issue)
         if reason!='cost_treatment_required' or truck_id!=repair.truck_id:blockers.append('TRUCK_IDENTITY_REVIEW_REQUIRED')
         asset=db.query(Truck).filter_by(id=truck_id,tenant_id=tenant).first() if truck_id else None
         if needs_asset_review(row) and not allocation and (not asset or asset.vehicle_type!='trailer'):blockers.append('COST_ASSET_REVIEW_REQUIRED')
@@ -612,8 +631,8 @@ async def review_preview(db,tenant,repair_id,expected_revision):
         blockers.extend(settlement.projection(row)['reasons'])
         blockers.extend(source_claim_issues(db,tenant,link,row))
         after={'invoice_id':inv['invoice_id'],'invoice_number':inv['invoice_number'],'cost':settlement.projection(row)['amount'],
-               'repair_date':when.isoformat() if when else None,'description':work_text(row),'category':category(row)}
-        action='no_change' if inv['invoice_id']==link.accepted_invoice_id and inv['revision']==link.accepted_revision and row['revision']==link.accepted_payload['revision'] and settlement.projection(row)['amount'] is not None and Decimal(settlement.projection(row)['amount'])==Decimal(repair.cost) else 'replace_unpaid_invoice'
+               'date_decision':date_decision,'repair_date':when.isoformat() if when else None,'description':work_text(row),'category':category(row)}
+        action='no_change' if when==repair.repair_date and inv['invoice_id']==link.accepted_invoice_id and inv['revision']==link.accepted_revision and row['revision']==link.accepted_payload['revision'] and settlement.projection(row)['amount'] is not None and Decimal(settlement.projection(row)['amount'])==Decimal(repair.cost) else 'replace_unpaid_invoice'
     else:
         proof=await authorized_cancellation(config,link.accepted_invoice_id)
         if proof:
@@ -652,7 +671,7 @@ async def apply_source_review(db,tenant,repair_id,body,key):
     link.state='review_required'
     from app.services.accounting_service import replace_dieselbridge_bill
     if preview['action']=='replace_unpaid_invoice':
-        inv=row['invoice'];when=occurrence(row)
+        inv=row['invoice'];when,_,_=resolved_occurrence(db,tenant,config,row)
         evidence=capture_invoice_evidence(db,tenant,config,row,note=body.note,repair_id=repair.id,supersedes_id=link.evidence_id)
         repair.cost=Decimal(settlement.projection(row)['amount']);repair.repair_date=when
         text=work_text(row);repair.title=(row['description'] or f"DBN repair {row['order_number']}")[:200]
