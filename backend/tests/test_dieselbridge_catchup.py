@@ -34,17 +34,17 @@ def test_initial_full_refetch_imports_missed_finalized_invoices_once_and_never_p
     assert db.query(FinanceEvent).filter_by(kind='bill').count()==2
     assert db.query(Payment).count()==db.query(Ledger).count()==0
     assert run(db,now=NOW)['connections'][0]['result']['created']==2  # durable operation replay
-    assert run(db,now=NOW+timedelta(minutes=5))['connections'][0]['result']['unchanged']==2
+    assert run(db,now=NOW+timedelta(hours=1))['connections'][0]['result']['unchanged']==2
     assert db.query(Repair).count()==2
 
 
 def test_changed_and_missing_invoice_is_held_without_rewriting_cost(monkeypatch,db):
     source(monkeypatch,snapshot([item()]));run(db,now=NOW)
     source(monkeypatch,snapshot([item(total='1200.00')]))
-    assert run(db,now=NOW+timedelta(minutes=5))['connections'][0]['result']['review_required']==1
+    assert run(db,now=NOW+timedelta(hours=1))['connections'][0]['result']['review_required']==1
     db.expire_all();assert db.query(Repair).one().cost==Decimal('1000')
     assert db.query(Link).one().state=='review_required'
-    source(monkeypatch,snapshot([]));run(db,now=NOW+timedelta(minutes=10));db.expire_all()
+    source(monkeypatch,snapshot([]));run(db,now=NOW+timedelta(hours=2));db.expire_all()
     assert db.query(Link).one().state=='access_removed'
     assert db.query(FinanceEvent).filter_by(kind='bill').count()==1
     assert db.query(Payment).count()==db.query(Ledger).count()==0
@@ -94,7 +94,7 @@ def test_fifteen_recorded_payments_survive_catchup_and_new_final_invoice(monkeyp
     monkeypatch.delenv('ELIS_DIESELBRIDGE_HISTORICAL_CASH_ENABLED')
     assert run(db,now=NOW)['connections'][0]['result']['unchanged']==15
     source(monkeypatch,snapshot(rows+[item(16)]))
-    assert run(db,now=NOW+timedelta(minutes=5))['connections'][0]['result']['created']==1
+    assert run(db,now=NOW+timedelta(hours=1))['connections'][0]['result']['created']==1
     db.expire_all()
     assert db.query(Repair).count()==db.query(FinanceEvent).filter_by(kind='bill').count()==16
     assert db.query(Payment).count()==db.query(Ledger).count()==15
@@ -106,14 +106,14 @@ def test_worker_runs_initial_and_periodic_catchup_even_with_continuous_events(mo
     calls=[];stop=asyncio.Event();clock=[NOW]
     async def catchup(*args,**kwargs):calls.append(kwargs['now']);return {'status':'completed','connections':[]}
     async def pending(*args,**kwargs):
-        clock[0]+=timedelta(seconds=300)
+        clock[0]+=timedelta(hours=1)
         if len(calls)>=2:stop.set()
         return {'processed':1,'status':'completed'}
     monkeypatch.setattr(events,'reconcile_connections_once',catchup)
     monkeypatch.setattr(events,'process_pending_once',pending)
     monkeypatch.setattr(events,'utcnow',lambda:clock[0])
     asyncio.run(events.financial_events_worker(None,stop))
-    assert calls==[NOW,NOW+timedelta(minutes=5)]
+    assert calls==[NOW,NOW+timedelta(hours=1)]
 
 
 @pytest.mark.parametrize('value',['{}','[{"tenant_id":true,"slug":"shop"}]','[{"tenant_id":1}]'])

@@ -11,6 +11,8 @@ router = APIRouter()
 def _commit(db,slug,body,headers):
     try:
         result = events.receive_event(db,slug,body,headers)
+        from app.services.dieselbridge_signal import notify
+        notify(db)
         db.commit()
         return result
     except Exception:
@@ -43,4 +45,8 @@ async def financial_wakeup(slug: str,request: Request,db: Session=Depends(get_db
         if len(body)+len(chunk) > events.MAX_BODY_BYTES:
             events.fail(413,'EVENT_TOO_LARGE','Notification exceeds the supported size.')
         body.extend(chunk)
-    return await run_in_threadpool(_commit,db,slug,bytes(body),headers)
+    result = await run_in_threadpool(_commit,db,slug,bytes(body),headers)
+    # Wake only after durable commit and successful HMAC/scope validation.
+    wake = getattr(request.app.state,'dbn_financial_worker_wake',None)
+    if wake is not None:wake.set()
+    return result
