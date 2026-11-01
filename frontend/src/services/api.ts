@@ -226,6 +226,14 @@ export interface Repair {
   paid_from_reserve?: boolean
 }
 
+export interface CompanyRepairReserve {
+  as_of: string
+  scope: 'company'
+  allows_negative: boolean
+  fund: { opening: string; added: string; used: string; balance: string }
+  basis: string
+}
+
 export interface ReserveBalance {
   truck_id: number
   balance: number
@@ -592,6 +600,7 @@ export const repairsApi = {
 }
 
 export const reserveApi = {
+  getPool: () => api.get<CompanyRepairReserve>('/repair-reserve-pool'),
   getBalance: (truckId: number) =>
     api.get<ReserveBalance>(`/trucks/${truckId}/reserve-balance`),
   getLedger: (truckId: number, params?: { from?: string; to?: string }) =>

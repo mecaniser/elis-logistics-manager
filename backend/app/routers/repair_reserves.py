@@ -57,6 +57,17 @@ def _serialize_balance_row(row) -> dict:
     }
 
 
+@router.get('/repair-reserve-pool')
+def get_repair_reserve_pool(as_of: Optional[date] = None, db: Session = Depends(get_db), tenant_id: int = Depends(get_tenant_id)):
+    from app.services.business_funds import repair_fund
+    day = as_of or date.today()
+    if day > date.today():
+        raise HTTPException(422, 'Choose today or an earlier date.')
+    return {'as_of': day, 'scope': 'company', 'allows_negative': True,
+            'fund': repair_fund(db, tenant_id, date(2026, 1, 1), day),
+            'basis': 'Shared management repair reserve across all equipment; bank cash coverage is verified separately.'}
+
+
 @router.get("/trucks/{truck_id}/reserve-balance")
 def get_reserve_balance(
     truck_id: int,

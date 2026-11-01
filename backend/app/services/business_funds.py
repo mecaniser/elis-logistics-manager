@@ -17,9 +17,9 @@ def movement(entries, start, end):
     return {key: money(value) for key, value in dict(opening=opening, added=added, used=used, balance=opening + added - used).items()}
 
 
-def business_funds(db, tenant, start, end):
-    assets = db.query(Truck).filter_by(tenant_id=tenant).all()
-    ids = [a.id for a in assets]
+def repair_fund(db, tenant, start, end):
+    """One company repair pool; asset tags retain attribution, never spending caps."""
+    ids = [row[0] for row in db.query(Truck.id).filter_by(tenant_id=tenant).all()]
     regime = date(2026, 1, 1)
     settlements = db.query(Settlement).filter(Settlement.truck_id.in_(ids), Settlement.source_settlement_id.is_(None), Settlement.settlement_date >= regime, Settlement.settlement_date <= end).all()
     repairs = db.query(Repair).filter(Repair.truck_id.in_(ids), Repair.paid_from_reserve.is_(True), Repair.repair_date >= regime, Repair.repair_date <= end).all()
@@ -41,6 +41,12 @@ def business_funds(db, tenant, start, end):
             and_(RepairReserveLedger.source_type == 'dbn_payment_reverse', RepairReserveLedger.entry_type == 'withdrawal_reversal')),
     ).all()
     repair_entries += [(p.entry_date, D(p.amount) if p.entry_type == 'withdrawal_reversal' else -D(p.amount)) for p in paid_entries]
+    return movement(repair_entries, start, end)
+
+
+def business_funds(db, tenant, start, end):
+    assets = db.query(Truck).filter_by(tenant_id=tenant).all()
+    regime = date(2026, 1, 1)
     capital_entries = []
     equipment = []
     for asset in assets:
@@ -57,6 +63,6 @@ def business_funds(db, tenant, start, end):
         capital_entries += entries
         equipment.append({'asset_id': asset.id, 'name': asset.name, **movement(entries, start, end)})
     return {'start': start.isoformat(), 'end': end.isoformat(), 'repair_since': regime.isoformat(),
-            'repair': movement(repair_entries, start, end), 'capital': movement(capital_entries, start, end),
+            'repair': repair_fund(db, tenant, start, end), 'capital': movement(capital_entries, start, end),
             'equipment': equipment,
             'basis': 'Settlement records and saved recovery plans. Legacy repair spending follows saved reserve flags; DBN spending follows verified payment dates and amounts only. Returned payments add funds on their reversal date. Capital shows cumulative recovery before owner withdrawals; it is not a bank balance.'}
