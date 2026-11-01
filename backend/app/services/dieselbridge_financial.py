@@ -367,14 +367,25 @@ def create_repair(db,tenant,config,row,snapshot_id):
     db.flush();return link
 
 
-async def sync_financial(db,tenant,slug,*,repair_order_ids=None,expected_plan_digest=None,idempotency_key,automatic=False):
-    require_enabled();f.lock_business(db,tenant)
+async def sync_financial(db,tenant,slug,*,repair_order_ids=None,expected_plan_digest=None,idempotency_key,automatic=False,_source_manifest=None):
+    require_enabled()
     config=d.config(tenant,slug);connection=d.connection(db,tenant,config)
     request={'selection':sorted(repair_order_ids) if repair_order_ids is not None else None,'expected_plan_digest':expected_plan_digest,'automatic':automatic,
              'scope':[str(config['shop_id']),str(config['bill_to_id']),config['base_url']]}
     prior,request_digest=operation(db,tenant,slug,'sync',idempotency_key,request)
     if prior:return prior.result
-    value=await manifest(config);preview=build_preview(db,tenant,config,value,repair_order_ids)
+    # Remote I/O precedes the tenant finance lock. Recheck local scope and
+    # idempotency after serialization; event workers may supply a just-fetched
+    # validated source snapshot, never a notification's untrusted amounts.
+    value=validate_manifest(_source_manifest,config) if _source_manifest is not None else await manifest(config)
+    f.lock_business(db,tenant)
+    from app.models.tenant import Tenant
+    if not db.query(Tenant).filter_by(id=tenant,is_active=True).first():f.fail('Business is unavailable.','CONNECTION_SCOPE_CHANGED')
+    db.flush();db.expire_all()
+    connection=d.connection(db,tenant,config)
+    prior,request_digest=operation(db,tenant,slug,'sync',idempotency_key,request)
+    if prior:return prior.result
+    preview=build_preview(db,tenant,config,value,repair_order_ids)
     if not automatic and expected_plan_digest!=preview['plan_digest']:f.fail('Financial records or source changed. Refresh the preview.','STALE_PLAN')
     if not automatic and not preview['executable']:f.fail('Resolve every selected repair before importing this batch.','BATCH_BLOCKED')
     items={r['repair_order_id']:r for r in value['items']}

@@ -45,12 +45,19 @@ async def start_dieselbridge_financial_worker():
         return
     app.state.dbn_financial_worker_task = None
     app.state.dbn_financial_worker_stop = None
+    app.state.dbn_financial_worker_wake = None
+    app.state.dbn_financial_listener_task = None
     flags = ('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED', 'ELIS_DIESELBRIDGE_FINANCIAL_WORKER_ENABLED')
     if not all(os.getenv(name, '').lower() in {'1', 'true'} for name in flags):
         return
-    stop = asyncio.Event()
+    from app.services.dieselbridge_schedule import load_schedule
+    load_schedule()  # Invalid enabled scheduling fails clearly at startup.
+    stop = asyncio.Event();wake = asyncio.Event()
     app.state.dbn_financial_worker_stop = stop
-    app.state.dbn_financial_worker_task = asyncio.create_task(financial_events_worker(SessionLocal, stop))
+    app.state.dbn_financial_worker_wake = wake
+    from app.services.dieselbridge_signal import listen
+    app.state.dbn_financial_listener_task = asyncio.create_task(listen(SessionLocal.kw["bind"], stop, wake))
+    app.state.dbn_financial_worker_task = asyncio.create_task(financial_events_worker(SessionLocal, stop, wake_event=wake))
 
 
 @app.on_event('shutdown')
@@ -59,11 +66,17 @@ async def stop_dieselbridge_financial_worker():
     task = getattr(app.state, 'dbn_financial_worker_task', None)
     if stop is not None:
         stop.set()
+    wake = getattr(app.state, 'dbn_financial_worker_wake', None)
+    if wake is not None:wake.set()
     if task is not None:
         # Let an in-flight transaction finish/rollback before service shutdown.
         await task
+    listener = getattr(app.state, "dbn_financial_listener_task", None)
+    if listener is not None:await listener
     app.state.dbn_financial_worker_task = None
     app.state.dbn_financial_worker_stop = None
+    app.state.dbn_financial_worker_wake = None
+    app.state.dbn_financial_listener_task = None
 
 # Session-based auth middleware to keep the app private while allowing a custom login page.
 APP_AUTH_USERNAME = os.getenv("APP_AUTH_USERNAME")
