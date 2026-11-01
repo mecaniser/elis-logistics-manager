@@ -1,3 +1,4 @@
+import CompanyRepairReserve from '../components/finance/CompanyRepairReserve'
 import TrailerInvestmentForm from '../components/TrailerInvestmentForm'
 import { useEventCallback } from '../utils/useEventCallback'
 import { apiError } from '../utils/apiError'
@@ -168,7 +169,7 @@ export default function VehicleDetail() {
   const reserveDeposits = Number(reserveBalance?.deposits_total) || 0
   const reserveWithdrawals = Number(reserveBalance?.withdrawals_total) || 0
   const reserveAdjustments = Number(reserveBalance?.adjustments_total) || 0
-  const reserveCushionAvailable = Number(reserveBalance?.balance) || 0
+  const equipmentReserveNet = Number(reserveBalance?.balance) || 0
   const reserveDepositedAcrossLoadedSettlements = settlements.reduce(
     (sum, settlement) => sum + (Number(settlement.repair_reserve_amount) || 0),
     0
@@ -192,7 +193,7 @@ export default function VehicleDetail() {
     reserveDeposits > 0 ||
     reserveWithdrawals > 0 ||
     reserveAdjustments > 0 ||
-    reserveCushionAvailable > 0 ||
+    equipmentReserveNet > 0 ||
     (vehicle.default_repair_reserve_amount || 0) > 0
   )
 
@@ -331,65 +332,6 @@ export default function VehicleDetail() {
             </div>
           )}
 
-          {showReserveSummary && (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Repair Reserve Summary</h3>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Ledger-backed reserve totals for this truck under the 2026 reserve regime.
-                  </p>
-                </div>
-                {vehicle.default_repair_reserve_amount != null && vehicle.default_repair_reserve_amount > 0 && (
-                  <div className="text-xs text-amber-700 font-medium">
-                    Default weekly reserve: ${safeToLocaleString(vehicle.default_repair_reserve_amount)}
-                  </div>
-                )}
-              </div>
-
-              <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
-                <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Deposits</div>
-                  <div className="text-xl font-bold mt-1 text-amber-700">
-                    ${safeToLocaleString(reserveDeposits)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    Total deposits synced from 2026+ settlements.
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Withdrawals</div>
-                  <div className="text-xl font-bold mt-1 text-red-600">
-                    ${safeToLocaleString(reserveWithdrawals)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    Repairs marked as paid from reserve reduce the balance here.
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-white p-4 border border-gray-200">
-                  <div className="text-xs font-medium text-gray-500">Reserve Balance</div>
-                  <div className={`text-xl font-bold mt-1 ${reserveCushionAvailable >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                    ${safeToLocaleString(reserveCushionAvailable)}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    Deposits plus manual adjustments minus withdrawals.
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-col gap-1 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
-                <span>Loaded settlements on this screen contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} of reserve deposits.</span>
-                <span>Reserve regime starts 2026-01-01. Repairs paid from reserve show under withdrawals; adjustments are manual corrections only.</span>
-              </div>
-              {reserveAdjustments > 0 && (
-                <div className="mt-2 text-xs text-gray-600">
-                  Manual reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
-                </div>
-              )}
-            </div>
-          )}
-          
           {/* Cumulative Net Profit */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-4">
@@ -639,6 +581,66 @@ export default function VehicleDetail() {
                   🎉 All investments recovered! This is pure profit after paying back your ${safeToLocaleString(roiData.cash_investment)} cash investment and ${safeToLocaleString(roiData.loan_amount)} loan.
                 </span>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(vehicle.vehicle_type === 'truck' || vehicle.vehicle_type === 'trailer') && <CompanyRepairReserve key={`company-reserve-${currentTenant?.id}`} tenantId={currentTenant?.id} refreshKey={repairs} />}
+      {showReserveSummary && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Equipment contribution &amp; usage</h3>
+              <p className="text-xs text-gray-600 mt-1">
+                This equipment’s contributions and spending within the shared company repair fund.
+              </p>
+            </div>
+            {vehicle.default_repair_reserve_amount != null && vehicle.default_repair_reserve_amount > 0 && (
+              <div className="text-xs text-amber-700 font-medium">
+                Default weekly reserve: ${safeToLocaleString(vehicle.default_repair_reserve_amount)}
+              </div>
+            )}
+          </div>
+
+          <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
+            <div className="rounded-lg bg-white p-4 border border-gray-200">
+              <div className="text-xs font-medium text-gray-500">Contributed to shared fund</div>
+              <div className="text-xl font-bold mt-1 text-amber-700">
+                ${safeToLocaleString(reserveDeposits)}
+              </div>
+              <div className="text-xs text-gray-500 mt-2">
+                Total deposits synced from 2026+ settlements.
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 border border-gray-200">
+              <div className="text-xs font-medium text-gray-500">Used for this equipment</div>
+              <div className="text-xl font-bold mt-1 text-red-600">
+                ${safeToLocaleString(reserveWithdrawals)}
+              </div>
+              <div className="text-xs text-gray-500 mt-2">
+                Repairs marked as paid from reserve reduce the balance here.
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 border border-gray-200">
+              <div className="text-xs font-medium text-gray-500">Net contribution minus usage</div>
+              <div className="text-xl font-bold mt-1 text-gray-900">
+                ${safeToLocaleString(equipmentReserveNet)}
+              </div>
+              <div className="text-xs text-gray-500 mt-2">
+                Equipment attribution; the shared fund above covers repairs across all equipment.
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-col gap-1 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+            <span>Loaded settlements on this screen contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} of reserve deposits.</span>
+            <span>Reserve regime starts 2026-01-01. Repairs paid from reserve show under withdrawals; adjustments are manual corrections only.</span>
+          </div>
+          {reserveAdjustments > 0 && (
+            <div className="mt-2 text-xs text-gray-600">
+              Manual reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
             </div>
           )}
         </div>

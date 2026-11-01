@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 from uuid import UUID
@@ -203,9 +204,70 @@ async def process_pending_once(session_factory, *, sync_fn=None, now=None):
             return {'processed':1,'status':row.status,'event_id':row.event_id,'error_code':row.last_error_code}
 
 
+CATCHUP_SECONDS = 300
+
+
+async def reconcile_connections_once(session_factory, *, sync_fn=None, now=None):
+    """Full authenticated refetch repairs missed wakeups, including before setup.
+
+    The existing tenant lock and per-bucket operation key serialize replicas and
+    restarts. Each connection commits independently; failure never acknowledges
+    another connection or fabricates a payment. No webhook secret is needed for
+    an authenticated pull through the already scoped source read key.
+    """
+    if not enabled() or os.getenv('ELIS_DIESELBRIDGE_FINANCIAL_WORKER_ENABLED','').lower() not in {'1','true'}:
+        return {'status':'disabled','connections':[]}
+    current = now or utcnow()
+    try:
+        entries = json.loads(os.getenv('ELIS_DIESELBRIDGE_CONNECTIONS','[]'))
+        if not isinstance(entries,list) or len(entries)>100:raise ValueError()
+        scopes = []
+        for entry in entries:
+            tenant,slug = entry['tenant_id'],entry['slug']
+            if type(tenant) is not int or tenant <= 0 or not isinstance(slug,str):raise ValueError()
+            if (tenant,slug) in scopes:raise ValueError()
+            scopes.append((tenant,slug))
+    except (ValueError,TypeError,KeyError):
+        return {'status':'configuration_error','connections':[]}
+    if sync_fn is None:
+        from app.services.dieselbridge_financial import sync_financial
+        sync_fn = sync_financial
+    bucket = int(current.timestamp()) // CATCHUP_SECONDS
+    results = []
+    for tenant,slug in scopes:
+        try:
+            with session_factory() as db:
+                f.lock_business(db,tenant)
+                d.config(tenant,slug)
+                if not db.query(Tenant).filter_by(id=tenant,is_active=True).first():
+                    fail(409,'CONNECTION_SCOPE_CHANGED','Notification business is unavailable.')
+                # sync_financial verifies stored connection scope, fetches the
+                # complete validated manifest and holds changes for source review.
+                result = await sync_fn(db,tenant,slug,idempotency_key='catchup:v1:'+str(bucket),automatic=True)
+                db.commit()
+                results.append({'tenant_id':tenant,'slug':slug,'status':'completed','result':result})
+        except Exception as exc:
+            results.append({'tenant_id':tenant,'slug':slug,'status':'retry','error_code':_error_code(exc)})
+    return {'status':'completed','connections':results}
+
+
 async def financial_events_worker(session_factory, stop_event, *, poll_seconds=2.0):
     """One bounded worker loop. Explicit application lifecycle must start/stop it."""
+    next_catchup = None
     while not stop_event.is_set():
+        current = utcnow()
+        if next_catchup is None or current >= next_catchup:
+            try:
+                checked = await asyncio.to_thread(lambda:asyncio.run(reconcile_connections_once(session_factory,now=current)))
+                if checked['status']=='configuration_error':
+                    logging.getLogger(__name__).warning('DBN catch-up configuration requires review.')
+                for connection in checked.get('connections',[]):
+                    if connection['status']=='retry':
+                        logging.getLogger(__name__).warning('DBN catch-up paused: tenant=%s connection=%s code=%s',connection['tenant_id'],connection['slug'],connection['error_code'])
+            except Exception:
+                logging.getLogger(__name__).warning('DBN catch-up unavailable; next scheduled pass will retry.')
+            next_catchup = current + timedelta(seconds=CATCHUP_SECONDS)
+        if stop_event.is_set():break
         try:
             result = await asyncio.to_thread(lambda:asyncio.run(process_pending_once(session_factory)))
         except Exception:

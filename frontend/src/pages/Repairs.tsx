@@ -1,3 +1,4 @@
+import CompanyRepairReserve from '../components/finance/CompanyRepairReserve'
 import { useEventCallback } from '../utils/useEventCallback'
 import DieselBridgeFinancialSync from '../components/repairs/DieselBridgeFinancialSync'
 import { useSearchParams } from 'react-router-dom'
@@ -822,6 +823,7 @@ export default function Repairs() {
         </div>
         {review.loading && <p role="status" className="text-sm text-gray-600 mt-2">Loading preserved documents and payment links…</p>}
         {review.error && <div role="alert" className="mt-2 text-sm text-red-700">Evidence review could not load: {review.error}. Existing repair records remain available. <button type="button" onClick={review.retry} className="min-h-11 underline focus-visible:outline focus-visible:outline-2">Retry evidence review</button></div>}
+        <CompanyRepairReserve key={`company-reserve-${currentTenant?.id}`} tenantId={currentTenant?.id} refreshKey={review.data} />
         {review.data && <>
           <p className="text-sm text-gray-700 mt-2">Upload your invoices as usual. Review differences here and add payment details only where needed. {review.data.coverage.with_preserved_evidence} of {review.data.coverage.records} repairs have preserved documents.</p>
           <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Filter repair evidence">
