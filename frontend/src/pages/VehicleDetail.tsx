@@ -592,57 +592,38 @@ export default function VehicleDetail() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-900">Equipment contribution &amp; usage</h3>
-              <p className="text-xs text-gray-600 mt-1">
-                This equipment’s contributions and spending within the shared company repair fund.
-              </p>
             </div>
             {vehicle.default_repair_reserve_amount != null && vehicle.default_repair_reserve_amount > 0 && (
               <div className="text-xs text-amber-700 font-medium">
-                Default weekly reserve: ${safeToLocaleString(vehicle.default_repair_reserve_amount)}
+                Weekly contribution: ${safeToLocaleString(vehicle.default_repair_reserve_amount)}
               </div>
             )}
           </div>
 
           <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-3'} gap-3`}>
             <div className="rounded-lg bg-white p-4 border border-gray-200">
-              <div className="text-xs font-medium text-gray-500">Contributed to shared fund</div>
+              <div className="text-xs font-medium text-gray-500">Contributed</div>
               <div className="text-xl font-bold mt-1 text-amber-700">
                 ${safeToLocaleString(reserveDeposits)}
               </div>
-              <div className="text-xs text-gray-500 mt-2">
-                Total deposits synced from 2026+ settlements.
-              </div>
             </div>
 
             <div className="rounded-lg bg-white p-4 border border-gray-200">
-              <div className="text-xs font-medium text-gray-500">Used for this equipment</div>
+              <div className="text-xs font-medium text-gray-500">Used</div>
               <div className="text-xl font-bold mt-1 text-red-600">
                 ${safeToLocaleString(reserveWithdrawals)}
               </div>
-              <div className="text-xs text-gray-500 mt-2">
-                Repairs marked as paid from reserve reduce the balance here.
-              </div>
             </div>
 
             <div className="rounded-lg bg-white p-4 border border-gray-200">
-              <div className="text-xs font-medium text-gray-500">Net contribution minus usage</div>
+              <div className="text-xs font-medium text-gray-500">Net contribution</div>
               <div className="text-xl font-bold mt-1 text-gray-900">
                 ${safeToLocaleString(equipmentReserveNet)}
               </div>
-              <div className="text-xs text-gray-500 mt-2">
-                Equipment attribution; the shared fund above covers repairs across all equipment.
-              </div>
             </div>
           </div>
-          <div className="mt-3 flex flex-col gap-1 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
-            <span>Loaded settlements on this screen contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} of reserve deposits.</span>
-            <span>Reserve regime starts 2026-01-01. Repairs paid from reserve show under withdrawals; adjustments are manual corrections only.</span>
-          </div>
-          {reserveAdjustments > 0 && (
-            <div className="mt-2 text-xs text-gray-600">
-              Manual reserve adjustments recorded: ${safeToLocaleString(reserveAdjustments)}
-            </div>
-          )}
+          {reserveAdjustments !== 0 && <p className="mt-2 text-sm text-gray-600">Adjustments: ${safeToLocaleString(reserveAdjustments)}</p>}
+          <details className="mt-3 text-xs text-gray-600"><summary className="min-h-8 cursor-pointer" aria-label="Equipment contribution details">Details</summary><p>Contributions follow settlement records from January 1, 2026. Loaded settlements contain ${safeToLocaleString(reserveDepositedAcrossLoadedSettlements)} in contributions. Legacy repair spending follows saved reserve flags; DBN spending follows verified payments. Net contribution includes adjustments. Repairs use the shared company fund.</p></details>
         </div>
       )}
 

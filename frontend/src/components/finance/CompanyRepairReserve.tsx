@@ -13,10 +13,10 @@ export default function CompanyRepairReserve({tenantId, refreshKey}: {tenantId?:
     return () => {active = false}
   }, [tenantId, refreshKey, reload])
   return <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4" aria-label="Shared company repair reserve">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-gray-900">Shared company repair reserve</h2><p className="mt-1 text-sm text-gray-600">One repair fund for all trucks and trailers. Contributions and spending remain attributed to each equipment.</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-gray-900">Shared repair reserve</h2><p className="mt-1 text-sm text-gray-600">All trucks and trailers</p></div>
       <div className="text-right"><p className="text-xs text-gray-600">{pool ? `Through ${pool.as_of}` : failed ? 'Balance unavailable' : 'Loading shared balance…'}</p><p className={`text-xl font-semibold ${pool && Number(pool.fund.balance) < 0 ? 'text-red-700' : 'text-gray-900'}`}>{pool ? repairMoney(pool.fund.balance) : '—'}</p></div></div>
-    {pool && <p className="mt-2 text-sm text-gray-700">Added {repairMoney(pool.fund.added)} · Used {repairMoney(pool.fund.used)} since January 1, 2026.{Number(pool.fund.balance) < 0 ? ' The shared pool is negative.' : ''}</p>}
-    <p className="mt-2 text-xs text-gray-600">This management reserve is calculated from recorded contributions and repair payments. Bank cash coverage is verified separately.</p>
+    {pool && <p className="mt-2 text-sm text-gray-700">Added {repairMoney(pool.fund.added)} · Used {repairMoney(pool.fund.used)} {Number(pool.fund.balance) < 0 ? ' Shared reserve is negative.' : ''}</p>}
+    <details className="mt-2 text-xs text-gray-600"><summary className="min-h-8 cursor-pointer" aria-label="Shared reserve details">Details</summary><p>Contributions and repair payments since January 1, 2026. Equipment attribution is retained. Bank cash coverage is verified separately.</p></details>
     {failed && <button type="button" className="mt-2 min-h-11 text-sm text-blue-700" onClick={() => setReload(reload + 1)}>Retry shared reserve</button>}
   </section>
 }
