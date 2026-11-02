@@ -8,6 +8,7 @@ import ReactECharts from 'echarts-for-react'
 import { useMobile } from '../utils/useMobile'
 import { useTenant } from '../contexts/tenantState'
 import AccountingTooltip from '../components/AccountingTooltip'
+import DashboardInfoTooltip from '../components/DashboardInfoTooltip'
 
 // Type definitions for dashboard data structures
 interface RepairByMonth {
@@ -1418,17 +1419,27 @@ function DashboardContent() {
       </div>
 
       {vehicleTypeFilter !== 'trailers' && <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <div className="flex items-center gap-1">
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <DashboardInfoTooltip label="Business Total">
               Settlement remaining across all vehicles, after reserve and trailer allocations. Repair invoices are shown separately; reserve payments reduce the shared reserve, not remaining again.
-            </p>
+            </DashboardInfoTooltip>
           </div>
-          <div className="text-left lg:text-right">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Remaining after allocations</div>
-            <div className={`text-2xl font-bold ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : businessTimeSeriesError ? 'Result unavailable' : emptySettlementLabel}
+          <div className="min-w-0 sm:text-right">
+            <div className="flex items-center gap-1 sm:justify-end">
+              <span className="text-xs font-medium text-gray-500">Remaining after allocations</span>
+              <DashboardInfoTooltip label="Remaining after allocations">
+                Amount left in the recorded settlements after reserve and trailer allocations. It follows settlement records, not bank cash. Reserve-funded repairs are not deducted again.
+              </DashboardInfoTooltip>
+            </div>
+            <div className="flex items-center gap-1 sm:justify-end">
+              <span className={`text-xl font-semibold leading-tight ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : businessTimeSeriesError ? 'Result unavailable' : emptySettlementLabel}
+              </span>
+              {awaitingSettlements && <DashboardInfoTooltip label="Awaiting settlements">
+                Awaiting settlements for the previous week’s run. They usually arrive Tuesday or Wednesday. Recorded repairs and reserve payments remain visible.
+              </DashboardInfoTooltip>}
             </div>
           </div>
         </div>
@@ -2533,8 +2544,11 @@ function DashboardContent() {
             </div>
           ) : selectedActivityPeriod ? (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <p className="font-medium text-gray-800">{emptySettlementLabel}</p>
-              {awaitingSettlements && <p className="mt-1 text-sm text-gray-600">Awaiting settlements for the previous week’s run. They usually arrive Tuesday or Wednesday. Recorded repairs and reserve payments remain visible.</p>}
+              <div className="flex items-center gap-1"><p className="font-medium text-gray-800">{emptySettlementLabel}</p>
+                {awaitingSettlements && <DashboardInfoTooltip label="Awaiting settlements in this period">
+                  Awaiting settlements for the previous week’s run. They usually arrive Tuesday or Wednesday. Recorded repairs and reserve payments remain visible.
+                </DashboardInfoTooltip>}
+              </div>
               <p className="mt-1 text-sm text-gray-600">Settlement revenue, profit and mileage are unavailable. Recorded reserve withdrawals use their own dated ledger entries above.</p>
               {selectedIncurredRepairCosts !== null && selectedIncurredRepairCosts !== 0 && <p className="mt-3 text-sm text-gray-800">Incurred repair costs: <strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(selectedIncurredRepairCosts)}</strong> · service/invoice date basis</p>}
             </div>
