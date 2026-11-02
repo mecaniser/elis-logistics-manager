@@ -1,4 +1,4 @@
-import { reportRemaining, reportExpenseTotal, formatReportDate } from '../utils/reporting'
+import { reportRemaining, reportExpenseTotal, formatReportDate, awaitingWeeklySettlements, hasRecordedSettlementForRun } from '../utils/reporting'
 import { expenseActivityPeriods, reserveWithdrawalsForPeriod, serviceRepairCostsForPeriod } from '../components/repairs/reserveWithdrawals'
 import { useEventCallback } from '../utils/useEventCallback'
 interface ChartDatum { value: number; dataIndex: number; name: string; seriesName: string; seriesType: string; axisValue: string; marker: string; percent?: number }
@@ -1321,6 +1321,12 @@ function DashboardContent() {
   const truckResultAvailable = expenseAnalysisView === 'all_time' ? businessTimeSeries.truck !== null : businessTruckPeriod?.settlement_remainder !== undefined
   const trailerResultAvailable = expenseAnalysisView === 'all_time' ? businessTimeSeries.trailer !== null : businessTrailerPeriod?.settlement_remainder !== undefined
   const businessResultAvailable = truckResultAvailable || trailerResultAvailable
+  const recordedBusinessWeeks = [...(businessTimeSeries.truck?.by_week || []), ...(businessTimeSeries.trailer?.by_week || [])]
+  const recordedRunExists = expenseAnalysisView === 'weekly' && hasRecordedSettlementForRun(selectedActivityPeriod, recordedBusinessWeeks)
+  const awaitingSettlements = !businessTimeSeriesError && businessTimeSeries.truck !== null && businessTimeSeries.trailer !== null
+    && businessTimeSeries.truck.by_week.length > 0
+    && awaitingWeeklySettlements(expenseAnalysisView, selectedActivityPeriod, businessResultAvailable || recordedRunExists)
+  const emptySettlementLabel = awaitingSettlements ? 'Awaiting settlements' : recordedRunExists ? 'No result for this selection' : 'No settlements recorded'
   const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
 
   const renderMetricTrend = (
@@ -1422,7 +1428,7 @@ function DashboardContent() {
           <div className="text-left lg:text-right">
             <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Remaining after allocations</div>
             <div className={`text-2xl font-bold ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
+              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : businessTimeSeriesError ? 'Result unavailable' : emptySettlementLabel}
             </div>
           </div>
         </div>
@@ -1433,19 +1439,19 @@ function DashboardContent() {
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
                 <div className="text-xs font-medium text-gray-600">Truck remaining</div>
                 <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                  {truckResultAvailable ? `$${safeToLocaleString(truckNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
+                  {truckResultAvailable ? `$${safeToLocaleString(truckNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : emptySettlementLabel}
                 </div>
               </div>
               <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
                 <div className="text-xs font-medium text-gray-600">Trailer remaining</div>
                 <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                  {trailerResultAvailable ? `$${safeToLocaleString(trailerNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
+                  {trailerResultAvailable ? `$${safeToLocaleString(trailerNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : emptySettlementLabel}
                 </div>
               </div>
               <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
                 <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
                 <div className="mt-1 text-xl font-bold text-amber-700">
-                  {truckResultAvailable ? `$${safeToLocaleString(businessReserveDepositsThisPeriod)}` : businessTimeSeriesError ? 'Allocation unavailable' : 'No settlement recorded'}
+                  {truckResultAvailable ? `$${safeToLocaleString(businessReserveDepositsThisPeriod)}` : businessTimeSeriesError ? 'Allocation unavailable' : emptySettlementLabel}
                 </div>
               </div>
             </div>
@@ -1590,7 +1596,7 @@ function DashboardContent() {
                       const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
                       return (
                         <option key={key} value={key}>
-                          {label}
+                          {expenseAnalysisView === 'weekly' && !period.has_settlement_data && !timeSeriesError && !businessTimeSeriesError && businessTimeSeries.truck !== null && businessTimeSeries.trailer !== null && businessTimeSeries.truck.by_week.length > 0 && awaitingWeeklySettlements(expenseAnalysisView, period, hasRecordedSettlementForRun(period, recordedBusinessWeeks)) ? `${period.week_start} – ${period.week_end} · awaiting settlements` : label}
                         </option>
                       )
                     })}
@@ -2527,7 +2533,8 @@ function DashboardContent() {
             </div>
           ) : selectedActivityPeriod ? (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <p className="font-medium text-gray-800">No settlement recorded for this period.</p>
+              <p className="font-medium text-gray-800">{emptySettlementLabel}</p>
+              {awaitingSettlements && <p className="mt-1 text-sm text-gray-600">Awaiting settlements for the previous week’s run. They usually arrive Tuesday or Wednesday. Recorded repairs and reserve payments remain visible.</p>}
               <p className="mt-1 text-sm text-gray-600">Settlement revenue, profit and mileage are unavailable. Recorded reserve withdrawals use their own dated ledger entries above.</p>
               {selectedIncurredRepairCosts !== null && selectedIncurredRepairCosts !== 0 && <p className="mt-3 text-sm text-gray-800">Incurred repair costs: <strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(selectedIncurredRepairCosts)}</strong> · service/invoice date basis</p>}
             </div>
