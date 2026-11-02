@@ -1,3 +1,4 @@
+import { reportRemaining, reportExpenseTotal, formatReportDate } from '../utils/reporting'
 import { expenseActivityPeriods, reserveWithdrawalsForPeriod, serviceRepairCostsForPeriod } from '../components/repairs/reserveWithdrawals'
 import { useEventCallback } from '../utils/useEventCallback'
 interface ChartDatum { value: number; dataIndex: number; name: string; seriesName: string; seriesType: string; axisValue: string; marker: string; percent?: number }
@@ -189,6 +190,12 @@ function MetricSparkline({
 }
 
 export default function Dashboard() {
+  const { currentTenant } = useTenant()
+  // A tenant change owns a new state tree; late requests cannot populate another business.
+  return <DashboardContent key={currentTenant?.id ?? 'none'} />
+}
+
+function DashboardContent() {
   const isMobile = useMobile()
   const { currentTenant } = useTenant()
   const [data, setData] = useState<DashboardData | null>(null)
@@ -220,6 +227,9 @@ export default function Dashboard() {
   const [cumulativePositionExpanded, setCumulativePositionExpanded] = useState<boolean>(false)
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 1024)
   const timeSeriesRequestRef = useRef(0)
+  const businessTimeSeriesRequestRef = useRef(0)
+  const [timeSeriesError, setTimeSeriesError] = useState(false)
+  const [businessTimeSeriesError, setBusinessTimeSeriesError] = useState(false)
 
   const loadDashboard = useEventCallback(async () => {
     try {
@@ -239,11 +249,15 @@ export default function Dashboard() {
     try {
       setTimeSeriesLoading(true)
       setTimeSeriesReady(false)
+      setTimeSeriesError(false)
       // Map vehicle type filter to backend parameter
       const vehicleType = vehicleTypeFilter === 'trucks' ? 'truck' : vehicleTypeFilter === 'trailers' ? 'trailer' : undefined
       const dieselRequest =
         vehicleTypeFilter === 'trucks'
-          ? analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, true)
+          ? analyticsApi.getTimeSeries(undefined, selectedTruck || undefined, vehicleType, true).catch((err) => {
+              console.error('Failed to load diesel benchmark time-series:', err)
+              return null
+            })
           : null
 
       if (dieselRequest) {
@@ -262,6 +276,7 @@ export default function Dashboard() {
       if (dieselRequest) {
         dieselRequest
           .then((dieselResponse) => {
+            if (!dieselResponse) return
             if (requestId !== timeSeriesRequestRef.current) return
             const normalizedDieselData = normalizeTimeSeries(dieselResponse.data || {})
             setTimeSeriesData((currentData) => mergeDieselBenchmarks(currentData || normalizedData, normalizedDieselData))
@@ -278,11 +293,9 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to load time-series data:', err)
       if (requestId !== timeSeriesRequestRef.current) return
-      setTimeSeriesData({
-        by_week: [],
-        by_month: [],
-        by_year: [],
-      })
+      setTimeSeriesData(null)
+      setTimeSeriesError(true)
+      setDieselBenchmarkLoading(false)
       setTimeSeriesReady(true)
     } finally {
       if (requestId === timeSeriesRequestRef.current) {
@@ -295,17 +308,22 @@ export default function Dashboard() {
   })
 
   const loadBusinessTimeSeries = useEventCallback(async () => {
+    const requestId = ++businessTimeSeriesRequestRef.current
+    setBusinessTimeSeriesError(false)
     try {
       const [truckResponse, trailerResponse] = await Promise.all([
         analyticsApi.getTimeSeries(undefined, undefined, 'truck'),
         analyticsApi.getTimeSeries(undefined, undefined, 'trailer'),
       ])
+      if (requestId !== businessTimeSeriesRequestRef.current) return
       setBusinessTimeSeries({
         truck: normalizeTimeSeries(truckResponse.data),
         trailer: normalizeTimeSeries(trailerResponse.data),
       })
     } catch (err) {
+      if (requestId !== businessTimeSeriesRequestRef.current) return
       console.error('Failed to load business time series:', err)
+      setBusinessTimeSeriesError(true)
       setBusinessTimeSeries({ truck: null, trailer: null })
     }
   })
@@ -399,6 +417,8 @@ export default function Dashboard() {
         { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0 },
         { name: 'Loan Interest', value: expenseCategories.loan_interest || 0 },
         { name: 'Truck Parking', value: expenseCategories.truck_parking || 0 },
+        { name: 'Fleet Manager Support', value: expenseCategories.fleet_manager_support || 0 },
+        { name: 'Custom Expenses', value: expenseCategories.custom || 0 },
       ].filter(item => item.value > 0).sort((a, b) => b.value - a.value)
       
       if (categories.length > 0) {
@@ -623,6 +643,7 @@ export default function Dashboard() {
       { name: 'Payroll Fee', value: expenseCategories.payroll_fee || 0, color: '#ec4899' },
       { name: 'Loan Interest', value: expenseCategories.loan_interest || 0, color: '#fbbf24' },
       { name: 'Truck Parking', value: expenseCategories.truck_parking || 0, color: '#a855f7' },
+      { name: 'Custom Expenses', value: expenseCategories.custom || 0, color: '#64748b' },
     ].filter(item => item.value > 0).sort((a, b) => b.value - a.value) : []
   }
   
@@ -780,7 +801,7 @@ export default function Dashboard() {
       ifta: data.by_week.map((item) => item.ifta),
       loan_interest: data.by_week.map((item) => item.loan_interest || 0),
       truck_parking: data.by_week.map((item) => item.truck_parking),
-      custom: data.by_week.map(() => 0),
+      custom: data.by_week.map((item) => item.custom || 0),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
@@ -809,7 +830,7 @@ export default function Dashboard() {
       ifta: data.by_month.map((item) => item.ifta),
       loan_interest: data.by_month.map((item) => item.loan_interest || 0),
       truck_parking: data.by_month.map((item) => item.truck_parking),
-      custom: data.by_month.map(() => 0),
+      custom: data.by_month.map((item) => item.custom || 0),
     }
     
     return { labels, grossRevenue, netProfit, driverPay, payrollFee, expenses }
@@ -889,6 +910,7 @@ export default function Dashboard() {
 
   // Get selected period data
   const getSelectedPeriodData = () => {
+    if (!timeSeriesData) return null
     // For "All Time", use dashboard data which has correct totals
     if (expenseAnalysisView === 'all_time') {
       // Always use dashboard data for "all time" as it has accurate totals
@@ -909,7 +931,6 @@ export default function Dashboard() {
         truckProfits = data.trucks.truck_profits || []
         totalExpensesFromBackend = data.trucks.total_expenses || 0
         operationalMetrics = data.trucks.operational_metrics || {}
-        expenseCategories.custom = 0
       } else if (vehicleTypeFilter === 'trailers' && data.trailers) {
         expenseCategories = data.trailers.expense_categories || {}
         grossRevenue = data.trailers.total_revenue || 0
@@ -917,7 +938,6 @@ export default function Dashboard() {
         truckProfits = data.trailers.trailer_profits || []
         totalExpensesFromBackend = data.trailers.total_expenses || 0
         operationalMetrics = data.trailers.operational_metrics || {}
-        expenseCategories.custom = 0
       } else {
         // Fallback - should not happen since 'all' is removed
         expenseCategories = {}
@@ -928,10 +948,9 @@ export default function Dashboard() {
         operationalMetrics = {}
       }
 
-      // Remove custom expenses from totals/net profit to align with settlement net profit
-      const customAmount = expenseCategories.custom || 0
-      const adjustedTotalExpenses = Math.max(0, (totalExpensesFromBackend || 0) - customAmount)
-      const adjustedNetProfit = netProfit + customAmount
+      // Preserve every recorded expense category, including custom expenses and credits.
+      const adjustedTotalExpenses = totalExpensesFromBackend || 0
+      const adjustedNetProfit = netProfit
       
       const aggregated: TimeSeriesPeriod & {all_time_key:string; all_time_label:string} = {
         fleet_manager_support: expenseCategories.fleet_manager_support || 0,
@@ -942,6 +961,9 @@ export default function Dashboard() {
         raw_gross_miles_driven: operationalMetrics.raw_gross_miles_driven || 0,
         miles_driven: operationalMetrics.miles_driven || 0,
         net_profit: adjustedNetProfit,
+        settlement_remainder: timeSeriesData?.by_year.reduce((sum, period) => sum + reportRemaining(period), 0),
+        repair_reserve_amount: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number(period.repair_reserve_amount) || 0), 0),
+        trailer_income_split_amount: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number(period.trailer_income_split_amount) || 0), 0),
         expenses: operationalMetrics.settlement_expenses || 0,
         total_expenses: (() => {
           return adjustedTotalExpenses
@@ -959,7 +981,7 @@ export default function Dashboard() {
         loan_interest: expenseCategories.loan_interest || 0,
         truck_parking: expenseCategories.truck_parking || 0,
         service_on_truck: expenseCategories.service_on_truck || 0,
-        custom: 0,
+        custom: expenseCategories.custom || 0,
         repairs: operationalMetrics.repair_costs || expenseCategories.repairs || 0,
         trucks: (Array.isArray(truckProfits) ? truckProfits : []).map((tp) => ({
           truck_id: tp.truck_id,
@@ -1272,7 +1294,7 @@ export default function Dashboard() {
 
   const sumNetProfitAcrossSeries = (series: TimeSeriesData | null) => {
     if (!series) return 0
-    return series.by_year.reduce((sum, period) => sum + (Number(period.net_profit) || 0), 0)
+    return series.by_year.reduce((sum, period) => sum + reportRemaining(period), 0)
   }
 
   const detailReserveBalances = selectedTruck
@@ -1290,14 +1312,14 @@ export default function Dashboard() {
     ? summaryReserveDepositsToDate
     : Number((businessTruckPeriod as TimeSeriesPeriod)?.repair_reserve_amount) || 0
   const truckNetProfitTotal = expenseAnalysisView === 'all_time'
-    ? sumNetProfitAcrossSeries(businessTimeSeries.truck) || Number(businessSummary?.trucks?.net_profit) || 0
-    : Number((businessTruckPeriod as TimeSeriesPeriod)?.net_profit) || 0
+    ? sumNetProfitAcrossSeries(businessTimeSeries.truck)
+    : reportRemaining(businessTruckPeriod)
   const trailerNetProfitTotal = expenseAnalysisView === 'all_time'
-    ? sumNetProfitAcrossSeries(businessTimeSeries.trailer) || Number(businessSummary?.trailers?.net_profit) || 0
-    : Number((businessTrailerPeriod as TimeSeriesPeriod)?.net_profit) || 0
+    ? sumNetProfitAcrossSeries(businessTimeSeries.trailer)
+    : reportRemaining(businessTrailerPeriod)
   const businessTotalProfit = truckNetProfitTotal + trailerNetProfitTotal
-  const truckResultAvailable = expenseAnalysisView === 'all_time' || businessTruckPeriod !== null
-  const trailerResultAvailable = expenseAnalysisView === 'all_time' || businessTrailerPeriod !== null
+  const truckResultAvailable = expenseAnalysisView === 'all_time' ? businessTimeSeries.truck !== null : businessTruckPeriod?.settlement_remainder !== undefined
+  const trailerResultAvailable = expenseAnalysisView === 'all_time' ? businessTimeSeries.trailer !== null : businessTrailerPeriod?.settlement_remainder !== undefined
   const businessResultAvailable = truckResultAvailable || trailerResultAvailable
   const businessPeriodSectionLabel = expenseAnalysisView === 'all_time' ? 'All Time' : 'This Period'
 
@@ -1394,13 +1416,13 @@ export default function Dashboard() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Business Total</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Truck and trailer results across all vehicles. Weekly results follow settlement records; monthly/yearly results include incurred repair costs.
+              Settlement remaining across all vehicles, after reserve and trailer allocations. Repair invoices are shown separately; reserve payments reduce the shared reserve, not remaining again.
             </p>
           </div>
           <div className="text-left lg:text-right">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Reported business result</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Remaining after allocations</div>
             <div className={`text-2xl font-bold ${businessTotalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : 'No result recorded'}
+              {businessResultAvailable ? `$${safeToLocaleString(businessTotalProfit)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
             </div>
           </div>
         </div>
@@ -1409,21 +1431,21 @@ export default function Dashboard() {
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{businessPeriodSectionLabel}</div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
-                <div className="text-xs font-medium text-gray-600">Truck recorded result</div>
+                <div className="text-xs font-medium text-gray-600">Truck remaining</div>
                 <div className={`mt-1 text-xl font-bold ${truckNetProfitTotal >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                  {truckResultAvailable ? `$${safeToLocaleString(truckNetProfitTotal)}` : 'No result recorded'}
+                  {truckResultAvailable ? `$${safeToLocaleString(truckNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
                 </div>
               </div>
               <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
-                <div className="text-xs font-medium text-gray-600">Trailer recorded result</div>
+                <div className="text-xs font-medium text-gray-600">Trailer remaining</div>
                 <div className={`mt-1 text-xl font-bold ${trailerNetProfitTotal >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
-                  {trailerResultAvailable ? `$${safeToLocaleString(trailerNetProfitTotal)}` : 'No result recorded'}
+                  {trailerResultAvailable ? `$${safeToLocaleString(trailerNetProfitTotal)}` : businessTimeSeriesError ? 'Result unavailable' : 'No result recorded'}
                 </div>
               </div>
               <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
                 <div className="text-xs font-medium text-gray-600">Reserve Deposited This Period</div>
                 <div className="mt-1 text-xl font-bold text-amber-700">
-                  {truckResultAvailable ? `$${safeToLocaleString(businessReserveDepositsThisPeriod)}` : 'No settlement recorded'}
+                  {truckResultAvailable ? `$${safeToLocaleString(businessReserveDepositsThisPeriod)}` : businessTimeSeriesError ? 'Allocation unavailable' : 'No settlement recorded'}
                 </div>
               </div>
             </div>
@@ -1598,6 +1620,11 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+          ) : timeSeriesError ? (
+            <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Settlement results are unavailable because the report could not load. Remaining and allocations are not shown.
+              <button type="button" onClick={() => { loadTimeSeries(); loadBusinessTimeSeries() }} className="ml-2 underline">Retry report</button>
+            </div>
           ) : !hasAnyTimeSeriesPeriods ? (
             <div className="text-center py-8 text-gray-500">
               No time-series data available. Please ensure you have settlements with dates.
@@ -1609,7 +1636,7 @@ export default function Dashboard() {
                 const pd = selectedPeriodData as TimeSeriesPeriod
                 const repairsForPeriod = getRepairCostForSelectedPeriod(pd)
                 
-                    const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                    const netProfitValue = reportRemaining(selectedPeriodData)
                     const loanInterestOuter = Number(pd.loan_interest) || 0
                     const trailerSplitOuter = vehicleTypeFilter === 'trailers'
                       ? Math.max(0, (Number(selectedPeriodData.gross_revenue) || 0) - netProfitValue)
@@ -1692,7 +1719,7 @@ export default function Dashboard() {
                           </div>
                           <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
                             <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-xs sm:text-sm font-medium text-gray-600">{expenseAnalysisView === 'weekly' ? 'Settlement remainder' : 'Net result after repair costs'}</span>
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Settlement remaining after allocations</span>
                               <span className={`text-base sm:text-xl font-bold ${netProfitValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 ${safeToLocaleString(netProfitValue)}
                               </span>
@@ -1707,26 +1734,7 @@ export default function Dashboard() {
                               <span className="text-xs sm:text-sm font-medium text-gray-600">Total Expenses:</span>
                               <span className="text-base sm:text-xl font-bold text-red-600">
                                 ${(() => {
-                                  const customAmt = Number((selectedPeriodData as TimeSeriesPeriod).custom) || 0
-                                  if (pd.total_expenses !== undefined && pd.total_expenses > 0) {
-                                    return Math.max(0, pd.total_expenses - customAmt)
-                                  }
-                                  const sum = (
-                                    (Number(pd.fuel) || 0) +
-                                    (Number(pd.tolls) || 0) +
-                                    (Number(pd.dispatch_fee) || 0) +
-                                    (Number(pd.deduct) || 0) +
-                                    (Number(pd.insurance) || 0) +
-                                    (Number(pd.safety) || 0) +
-                                    (Number(pd.prepass) || 0) +
-                                    (Number(pd.ifta) || 0) +
-                                    (Number(pd.loan_interest) || 0) +
-                                    (Number(pd.truck_parking) || 0) +
-                                    (Number(pd.driver_pay) || 0) +
-                                    (Number(pd.payroll_fee) || 0) +
-                                    (expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly' || expenseAnalysisView === 'all_time' ? (Number(pd.repairs) || 0) : 0)
-                                  )
-                                  return isNaN(sum) ? 0 : Math.max(0, sum - customAmt)
+                                  return reportExpenseTotal(pd, expenseAnalysisView !== 'weekly')
                                 })().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
@@ -1734,7 +1742,7 @@ export default function Dashboard() {
                           </div>
                           <div className="bg-green-50 p-2 sm:p-4 rounded-lg">
                             <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-xs sm:text-sm font-medium text-gray-600">{expenseAnalysisView === 'weekly' ? 'Settlement result before allocations' : 'Reported result before allocations'}</span>
+                              <span className="text-xs sm:text-sm font-medium text-gray-600">Settlement result before allocations</span>
                               <span className={`text-base sm:text-xl font-bold ${grossSettlementProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 ${safeToLocaleString(grossSettlementProfit)}
                               </span>
@@ -1877,7 +1885,7 @@ export default function Dashboard() {
                   ? ((selectedPeriodData as TimeSeriesPeriod).month_label || 'Selected Month')
                   : ((selectedPeriodData as TimeSeriesPeriod).year_label || 'Selected Year')
                 const loanInterest = Number((selectedPeriodData as TimeSeriesPeriod).loan_interest) || 0
-                const netProfitValue = Number(selectedPeriodData.net_profit) || 0
+                const netProfitValue = reportRemaining(selectedPeriodData)
                 const trailerSplitThisPeriod = Number((selectedPeriodData as TimeSeriesPeriod).trailer_income_split_amount) || 0
                 const repairReserveThisPeriod = Number((selectedPeriodData as TimeSeriesPeriod).repair_reserve_amount) || 0
                 const settlementNetProfitBeforeDeductions = netProfitValue + loanInterest + trailerSplitThisPeriod + repairReserveThisPeriod
@@ -1940,12 +1948,12 @@ export default function Dashboard() {
                       {/* Take-Home Profit: reconciles to the Settlement Net Profit card */}
                       <div className="pt-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-base font-semibold text-gray-900">{expenseAnalysisView === 'weekly' ? 'Settlement remainder' : 'Net result after repair costs'}</span>
+                          <span className="text-base font-semibold text-gray-900">Settlement remaining after allocations</span>
                           <span className={`text-xl font-bold ${takeHomeProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ${safeToLocaleString(takeHomeProfit)}
                           </span>
                         </div>
-                        <div className="mt-1 text-xs text-gray-500">{expenseAnalysisView === 'weekly' ? 'Follows settlement records; incurred repair costs are shown separately.' : 'Includes incurred repair costs. This result does not establish cash paid.'}</div>
+                        <div className="mt-1 text-xs text-gray-500">Follows settlement records, not bank cash. Invoices and payments outside settlements are shown separately; reserve payments do not reduce remaining again.</div>
                       </div>
 
 
@@ -2164,8 +2172,8 @@ export default function Dashboard() {
                       <tbody className="divide-y divide-yellow-200">
                         {((selectedPeriodData as TimeSeriesPeriod).settlements || []).map((settlement, idx: number) => (
                           <tr key={settlement.settlement_id || idx} className="bg-white">
-                            <td className="px-2 py-1">{settlement.settlement_date ? new Date(settlement.settlement_date).toLocaleDateString() : '-'}</td>
-                            <td className="px-2 py-1">{settlement.week_start ? new Date(settlement.week_start).toLocaleDateString() : '-'}</td>
+                            <td className="px-2 py-1">{settlement.settlement_date ? formatReportDate(settlement.settlement_date) : '-'}</td>
+                            <td className="px-2 py-1">{settlement.week_start ? formatReportDate(settlement.week_start) : '-'}</td>
                             <td className="px-2 py-1">{settlement.truck_name}</td>
                             <td className="px-2 py-1 text-right">${(settlement.insurance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className="px-2 py-1 text-right">${(settlement.driver_pay || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -2211,6 +2219,7 @@ export default function Dashboard() {
                         { key: 'loan_interest', label: 'Loan Interest', value: (selectedPeriodData as TimeSeriesPeriod).loan_interest || 0 },
                         { key: 'truck_parking', label: 'Truck Parking', value: (selectedPeriodData as TimeSeriesPeriod).truck_parking || 0 },
                         { key: 'driver_pay', label: "Driver's Pay", value: (selectedPeriodData as TimeSeriesPeriod).driver_pay || 0 },
+                        { key: 'custom', label: 'Custom Expenses', value: (selectedPeriodData as TimeSeriesPeriod).custom || 0 },
                         { key: 'payroll_fee', label: 'Payroll Fee', value: (selectedPeriodData as TimeSeriesPeriod).payroll_fee || 0 },
                         ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as TimeSeriesPeriod).repairs ? [{ key: 'repairs', label: 'Repairs', value: (selectedPeriodData as TimeSeriesPeriod).repairs || 0 }] : []),
                       ]
@@ -2220,7 +2229,7 @@ export default function Dashboard() {
                   
                   // Combine standard categories, filter out zero values, and sort
                   const expenseCategories = updatedStandardCategories
-                    .filter(cat => cat.value > 0)
+                    .filter(cat => cat.value !== 0)
                     .sort((a, b) => b.value - a.value)
 
                   const sortedLabels = expenseCategories.map(cat => cat.label)
@@ -2435,6 +2444,8 @@ export default function Dashboard() {
                         { key: 'payroll_fee', label: 'Payroll Fee' },
                         { key: 'loan_interest', label: 'Loan Interest' },
                         { key: 'truck_parking', label: 'Truck Parking' },
+                        { key: 'fleet_manager_support', label: 'Fleet Manager Support' },
+                        { key: 'custom', label: 'Custom Expenses' },
                         ...((expenseAnalysisView === 'all_time' || expenseAnalysisView === 'yearly' || expenseAnalysisView === 'monthly') && (selectedPeriodData as TimeSeriesPeriod).repairs ? [{ key: 'repairs', label: 'Repairs' }] : []),
                       ]
                         .map(({ key, label }) => ({
@@ -3272,7 +3283,7 @@ export default function Dashboard() {
                         padding: [8, 12]
                       },
                       legend: {
-                        data: ['Gross Revenue', 'Net Profit'],
+                        data: ['Gross Revenue', activeTimeView === 'monthly' ? 'Result including incurred repairs' : 'Settlement remaining'],
                         top: isMobile ? 'bottom' : 10,
                         bottom: isMobile ? 0 : 'auto',
                         orient: 'horizontal',
@@ -3323,7 +3334,7 @@ export default function Dashboard() {
                           lineStyle: { width: 2 }
                         },
                         {
-                          name: 'Net Profit',
+                          name: activeTimeView === 'monthly' ? 'Result including incurred repairs' : 'Settlement remaining',
                           type: 'line',
                           smooth: true,
                           data: currentData.netProfit,
