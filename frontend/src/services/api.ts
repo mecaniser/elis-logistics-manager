@@ -610,6 +610,7 @@ export const reserveApi = {
 }
 
 export interface TimeSeriesPeriod {
+  settlement_remainder?: number
   service_on_truck?: number
   total_expenses?: number
   settlement_count?: number
@@ -654,6 +655,7 @@ export interface TimeSeriesPeriod {
 
 export interface TimeSeriesData {
   by_week: Array<{
+    settlement_remainder?: number
     week_key: string
     week_label: string
     week_start?: string | null
@@ -686,6 +688,7 @@ export interface TimeSeriesData {
     settlement_types?: string[]
   }>
   by_month: Array<{
+    settlement_remainder?: number
     month_key: string
     month_label: string
     gross_revenue: number
@@ -726,6 +729,7 @@ export interface TimeSeriesData {
     }>
   }>
   by_year: Array<{
+    settlement_remainder?: number
     year_key: string
     year_label: string
     gross_revenue: number

@@ -409,7 +409,7 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
                             continue
                             
                         amount_float = float(amount) if amount is not None else 0.0
-                        if amount_float > 0:
+                        if amount_float != 0:
                             if category == "fees" or category == "other":
                                 expense_cats["custom"] += amount_float
                             elif category in expense_cats:
@@ -1477,7 +1477,7 @@ def _get_time_series_impl(
                         continue
                     
                     amount_float = float(amount) if amount is not None else 0.0
-                    if amount_float > 0:
+                    if amount_float != 0:
                         # Map category names
                         mapped_category = category
                         if category == "fees" or category == "other":
@@ -1582,6 +1582,8 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(week_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(week_data["miles_driven"], 2),
             "net_profit": round(week_data["net_profit"], 2),
+            # Settlement allocations are already deducted; invoices are not cash payments.
+            "settlement_remainder": round(week_data["net_profit"], 2),
             "expenses": round(week_data["expenses"], 2),
             "trailer_income_split_amount": round(week_data["trailer_income_split_amount"], 2),
             "repair_reserve_amount": round(week_data["repair_reserve_amount"], 2),
@@ -1707,6 +1709,8 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(month_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(month_data["miles_driven"], 2),
             "net_profit": round(month_data["net_profit"], 2),
+            # Settlement allocations are already deducted; invoices are not cash payments.
+            "settlement_remainder": round(month_data["net_profit"] + month_data["repairs"], 2),
             "expenses": round(month_data["expenses"], 2),
             "trailer_income_split_amount": round(month_data["trailer_income_split_amount"], 2),
             "repair_reserve_amount": round(month_data["repair_reserve_amount"], 2),
@@ -1767,6 +1771,8 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(year_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(year_data["miles_driven"], 2),
             "net_profit": round(year_data["net_profit"], 2),
+            # Settlement allocations are already deducted; invoices are not cash payments.
+            "settlement_remainder": round(year_data["net_profit"] + year_data["repairs"], 2),
             "expenses": round(year_data["expenses"], 2),
             "trailer_income_split_amount": round(year_data["trailer_income_split_amount"], 2),
             "repair_reserve_amount": round(year_data["repair_reserve_amount"], 2),
