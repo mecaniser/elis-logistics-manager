@@ -1,3 +1,4 @@
+import { resolveReportPeriod, recordedReportPeriods, ReportSelection } from '../utils/latestReportPeriod'
 import { reportRemaining, reportExpenseTotal, formatReportDate, awaitingWeeklySettlements, hasRecordedSettlementForRun } from '../utils/reporting'
 import { expenseActivityPeriods, reserveWithdrawalsForPeriod, serviceRepairCostsForPeriod } from '../components/repairs/reserveWithdrawals'
 import { useEventCallback } from '../utils/useEventCallback'
@@ -216,7 +217,7 @@ function DashboardContent() {
   const [selectedTrailerContributionTotal, setSelectedTrailerContributionTotal] = useState(0)
   const [activeTimeView, setActiveTimeView] = useState<'weekly' | 'monthly'>('monthly')
   const [selectedCategories, setSelectedCategories] = useState<{ [key: string]: boolean }>({})
-  const [selectedExpensePeriod, setSelectedExpensePeriod] = useState<string>('')
+  const [manualPeriodSelection, setManualPeriodSelection] = useState<ReportSelection>(null)
   const [expenseAnalysisView, setExpenseAnalysisView] = useState<'weekly' | 'monthly' | 'yearly' | 'all_time'>('weekly')
   // Collapse sections by default on mobile, expand on desktop
   const [settlementsInfoExpanded, setSettlementsInfoExpanded] = useState<boolean>(!isMobile)
@@ -385,7 +386,8 @@ function DashboardContent() {
     if (currentTenant?.business_type !== 'logistics') return
     
     // Reset selected period when vehicle type filter changes, so it gets re-initialized with new data
-    setSelectedExpensePeriod('')
+    setManualPeriodSelection(null)
+    setTimeSeriesData(null)
     // Set default view based on vehicle type: weekly for trucks, monthly for trailers
     setExpenseAnalysisView(view => vehicleTypeFilter === 'trucks' && view === 'monthly'
       ? 'weekly' : vehicleTypeFilter === 'trailers' && view === 'weekly' ? 'monthly' : view)
@@ -433,20 +435,16 @@ function DashboardContent() {
   }, [data, vehicleTypeFilter])
 
   const activityExpensePeriods = useMemo(() => {
-    const periods = expenseAnalysisView === 'weekly' ? timeSeriesData?.by_week : expenseAnalysisView === 'monthly' ? timeSeriesData?.by_month : timeSeriesData?.by_year
+    const periods = recordedReportPeriods(expenseAnalysisView, timeSeriesData)
     return expenseActivityPeriods(expenseAnalysisView, periods, data?.repair_reserve_withdrawals, data?.repairs_by_month)
   }, [expenseAnalysisView, timeSeriesData, data?.repair_reserve_withdrawals, data?.repairs_by_month])
 
+  const periodSelectionScope = `${currentTenant?.id}:${vehicleTypeFilter}:${selectedTruck ?? 'all'}:${expenseAnalysisView}`
+  const selectedExpensePeriod = resolveReportPeriod(expenseAnalysisView, activityExpensePeriods, manualPeriodSelection, periodSelectionScope)
+
   useEffect(() => {
-    if (expenseAnalysisView === 'all_time') setSelectedExpensePeriod('')
-    else {
-      const key = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
-      if (activityExpensePeriods.length && !activityExpensePeriods.some(period => period[key] === selectedExpensePeriod)) {
-        setSelectedExpensePeriod(activityExpensePeriods[activityExpensePeriods.length - 1][key] || '')
-      } else if (!activityExpensePeriods.length && timeSeriesData && selectedExpensePeriod) setSelectedExpensePeriod('')
-    }
     setSettlementsInfoExpanded(false); setRepairExpensesExpanded(false); setCumulativePositionExpanded(false)
-  }, [expenseAnalysisView, activityExpensePeriods, selectedExpensePeriod, timeSeriesData])
+  }, [expenseAnalysisView, selectedExpensePeriod])
 
   useEffect(() => {
     if (currentTenant?.business_type !== 'logistics') {
@@ -997,12 +995,8 @@ function DashboardContent() {
     
     if (!selectedExpensePeriod) return null
     
-    const periods = expenseAnalysisView === 'weekly' 
-      ? (Array.isArray(timeSeriesData.by_week) ? timeSeriesData.by_week : [])
-      : expenseAnalysisView === 'monthly'
-      ? (Array.isArray(timeSeriesData.by_month) ? timeSeriesData.by_month : [])
-      : (Array.isArray(timeSeriesData.by_year) ? timeSeriesData.by_year : [])
-    
+    const periods = recordedReportPeriods(expenseAnalysisView, timeSeriesData)
+
     const periodKey = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
     return periods.find(p => (p as TimeSeriesPeriod)[periodKey] === selectedExpensePeriod) || null
   }
@@ -1281,15 +1275,10 @@ function DashboardContent() {
 
   const getMatchingBusinessPeriod = (series: TimeSeriesData | null) => {
     if (!series || expenseAnalysisView === 'all_time') return null
-    const periods =
-      expenseAnalysisView === 'weekly'
-        ? series.by_week
-        : expenseAnalysisView === 'monthly'
-        ? series.by_month
-        : series.by_year
+    const periods = recordedReportPeriods(expenseAnalysisView, series)
     const keyName = expenseAnalysisView === 'weekly' ? 'week_key' : expenseAnalysisView === 'monthly' ? 'month_key' : 'year_key'
     if (!periods.length) return null
-    if (!selectedExpensePeriod) return periods[periods.length - 1] as TimeSeriesPeriod
+    if (!selectedExpensePeriod) return null
     return ((periods as TimeSeriesPeriod[]).find((period) => period[keyName] === selectedExpensePeriod) || null) as TimeSeriesPeriod
   }
 
@@ -1491,7 +1480,7 @@ function DashboardContent() {
                 <div className="w-full md:w-auto flex rounded-md shadow-sm" role="group">
                   <button
                     type="button"
-                    onClick={() => setVehicleTypeFilter('trucks')}
+                    onClick={() => { setSelectedTruck(null); setVehicleTypeFilter('trucks') }}
                     className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-l-lg ${
                       vehicleTypeFilter === 'trucks'
                         ? 'bg-green-600 text-white border-green-600'
@@ -1502,7 +1491,7 @@ function DashboardContent() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setVehicleTypeFilter('trailers')}
+                    onClick={() => { setSelectedTruck(null); setVehicleTypeFilter('trailers') }}
                     className={`flex-1 md:flex-none px-3 py-2 text-xs sm:text-sm font-medium border rounded-r-lg ${
                       vehicleTypeFilter === 'trailers'
                         ? 'bg-green-600 text-white border-green-600'
@@ -1598,7 +1587,8 @@ function DashboardContent() {
                 <div className="w-full xl:w-auto">
                   <select
                     value={selectedExpensePeriod}
-                    onChange={(e) => setSelectedExpensePeriod(e.target.value)}
+                    aria-label="Report period"
+                    onChange={(e) => setManualPeriodSelection({ scope: periodSelectionScope, key: e.target.value })}
                     disabled={isTimeSeriesPending || availableExpensePeriods.length === 0}
                     className="w-full xl:w-auto px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   >
@@ -1607,11 +1597,15 @@ function DashboardContent() {
                       const label = expenseAnalysisView === 'weekly' ? period.week_label : expenseAnalysisView === 'monthly' ? period.month_label : period.year_label
                       return (
                         <option key={key} value={key}>
-                          {expenseAnalysisView === 'weekly' && !period.has_settlement_data && !timeSeriesError && !businessTimeSeriesError && businessTimeSeries.truck !== null && businessTimeSeries.trailer !== null && businessTimeSeries.truck.by_week.length > 0 && awaitingWeeklySettlements(expenseAnalysisView, period, hasRecordedSettlementForRun(period, recordedBusinessWeeks)) ? `${period.week_start} – ${period.week_end} · awaiting settlements` : label}
+                          {label}
                         </option>
                       )
                     })}
                   </select>
+                  <button type="button" className="ml-2 text-xs text-blue-700 underline disabled:text-gray-400" disabled={isTimeSeriesPending}
+                    onClick={() => { setManualPeriodSelection(null); loadTimeSeries(); loadBusinessTimeSeries() }}>
+                    Latest settlement
+                  </button>
                 </div>
               )}
             </div>
