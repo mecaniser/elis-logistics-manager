@@ -5,6 +5,7 @@ from datetime import datetime,timezone
 import json,os
 import httpx
 import pytest
+from sqlalchemy import text
 from app.models.truck import Truck
 from app.models.repair import Repair
 from app.models.dieselbridge import DieselBridgeRepairLink,DieselBridgeRepairPayment,DieselBridgeFinancialOperation
@@ -43,3 +44,20 @@ def test_postgres_replicas_and_event_races_create_one_cost_without_payments(post
         assert db.query(DieselBridgeRepairPayment).filter_by(tenant_id=tenant).count()==0
         assert db.query(RepairReserveLedger).filter_by(tenant_id=tenant).count()==0
         assert db.query(DieselBridgeFinancialOperation).filter_by(tenant_id=tenant,kind='sync').count()==(1 if other_worker=='catchup' else 2)
+
+
+def test_postgres_source_http_does_not_hold_tenant_lock(postgres,monkeypatch):
+    _,sessions,tenant=postgres
+    monkeypatch.setenv('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED','true')
+    raw={'version':financial.VERSION,'shop_id':'fixture-shop','customer_id':'fixture-customer','items':[]}
+    body={**raw,'complete':True,'count':0,'snapshot_id':digest(raw)}
+    async def request(self,path,params=None):
+        with sessions() as probe:
+            probe.execute(text("SELECT id FROM tenants WHERE id=:tenant FOR UPDATE NOWAIT"), {'tenant':tenant})
+            probe.rollback()
+        return httpx.Response(200,json=body)
+    monkeypatch.setattr(d.SourceClient,'request',request)
+    with sessions() as db:
+        result=asyncio.run(financial.sync_financial(db,tenant,'fixture',idempotency_key='no-http-lock',automatic=True))
+        db.commit()
+    assert result['created']==0

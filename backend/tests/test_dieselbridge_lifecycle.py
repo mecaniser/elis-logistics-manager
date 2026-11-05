@@ -14,7 +14,7 @@ def test_worker_requires_both_flags_and_shutdown_awaits_it(monkeypatch,financial
     monkeypatch.setenv('ELIS_DIESELBRIDGE_FINANCIAL_ENABLED',financial)
     monkeypatch.setenv('ELIS_DIESELBRIDGE_FINANCIAL_WORKER_ENABLED',worker)
     events=[]
-    async def fake(session_factory,stop_event):
+    async def fake(session_factory,stop_event,**kwargs):
         events.append('started')
         await stop_event.wait()
         events.append('stopped')
