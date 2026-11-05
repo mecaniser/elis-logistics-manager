@@ -1,7 +1,7 @@
 """
 Settlement schemas
 """
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, computed_field
 from datetime import date, datetime
 from typing import Optional, Dict, List, Union, Any
 from decimal import Decimal
@@ -108,6 +108,13 @@ class SettlementResponse(SettlementBase):
     id: int
     pdf_file_path: Optional[str] = None
     created_at: Optional[datetime] = None
+
+    @computed_field
+    @property
+    def reporting(self) -> Dict[str, Any]:
+        from app.services.settlement_transfers import reporting
+        result = reporting(self)
+        return {key: result[key] for key in ("operating_expenses", "operating_net", "settlement_net", "transfer", "other_cash_adjustment", "review_required")}
 
     class Config:
         from_attributes = True

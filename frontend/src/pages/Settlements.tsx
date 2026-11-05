@@ -2120,7 +2120,7 @@ export default function Settlements() {
                         <div className="flex justify-between">
                           <span className="text-gray-500">Expenses:</span>
                           <span className="font-medium text-orange-600">
-                            ${(settlement.expenses || 0).toLocaleString()}
+                            ${Number(settlement.reporting?.operating_expenses ?? settlement.expenses ?? 0).toLocaleString()}
                           </span>
                         </div>
                       )}
@@ -2130,17 +2130,24 @@ export default function Settlements() {
                             Operating Profit:
                           </span>
                           <span className={`font-medium ${
-                            ((settlement.gross_revenue || 0) - (settlement.expenses || 0)) < 0 ? 'text-red-600' : 'text-green-600'
+                            ((settlement.gross_revenue || 0) - Number(settlement.reporting?.operating_expenses ?? settlement.expenses ?? 0)) < 0 ? 'text-red-600' : 'text-green-600'
                           }`}>
-                            ${((settlement.gross_revenue || 0) - (settlement.expenses || 0)).toLocaleString()}
+                            ${((settlement.gross_revenue || 0) - Number(settlement.reporting?.operating_expenses ?? settlement.expenses ?? 0)).toLocaleString()}
                           </span>
                         </div>
                       )}
-                      {settlement.cash_adjustments && settlement.cash_adjustments.length > 0 && (
+                      {Number(settlement.reporting?.transfer || 0) !== 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Cross-truck carryover:</span>
+                          <span className="font-medium text-purple-600">${Number(settlement.reporting?.transfer).toLocaleString()}</span>
+                        </div>
+                      )}
+                      {settlement.reporting?.review_required && <p className="text-amber-700">Carryover classification needs review.</p>}
+                      {settlement.cash_adjustments && settlement.cash_adjustments.some(adjustment => adjustment.type !== 'cross_truck_transfer') && (
                         <div className="flex justify-between">
                           <span className="text-gray-500">Prior-balance adjustment:</span>
                           <span className="font-medium text-purple-600">
-                            ${Number(settlement.cash_adjustments.reduce((sum, adjustment) => sum + Number(adjustment.amount || 0), 0)).toLocaleString()}
+                            ${Number(settlement.cash_adjustments.filter(adjustment => adjustment.type !== 'cross_truck_transfer').reduce((sum, adjustment) => sum + Number(adjustment.amount || 0), 0)).toLocaleString()}
                           </span>
                         </div>
                       )}

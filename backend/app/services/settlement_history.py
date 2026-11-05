@@ -1,4 +1,7 @@
 """Read-only historical reconciliation. Source checks never silently rewrite books."""
+from urllib.parse import urlsplit, quote
+from pathlib import PurePosixPath
+from app.services.settlement_transfers import audit_transfers, reporting
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -11,6 +14,20 @@ from app.services.finance import D, money, ZERO
 VERSION = 'settlement-review-v2'
 
 
+
+def attachment_url(path):
+    """Reuse saved attachments without claiming that their contents are verified."""
+    if not path:
+        return None
+    parsed = urlsplit(path)
+    if parsed.scheme:
+        return path if (parsed.scheme == 'https' and parsed.hostname == 'res.cloudinary.com'
+                        and not parsed.username and not parsed.password) else None
+    # Match the original settlement page's upload URL; never expose absolute paths.
+    filename = PurePosixPath(path).name
+    return '/uploads/' + quote(filename, safe='') if filename.lower().endswith('.pdf') else None
+
+
 def review_rows(records, sources):
     rows = []
     hashes = Counter(sources.get(r['id'], {}).get('sha256') for r in records if not r.get('source_settlement_id'))
@@ -20,7 +37,9 @@ def review_rows(records, sources):
             continue
         source = sources.get(r['id']) or {}
         p = source.get('proposal') or {}
+        saved_attachment = attachment_url(r.get('pdf_file_path'))
         original = bool(source.get('id'))
+        available = original or bool(saved_attachment)
         issues = []
         def flag(code, title, detail, amount=None):
             issues.append({'code': code, 'title': title, 'detail': detail, 'amount': money(amount) if amount is not None else None})
@@ -89,12 +108,15 @@ def review_rows(records, sources):
                     flag('interpretation_change', 'Planning amounts separated from statement figures', 'The prior application deducted internal reserves or modeled interest. These are explained presentation differences, not evidence of missing income.')
                 else:
                     flag('stored_difference', 'Saved figures differ from original', 'Review the field-by-field differences. The saved record has not been changed.')
-        elif original:
-            flag('mapping', 'Original needs a reviewed mapping', 'The PDF is preserved. Its older layout has not passed the normalized load, fuel and payout checks.')
+        elif available:
+            flag('mapping', 'Original needs a reviewed mapping', 'An original PDF is attached. Its contents have not passed the evidence and payout checks.')
         else:
             flag('missing_source', 'Original PDF not available', 'Stored figures remain visible; upload the original to verify them.')
         # Internal allocation and reserve amounts are recorded as planning movements, not external costs.
-        row = {'id': r['id'], 'asset_id': r['truck_id'], 'name': r['name'], 'vin': r.get('vin'), 'vehicle_type': r.get('vehicle_type', 'truck'), 'date': r['settlement_date'], 'provider': ('277 Logistics' if p.get('mapping') == '277-paystub-review-v1' else r.get('settlement_type') or 'Unspecified'), 'status': 'arithmetic_matched' if verified else ('needs_review' if original else 'missing_source'), 'evidence_id': source.get('id'), 'sha256': source.get('sha256'), 'basis': 'source_statement' if p else 'stored_unverified', 'source_ref': p.get('source_ref'), 'freight': money(gross) if gross is not None else None, 'carrier': money(carrier) if carrier is not None else None, 'driver_pay': categories.get('driver_pay'), 'fuel': categories.get('fuel'), 'categories': categories, 'remainder': money(remainder) if remainder is not None else None, 'calculated_remainder': money(calculated) if calculated is not None else None, 'difference': money(delta) if delta is not None else None, 'miles': miles, 'stored_miles': money(r['miles_driven']) if r.get('miles_driven') is not None else None, 'mileage_basis': basis, 'gallons_purchased': gallons, 'measured_mpg': None, 'fuel_per_mile': str((D(categories.get('fuel', 0))/D(miles)).quantize(Decimal('.001'))) if miles and verified else None, 'driver_percent': str((D(categories['driver_pay'])/D(gross)*100).quantize(Decimal('.01'))) if gross and D(gross)>0 and categories.get('driver_pay') is not None else None, 'trailer_allocation': money(r.get('trailer_income_split_amount') or 0), 'repair_target': money(r.get('repair_reserve_amount') or 0), 'legacy_net': money(r['net_profit']) if r.get('net_profit') is not None else None, 'loads': p.get('loads') or [], 'fuel_rows': p.get('fuel') or [], 'differences': differences, 'issues': issues, 'deposit_status': 'not_reconciled', 'driver_payment_status': 'statement_amount_only'}
+        row = {'id': r['id'], 'asset_id': r['truck_id'], 'name': r['name'], 'vin': r.get('vin'), 'vehicle_type': r.get('vehicle_type', 'truck'), 'date': r['settlement_date'], 'provider': ('277 Logistics' if p.get('mapping') == '277-paystub-review-v1' else r.get('settlement_type') or 'Unspecified'), 'status': 'arithmetic_matched' if verified else ('needs_review' if available else 'missing_source'), 'evidence_id': source.get('id'), 'sha256': source.get('sha256'), 'basis': 'source_statement' if p else 'stored_unverified', 'source_ref': p.get('source_ref'), 'freight': money(gross) if gross is not None else None, 'carrier': money(carrier) if carrier is not None else None, 'driver_pay': categories.get('driver_pay'), 'fuel': categories.get('fuel'), 'categories': categories, 'remainder': money(remainder) if remainder is not None else None, 'calculated_remainder': money(calculated) if calculated is not None else None, 'difference': money(delta) if delta is not None else None, 'miles': miles, 'stored_miles': money(r['miles_driven']) if r.get('miles_driven') is not None else None, 'mileage_basis': basis, 'gallons_purchased': gallons, 'measured_mpg': None, 'fuel_per_mile': str((D(categories.get('fuel', 0))/D(miles)).quantize(Decimal('.001'))) if miles and verified else None, 'driver_percent': str((D(categories['driver_pay'])/D(gross)*100).quantize(Decimal('.01'))) if gross and D(gross)>0 and categories.get('driver_pay') is not None else None, 'trailer_allocation': money(r.get('trailer_income_split_amount') or 0), 'repair_target': money(r.get('repair_reserve_amount') or 0), 'legacy_net': money(r['net_profit']) if r.get('net_profit') is not None else None, 'loads': p.get('loads') or [], 'fuel_rows': p.get('fuel') or [], 'differences': differences, 'issues': issues, 'deposit_status': 'not_reconciled', 'driver_payment_status': 'statement_amount_only'}
+        row['attachment_url'] = saved_attachment
+        row['original_available'] = available
+        row['cross_truck_transfer'] = money(reporting(r)['transfer'])
         rows.append(row)
     # Rolling purchase-based comparison: same truck/provider, supported statement miles,
     # minimum 3 records, and 28-calendar-day windows. Never label this consumption.
@@ -149,6 +171,6 @@ def settlement_history(db, tenant):
             from app.services.settlement_evidence import normalize_277_review
             proposal = normalize_277_review('\n'.join(p['text'] for p in latest.extracted.get('pages', [])))
         for i in ids: sources[i]={'id':latest.id,'sha256':latest.sha256,'proposal':proposal}
-    data=[{**{c.name: getattr(s,c.name) for c in Settlement.__table__.columns}, 'name':t.name,'vin':t.vin,'vehicle_type':t.vehicle_type,'settlement_date':s.settlement_date.isoformat()} for s,t in records]
+    data=[{**{c.name: getattr(s,c.name) for c in Settlement.__table__.columns}, 'name':t.name,'tenant_id':t.tenant_id,'vin':t.vin,'vehicle_type':t.vehicle_type,'settlement_date':s.settlement_date.isoformat()} for s,t in records]
     rows=review_rows(data,sources)
-    return {'version':VERSION,'tenant_id':tenant,'basis':'settlement_statement_date','evidence_status':'review_in_progress','period':{'start':min((r['date'] for r in rows),default=None),'end':max((r['date'] for r in rows),default=None)},'coverage':{'source_records':len(rows),'derived_allocations_excluded':sum(bool(r['source_settlement_id']) for r in data),'originals_preserved':sum(bool(r['evidence_id']) for r in rows),'arithmetic_matched':sum(r['status']=='arithmetic_matched' for r in rows),'originals_need_review':sum(x['status']=='needs_review' for x in rows),'needs_mapping':sum(r['basis']=='stored_unverified' and bool(r['evidence_id']) for r in rows),'missing_sources':sum(not r['evidence_id'] for r in rows),'flagged_records':sum(bool(r['issues']) for r in rows),'issue_counts':dict(Counter(i['code'] for r in rows for i in r['issues']))},'rows':rows,'limitations':['Arithmetic matching is not proof of deposit or driver receipt.','Older unmapped statements remain unverified. Internal trailer allocations are excluded from freight totals.','Fuel purchases are not consumption. Independent distance, product classification and tank timing remain necessary.','Missing income is not established without completed-load and payment evidence.']}
+    return {'version':VERSION,'tenant_id':tenant,'basis':'settlement_statement_date','evidence_status':'review_in_progress','period':{'start':min((r['date'] for r in rows),default=None),'end':max((r['date'] for r in rows),default=None)},'coverage':{'source_records':len(rows),'derived_allocations_excluded':sum(bool(r['source_settlement_id']) for r in data),'originals_preserved':sum(bool(r['evidence_id']) for r in rows),'attached_originals':sum(bool(r['attachment_url']) for r in rows),'arithmetic_matched':sum(r['status']=='arithmetic_matched' for r in rows),'originals_need_review':sum(x['status']=='needs_review' for x in rows),'needs_mapping':sum(r['basis']=='stored_unverified' and bool(r['original_available']) for r in rows),'missing_sources':sum(not r['original_available'] for r in rows),'flagged_records':sum(bool(r['issues']) for r in rows),'issue_counts':dict(Counter(i['code'] for r in rows for i in r['issues']))},'rows':rows,'transfer_audit':audit_transfers(data),'limitations':['Arithmetic matching is not proof of deposit or driver receipt.','Older unmapped statements remain unverified. Internal trailer allocations are excluded from freight totals.','Fuel purchases are not consumption. Independent distance, product classification and tank timing remain necessary.','Missing income is not established without completed-load and payment evidence.']}

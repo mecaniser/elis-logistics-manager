@@ -1,6 +1,7 @@
 """
 PDF parser for Amazon Relay settlement files
 """
+from app.services.settlement_transfers import transfer_reference
 import pdfplumber
 import re
 from datetime import datetime
@@ -307,18 +308,29 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
             addition_lines.append(line)
 
         description = " ".join(addition_lines).strip(" :-") or "Settlement addition"
-        if "balance out" in description.lower() or "previous negative balance" in description.lower():
-            cash_adjustments.append({
-                "type": "prior_balance_offset",
-                "description": description,
-                "amount": round(additions_total, 2),
-            })
+        addition_rows = re.findall(
+            r"(?m)^-\s+\d{1,2}/\d{1,2}/\d{2,4}\s+(.+?)\s+\$?([\d,]+\.\d{2})$",
+            additions_section,
+        )
+        if addition_rows:
+            if abs(sum(_parse_currency(value) for _, value in addition_rows) - additions_total) > 0.01:
+                raise ValueError("77 Cargo additions need reviewed line mapping")
+        elif transfer_reference(description):
+            raise ValueError("77 Cargo carryover needs an explicit addition row")
         else:
-            reimbursement_details.append({
-                "description": description,
-                "amount": round(additions_total, 2),
-            })
-            expense_categories["reimbursement"] = round(additions_total, 2)
+            addition_rows = [(description, str(additions_total))]
+        for description, value in addition_rows:
+            addition_amount = _parse_currency(value)
+            if transfer_reference(description) or "balance out" in description.lower() or "previous negative balance" in description.lower():
+                cash_adjustments.append({
+                    "type": "cross_truck_transfer" if transfer_reference(description) else "prior_balance_offset",
+                    "description": description,
+                    "amount": round(addition_amount, 2),
+                })
+            else:
+                reimbursement_details.append({"description": description, "amount": round(addition_amount, 2)})
+                expense_categories["reimbursement"] = round(expense_categories.get("reimbursement", 0) + addition_amount, 2)
+        if reimbursement_details:
             settlement_data["reimbursement_details"] = reimbursement_details
 
     deduction_details = []
@@ -366,12 +378,12 @@ def _parse_77_cargo_pdf(text: str) -> Dict:
             normalized_description = _normalize_77_cargo_description(description)
             lower_description = normalized_description.lower()
 
-            if "balance in" in lower_description or "negative balance" in lower_description:
+            if transfer_reference(normalized_description) or "balance in" in lower_description or "negative balance" in lower_description:
                 # This is a carry-forward cash adjustment, not a cost incurred
                 # by this load period.  Preserve its sign so the reported cash
                 # payout can be reconciled without distorting operating profit.
                 cash_adjustments.append({
-                    "type": "prior_balance_offset",
+                    "type": "cross_truck_transfer" if transfer_reference(normalized_description) else "prior_balance_offset",
                     "description": normalized_description,
                     "amount": round(-amount, 2),
                 })
