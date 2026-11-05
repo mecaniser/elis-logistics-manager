@@ -960,6 +960,8 @@ function DashboardContent() {
         raw_gross_miles_driven: operationalMetrics.raw_gross_miles_driven || 0,
         miles_driven: operationalMetrics.miles_driven || 0,
         net_profit: adjustedNetProfit,
+        cross_truck_transfer: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number((period as any).cross_truck_transfer) || 0), 0),
+        other_cash_adjustment: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number((period as any).other_cash_adjustment) || 0), 0),
         settlement_remainder: timeSeriesData?.by_year.reduce((sum, period) => sum + reportRemaining(period), 0),
         repair_reserve_amount: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number(period.repair_reserve_amount) || 0), 0),
         trailer_income_split_amount: timeSeriesData?.by_year.reduce((sum, period) => sum + (Number(period.trailer_income_split_amount) || 0), 0),
@@ -1918,6 +1920,26 @@ function DashboardContent() {
                     </h3>
 
                     <div className="mb-6 space-y-3">
+                      {(Number(selectedPeriodData.cross_truck_transfer || 0) !== 0 || Number(selectedPeriodData.other_cash_adjustment || 0) !== 0) && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Operating result before transfers and allocations</span>
+                          <span className="text-sm font-semibold text-gray-900">${safeToLocaleString(settlementNetProfitBeforeDeductions - Number(selectedPeriodData.cross_truck_transfer || 0) - Number(selectedPeriodData.other_cash_adjustment || 0))}</span>
+                        </div>
+                      )}
+                      {Number((selectedPeriodData as any).cross_truck_transfer || 0) !== 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Cross-truck carryover included <span className="text-xs text-gray-400">(transfer between trucks)</span></span>
+                          <span className="text-sm font-medium text-purple-600">${safeToLocaleString(Number((selectedPeriodData as any).cross_truck_transfer))}</span>
+                        </div>
+                      )}
+
+                      {Number((selectedPeriodData as any).other_cash_adjustment || 0) !== 0 && (
+                        <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                          <span className="text-sm text-gray-600">Other settlement adjustments included</span>
+                          <span className="text-sm font-medium text-purple-600">${safeToLocaleString(Number((selectedPeriodData as any).other_cash_adjustment))}</span>
+                        </div>
+                      )}
+
                       {/* Gross settlement profit before any internal deductions */}
                       <div className="flex justify-between items-center py-2 border-b border-gray-200">
                         <span className="text-sm font-medium text-gray-700">{expenseAnalysisView === 'weekly' ? 'Gross settlement result' : 'Result before shown allocations'}</span>

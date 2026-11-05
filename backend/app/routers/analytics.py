@@ -1,6 +1,7 @@
 """
 Analytics router
 """
+from app.services.settlement_transfers import reporting_record
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
@@ -485,8 +486,12 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
         )
 
     # Calculate expense categories separately for trucks and trailers
-    truck_settlements = truck_settlements_query.all()
-    trailer_settlements = trailer_settlements_query.all()
+    truck_settlements = [reporting_record(s) for s in truck_settlements_query.all()]
+    trailer_settlements = [reporting_record(s) for s in trailer_settlements_query.all()]
+    truck_expenses = sum(float(s.expenses or 0) for s in truck_settlements)
+    trailer_expenses = sum(float(s.expenses or 0) for s in trailer_settlements)
+    truck_transfers = sum(float(s.cross_truck_transfer + s.other_cash_adjustment) for s in truck_settlements)
+    trailer_transfers = sum(float(s.cross_truck_transfer + s.other_cash_adjustment) for s in trailer_settlements)
     truck_repairs = truck_repairs_query.all()
     trailer_repairs = trailer_repairs_query.all()
     
@@ -521,12 +526,12 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     # Calculate net profits
     truck_expenses_sum = sum(truck_expense_categories.values())
     trailer_expenses_sum = sum(trailer_expense_categories.values())
-    truck_net_profit = float(truck_revenue) - float(truck_expenses_sum)
-    trailer_net_profit = float(trailer_revenue) - float(trailer_expenses_sum)
+    truck_net_profit = float(truck_revenue) - float(truck_expenses_sum) + truck_transfers
+    trailer_net_profit = float(trailer_revenue) - float(trailer_expenses_sum) + trailer_transfers
     
     # Combined net profit (for backward compatibility)
     total_expenses_sum = sum(expense_categories.values())
-    net_profit = float(total_revenue) - float(total_expenses_sum)
+    net_profit = float(total_revenue) - float(total_expenses_sum) + truck_transfers + trailer_transfers
     combined_operational_metrics = _calculate_operational_metrics(
         post_dispatch_revenue=float(total_revenue),
         settlement_expenses=float(truck_expenses + trailer_expenses),
@@ -540,54 +545,58 @@ def _get_dashboard_impl(truck_id: int, vehicle_type: Optional[str], db: Session,
     truck_profits = []
     trucks = trucks_only_query.all()
     for truck in trucks:
-        truck_settlements = db.query(Settlement).filter(Settlement.truck_id == truck.id)
-        truck_repairs = db.query(Repair).filter(Repair.truck_id == truck.id)
+        asset_settlements = db.query(Settlement).filter(Settlement.truck_id == truck.id)
+        asset_repairs = db.query(Repair).filter(Repair.truck_id == truck.id)
         
-        truck_revenue = truck_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
-        truck_expenses = truck_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
-        truck_repairs_cost = truck_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+        asset_revenue = asset_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+        asset_rows = [reporting_record(s) for s in asset_settlements.all()]
+        asset_expenses = sum(float(s.expenses or 0) for s in asset_rows)
+        asset_adjustments = sum(float(s.cross_truck_transfer + s.other_cash_adjustment) for s in asset_rows)
+        asset_repairs_cost = asset_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
         
         # Calculate profit before repairs (revenue - settlement expenses only)
-        profit_before_repairs = float(truck_revenue) - float(truck_expenses)
+        profit_before_repairs = float(asset_revenue) - float(asset_expenses) + asset_adjustments
         
         truck_profits.append({
             "truck_id": truck.id,
             "truck_name": truck.name,
             "license_plate": truck.license_plate,
             "vin": truck.vin,
-            "total_revenue": float(truck_revenue),
-            "total_expenses": float(truck_expenses) + float(truck_repairs_cost),
-            "settlement_expenses": float(truck_expenses),
-            "repair_costs": float(truck_repairs_cost),
+            "total_revenue": float(asset_revenue),
+            "total_expenses": float(asset_expenses) + float(asset_repairs_cost),
+            "settlement_expenses": float(asset_expenses),
+            "repair_costs": float(asset_repairs_cost),
             "profit_before_repairs": profit_before_repairs,
-            "net_profit": float(truck_revenue) - float(truck_expenses) - float(truck_repairs_cost)
+            "net_profit": float(asset_revenue) - float(asset_expenses) - float(asset_repairs_cost) + asset_adjustments
         })
     
     # Get trailer profits
     trailer_profits = []
     trailers = trailers_only_query.all()
     for trailer in trailers:
-        trailer_settlements = db.query(Settlement).filter(Settlement.truck_id == trailer.id)
-        trailer_repairs = db.query(Repair).filter(Repair.truck_id == trailer.id)
+        asset_settlements = db.query(Settlement).filter(Settlement.truck_id == trailer.id)
+        asset_repairs = db.query(Repair).filter(Repair.truck_id == trailer.id)
         
-        trailer_revenue = trailer_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
-        trailer_expenses = trailer_settlements.with_entities(func.sum(Settlement.expenses)).scalar() or 0
-        trailer_repairs_cost = trailer_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
+        asset_revenue = asset_settlements.with_entities(func.sum(Settlement.gross_revenue)).scalar() or 0
+        asset_rows = [reporting_record(s) for s in asset_settlements.all()]
+        asset_expenses = sum(float(s.expenses or 0) for s in asset_rows)
+        asset_adjustments = sum(float(s.cross_truck_transfer + s.other_cash_adjustment) for s in asset_rows)
+        asset_repairs_cost = asset_repairs.with_entities(func.sum(Repair.cost)).scalar() or 0
         
         # Calculate profit before repairs (revenue - settlement expenses only)
-        profit_before_repairs = float(trailer_revenue) - float(trailer_expenses)
+        profit_before_repairs = float(asset_revenue) - float(asset_expenses) + asset_adjustments
         
         trailer_profits.append({
             "truck_id": trailer.id,
             "truck_name": trailer.name,
             "tag_number": trailer.tag_number,
             "vin": trailer.vin,
-            "total_revenue": float(trailer_revenue),
-            "total_expenses": float(trailer_expenses) + float(trailer_repairs_cost),
-            "settlement_expenses": float(trailer_expenses),
-            "repair_costs": float(trailer_repairs_cost),
+            "total_revenue": float(asset_revenue),
+            "total_expenses": float(asset_expenses) + float(asset_repairs_cost),
+            "settlement_expenses": float(asset_expenses),
+            "repair_costs": float(asset_repairs_cost),
             "profit_before_repairs": profit_before_repairs,
-            "net_profit": float(trailer_revenue) - float(trailer_expenses) - float(trailer_repairs_cost)
+            "net_profit": float(asset_revenue) - float(asset_expenses) - float(asset_repairs_cost) + asset_adjustments
         })
     
     # Get blocks by truck and month
@@ -1229,7 +1238,7 @@ def _get_time_series_impl(
                 # No vehicles of this type; return empty results
                 settlements_query = settlements_query.filter(False)
     
-    settlements = settlements_query.order_by(Settlement.settlement_date).all()
+    settlements = [reporting_record(s) for s in settlements_query.order_by(Settlement.settlement_date).all()]
     
     # Get truck names for reference (only for this tenant)
     trucks = db.query(Truck).filter(Truck.tenant_id == tenant_id).all()
@@ -1254,6 +1263,9 @@ def _get_time_series_impl(
         "raw_gross_miles_driven": 0.0,
         "miles_driven": 0.0,
         "net_profit": 0.0,
+        "cross_truck_transfer": 0.0,
+        "other_cash_adjustment": 0.0,
+        "operating_net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "trailer_income_split_amount": 0.0,
         "repair_reserve_amount": 0.0,
@@ -1287,6 +1299,9 @@ def _get_time_series_impl(
         "raw_gross_miles_driven": 0.0,
         "miles_driven": 0.0,
         "net_profit": 0.0,
+        "cross_truck_transfer": 0.0,
+        "other_cash_adjustment": 0.0,
+        "operating_net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "trailer_income_split_amount": 0.0,
         "repair_reserve_amount": 0.0,
@@ -1318,6 +1333,9 @@ def _get_time_series_impl(
         "raw_gross_miles_driven": 0.0,
         "miles_driven": 0.0,
         "net_profit": 0.0,
+        "cross_truck_transfer": 0.0,
+        "other_cash_adjustment": 0.0,
+        "operating_net_profit": 0.0,
         "expenses": 0.0,  # Total expenses from settlement.expenses field
         "trailer_income_split_amount": 0.0,
         "repair_reserve_amount": 0.0,
@@ -1418,6 +1436,9 @@ def _get_time_series_impl(
         weekly_data[week_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
         weekly_data[week_key]["miles_driven"] += miles_driven
         weekly_data[week_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+        weekly_data[week_key]["cross_truck_transfer"] += float(settlement.cross_truck_transfer)
+        weekly_data[week_key]["other_cash_adjustment"] += float(settlement.other_cash_adjustment)
+        weekly_data[week_key]["operating_net_profit"] += float(settlement.operating_net_profit or 0)
         weekly_data[week_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
         weekly_data[week_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
         weekly_data[week_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
@@ -1441,6 +1462,9 @@ def _get_time_series_impl(
             monthly_data[month_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
             monthly_data[month_key]["miles_driven"] += miles_driven
             monthly_data[month_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            monthly_data[month_key]["cross_truck_transfer"] += float(settlement.cross_truck_transfer)
+            monthly_data[month_key]["other_cash_adjustment"] += float(settlement.other_cash_adjustment)
+            monthly_data[month_key]["operating_net_profit"] += float(settlement.operating_net_profit or 0)
             monthly_data[month_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             monthly_data[month_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
             monthly_data[month_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
@@ -1458,6 +1482,9 @@ def _get_time_series_impl(
             yearly_data[year_key]["raw_gross_miles_driven"] += raw_gross_miles_driven
             yearly_data[year_key]["miles_driven"] += miles_driven
             yearly_data[year_key]["net_profit"] += float(settlement.net_profit) if settlement.net_profit else 0.0
+            yearly_data[year_key]["cross_truck_transfer"] += float(settlement.cross_truck_transfer)
+            yearly_data[year_key]["other_cash_adjustment"] += float(settlement.other_cash_adjustment)
+            yearly_data[year_key]["operating_net_profit"] += float(settlement.operating_net_profit or 0)
             yearly_data[year_key]["expenses"] += float(settlement.expenses) if settlement.expenses else 0.0
             yearly_data[year_key]["trailer_income_split_amount"] += float(settlement.trailer_income_split_amount) if settlement.trailer_income_split_amount else 0.0
             yearly_data[year_key]["repair_reserve_amount"] += float(settlement.repair_reserve_amount) if settlement.repair_reserve_amount else 0.0
@@ -1582,6 +1609,9 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(week_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(week_data["miles_driven"], 2),
             "net_profit": round(week_data["net_profit"], 2),
+            "cross_truck_transfer": round(week_data["cross_truck_transfer"], 2),
+            "other_cash_adjustment": round(week_data["other_cash_adjustment"], 2),
+            "operating_net_profit": round(week_data["operating_net_profit"], 2),
             # Settlement allocations are already deducted; invoices are not cash payments.
             "settlement_remainder": round(week_data["net_profit"], 2),
             "expenses": round(week_data["expenses"], 2),
@@ -1709,6 +1739,9 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(month_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(month_data["miles_driven"], 2),
             "net_profit": round(month_data["net_profit"], 2),
+            "cross_truck_transfer": round(month_data["cross_truck_transfer"], 2),
+            "other_cash_adjustment": round(month_data["other_cash_adjustment"], 2),
+            "operating_net_profit": round(month_data["operating_net_profit"], 2),
             # Settlement allocations are already deducted; invoices are not cash payments.
             "settlement_remainder": round(month_data["net_profit"] + month_data["repairs"], 2),
             "expenses": round(month_data["expenses"], 2),
@@ -1771,6 +1804,9 @@ def _get_time_series_impl(
             "raw_gross_miles_driven": round(year_data["raw_gross_miles_driven"], 2),
             "miles_driven": round(year_data["miles_driven"], 2),
             "net_profit": round(year_data["net_profit"], 2),
+            "cross_truck_transfer": round(year_data["cross_truck_transfer"], 2),
+            "other_cash_adjustment": round(year_data["other_cash_adjustment"], 2),
+            "operating_net_profit": round(year_data["operating_net_profit"], 2),
             # Settlement allocations are already deducted; invoices are not cash payments.
             "settlement_remainder": round(year_data["net_profit"] + year_data["repairs"], 2),
             "expenses": round(year_data["expenses"], 2),

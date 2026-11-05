@@ -334,7 +334,7 @@ def validate_journal_entry_lines(lines: List[Dict], tenant_id: int, db: Session,
     # Rule 3: All accounts must belong to same tenant
     if account_ids:
         accounts = db.query(ChartOfAccount).filter(ChartOfAccount.id.in_(account_ids)).all()
-        if len(accounts) != len(account_ids):
+        if len(accounts) != len(set(account_ids)):
             missing_ids = set(account_ids) - {acc.id for acc in accounts}
             return False, f"One or more accounts not found: {missing_ids}"
         
@@ -392,15 +392,19 @@ def create_settlement_journal_entry(
     if existing:
         return existing  # Already created
     
-    # Ensure accounts exist
-    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting, auto_commit=auto_commit)
-
+    from app.services.settlement_transfers import reporting
+    report = reporting(settlement)
+    # Existing entries return above. This only governs a new settlement's posting.
+    # Do not post ambiguous carryover classifications automatically.
+    if report['review_required']:
+        raise ValueError("Carryover classification requires review before journal posting")
+    settlement_categories = report['categories']
     gross_revenue = Decimal(str(settlement.gross_revenue)) if settlement.gross_revenue else Decimal(0)
-    net_profit = Decimal(str(settlement.net_profit)) if settlement.net_profit else Decimal(0)
+    net_profit = Decimal(str(report['settlement_net'] or 0))
     has_positive_expenses = False
     has_reimbursement = False
-    if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
-        for category, amount in settlement.expense_categories.items():
+    if settlement_categories and isinstance(settlement_categories, dict):
+        for category, amount in settlement_categories.items():
             amount_dec = Decimal(str(amount)) if amount else Decimal(0)
             if category == "reimbursement":
                 if amount_dec > 0:
@@ -412,9 +416,11 @@ def create_settlement_journal_entry(
     # Skip accounting side effects when a settlement produces nothing valid to post.
     if not per_asset and net_profit <= 0:
         return None
-    if per_asset and gross_revenue <= 0 and not has_positive_expenses and not has_reimbursement:
+    if per_asset and gross_revenue <= 0 and not has_positive_expenses and not has_reimbursement and not report['transfer']:
         return None
     
+    ensure_standard_accounts_exist(db, tenant_id, truck_id_for_accounting, auto_commit=auto_commit)
+
     entry_date = settlement.settlement_date or settlement.created_at.date() if settlement.created_at else date.today()
     
     # Create journal entry
@@ -481,8 +487,8 @@ def create_settlement_journal_entry(
             })
         
         # Expense side: Debit Expense accounts, Credit AR (or Cash)
-        if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
-            for category, amount in settlement.expense_categories.items():
+        if settlement_categories and isinstance(settlement_categories, dict):
+            for category, amount in settlement_categories.items():
                 # Skip reimbursements - they're credits, handled separately
                 if category == "reimbursement":
                     continue
@@ -520,8 +526,8 @@ def create_settlement_journal_entry(
                     })
         
         # Handle reimbursements (credits that reduce expenses)
-        if settlement.expense_categories and isinstance(settlement.expense_categories, dict):
-            reimbursement = settlement.expense_categories.get("reimbursement", 0)
+        if settlement_categories and isinstance(settlement_categories, dict):
+            reimbursement = settlement_categories.get("reimbursement", 0)
             if reimbursement:
                 reimbursement_float = Decimal(str(reimbursement))
                 # Reimbursement: Debit AR, Credit Expense (reduces expense)
@@ -546,6 +552,22 @@ def create_settlement_journal_entry(
                     "tenant_id": tenant_id
                 })
     
+    if per_asset and report['transfer']:
+        # This shifts the receivable between assets without booking another cost
+        # or reimbursement income. Paired asset clearing balances cancel in total.
+        transfer = report['transfer']
+        clearing = get_or_create_account(db, "2190", "Cross-truck Settlement Clearing", "Liability", tenant_id,
+                                         truck_id=truck_id_for_accounting, auto_commit=auto_commit)
+        if clearing.name != "Cross-truck Settlement Clearing" or clearing.account_type != "Liability":
+            raise ValueError("Account 2190 is already used; review the carryover clearing account")
+        transfer_amount = abs(transfer)
+        for account, debit in [(ar_account, transfer > 0), (clearing, transfer < 0)]:
+            lines.append({"journal_entry_id": journal_entry.id, "account_id": account.id,
+                          "debit": transfer_amount if debit else 0,
+                          "credit": 0 if debit else transfer_amount,
+                          "description": "Cross-truck settlement carryover", "truck_id": settlement.truck_id,
+                          "tenant_id": tenant_id})
+
     # Ensure all lines have tenant_id
     for line_data in lines:
         if "tenant_id" not in line_data:

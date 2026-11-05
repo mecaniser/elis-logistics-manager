@@ -169,6 +169,7 @@ export interface VehicleROI {
 }
 
 export interface Settlement {
+  reporting?: { operating_expenses: number | null; operating_net: number | null; settlement_net: number | null; transfer: number; review_required: boolean }
   id: number
   truck_id: number
   driver_id?: number | null
@@ -610,6 +611,9 @@ export const reserveApi = {
 }
 
 export interface TimeSeriesPeriod {
+  cross_truck_transfer?: number
+  other_cash_adjustment?: number
+  operating_net_profit?: number
   settlement_remainder?: number
   service_on_truck?: number
   total_expenses?: number
